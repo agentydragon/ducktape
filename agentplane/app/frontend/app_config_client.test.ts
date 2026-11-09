@@ -2,13 +2,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { getFrontendConfig, getSandboxForm, listModels, listSandboxPresets } from "./app_config_client";
+import { Harness } from "../../proto/session_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-it("decodes the generated AppService ProtoJSON responses into the UI config views", async () => {
+it("decodes the generated AppService ProtoJSON responses", async () => {
   const paths: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -71,46 +72,23 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
     })
   );
 
-  await expect(listModels()).resolves.toEqual({
-    models: [{ model: "model-a", display_name: "Model A", reasoning_efforts: ["low", "high"] }],
-    harnesses: { HARNESS_CODEX: ["model-a"], HARNESS_CLAUDE: [] },
-  });
-  await expect(getFrontendConfig()).resolves.toEqual({
-    trace_search: {
-      grafana_base_url: "https://grafana.example.test/",
-      tempo_datasource_uid: "fixture-tempo",
-      deployment_environment: "fixture",
-    },
-    langfuse_search: {
-      base_url: "https://langfuse.example.test/",
-      project_id: "fixture-project",
-      session_metadata_key: "session",
-      sandbox_namespace_metadata_key: "namespace",
-      sandbox_service_account_metadata_key: "account",
-    },
-  });
-  await expect(listSandboxPresets()).resolves.toEqual([
-    {
-      name: "work",
-      title: "Work",
-      template: "linux",
-      policy_sets: ["baseline"],
-      inbox_tags: [],
-      session_defaults: {
-        harness: "HARNESS_CODEX",
-        model: "model-a",
-        cwd: "/workspace",
-        reasoning_effort: "medium",
-        instructions: "",
-        setup_script: "echo ready",
-      },
-      bootstrap: "mkdir -p /workspace",
-    },
+  const catalog = await listModels();
+  expect(
+    catalog.models.map(({ model, displayName, reasoningEfforts }) => ({ model, displayName, reasoningEfforts }))
+  ).toEqual([{ model: "model-a", displayName: "Model A", reasoningEfforts: ["low", "high"] }]);
+  expect(catalog.harnesses.map(({ harness, models }) => [harness, models])).toEqual([
+    [Harness.CODEX, ["model-a"]],
+    [Harness.CLAUDE, []],
   ]);
-  await expect(getSandboxForm()).resolves.toEqual({
-    policy_sets: ["alpha", "zeta"],
-    new_sandbox_defaults: { wake_on_send: true, idle_suspend_after_seconds: 900 },
-  });
+  const config = await getFrontendConfig();
+  expect(config.traceSearch?.grafanaBaseUrl).toBe("https://grafana.example.test/");
+  expect(config.langfuseSearch?.sandboxServiceAccountMetadataKey).toBe("account");
+  const [preset] = await listSandboxPresets();
+  expect(preset?.sessionDefaults?.harness).toBe(Harness.CODEX);
+  expect(preset?.sessionDefaults?.reasoningEffort).toBe("medium");
+  const form = await getSandboxForm();
+  expect(form.policySets).toEqual(["alpha", "zeta"]);
+  expect(form.newSandboxDefaults.idleSuspendAfterSeconds).toBe(900n);
   expect(paths).toEqual([
     "/upstream/app-config/v1/models",
     "/upstream/app-config/v1/frontend-config",
@@ -124,7 +102,20 @@ it("maps unset ProtoJSON message fields to absent optional links", async () => {
     "fetch",
     vi.fn(async () => Response.json({ frontendConfig: { traceSearch: null, langfuseSearch: null } }))
   );
-  await expect(getFrontendConfig()).resolves.toEqual({ trace_search: null, langfuse_search: null });
+  const config = await getFrontendConfig();
+  expect(config.traceSearch).toBeUndefined();
+  expect(config.langfuseSearch).toBeUndefined();
+});
+
+it.each([
+  { label: "models", read: listModels, wire: '{"harnesses":[{"harness":"HARNESS_UNSPECIFIED"}]}' },
+  { label: "presets without session defaults", read: listSandboxPresets, wire: '{"presets":[{"name":"no-defaults"}]}' },
+])("rejects $label that name no known harness", async ({ read, wire }) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(wire))
+  );
+  await expect(read()).rejects.toThrow("unknown harness");
 });
 
 it.each([

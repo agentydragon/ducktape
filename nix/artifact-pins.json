@@ -61,8 +61,8 @@
       "sha256": "ScYL50jt+e5dPPtbXCPi+/IrDw5dLaVxzwXcM/Zydq0="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-34587819594d/debundle",
-      "sha256": "NFh4GVlN8petBoF6gZ2CErO0vfgEmmhAnA8gtDXbbug="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-7fd173fad2a2/debundle",
+      "sha256": "f9Fz+tKisD5Nz+9B9DW6lnSuspt0b+epCctTpQvscZg="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
@@ -269,8 +269,8 @@
       "sha256": "E+p1em+YfLRoHS7tFERt8cCVwnydkw6bLl9lyF7suxU="
     },
     "agentplane-cli": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-253f6889e23e/agentplane-cli",
-      "sha256": "JT9oieI+vKYzDAOrx+KhJbi69my7Wzh0+uSNJZhO8fI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-4d49eb1a5ced/agentplane-cli",
+      "sha256": "TUnrGlztJPl9jcvfnmdOQ2IgXGB+Dv0ccO/f4Ir014A="
     },
     "ducktape-network-monitor": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-network-monitor-ec79f5c96290/ducktape_network_monitor-0.1.0-py3-none-any.whl",

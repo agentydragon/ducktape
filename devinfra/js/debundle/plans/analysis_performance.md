@@ -5,9 +5,8 @@ scope and lifetime are clear. Use fresh `-c opt` profiles when a CPU hotspot or
 the value of an uncertain optimization needs attribution; profiling is not a
 prerequisite for an obvious, bounded memory improvement. Older replay rankings
 predate the current interpreter and effect-transfer work, so they cannot rank
-current work. Earlier callback-scale findings and their profile and validation
-evidence are in
-<../debug/2026_10_24_callback_analysis_performance.md>.
+current work. Earlier callback-scale and other measured mechanisms are in
+<../docs/lessons_learned/performance_traps.md>.
 
 ## Remaining work
 

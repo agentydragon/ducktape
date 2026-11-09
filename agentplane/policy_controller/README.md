@@ -53,6 +53,11 @@ Lease in the policy namespace.
   grant, and of labeled ServiceAccounts each one's managed account, so an owner deleted while the
   controller was down is reconciled as not found on start, which deletes what it kept. A finalizer
   would block deletion whenever the controller is down.
+- **A holder object for created accounts.** The accounts namespace is separate from the policy
+  namespace so the egress proxy's `impersonate` Role there cannot reach the controllers' own
+  accounts. OwnerReferences do not cross namespaces, so a ServiceAccount there can carry neither an
+  owner nor an expiry; `ManagedServiceAccount` in the policy namespace holds both, and what the
+  account owns is garbage-collected with it.
 - **Roles are watched by metadata only**, and read uncached. A Role or ClusterRole change
   reconciles the bindings whose `status.missingRoles` names it, so a binding to a role created
   later is granted once it appears. Condition reasons are informational and nothing branches on them.

@@ -31,7 +31,10 @@ const (
 	OutboxChannel  = "central_sampler_outbox"
 	WorkChannel    = "central_sampler_work"
 	processColumns = `id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id,omitted_bytes`
-	sessionWork    = `(ss.setup_state=$2
+	// Work scans select on durable pending work only. The conversation's `stopped` flag stays set
+	// after a rejected turn until the next command is processed, so filtering on it hid queued input
+	// whose direct wake reached a retiring driver or another replica.
+	sessionWork = `(ss.setup_state=$2
 		OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
 		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
 		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))`

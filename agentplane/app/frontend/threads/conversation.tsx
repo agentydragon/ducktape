@@ -1,6 +1,6 @@
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
+import type { LangfuseSearchSettings, ModelOption, TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
 import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../icons";
@@ -10,7 +10,8 @@ import { Link } from "react-router";
 
 import { displayableError } from "../client";
 import { attachedHarness, harnessBehavior } from "../harness_behavior";
-import { harnessLabel, models, modelsForHarness, type ModelOption } from "../model_catalog";
+import { harnessLabel, modelsForHarness } from "../model_catalog";
+import { listModels } from "../app_config_client";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useThreadSync, type ThreadWindow } from "./thread_sync";
@@ -273,7 +274,7 @@ function ConversationBody({
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.appliedModel ?? spec?.model;
-  const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
+  const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoningEfforts ?? [];
   useEffect(() => {
     // Unknown until the Thread's summary folds a runner attachment; no model fits it yet.
     if (harness === undefined || harness === Harness.UNSPECIFIED) {
@@ -281,7 +282,7 @@ function ConversationBody({
       return;
     }
     let active = true;
-    void models().then(
+    void listModels().then(
       (catalog) => {
         if (active) setModelOptions(modelsForHarness(catalog, harness));
       },
@@ -391,7 +392,7 @@ function ConversationBody({
             <Select
               aria-label="Model"
               className="agentplane-composer-model"
-              data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
+              data={modelOptions.map((option) => ({ value: option.model, label: option.displayName }))}
               value={controls?.appliedModel ?? null}
               placeholder={
                 sync.window?.error || operational?.status === ThreadFeedStatus.FAILED

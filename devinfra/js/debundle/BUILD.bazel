@@ -837,6 +837,7 @@ rust_test(
     crate = ":gate",
     edition = "2024",
     deps = [
+        ":js_ast",
         ":raw_js_test_support",
         ":report_fixtures",
         "@crates//:proptest",

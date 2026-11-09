@@ -22,10 +22,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
-- [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — historical proposal; the
-  optional queue mode is superseded by the mandatory Dispatcher database and queue. Delivery ownership,
-  service topology and an immediate-or-fail option remain separate decisions and do not gate the
-  Runner extractions
+- [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — candidate service topology,
+  holder-owned delivery and an immediate-or-fail send, awaiting the delivery-ownership decision; they
+  do not gate the Runner extractions
 - [History tags and History's Sandbox records](sandbox_tags.md) — agreed design for history tags
   on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
@@ -43,18 +42,16 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
-  proposal under the 2026-11-05 direction: `Identity` as the policy subject, SVIDs on the egress hop,
-  a separate Kubernetes grant kind for ServiceAccounts several identities may act as, lifetimes, cutover
-  and open questions
+  the expand phase (identity and grant kinds, managed ServiceAccounts, impersonation,
+  WorkloadCredentials) has landed; the cutover and its open questions remain
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements
   (SA attribution, Sandbox scopes and tags, live bundles) and what is open after messaging shipped:
   broader cross-SA transcript reads/archive policy, delegation usability and Sandbox launch
-- [Caller-privilege Session delegation](session_delegation_workflows.md) — approved existing-environment
-  and external MCP workflows have implemented tools and scripted acceptance. Natural-agent usability
-  remains open; staging tool exposure is active and fresh provisioning is deferred. Service-mediated caller
-  identity follows the implemented [delegated authorization contract](../docs/delegated_authorization.md).
+- [Caller-privilege Session delegation](session_delegation_workflows.md) — natural-agent usability,
+  instruction composition, budgets and deferred environment provisioning; the shipped tools are
+  documented in [Session delegation](../action_service/session_delegation/README.md)
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving

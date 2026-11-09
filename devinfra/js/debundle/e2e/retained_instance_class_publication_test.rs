@@ -1,7 +1,7 @@
 //! Retained local instances must not be confused with escaped class members.
 use analysis::execution_evidence::ConstructionRejection;
 use analysis::reports::schema::RecordFactoryRejectionReason;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use serde_json::Value as JsonValue;
 
@@ -235,23 +235,8 @@ fn modules(bindings: &[&'static str]) -> Vec<LogicalModuleEntry> {
     vec![module(bindings, &[])]
 }
 
-fn source_unit<'a>(
-    graph: &'a analysis::DependencyGraphReport,
-    binding: &str,
-) -> &'a analysis::reports::schema::SourceUnitReport {
-    graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == binding)
-        })
-        .unwrap_or_else(|| panic!("missing source unit for {binding}"))
-}
-
 fn assert_factory_complete(graph: &analysis::DependencyGraphReport, binding: &str) {
-    let execution = source_unit(graph, binding)
+    let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()
         .expect("factory execution report");
@@ -268,7 +253,7 @@ fn assert_factory_complete(graph: &analysis::DependencyGraphReport, binding: &st
 }
 
 fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, binding: &str) {
-    let execution = source_unit(graph, binding)
+    let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()
         .expect("later factory execution report");
@@ -290,7 +275,7 @@ fn class_members_escape_rejection<'a>(
     graph: &'a analysis::DependencyGraphReport,
     binding: &str,
 ) -> &'a analysis::reports::schema::LocalRecordFactoryRejection {
-    let execution = source_unit(graph, binding)
+    let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()
         .expect("later factory execution report");
@@ -320,7 +305,7 @@ fn mapping_a_retained_instance_does_not_publish_class_members() {
     let graph = fixture.dependency_graph();
     assert_factory_complete(&graph, "first");
 
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -451,7 +436,7 @@ fn projected_primitive_does_not_gain_constructed_instance_kind() {
     assert_preserved_entry_output(&fixture, "undefined 8\n");
     let graph = fixture.dependency_graph();
     assert_factory_complete(&graph, "first");
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -467,7 +452,7 @@ fn repeated_aliases_are_iterated_without_claiming_unique_instances() {
     ));
     assert_preserved_entry_output(&fixture, "7 7 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -489,7 +474,7 @@ fn opaque_consumer_of_mapped_callbacks_still_publishes_class_capabilities() {
     );
     assert_preserved_entry_output(&fixture, "7 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -507,12 +492,12 @@ fn invoking_an_opaque_mapped_element_preserves_callback_reach() {
     ));
     assert_preserved_entry_output(&fixture, "7 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
     assert!(selected.complete, "{selected:#?}");
-    let invoked = source_unit(&graph, "invoked")
+    let invoked = node_declaring(&graph, "invoked")
         .synchronous_execution
         .as_ref()
         .expect("element invocation report");
@@ -528,12 +513,12 @@ fn mutation_during_iteration_invalidates_the_instance_read_proof() {
     ));
     assert_preserved_entry_output(&fixture, "10 10 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
     assert!(!selected.complete, "{selected:#?}");
-    let again = source_unit(&graph, "again")
+    let again = node_declaring(&graph, "again")
         .synchronous_execution
         .as_ref()
         .expect("later factory report");
@@ -556,7 +541,7 @@ fn replaced_array_map_keeps_the_opaque_callback_path() {
     ));
     assert_preserved_entry_output(&fixture, "7 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -575,7 +560,7 @@ fn instance_getter_runs_and_refuses_the_own_data_read_proof() {
     ));
     assert_preserved_entry_output(&fixture, "7 8 2\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -591,7 +576,7 @@ fn array_slot_mutation_during_iteration_invalidates_the_source_receipt() {
     ));
     assert_preserved_entry_output(&fixture, "7 99 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -610,7 +595,7 @@ fn unknown_array_slot_prevents_instance_only_iteration() {
     );
     assert_preserved_entry_output(&fixture, "7 19 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
@@ -629,12 +614,12 @@ fn class_prototype_mutation_during_iteration_revokes_constructor_proof() {
     ));
     assert_preserved_entry_output(&fixture, "7 8\n");
     let graph = fixture.dependency_graph();
-    let selected = source_unit(&graph, "selected")
+    let selected = node_declaring(&graph, "selected")
         .synchronous_execution
         .as_ref()
         .expect("map execution report");
     assert!(!selected.complete, "{selected:#?}");
-    let again = source_unit(&graph, "again")
+    let again = node_declaring(&graph, "again")
         .synchronous_execution
         .as_ref()
         .expect("later factory report");

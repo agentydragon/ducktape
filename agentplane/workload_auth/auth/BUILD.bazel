@@ -11,7 +11,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/auth",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/environment_runtime_transport",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/workload_auth/listener",

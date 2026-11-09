@@ -31,7 +31,7 @@ fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
 }
 
 fn analyze_facts_with_hints(module: &Module, hints: &AnalysisInputs) -> Vec<StatementFacts> {
-    analyze_chunk(module, hints, None, |_| None).facts
+    analyze_chunk(module, hints, None).facts
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
@@ -1077,8 +1077,8 @@ sideEffect(C, E);
         ..AnalysisInputs::default()
     };
 
-    let a = analyze_chunk(&module, &hints_default, None, |_| None);
-    let b = analyze_chunk(&module, &hints_decorate, None, |_| None);
+    let a = analyze_chunk(&module, &hints_default, None);
+    let b = analyze_chunk(&module, &hints_decorate, None);
     assert_eq!(a.facts.len(), b.facts.len());
     assert_eq!(a.top_level_await, b.top_level_await);
 

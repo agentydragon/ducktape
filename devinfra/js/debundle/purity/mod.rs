@@ -35,7 +35,7 @@ pub(crate) use swc_common::{Span, Spanned};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
-pub(crate) use crate::execution_evidence::SourceLocation;
+pub(crate) use crate::execution_evidence::{SourceLocation, SourceLocator};
 pub(crate) use crate::facts::TopLevelItemView;
 pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
 pub(crate) use crate::facts::abstract_domain::effect::{

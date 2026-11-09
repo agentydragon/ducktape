@@ -97,8 +97,8 @@ export function SandboxPage({
   onBack: () => void;
 }): JSX.Element {
   const frontendConfig = useFrontendConfig();
-  const traceSearch = frontendConfig?.trace_search ?? null;
-  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
+  const traceSearch = frontendConfig?.traceSearch ?? null;
+  const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");

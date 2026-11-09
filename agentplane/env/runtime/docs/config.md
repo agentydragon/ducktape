@@ -73,6 +73,11 @@ the listed defaults; each window is configured independently.
 
 Values must be representable as a Go `time.Duration` after conversion from milliseconds.
 
+**Gotcha:** the executor readiness window starts before launch and covers the whole protocol probe; a
+failed generation is fenced and replaced. The app-server's dependency wait does not restart for that
+successor, so it must cover at least one failed readiness window plus a successor start. Emulated
+VM fixtures set both explicitly.
+
 `control` always serves the Environment Runtime protocol. Its required `security.mode` selects `mtls` or
 `insecure`; there is no default. Cluster and k3s templates explicitly select `mtls` with absolute TLS paths:
 

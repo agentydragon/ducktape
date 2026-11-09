@@ -12,7 +12,6 @@ go_binary(
     deps = [
         "//agentplane/env/configuration",
         "//agentplane/env/runtime",
-        "//agentplane/env/runtime/supervision",
         "//agentplane/env/runtime/workspace",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",
@@ -34,7 +33,6 @@ go_binary(
         "//agentplane/env/configuration",
         "//agentplane/env/runtime",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/env/runtime/supervision",
         "//agentplane/env/runtime/workspace",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",

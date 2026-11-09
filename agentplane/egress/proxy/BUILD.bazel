@@ -17,7 +17,6 @@ go_library(
         "//agentplane/egress/policy",
         "//agentplane/egress/presentation",
         "//agentplane/egress/upstream",
-        "//agentplane/environment_runtime_transport",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/workload_auth/auth",

@@ -1236,10 +1236,10 @@ fn object_calls_shadowed_receiver_invoke() {
 /// primitive binding facts — are populated.
 fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
     let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let structural = analyze_chunk_structural(&module, None, |_| None);
+    let structural = analyze_chunk_structural(&module, None);
     let body = &structural.body;
     let shadowed = &structural.shadowed;
-    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+    let graph = ChunkCodeGraph::build_full_with_stable_vars(
         body,
         shadowed,
         &BTreeSet::new(),
@@ -1248,7 +1248,6 @@ fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
-        None,
     );
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
         panic!("expected final initializer");
@@ -1324,8 +1323,8 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
     );
 
     let module = parse("var value = 1;");
-    let structural = analyze_chunk_structural(&module, None, |_| None);
-    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+    let structural = analyze_chunk_structural(&module, None);
+    let graph = ChunkCodeGraph::build_full_with_stable_vars(
         &structural.body,
         &structural.shadowed,
         &BTreeSet::new(),
@@ -1334,7 +1333,6 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
-        None,
     );
     assert!(graph.primitive_bindings.contains("value"));
     assert_eq!(
@@ -1344,8 +1342,8 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
     );
 
     let redeclared_module = parse("var value = 1; function value() {}");
-    let redeclared_structure = analyze_chunk_structural(&redeclared_module, None, |_| None);
-    let redeclared_graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+    let redeclared_structure = analyze_chunk_structural(&redeclared_module, None);
+    let redeclared_graph = ChunkCodeGraph::build_full_with_stable_vars(
         &redeclared_structure.body,
         &redeclared_structure.shadowed,
         &BTreeSet::new(),
@@ -1354,7 +1352,6 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
         &BTreeMap::new(),
         &BTreeSet::new(),
         &redeclared_structure.stable_var_number_candidates,
-        None,
     );
     assert!(!redeclared_graph.primitive_bindings.contains("value"));
 
@@ -1388,8 +1385,8 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
 #[test]
 fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
     let module = parse("var value = 1; function read(value) { return value + 1; }");
-    let structural = analyze_chunk_structural(&module, None, |_| None);
-    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+    let structural = analyze_chunk_structural(&module, None);
+    let graph = ChunkCodeGraph::build_full_with_stable_vars(
         &structural.body,
         &structural.shadowed,
         &BTreeSet::new(),
@@ -1398,7 +1395,6 @@ fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
-        None,
     );
     assert!(
         graph

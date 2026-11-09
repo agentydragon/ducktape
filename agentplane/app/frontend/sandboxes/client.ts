@@ -1,7 +1,7 @@
 import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
-import { fetchWithLogin, HttpError } from "../client";
+import { fetchJson, HttpError } from "../client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   CreateEnvironmentRequestSchema,
@@ -68,13 +68,11 @@ export async function createSession(
 
 export async function getSession(sessionId: string): Promise<Session> {
   const request = create(GetSessionRequestSchema, { sessionId });
-  const response = await fetchWithLogin(`/upstream/dispatcher/v1/sessions/${encodeURIComponent(request.sessionId)}`);
-  const body: unknown = await response.json();
-  if (!response.ok) throw new HttpError(response, body);
+  const body = await fetchJson(`/upstream/dispatcher/v1/sessions/${encodeURIComponent(request.sessionId)}`);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new Error("Dispatcher Session response must be a JSON object");
   }
-  const session = fromJson(GetSessionResponseSchema, body as JsonObject).session;
+  const session = fromJson(GetSessionResponseSchema, body).session;
   if (!session) throw new Error("Dispatcher returned no Session");
   if (session.sessionId !== request.sessionId) {
     throw new Error(`Dispatcher returned Session ${session.sessionId} for requested Session ${request.sessionId}`);
@@ -83,10 +81,7 @@ export async function getSession(sessionId: string): Promise<Session> {
 }
 
 async function sessionJson(path: string, init?: RequestInit): Promise<Session> {
-  const response = await fetchWithLogin(path, init);
-  const body = await response.json();
-  if (!response.ok) throw new HttpError(response, body);
-  return fromJson(SessionSchema, body);
+  return fromJson(SessionSchema, await fetchJson(path, init));
 }
 
 /** Classify explicit create rejections; transport failures remain uncertain. */
@@ -109,36 +104,24 @@ export function sessionNotVisible(error: unknown): boolean {
 
 export async function getEnvironmentRuntimeStatus(target: EnvironmentTarget): Promise<EnvironmentRuntimeStatus> {
   const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: target.name, sandboxUid: target.uid });
-  const response = await fetchWithLogin(
+  const body = await fetchJson(
     `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
-    {
-      headers: { Accept: "application/json" },
-    }
+    { headers: { Accept: "application/json" } }
   );
-  const text = await response.text();
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = text;
-  }
-  if (!response.ok) throw new HttpError(response, body);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new Error("Runner status response must be a JSON object");
   }
-  return fromJson(EnvironmentRuntimeStatusSchema, body as JsonObject);
+  return fromJson(EnvironmentRuntimeStatusSchema, body);
 }
 
 const environmentPath = (target: EnvironmentTarget): string =>
   `/upstream/environments/v1/environments/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}`;
 
 async function environmentJSON(path: string, init?: RequestInit): Promise<JsonObject> {
-  const response = await fetchWithLogin(path, init);
-  const body: unknown = await response.json();
-  if (!response.ok) throw new HttpError(response, body);
+  const body = await fetchJson(path, init);
   if (typeof body !== "object" || body === null || Array.isArray(body))
     throw new Error("Invalid EnvironmentService response");
-  return body as JsonObject;
+  return body;
 }
 
 function environmentPost(method: string, body: JsonObject): RequestInit {

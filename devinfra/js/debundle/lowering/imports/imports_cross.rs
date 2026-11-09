@@ -13,7 +13,7 @@ use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, bail};
-use frontend_elaboration::chunk_ast::declaration_names;
+use binding_targets::declaration_name_strings;
 use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -203,7 +203,7 @@ pub(crate) fn collect_entry_exports_by_original_local(
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for final_local in declaration_names(&export_decl.decl) {
+                for final_local in declaration_name_strings(&export_decl.decl) {
                     let original = final_to_original
                         .get(&final_local)
                         .cloned()

@@ -1,6 +1,7 @@
 """Run Go tests that exercise Pod native supervision as PID 1."""
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_test")
 
 def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs):
@@ -19,16 +20,11 @@ def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs)
         size = size,
         srcs = ["//agentplane/env/runtime/supervision/testing:pid1_go_test.py"],
         data = [":" + binary],
-        env = {
-            "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        env = NATIVE_RUNNER_DOCKER_ENV | {
             "PID1_GO_TEST_IMAGE": "agentplane.env.runtime.supervision.testing.git_tools" if git else "third_party.containers.debian_slim",
             "PID1_GO_TEST_RUNFILE": "$(rlocationpath :{})".format(binary),
         },
-        exec_properties = {
-            "test.dockerUser": "1000:1000",
-            "test.enable-dockerd-tcp": "true",
-            "test.nonroot-workspace": "true",
-        },
+        exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
         main = "//agentplane/env/runtime/supervision/testing:pid1_go_test.py",
         requires_docker = True,
         deps = [

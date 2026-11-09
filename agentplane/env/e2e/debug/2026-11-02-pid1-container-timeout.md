@@ -53,3 +53,14 @@ original last wait site, and no timeout increase, skip, stub or speculative life
 
 If it recurs, capture the test process and wrapper's stacks/syscalls at their original deadline;
 separate interpreter/import startup, pytest execution, Python exit and wrapper postprocessing.
+
+## Earlier timeouts
+
+Two earlier action timeouts ([34316f8a](https://app.buildbuddy.io/invocation/34316f8a-2ee0-5d55-a251-262c2c3de123)
+shard 3, [c4b91ed6](https://app.buildbuddy.io/invocation/c4b91ed6-4ca6-5bae-9675-3e850fb23e87) shard 1)
+also retained no stacks. Diagnostic reruns with `-o faulthandler_timeout=10` all passed, but two
+10-second captures caught the main thread waiting on Docker's container-start response and in
+`docker.api.image.pull` from the Testcontainers Ryuk reaper. The test now preloads the pinned Ryuk
+image (`//third_party/containers:ryuk`), removing that registry dependency; the start-response delay
+is unexplained. Those reruns also measured 5.6–11.1 seconds importing `process_fixtures`, mostly
+History test support and Kubernetes clients.

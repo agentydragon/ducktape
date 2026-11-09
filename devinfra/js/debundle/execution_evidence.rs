@@ -4,8 +4,10 @@
 //! conservatively assumed. Reports serialize them, while runtime and graph
 //! construction own their meaning here.
 
+use js_ast::SourceLineIndex;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
+use swc_common::{BytePos, Span};
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -14,6 +16,38 @@ pub struct SourceLocation {
     pub end_line: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_column: Option<usize>,
+}
+
+/// Resolves SWC positions of one analyzed source file to [`SourceLocation`]s.
+#[derive(Debug, Clone, Copy)]
+pub struct SourceLocator<'a> {
+    pub source_path: &'a str,
+    pub lines: &'a SourceLineIndex,
+}
+
+impl SourceLocator<'_> {
+    /// The span's start line and column and its end line; `None` for a dummy span.
+    pub fn span(&self, span: Span) -> Option<SourceLocation> {
+        let (start_line, end_line, start_column) =
+            self.lines.line_range_and_start_column_for_span(span)?;
+        Some(SourceLocation {
+            source_path: self.source_path.to_owned(),
+            start_line,
+            end_line,
+            start_column: Some(start_column),
+        })
+    }
+
+    /// A one-line location at `pos`.
+    pub fn pos(&self, pos: BytePos) -> Option<SourceLocation> {
+        let (line, column) = self.lines.line_and_column_for_pos(pos)?;
+        Some(SourceLocation {
+            source_path: self.source_path.to_owned(),
+            start_line: line,
+            end_line: line,
+            start_column: Some(column),
+        })
+    }
 }
 
 /// Exact property lookup that made accessor execution possible. The owner is

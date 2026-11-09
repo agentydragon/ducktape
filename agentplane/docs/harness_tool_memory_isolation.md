@@ -2,7 +2,7 @@
 
 Runner implements isolated Codex execution through a supervised exec-server. Pods use a separate
 container; VMs use a systemd service in a sibling slice. Configuration, lifecycle, and the limits of that
-boundary are documented in [Codex executor isolation](../runner/docs/codex_executor.md).
+boundary are documented in [Codex executor isolation](../env/runtime/execution/docs/codex_executor.md).
 
 The research below covers additional interception and enforcement options, principally for Claude.
 It was based on Claude Code 2.1.252 and Codex `rust-v0.144.1`; it is not a statement of the current

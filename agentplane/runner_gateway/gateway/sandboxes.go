@@ -134,6 +134,9 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	return phaseSuspend
 }
 
+// allowSuspending admits the controller's Quiesce through a held suspend: the controller calls it
+// right after publishing `Quiescing`, while this informer can still serve the prior `Suspending`
+// snapshot, which otherwise returned UNAVAILABLE until the controller's one-minute retry.
 func (r *sandboxResolver) destination(ctx context.Context, destination *identitypb.SandboxDestination, writes, allowSuspending bool) (sandboxView, error) {
 	if !r.health.Available() {
 		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox inventory is not synchronized")

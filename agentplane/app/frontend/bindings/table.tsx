@@ -1,4 +1,5 @@
 import { toJson } from "@bufbuild/protobuf";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Badge, Box, Button, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
@@ -131,7 +132,7 @@ export function BindingsTable({
           const source = provenance(binding);
           const state = bindingState(binding, sets);
           const expires = binding.spec?.expiresAt;
-          const expiresAt = expires ? new Date(Number(expires.seconds) * 1000 + expires.nanos / 1e6) : null;
+          const expiresAt = expires ? timestampDate(expires) : null;
           const references = binding.spec?.policySets ?? [];
           const labels = (
             <Group gap={4}>

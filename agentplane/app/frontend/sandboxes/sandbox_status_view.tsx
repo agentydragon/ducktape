@@ -1,5 +1,6 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { create, toJson } from "@bufbuild/protobuf";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { ThreadView } from "../threads/client";
@@ -255,9 +256,7 @@ function SandboxDetails({
     <Table>
       <Table.Tbody>
         <Detail label="State">{sandboxSummary(sandbox).label}</Detail>
-        <Detail label="Created">
-          {createdAt ? <TimeAgo value={new Date(Number(createdAt.seconds) * 1000 + createdAt.nanos / 1e6)} /> : "—"}
-        </Detail>
+        <Detail label="Created">{createdAt ? <TimeAgo value={timestampDate(createdAt)} /> : "—"}</Detail>
         {sandbox.configuration?.preset && <Detail label="Preset">{sandbox.configuration?.preset}</Detail>}
         <Detail
           label="ServiceAccount"

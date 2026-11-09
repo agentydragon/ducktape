@@ -7,7 +7,13 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import * as sandboxClient from "./client";
 import * as appConfigClient from "../app_config_client";
-import type { NewSandboxDefaults, SandboxPresetView } from "../app_config_client";
+import {
+  GetSandboxFormResponseSchema,
+  NewSandboxDefaultsSchema,
+  SandboxPresetSchema,
+  type NewSandboxDefaults,
+} from "../../app_service_pb";
+import { Harness } from "../../../proto/session_pb";
 import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
@@ -48,7 +54,7 @@ CREATED_INVENTORY.observedState!.operatingMode = OperatingMode.RUNNING;
 CREATED_INVENTORY.observedState!.phase = SandboxPhase.CREATING;
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
-const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };
+const UNSET_DEFAULTS: NewSandboxDefaults = create(NewSandboxDefaultsSchema);
 
 async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
   serveEventStreams(
@@ -68,27 +74,20 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     new Set(["/upstream/environments/v1/environments:watch"])
   );
   const onOpen = vi.fn();
-  const preset: SandboxPresetView = {
+  const preset = create(SandboxPresetSchema, {
     name: "test-preset",
     title: "Test preset",
     template: "test-template",
-    policy_sets: ["test-basic"],
-    inbox_tags: ["test-group"],
-    session_defaults: {
-      harness: "HARNESS_CODEX",
-      model: "test-codex-b",
-      cwd: "/state/workspaces/test",
-      reasoning_effort: null,
-      instructions: "",
-      setup_script: "",
-    },
+    policySets: ["test-basic"],
+    inboxTags: ["test-group"],
+    sessionDefaults: { harness: Harness.CODEX, model: "test-codex-b", cwd: "/state/workspaces/test" },
     bootstrap: "mkdir -p /state/workspaces",
-  };
+  });
   vi.spyOn(appConfigClient, "listSandboxPresets").mockResolvedValue([preset]);
   vi.spyOn(sandboxClient, "listEnvironmentTemplates").mockResolvedValue(["test-template", "other-template"]);
   vi.spyOn(appConfigClient, "getSandboxForm").mockResolvedValue({
-    policy_sets: ["test-basic", "test-packages"],
-    new_sandbox_defaults: newSandboxDefaults,
+    ...create(GetSandboxFormResponseSchema, { policySets: ["test-basic", "test-packages"] }),
+    newSandboxDefaults,
   });
   const container = document.createElement("div");
   document.body.append(container);
@@ -273,7 +272,9 @@ it("lets an operator opt a new Sandbox into wake on message", async () => {
 });
 
 it("starts a new Sandbox with the app's wake and idle suspension defaults whatever the preset", async () => {
-  const { container } = await render({ wake_on_send: true, idle_suspend_after_seconds: 900 });
+  const { container } = await render(
+    create(NewSandboxDefaultsSchema, { wakeOnSend: true, idleSuspendAfterSeconds: 900n })
+  );
   const wakeCheckbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
   if (!wakeCheckbox) throw new Error("Missing Wake on message checkbox");
   expect(wakeCheckbox.checked).toBe(true);

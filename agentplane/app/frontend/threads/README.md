@@ -9,8 +9,8 @@ the status indicator, and the Thread tab favicon belong with that navigation.
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
 and send/interrupt controls; `history_row_views.tsx` renders history rows,
 and `virtualized_history.tsx` adapts Thread rows to the shared `util/frontend/transcript` viewport.
-The shared `history_geometry.ts` owns height evidence and row positions;
-`history_viewport.ts` verifies committed DOM geometry and owns reader intent and scroll writes.
+The shared [`history_geometry.ts`](../../../../util/frontend/transcript/history_geometry.ts) owns height evidence and row positions;
+[`history_viewport.ts`](../../../../util/frontend/transcript/history_viewport.ts) verifies committed DOM geometry and owns reader intent and scroll writes.
 `util/frontend/transcript/history_recorder.ts` owns bounded opt-in diagnostic recording and its
 generic recording format. `thread_view_recorder.ts` configures the page-wide recorder, including
 the User Timing prefix consumed by browser tests; `thread_view_recorder_tools.tsx` supplies the

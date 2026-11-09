@@ -2,6 +2,7 @@
 use super::progress::emit_debundle_progress;
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::CallableSummary;
+use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result};
@@ -33,8 +34,10 @@ pub fn analyze_logical_chunk(
     let line_index = runtime_ast.line_index();
     let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
+        Some(SourceLocator {
+            source_path: &source_path,
+            lines: &line_index,
+        }),
     );
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
     let (facts, _) = compute_logical_chunk_facts(
@@ -326,8 +329,10 @@ pub fn compute_logical_chunk_facts(
                 &runtime_ast.module,
                 structural_analysis,
                 &analysis_inputs,
-                Some(source_path),
-                |span| line_index.line_range_and_start_column_for_span(span),
+                Some(SourceLocator {
+                    source_path,
+                    lines: &line_index,
+                }),
                 chunk_analysis_inputs.admission_overrides,
                 export_reentry_policy,
                 &resolve_dynamic_import,

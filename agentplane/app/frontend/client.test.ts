@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, fetchWithLogin, HttpError, ok } from "./client";
+import { api, fetchText, fetchWithLogin, HttpError, ok } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -25,6 +25,14 @@ it("throws a non-2xx answer as an HttpError with its status and the complete str
   } finally {
     api.eject(middleware);
   }
+});
+
+it.each([
+  { wire: '{"code":10,"message":"changed"}', body: { code: 10, message: "changed" }, code: 10 },
+  { wire: "gateway unavailable", body: "gateway unavailable", code: undefined },
+])("fetchText throws a non-2xx answer with its JSON body, or its text: $wire", async ({ wire, body, code }) => {
+  const fetcher = vi.fn(async () => new Response(wire, { status: 409 }));
+  await expect(fetchText("/__test/conflict", undefined, fetcher)).rejects.toMatchObject({ status: 409, code, body });
 });
 
 it("on a 401 sends the browser to log in once and never hands the response back to the page", async () => {
