@@ -178,6 +178,11 @@ type expansion struct {
 
 func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (expansion, error) {
 	spec := binding.Spec
+	if spec.Subject.Identity != nil {
+		// Kubernetes rules bind a ServiceAccount; an identity's Kubernetes access is a
+		// ServiceAccountGrant on an account it uses.
+		return expansion{reason: "SubjectNotServiceAccount", message: "Kubernetes rules are not applied for an identity subject"}, nil
+	}
 	account, e, err := r.subject(ctx, spec.Subject.Namespace, spec.Subject.Name, r.SubjectNamespaces)
 	if account == nil {
 		return e, err
@@ -565,6 +570,9 @@ func (r *Reconciler) IndexFields(ctx context.Context, indexer client.FieldIndexe
 		}},
 		{&policyapi.PolicyBinding{}, subjectIndex, func(obj client.Object) []string {
 			subject := obj.(*policyapi.PolicyBinding).Spec.Subject
+			if subject.Identity != nil {
+				return nil
+			}
 			return []string{subject.Namespace + "/" + subject.Name}
 		}},
 		{&policyapi.PolicyBinding{}, missingRoleIndex, func(obj client.Object) []string {

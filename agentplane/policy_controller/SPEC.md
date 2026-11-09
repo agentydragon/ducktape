@@ -109,7 +109,7 @@ granting; nothing in the API server expires them.
 
 Each `PolicyBinding` carries a `KubernetesReady` condition, applied under the controller's own field
 manager so other readers' conditions stay. It is `Applied`, or `False` with reason
-`SubjectNotWatched`, `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
+`SubjectNotWatched`, `SubjectNotServiceAccount` (an identity subject, whose Kubernetes access is a grant instead), `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
 message naming what is wrong. Reasons are informational. With it the controller applies
 `status.missingRoles`: each Role (with its namespace) or ClusterRole the binding's rules name that does
 not exist. It is checked once the subject resolves and holds even when applying the rest fails

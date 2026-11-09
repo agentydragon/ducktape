@@ -395,3 +395,23 @@ func TestMissingSetIsReportedAndTheRestStillGrant(t *testing.T) {
 		t.Fatalf("natives = %v", got)
 	}
 }
+
+func TestIdentitySubjectGetsNoNativeBindings(t *testing.T) {
+	r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+	reconcileOnce(t, r)
+	var binding policyapi.PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
+	if err := c.Update(context.Background(), &binding); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := condition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SubjectNotServiceAccount" {
+		t.Fatalf("condition = %+v", got)
+	}
+	if got := nativeScopes(t, c); len(got) != 0 {
+		t.Fatalf("natives for an identity subject = %v", got)
+	}
+}
