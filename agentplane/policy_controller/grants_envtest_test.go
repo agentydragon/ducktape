@@ -199,8 +199,7 @@ func testGrant(name, namespace, account string, roleSets ...string) *policyapi.S
 	return &policyapi.ServiceAccountGrant{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
 		Spec: policyapi.ServiceAccountGrantSpec{
-			// CLEANUP(added 2026-11-09): drop APIServer with the identity-kinds commit removing it.
-			ServiceAccount: policyapi.ServiceAccountTarget{APIServer: "local", Namespace: namespace, Name: account},
+			ServiceAccount: policyapi.ServiceAccountTarget{Namespace: namespace, Name: account},
 			RoleSets:       roleSets,
 		},
 	}

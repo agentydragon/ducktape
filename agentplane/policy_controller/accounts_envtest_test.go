@@ -252,8 +252,7 @@ func readGrant(t *testing.T, api client.Client, name string) *policyapi.ServiceA
 func testManagedAccount(name string) *policyapi.ManagedServiceAccount {
 	return &policyapi.ManagedServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
-		// CLEANUP(added 2026-11-09): drop APIServer with the identity-kinds commit removing it.
-		Spec: policyapi.ManagedServiceAccountSpec{APIServer: "local"},
+		Spec:       policyapi.ManagedServiceAccountSpec{},
 	}
 }
 
