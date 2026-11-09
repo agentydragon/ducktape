@@ -3041,7 +3041,7 @@ flowchart LR
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3063,15 +3063,16 @@ tests of untouched kinds still pass.
 
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
-**Design ready; operator direction, 2026-11-08.** Manage identities and SVID issuance independently
-of Sandboxes, so Sandbox workloads, Action command/build boxes, Haku UI/Anki and future external
-callers can use one authentication model. Decide the issuer/enrollment authority, how a workload
-is bound to its policy subject, credential delivery and rotation, revocation, and ownership when a
-Sandbox or another workload disappears. Compare extending the planned Agentplane identity lifecycle
-with a shared issuance authority; do not introduce a second subject model or a Sandbox dependency
-for every caller. Preserve current ServiceAccount subjects until the explicit Identity cutover.
-OpenClaw has no compatibility requirement until a concrete instance needs it. **Exit:** review one
-contract covering Sandbox and non-Sandbox caller lifecycles, with an explicit migration and rollback.
+**Draft under review, 2026-11-09:** [workload identity lifecycle](workload_identity_lifecycle.md).
+Question for review: should every non-Sandbox caller bind its SVID through a cert-manager
+`Certificate` its owner requests from one Agentplane workload CA, gated per URI kind by admission
+(recommended), rather than through an issuing service, SPIRE, `csi-driver-spiffe` or a permanent
+bearer mode? Selecting it also adds an edge from the Action-box part of `WORKLOAD_AUTH_CUTOVER` to
+`IDENTITY_CUTOVER`, because boxes run as their caller's Sandbox ServiceAccount. The operator's
+direction of 2026-11-08 stands: one model for Sandboxes, Action boxes, Haku UI/Anki and future
+external callers, with no second subject model and no Sandbox dependency, preserving ServiceAccount
+subjects until `IDENTITY_CUTOVER`. **Exit:** the operator picks an alternative and the open
+questions' recommendations.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
