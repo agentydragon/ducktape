@@ -3043,7 +3043,8 @@ flowchart LR
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3069,15 +3070,20 @@ tests of untouched kinds still pass.
 
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
-**Design ready; operator direction, 2026-11-08.** Manage identities and SVID issuance independently
-of Sandboxes, so Sandbox workloads, Action command/build boxes, Haku UI/Anki and future external
-callers can use one authentication model. Decide the issuer/enrollment authority, how a workload
-is bound to its policy subject, credential delivery and rotation, revocation, and ownership when a
-Sandbox or another workload disappears. Compare extending the planned Agentplane identity lifecycle
-with a shared issuance authority; do not introduce a second subject model or a Sandbox dependency
-for every caller. Preserve current ServiceAccount subjects until the explicit Identity cutover.
-OpenClaw has no compatibility requirement until a concrete instance needs it. **Exit:** review one
-contract covering Sandbox and non-Sandbox caller lifecycles, with an explicit migration and rollback.
+**Draft under review, 2026-11-09:** [workload identity lifecycle](workload_identity_lifecycle.md).
+Question for review: should one workload-identity component own SVID issuance and resolution for
+every caller (recommended)? Under it, the Sandbox Controller, the Action Service and Flux-rendered
+workloads only write `WorkloadCredential` requests. The component mints the credential ID and URI,
+requests the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and publishes
+the resolver every verifier links. It is the `agentplane/workload_identity` package hosted in the
+Policy Controller. The alternatives are each owner issuing for itself, an RPC issuing service,
+SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. Every alternative shares a first
+step that can be dispatched before the decision: a dedicated workload CA that only the issuer may
+request from, and that verifiers trust alone. Selecting the recommendation then moves issuance out
+of the Sandbox Controller. The Action-box step's edge to `SANDBOX_IDENTITY_SPEC` is recorded. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
+boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
+dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
+picks an alternative and the open questions' recommendations.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
@@ -3143,7 +3149,11 @@ reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` may be absent or changed only while nothing is
+**Blocked on `IDENTITY_KINDS` and on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
+command/build boxes must authenticate by SVID first. Box creation reads the caller's own
+ServiceAccount, runs the box as it, and sets the box's owner reference to it
+(`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account.
+`Sandbox.spec.identity` may be absent or changed only while nothing is
 running, a start without one is refused with `IdentityMissing`, a change discards any RAM
 snapshot and rotates the credential ID, and `EnvironmentService` refuses a change while a Session
 of another identity is placed on or attached to the environment; the Sandbox Controller creates no ServiceAccount and no
@@ -3157,7 +3167,7 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 ### `IDENTITY_CATALOG` — the catalog and RBAC rendered in the new shapes
 
 **Blocked on `IDENTITY_KINDS`.** cdk8s renders `Identity` objects for the static agents
-(`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics` SA with its
+(`claude-ai`, `haku-agent`) and the standing workload caller `haku-ui` in place of their ServiceAccounts, the `shared-diagnostics` SA with its
 grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
 an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
 proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. Rendering is
