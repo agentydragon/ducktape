@@ -187,7 +187,9 @@ the #14552 code to port by reference.
 - L1g. CLI vocabulary (`claims_checked`, `needs_full_assessment`) with graph-only
   writes still allowed plus a warning; `docs/cli.md`.
 
-**Wave 2: the kernel.** Large by nature; one reviewer owns the traits.
+**Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
+`World` and its join, the one driver, the completion ledger as sole coverage
+authority) are specified in <kernel_design.md>, which the slices implement.
 
 - L2a. Narrow context traits and `kernel/continuation.rs` +
   `local_transfer::execute` + the strict-provider driver as the one provider
