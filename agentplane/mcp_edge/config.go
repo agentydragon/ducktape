@@ -19,6 +19,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const settingPrefix = "AGENTPLANE_MCP_EDGE_"
@@ -35,11 +36,23 @@ type config struct {
 	HTTPPort                       int      `mapstructure:"http_port" yaml:"http_port"`
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
 	// MintableAccounts is the explicit ownership scope granted to this edge's TokenRequest RBAC.
-	MintableAccounts  []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
-	OperatorOIDC      api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
-	OAuth             *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
-	MaxWaitSeconds    float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
-	DirectWaitSeconds float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
+	MintableAccounts []auth.Account `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
+	// ConnectionIdentities is nil while Connections bind only to mintable_accounts.
+	ConnectionIdentities *connectionIdentities    `mapstructure:"connection_identities" yaml:"connection_identities"`
+	OperatorOIDC         api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
+	OAuth                *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
+	MaxWaitSeconds       float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
+	DirectWaitSeconds    float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
+}
+
+// connectionIdentities are the Identities a Connection may be bound to, as mintable_accounts are the ServiceAccounts.
+// Staged for IDENTITY_CUTOVER (agentplane/plans/task_dag.md), which sets it and makes the edge bind Connections to
+// these Identities; until then the edge validates it and nothing reads it.
+type connectionIdentities struct {
+	// PolicyNamespace holds the Identity objects.
+	PolicyNamespace string `mapstructure:"policy_namespace" yaml:"policy_namespace"`
+	// Names are Identity names in PolicyNamespace; duplicates name the same Identity.
+	Names []string `mapstructure:"names" yaml:"names"`
 }
 
 type oauthSettings struct {
@@ -138,6 +151,9 @@ func (c config) validate() error {
 			return errors.New("mintable_accounts must be in a caller namespace")
 		}
 	}
+	if err := c.ConnectionIdentities.validate(); err != nil {
+		return err
+	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
 			return errors.New("MCP wait seconds must be finite and nonnegative")
@@ -167,6 +183,24 @@ func (c config) validate() error {
 	issuer, _ := url.Parse(o.BaseURL)
 	if issuer.Path != "" || issuer.RawQuery != "" {
 		return errors.New("oauth.base_url must be an origin")
+	}
+	return nil
+}
+
+func (i *connectionIdentities) validate() error {
+	if i == nil {
+		return nil
+	}
+	if len(validation.IsDNS1123Label(i.PolicyNamespace)) > 0 {
+		return errors.New("connection_identities.policy_namespace must be a namespace name")
+	}
+	if len(i.Names) == 0 {
+		return errors.New("connection_identities.names must list at least one Identity")
+	}
+	for _, name := range i.Names {
+		if len(validation.IsDNS1123Subdomain(name)) > 0 {
+			return fmt.Errorf("connection_identities.names must be Identity object names: %q", name)
+		}
 	}
 	return nil
 }
