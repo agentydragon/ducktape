@@ -7,11 +7,10 @@ use transform_command::TransformArgs;
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
-use graph_provenance::{CurrentRoots, GraphProvenance};
+use graph_provenance::{CurrentRoots, GraphProvenance, sha256};
 use peel::OutputFormat;
 use pipeline::{ContractAudit, ContractProbeOutcome, load_transform_spec_source};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use spec::{ChunkExportPurity, RetainedCallbackSignature};
 use tempfile::NamedTempFile;
 
@@ -433,13 +432,9 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         .filter(|result| !matches!(result.verdict, ProbeVerdict::BudgetSkipped))
         .count();
     let budget_skipped = results.len() - independently_probed;
-    let fingerprint = Sha256::digest(serde_json::to_vec(baseline_provenance)?);
     let report = AuditReport {
         policy_key: args.policy_key,
-        input_provenance_sha256: fingerprint
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        input_provenance_sha256: sha256(&serde_json::to_vec(baseline_provenance)?),
         source_markers: policy.source_markers.clone(),
         baseline: "passed",
         scope: "each target removed separately for this exact source, spec, and assignment; all other author contracts and runtime assumptions remain; passing targets are not jointly removable or independently inferred",

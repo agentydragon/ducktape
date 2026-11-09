@@ -6,31 +6,20 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
 const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
 const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
-fn source_hash(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [marker]\n",
-                declaration.trim()
-            ))
-            .expect("valid declaration source match"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["marker"],
+        )),
         operation: NativeOperationKind::Symbol,
-        audited_source_sha256: source_hash(source),
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits this one initialization call.".to_string()),
     }
 }
@@ -55,15 +44,12 @@ fn primitive_set_input(source: &str) -> NativeOperationInputContract {
         .find(|line| line.starts_with("const made = new Set("))
         .expect("fixture has a direct Set initializer");
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [made]\n",
-                declaration.trim()
-            ))
-            .expect("valid Set declaration source match"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["made"],
+        )),
         operation: NativeOperationKind::SetFromPrimitiveArray,
-        audited_source_sha256: source_hash(source),
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits this one Set construction site.".to_string()),
     }
 }
@@ -75,15 +61,12 @@ fn selected_native_input(
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [{binding}]\n",
-                declaration.trim()
-            ))
-            .expect("valid Set declaration source match"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &[binding],
+        )),
         operation,
-        audited_source_sha256: source_hash(source),
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits this exact native operation.".to_string()),
     }
 }
@@ -1434,13 +1417,10 @@ fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
         };
         let mut input = input_for(source, declaration);
         if selected_name == "selected" {
-            input.selector = SourceUnitSelector::SourceMatch(
-                serde_yaml::from_str(&format!(
-                    "match: {:?}\nbindings: [selected]\n",
-                    declaration.trim()
-                ))
-                .unwrap(),
-            );
+            input.selector = SourceUnitSelector::SourceMatch(source_match_selector(
+                declaration.trim(),
+                &["selected"],
+            ));
         }
         expect_rejection_containing_all(rejected_opts(source, selected_name, input), &[expected]);
     }
@@ -1949,10 +1929,10 @@ fn encoder_input_rejects_stale_digest_and_mismatched_selector() {
         &["sha256"],
     );
     let mut mismatched = encoder_input(source);
-    mismatched.selector = SourceUnitSelector::SourceMatch(
-        serde_yaml::from_str("match: 'const missing = new TextDecoder();'\nbindings: [missing]\n")
-            .unwrap(),
-    );
+    mismatched.selector = SourceUnitSelector::SourceMatch(source_match_selector(
+        "const missing = new TextDecoder();",
+        &["missing"],
+    ));
     expect_rejection_containing_all(
         encoder_opts(source).with_native_operation_inputs("static/app", vec![mismatched]),
         &["native_operation_inputs"],

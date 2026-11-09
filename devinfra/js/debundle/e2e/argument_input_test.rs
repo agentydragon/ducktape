@@ -1,7 +1,6 @@
 //! A selected local helper can borrow an enum table without making it escape.
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 const SOURCE: &str = r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
 function keys(input) { return Object.keys(input).filter((key) => Number.isNaN(+key)); }
@@ -13,17 +12,10 @@ export { Status, keys, names, preferences };
 
 fn input(source: &str, declaration: &str) -> ArgumentInputContract {
     ArgumentInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [keys]\n",
-            declaration
-        ))
-        .expect("source selector"),
+        source_match: source_match_selector(declaration, &["keys"]),
         parameter_index: 0,
         exact_arity: 1,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("The audited helper reads this argument without retaining it.".into()),
     }
 }
@@ -87,11 +79,7 @@ fn unrelated_argument_contract_does_not_admit_enum_plain_data() {
     let declaration = "function unrelated(input) { return Object.keys(input); }";
     let source = SOURCE.replace(DECLARATION, &format!("{DECLARATION}\n{declaration}"));
     let mut unrelated = input(&source, declaration);
-    unrelated.source_match = serde_yaml::from_str(&format!(
-        "match: {:?}\nbindings: [unrelated]\n",
-        declaration
-    ))
-    .unwrap();
+    unrelated.source_match = source_match_selector(declaration, &["unrelated"]);
     let fixture = run_fixture(opts(&source, Some(unrelated)));
     assert_ne!(purity(&fixture, "preferences"), "pure");
 }
@@ -162,11 +150,7 @@ fn stale_hash_wrong_arity_and_ambiguous_selector_are_rejected() {
     );
 
     let mut ambiguous = input(SOURCE, DECLARATION);
-    ambiguous.source_match = serde_yaml::from_str(&format!(
-        "match: {:?}\nbindings: [keys, names]\n",
-        DECLARATION
-    ))
-    .unwrap();
+    ambiguous.source_match = source_match_selector(DECLARATION, &["keys", "names"]);
     expect_rejection_containing_all(
         opts(SOURCE, Some(ambiguous)),
         &["argument_inputs[0]", "exactly one declared binding"],

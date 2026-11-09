@@ -3,7 +3,6 @@
 use crate::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 pub fn native_constructor_input(
     source: &str,
@@ -11,20 +10,13 @@ pub fn native_constructor_input(
     binding: &str,
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
-    let audited_source_sha256 = Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [{binding}]\n",
-                declaration.trim()
-            ))
-            .expect("valid direct constructor source match"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &[binding],
+        )),
         operation,
-        audited_source_sha256,
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits one direct empty native constructor.".to_string()),
     }
 }

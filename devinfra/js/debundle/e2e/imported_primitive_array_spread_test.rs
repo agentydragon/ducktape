@@ -3,10 +3,9 @@
 
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 use spec::{
     ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
-    ImportedPrimitiveArraySpreadInputContract, SourceMatchClaim,
+    ImportedPrimitiveArraySpreadInputContract,
 };
 
 const EMPTY_PROVIDER: &str =
@@ -18,21 +17,6 @@ const CONSUMER_IMPORTS: &str =
 const CONSUMER_SPREAD: &str = "const merged = [...inputLeft, ...inputRight];\n";
 const CONSUMER_SELECTOR: &str = "const result = [...left, ...right];";
 
-fn sha256(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn source_match(pattern: &str, binding: &str) -> SourceMatchClaim {
-    serde_yaml::from_str(&format!(
-        "match: {:?}\nbindings: [{binding}]\n",
-        pattern.trim()
-    ))
-    .expect("valid source-match claim")
-}
-
 fn input(
     consumer: &str,
     provider: &str,
@@ -42,22 +26,28 @@ fn input(
     second_provider_pattern: &str,
 ) -> ImportedPrimitiveArraySpreadInputContract {
     ImportedPrimitiveArraySpreadInputContract {
-        source_match: source_match(CONSUMER_SELECTOR, "result"),
+        source_match: source_match_selector(CONSUMER_SELECTOR, &["result"]),
         operands: vec![
             ImportedPrimitiveArrayOperandContract {
                 selector_local: "left".to_string(),
                 provider_chunk: "static/provider".to_string(),
-                provider_source_match: source_match(first_provider_pattern, "values"),
-                audited_provider_source_sha256: sha256(provider_digest.unwrap_or(provider)),
+                provider_source_match: source_match_selector(
+                    first_provider_pattern.trim(),
+                    &["values"],
+                ),
+                audited_provider_source_sha256: source_sha256(provider_digest.unwrap_or(provider)),
             },
             ImportedPrimitiveArrayOperandContract {
                 selector_local: "right".to_string(),
                 provider_chunk: "static/provider".to_string(),
-                provider_source_match: source_match(second_provider_pattern, "values"),
-                audited_provider_source_sha256: sha256(provider_digest.unwrap_or(provider)),
+                provider_source_match: source_match_selector(
+                    second_provider_pattern.trim(),
+                    &["values"],
+                ),
+                audited_provider_source_sha256: source_sha256(provider_digest.unwrap_or(provider)),
             },
         ],
-        audited_source_sha256: sha256(consumer_digest.unwrap_or(consumer)),
+        audited_source_sha256: source_sha256(consumer_digest.unwrap_or(consumer)),
         lifetime: ImportedPrimitiveArrayLifetimeContract {
             identity_unchanged_through_spread: true,
             dense_own_data_primitive_contents_unchanged_through_spread: true,

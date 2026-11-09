@@ -1025,18 +1025,46 @@ fn source_unit_selector(yaml: &str) -> spec::SourceUnitSelector {
     serde_yaml::from_str(yaml).expect("valid source-unit selector")
 }
 
+/// Hex SHA-256 of fixture `source`, as `audited_source_sha256` fields record it.
+pub fn source_sha256(source: &str) -> String {
+    graph_provenance::sha256(source.as_bytes())
+}
+
+/// `source_match` selector for `statement` claiming `bindings` by their local
+/// names; no bindings selects an anonymous statement.
+pub fn source_match_selector(statement: &str, bindings: &[&str]) -> SourceMatchClaim {
+    SourceMatchClaim {
+        identifiers: SourceMatchIdentifierMode::default(),
+        match_source: statement.to_owned(),
+        bindings: bindings
+            .iter()
+            .map(|binding| SourceMatchBinding::Local((*binding).to_owned()))
+            .collect(),
+        note: None,
+    }
+}
+
+/// Module YAML holding one `source_matches` claim of `statement` that binds
+/// `local` under the readable `name`.
+pub fn source_match_module_yaml(statement: &str, local: &str, name: &str) -> String {
+    let claim = SourceMatchClaim {
+        bindings: vec![source_match_binding(local, name)],
+        ..source_match_selector(statement, &[])
+    };
+    serde_yaml::to_string(&BTreeMap::from([("source_matches", vec![claim])]))
+        .expect("serialize source-match module")
+}
+
 /// `commuting_statements` endpoint: the anonymous statement matching
 /// `statement` exactly.
 pub fn anonymous_source_unit(statement: &str) -> spec::SourceUnitSelector {
-    source_unit_selector(&format!("source_match:\n  match: {statement:?}\n"))
+    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[]))
 }
 
 /// `commuting_statements` endpoint: `binding`'s declaration inside the
 /// statement matching `statement` exactly.
 pub fn declared_source_unit(statement: &str, binding: &str) -> spec::SourceUnitSelector {
-    source_unit_selector(&format!(
-        "source_match:\n  match: {statement:?}\n  bindings: [{binding}]\n"
-    ))
+    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[binding]))
 }
 
 /// `commuting_statements` endpoint: the source unit of an already resolved
