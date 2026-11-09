@@ -71,9 +71,10 @@ first caller is `alternatives/`, which comes with the first fork producer.
 
 ## Provider execution
 
-Provider execution becomes one `adapters/provider.rs` adapter over the
-kernel. It replaces `strict_provider.rs`'s private executor and the reference
-head's `provider_activation` lane.
+The provider adapter (`ProviderContext`) is in `adapters/provider.rs`; its
+only driver is the allocation-only query in `strict_provider.rs`. Provider
+execution becomes that one adapter over the kernel, replacing the query's
+private executor and the reference head's `provider_activation` lane.
 
 - Its `World` is the caller's fork when the provider body runs inside a
   caller transfer, or a fresh `World { scope: provider }` when sealing a
