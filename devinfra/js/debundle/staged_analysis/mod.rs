@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use swc_common::GLOBALS;
 
 pub mod analysis_artifact;
+mod asserted_contracts;
 pub mod chunk_facts;
 pub mod loader_surface;
 pub mod program_summary;
