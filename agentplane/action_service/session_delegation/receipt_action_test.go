@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	store "github.com/agentydragon/ducktape/agentplane/action_service/store"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -12,7 +13,7 @@ import (
 
 func TestObserveActionPreservesQueuedWakeAssessment(t *testing.T) {
 	backend := &delegatedBackend{testing: t, lookup: &dispatcherpb.Dispatch{
-		CommandId: testCommandID, SessionId: testSessionID, Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		CommandId: testCommandID, SessionId: testSessionID, Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		DeliveryBlocker: &environmentpb.DeliveryBlocker{
 			Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED,

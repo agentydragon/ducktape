@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -66,7 +67,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 		commands = append(commands, command)
 		f.dispatcher.hold(nil, &dispatcherpb.Dispatch{
 			CommandId: command, SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
-			Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+			Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 			State:     dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED, CreatedAt: at, UpdatedAt: at,
 		})
 	}

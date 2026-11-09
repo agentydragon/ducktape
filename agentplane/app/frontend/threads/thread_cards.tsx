@@ -1,4 +1,5 @@
 import { Alert, Badge, Box, Button, Group, Stack, Text, type MantineColor } from "@mantine/core";
+import { Operation } from "../../../proto/command_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -374,7 +375,7 @@ function ReasoningPreview({
 export function pendingSentMessage(entity: ThreadEntity): boolean {
   return (
     entity.entity.case === "command" &&
-    entity.entity.value.operation === "submit_input" &&
+    entity.entity.value.operation === Operation.SUBMIT_INPUT &&
     entity.entity.value.outcome === ThreadCommandOutcome.PENDING
   );
 }

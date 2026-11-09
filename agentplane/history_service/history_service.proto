@@ -3,6 +3,7 @@ syntax = "proto3";
 
 package agentplane.history_service;
 
+import "agentplane/proto/command.proto";
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/session.proto";
@@ -194,7 +195,8 @@ message ReadSessionObservationsRequest {
 
 message SessionObservation {
   uint64 cursor = 1;
-  string kind = 2;
+  // Unspecified for an entry without an observation.
+  EventKind kind = 2;
 }
 
 message ReadSessionObservationsResponse {
@@ -424,7 +426,7 @@ message ThreadLifecycle {
 }
 
 message ThreadCommand {
-  string operation = 1;
+  agentplane.proto.Operation operation = 1;
   ThreadCommandOutcome outcome = 2;
   optional uint64 outcome_cursor = 3;
   optional string outcome_reason = 4;

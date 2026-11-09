@@ -295,7 +295,6 @@ py_library(
         "//agentplane/grpc:calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:scripted_upstream",
