@@ -541,11 +541,10 @@ The current [temporary-grant guidance](../action_service/docs/agents/kubernetes.
 uses a Kubernetes admin Action, and [`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)
 tracks a dedicated request and approval view. A grant applies to the SA and therefore to every
 workload or Session able to use it; it is not per-Session isolation. A separate SA for extra
-Kubernetes permissions could be used without changing an Environment's Pod-bound identity. Explore
-granting the current SA permission to impersonate it, or using egress credential substitution for a
-token belonging to it; creating the second SA alone does not authorize either path. Compare these
-options, including shared-SA scope, under
-[`KUBERNETES_SA_DELEGATION_DESIGN`](task_dag.md#kubernetes_sa_delegation_design--additional-kubernetes-sa-access).
+Kubernetes permissions could be used without changing an Environment's Pod-bound identity. Decided
+2026-11-05: the egress proxy impersonates the second account, under an identity's use rule, through
+the `kubernetesServiceAccount` credential source
+([identity plan](identity_and_kubernetes_accounts.md#kubernetes-execution)).
 The GitHub bot case can instead use an existing EgressCredential, a matching host/method/path
 egress rule and a PolicyBinding for the effective caller; external GitHub permissions and those of
 any shared SA remain shared rather than becoming a unique external account for each Session.
@@ -664,7 +663,7 @@ Standards and examples: [SCIM protocol](https://datatracker.ietf.org/doc/html/rf
 | Agentplane service calls        | TokenReview / workload-auth returns an SA and sometimes Pod UID. Actions, Notification, History, Dispatcher, Environment Service and LLM ingress use these identities in authentication, policy, ownership or attribution. Their contracts differ.               | Translate authenticated workloads or trusted delegated actors into P with method-specific authority. Audit each service’s ownership, idempotency, read scope, Pod proof and provenance; never treat the sampler’s own service account or a caller-provided P as proof.                                                                                                   |
 | Lifecycle and persisted records | Sandbox controller owns the per-Sandbox SA and binding; Session and History records pin execution and writer SA identities; the central sampler currently binds an executor and principal.                                                                       | Define P’s independent lifetime and the authenticated P↔workload↔external-account links, preserve historical actor and execution identity, and handle revocation, deletion/recreation, migration, wake and queued work. Keep Session ID, principal, workload credential and external account distinct.                                                                   |
 
-**Scope and sequence:** start by deciding the semantic identity and permission subject; a first implementation might use existing SAs and delegation as adapters without changing all authentication at once. A prototype should follow one concrete agent action end to end, then cover a Kubernetes API request and one Agentplane service with real policy and UID checks. Inventory direct and delegated consumers, credential sources and RBAC reconciliation before estimating the full migration. Dynamically obtaining and substituting a different Kubernetes SA's token would require a new credential source or broker; Kubernetes impersonation is a separate option to investigate under `KUBERNETES_SA_DELEGATION_DESIGN`.
+**Scope and sequence:** start by deciding the semantic identity and permission subject; a first implementation might use existing SAs and delegation as adapters without changing all authentication at once. A prototype should follow one concrete agent action end to end, then cover a Kubernetes API request and one Agentplane service with real policy and UID checks. Inventory direct and delegated consumers, credential sources and RBAC reconciliation before estimating the full migration. Dynamically obtaining and substituting a different Kubernetes SA's token would require a new credential source or broker; the identity plan chose proxy impersonation instead (decided 2026-11-05).
 
 **Policy granularity:** a stable principal with individual external or per-environment accounts does not itself decide whether two environments share grants. Specify whether the principal or each environment is the PolicyBinding subject, what an agent is permitted to do through each attachment, and how its authority is propagated. Avoid accidentally widening privileges by unioning per-environment grants or using an unrestricted environment as a privilege boundary.
 
