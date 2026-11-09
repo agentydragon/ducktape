@@ -46,10 +46,12 @@ use super::value_model::{
     LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
     canonical_array_index,
 };
+use super::world::cells::{CellInitialization, CellTrace, LexicalCell};
 use super::world::descriptor_heap::{
     self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
+use super::world::{World, WorldScope};
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, ProofDependencies,
     ResolvedInitializerCallEffectInput,
@@ -83,8 +85,7 @@ use crate::facts::statement_facts::{
     SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
-    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
-    infer_own_property_projection,
+    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
 };
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
@@ -107,7 +108,6 @@ use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
@@ -451,16 +451,6 @@ struct NonInvokingClassHeritageRead<'a> {
 struct PrivateCallbackFactoryResult {
     proof_use: CallbackFactoryUseFact,
     dependencies: ProofDependencies,
-}
-
-#[derive(Debug, Clone, Default)]
-struct ReachabilityState {
-    unknown_call_seen: bool,
-    incomplete: bool,
-    revision: u64,
-    expanded: BTreeSet<SourceUnitOrdinal>,
-    deferred: BTreeMap<Id, SourceUnitOrdinal>,
-    owners: BTreeSet<SourceUnitOrdinal>,
 }
 
 /// Callback roots retained by a fallback stay escaped for the rest of the
@@ -953,22 +943,26 @@ impl ExecutionInputs<'_> {
             || !self.top_bindings.contains(binding)
             || !self.needed_bindings.contains(binding)
             || !self.single_writer_bindings.contains(binding)
-            || !state.initialized_bindings.contains(binding)
+            || !state.world.module.initialized_bindings.contains(binding)
         {
             return None;
         }
         let mut values = Values::new();
         let mut objects = 0;
-        for value in state.prefix_values.get(binding)? {
+        for value in state.world.module.prefix_values.get(binding)? {
             match value {
                 AbstractValue::Value(Value::Prim(_)) => {}
                 // PlainData above proves the whole lifetime after the checked
                 // initializer. Initializer writes can conservatively taint an
                 // enum allocation without invalidating that stronger proof.
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if state.parameter_initialized_objects.contains(object) =>
+                    if state
+                        .world
+                        .publication
+                        .parameter_initialized_objects
+                        .contains(object) =>
                 {
-                    let properties = state.surface.prefix_object_properties.get(object)?;
+                    let properties = state.world.surface.prefix_object_properties.get(object)?;
                     values.extend(properties.get(&Some(property.to_string()))?.iter().cloned());
                     // A computed-key write may have stored under this key.
                     if let Some(dynamic) = properties.get(&None) {
@@ -996,11 +990,13 @@ impl ExecutionInputs<'_> {
             && self.single_writer_bindings.contains(binding)
         {
             let mut values = state
+                .world
+                .module
                 .prefix_values
                 .get(binding)
                 .cloned()
                 .unwrap_or_default();
-            if !state.initialized_bindings.contains(binding) {
+            if !state.world.module.initialized_bindings.contains(binding) {
                 values.insert(if self.var_bindings.contains(binding) {
                     AbstractValue::UNDEFINED
                 } else {
@@ -1032,88 +1028,37 @@ impl ExecutionInputs<'_> {
     }
 }
 
-#[derive(Default)]
+/// Execution-control state of the current run beside the semantic `World`.
+/// Observations of admission predicates are not here either; see
+/// [`Observations`].
 pub(super) struct ExecutionState {
+    /// Program-prefix values, heap facts, reachability and identity-bearing
+    /// cells, copy-on-write so a fork clones the handle, not the contents.
+    world: Arc<World>,
     /// Conservative conditions under which settled prefix values hold,
     /// retained across owner/child boundaries. Prerequisites are not coverage.
     ledger_dependencies: ProofDependencies,
-    native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
-    native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
-    native_prefix_observations: RefCell<Vec<NativePrefixObservation>>,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
-    uncertain_native_execution: bool,
     author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
-    native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
-    native_operation_input_uses:
-        RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
-    imported_primitive_array_spread_input_uses:
-        RefCell<Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>>,
-    proof_dependencies: RefCell<ProofDependencies>,
-    inference_uses: RefCell<BTreeSet<crate::analysis_provenance::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
-    class_superclasses: OrdMap<u32, Values>,
     active_class_member_promotions: BTreeSet<u32>,
     prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     current_top_owner: Option<SourceUnitOrdinal>,
     proof_uses: Vec<CallbackFactoryUseFact>,
     returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
-    /// Owners executed while building a certified unpublished instance graph.
-    /// Their synchronous effects still run; execution alone does not expose
-    /// the wrapper or the classes' deferred callable members to the host.
-    private_constructor_result_owners: BTreeSet<SourceUnitOrdinal>,
-    checked_constructor_inputs: BTreeSet<u32>,
-    /// A proven silent primitive push changed contents, not descriptors or prototypes.
-    unknown_array_contents: BTreeSet<u32>,
-    /// Exact source-checked receivers whose prototype premises the author supplies.
-    record_factory_prototype_premises: RefCell<RecordFactoryPrototypePremises>,
     checking_record_factory_contract: bool,
     prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
     /// Callables run so far by the current top-level owner; joins
     /// `prior_effect_owners` when it finishes.
     statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
-    /// Fresh object literals a parameter-mutation initializer filled with
-    /// primitive data properties (`fresh_data_writes`).
-    parameter_initialized_objects: BTreeSet<u32>,
     /// All invoked callable keys, including outcomes a proof probe discards.
     /// The root union preserves the conservative heap order independently of
     /// the per-invocation non-assumed premise subset.
     statement_invoked_callables: BTreeSet<u32>,
-    accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
-    frozen_namespace_calls: BTreeSet<CallSite>,
-    reachability: ReachabilityState,
-    prefix_values: Context,
-    /// Published only from an actual ordered initializer result. A flat
-    /// projection's singleton value is not evidence of callable selection.
-    prefix_callable_selections: OrdMap<Id, CallableSelection>,
-    initialized_bindings: BTreeSet<Id>,
-    global_escaped_callbacks: Values,
-    /// First top-level owner observed inserting each function callback into
-    /// `global_escaped_callbacks` through `publish_values`.
-    first_callback_publication_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    /// First actual insertion of each class's members into the escaped pool.
-    first_class_members_publications: BTreeMap<u32, FirstClassMembersPublication>,
-    top_env: Context,
-    top_captures: Context,
-    surface: ObjectSurfaceStore,
-    descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
-    dense_arrays: OrdMap<u32, DenseArray>,
-    primitive_arrays: OrdMap<u32, ProofDependencies>,
-    /// `reduce` results by call site allocation id.
-    accumulated_values: OrdMap<u32, Values>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
     array_iteration_unsupported: bool,
-    array_intrinsic_mutated: bool,
-    tainted_native_sets: BTreeSet<u32>,
-    tainted_functions: BTreeSet<u32>,
-    /// A revoked identity is a semantic root: equal descriptions must retain
-    /// that identity even after other references disappear.
-    revoked_audited_results: BTreeMap<usize, Captured<Values>>,
-    tainted_classes: BTreeSet<u32>,
-    escaped_class_capabilities: BTreeSet<u32>,
-    exported_runtime_values: Values,
-    prefix_revision: u64,
     invocation_depth: usize,
     invocation_count: usize,
     callback_fallback: CallbackFallbackSummary,
@@ -1126,253 +1071,174 @@ pub(super) struct ExecutionState {
     fallback_callback_sizes: Option<(usize, usize)>,
     fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
     fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
-    /// Returned callable source closures are static within one top-level
-    /// initialization prefix. Incomplete reachability requires a fresh raw
-    /// closure even when the precise prefix was already summarized.
-    returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
     capture_contexts: CaptureInterner<LexicalCaptures>,
-    lexical_cells: LexicalCells,
-    active_cells: OrdMap<Id, LexicalCellId>,
     callback_sets: CaptureInterner<Values>,
     active: BTreeSet<ActiveInvocation>,
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CellInitialization {
-    Uninitialized,
-    Initialized,
-    MaybeInitialized,
+/// Run-level admission facts of one owner's execution: what the admission
+/// predicates consumed or checked while proving operations. These are not
+/// per-transfer effects (those ride the kernel's ledger): a predicate anywhere
+/// in the executor, including the legacy evaluator and native transfers, may
+/// add one, and `dependencies` and `record_factory_prototype_premises` are
+/// read back mid-run. They are therefore threaded explicitly rather than
+/// returned per operation: handed to a child executor with its request,
+/// returned in its `RuntimeResult`, and drained into the owner's
+/// `SynchronousCalls` by `execute_owner`. The fields are private so a fact
+/// enters only through a named admission predicate.
+#[derive(Default)]
+pub(super) struct Observations {
+    native_integrity_checks: BTreeSet<NativeIntegrityCheck>,
+    native_prototype_property_checks: BTreeMap<String, NativePrototypePropertyCheck>,
+    native_prefix_observations: Vec<NativePrefixObservation>,
+    native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
+    native_operation_input_uses:
+        BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>,
+    imported_primitive_array_spread_input_uses:
+        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
+    /// Premises consumed by this owner's proofs so far: the conservative
+    /// prerequisite set of its native transfers and record-factory certificate.
+    dependencies: ProofDependencies,
+    inference_uses: BTreeSet<crate::analysis_provenance::InferenceUse>,
+    /// Exact source-checked receivers whose prototype premises the author supplies.
+    record_factory_prototype_premises: RecordFactoryPrototypePremises,
 }
 
-struct LexicalCell {
-    values: Values,
-    kind: LocalBinding,
-    initialization: CellInitialization,
-}
-
-/// Slots are never reused. Retiring a cell frees its box and value graph,
-/// leaving only an empty identity slot behind.
-struct LexicalCells {
-    slots: Vec<Option<Box<LexicalCell>>>,
-    occupied: Vec<LexicalCellId>,
-    next_collection_at: usize,
-}
-
-impl Default for LexicalCells {
-    fn default() -> Self {
-        Self {
-            slots: Vec::new(),
-            occupied: Vec::new(),
-            next_collection_at: 1,
-        }
-    }
-}
-
-impl LexicalCells {
-    fn insert(&mut self, cell: LexicalCell) -> LexicalCellId {
-        let id = LexicalCellId(self.slots.len());
-        self.slots.push(Some(Box::new(cell)));
-        self.occupied.push(id);
-        id
+impl Observations {
+    fn record_failed_native_guard(&mut self, check: NativeIntegrityCheck) {
+        self.native_integrity_checks.insert(check);
     }
 
-    fn collection_due(&self, last_owner: bool) -> bool {
-        !self.occupied.is_empty() && (last_owner || self.slots.len() >= self.next_collection_at)
+    /// One check per property for the owner; the first computation stands.
+    fn prototype_property_check(
+        &mut self,
+        property: &str,
+        compute: impl FnOnce() -> NativePrototypePropertyCheck,
+    ) -> &NativePrototypePropertyCheck {
+        self.native_prototype_property_checks
+            .entry(property.to_owned())
+            .or_insert_with(compute)
     }
 
-    fn sweep(&mut self, marked: &FxHashSet<LexicalCellId>, trace_work: usize) {
-        self.occupied.retain(|id| {
-            if marked.contains(id) {
-                true
-            } else {
-                self.slots[id.0] = None;
-                false
-            }
-        });
-        // Allocation-driven scheduling amortizes the root walk. This counts
-        // graph nodes for collection policy, not elapsed time or telemetry.
-        self.next_collection_at = self.slots.len().saturating_add(trace_work.max(64));
+    fn observe_native_prefix(&mut self, observation: NativePrefixObservation) {
+        self.native_prefix_observations.push(observation);
     }
-}
 
-impl std::ops::Index<usize> for LexicalCells {
-    type Output = LexicalCell;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        self.slots[index]
-            .as_deref()
-            .expect("live lexical-cell reference")
+    fn record_native_integrity_use(&mut self, use_: crate::reports::schema::NativeIntegrityUse) {
+        self.native_integrity_uses.insert(use_);
     }
-}
 
-impl std::ops::IndexMut<usize> for LexicalCells {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.slots[index]
-            .as_deref_mut()
-            .expect("live lexical-cell reference")
+    fn record_native_operation_input_use(
+        &mut self,
+        span: Span,
+        use_: crate::reports::schema::NativeOperationInputUse,
+    ) {
+        self.native_operation_input_uses
+            .insert((span.lo.0, span.hi.0), use_);
     }
-}
 
-/// All references here borrow the one settled owner-boundary state. Separate
-/// visited sets respect the two interner identity namespaces and break cycles
-/// through cells without cloning captured graphs.
-struct CellTrace<'a> {
-    arena: &'a LexicalCells,
-    pending: Vec<&'a Values>,
-    cells: FxHashSet<LexicalCellId>,
-    contexts: FxHashSet<usize>,
-    callback_sets: FxHashSet<usize>,
-    work: usize,
-}
-
-impl<'a> CellTrace<'a> {
-    fn new(arena: &'a LexicalCells) -> Self {
-        Self {
-            arena,
-            pending: Vec::new(),
-            cells: FxHashSet::default(),
-            contexts: FxHashSet::default(),
-            callback_sets: FxHashSet::default(),
-            work: 0,
+    /// One report entry per distinct use; a spread site can run repeatedly.
+    fn record_imported_primitive_array_spread_input_use(
+        &mut self,
+        use_: crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse,
+    ) {
+        if !self
+            .imported_primitive_array_spread_input_uses
+            .contains(&use_)
+        {
+            self.imported_primitive_array_spread_input_uses.push(use_);
         }
     }
 
-    fn values(&mut self, values: &'a Values) {
-        self.pending.push(values);
+    fn consume_dependencies(&mut self, dependencies: &ProofDependencies) {
+        self.dependencies.extend(dependencies);
     }
 
-    fn cell(&mut self, id: LexicalCellId) {
-        if self.cells.insert(id) {
-            self.work = self.work.saturating_add(1);
-            self.pending.push(&self.arena[id.0].values);
-        }
+    fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
     }
 
-    fn retained(&mut self, captured: &'a Captured<Values>) {
-        if self.callback_sets.insert(captured.cache_identity()) {
-            self.values(&captured.values);
-        }
+    fn record_inference_use(&mut self, use_: crate::analysis_provenance::InferenceUse) {
+        self.inference_uses.insert(use_);
     }
 
-    fn finish(mut self) -> (FxHashSet<LexicalCellId>, usize) {
-        while let Some(values) = self.pending.pop() {
-            self.work = self.work.saturating_add(values.len()).saturating_add(1);
-            for value in values {
-                match value {
-                    AbstractValue::Closure(_, captures) => {
-                        if self.contexts.insert(captures.cache_identity()) {
-                            for values in captures.values.snapshots.values() {
-                                self.values(values);
-                            }
-                            for cell in captures.values.cells.values() {
-                                self.cell(*cell);
-                            }
-                        }
-                    }
-                    AbstractValue::Instance(_, captured, _)
-                    | AbstractValue::DeferredCallbacks(captured)
-                    | AbstractValue::AuditedRetainedResult(_, captured) => self.retained(captured),
-                    AbstractValue::Value(_)
-                    | AbstractValue::SymbolicInput(_)
-                    | AbstractValue::ClassMembers(_)
-                    | AbstractValue::CallbackFactory
-                    | AbstractValue::InlineCallbackFactory
-                    | AbstractValue::OwnDescriptorMap(_)
-                    | AbstractValue::ForeignDeferredRecord
-                    | AbstractValue::ObjectAssign
-                    | AbstractValue::ArrayIntrinsic
-                    | AbstractValue::GlobalObject => {}
-                }
-            }
-        }
-        (self.cells, self.work)
+    fn record_inference_uses(
+        &mut self,
+        uses: impl IntoIterator<Item = crate::analysis_provenance::InferenceUse>,
+    ) {
+        self.inference_uses.extend(uses);
+    }
+
+    fn record_factory_prototype_premises(&self) -> &RecordFactoryPrototypePremises {
+        &self.record_factory_prototype_premises
+    }
+
+    fn record_factory_prototype_premises_mut(&mut self) -> &mut RecordFactoryPrototypePremises {
+        &mut self.record_factory_prototype_premises
+    }
+
+    fn clear_record_factory_prototype_premises(&mut self) {
+        self.record_factory_prototype_premises = RecordFactoryPrototypePremises::default();
+    }
+
+    /// Move the report-only facts into the owner's effects. `dependencies` and
+    /// the record-factory premises are read after this by owner finalization.
+    fn drain_reports_into(&mut self, effects: &mut SynchronousCalls) {
+        effects.native_integrity_checks = std::mem::take(&mut self.native_integrity_checks)
+            .into_iter()
+            .collect();
+        effects.native_prototype_property_checks =
+            std::mem::take(&mut self.native_prototype_property_checks)
+                .into_values()
+                .collect();
+        effects.native_prefix_observations = std::mem::take(&mut self.native_prefix_observations);
+        effects.native_integrity_uses = std::mem::take(&mut self.native_integrity_uses)
+            .into_iter()
+            .collect();
+        effects.native_operation_input_uses = std::mem::take(&mut self.native_operation_input_uses)
+            .into_values()
+            .collect();
+        effects.imported_primitive_array_spread_input_uses =
+            std::mem::take(&mut self.imported_primitive_array_spread_input_uses);
+        effects.inference_uses = std::mem::take(&mut self.inference_uses)
+            .into_iter()
+            .collect();
     }
 }
 
 impl ExecutionState {
+    /// Detach the world from any shared fork before writing to it.
+    fn world_mut(&mut self) -> &mut World {
+        Arc::make_mut(&mut self.world)
+    }
+
     /// Only RuntimeRules calls this, after the owner executor and every
-    /// single-consumer transfer payload have unwound. Keep all value-bearing
-    /// state fields in this root list when extending ExecutionState.
+    /// single-consumer transfer payload have unwound. The world lists its own
+    /// roots; the control state adds the retained fallback returns.
     pub(super) fn reclaim_lexical_cells(&mut self, last_owner: bool) {
-        if !self.lexical_cells.collection_due(last_owner) {
+        if !self.world.cells.collection_due(last_owner) {
             return;
         }
         assert!(self.current_top_owner.is_none());
         assert_eq!(self.invocation_depth, 0);
         assert!(self.active.is_empty());
         assert!(self.invocation_memos.is_empty());
-        let mut trace = CellTrace::new(&self.lexical_cells);
-        for values in self
-            .prefix_values
-            .values()
-            .chain(self.top_env.values())
-            .chain(self.top_captures.values())
-            .chain(self.class_superclasses.values())
-            .chain(self.accumulated_values.values())
-        {
-            trace.values(values);
-        }
-        trace.values(&self.global_escaped_callbacks);
-        trace.values(&self.exported_runtime_values);
+        let mut trace = CellTrace::new(&self.world.cells);
+        self.world.trace_roots(&mut trace);
         trace.values(&self.fallback_outcome.returns);
-        for properties in self.surface.prefix_object_properties.values() {
-            for values in properties.values() {
-                trace.values(values);
-            }
-        }
-        for array in self.dense_arrays.values() {
-            for values in &array.slots {
-                trace.values(values);
-            }
-        }
-        for properties in self.surface.applied_accessors.values() {
-            for accessor in properties.values() {
-                trace.values(&accessor.getter);
-                trace.values(&accessor.setter);
-            }
-        }
-        for descriptors in self.descriptor_maps.values() {
-            trace.values(&descriptors.retained_values);
-            for descriptor in descriptors.properties.values() {
-                match descriptor {
-                    CapturedPropertyDescriptor::Data(values) => trace.values(values),
-                    CapturedPropertyDescriptor::Accessor { getter, setter } => {
-                        trace.values(getter);
-                        trace.values(setter);
-                    }
-                }
-            }
-        }
-        for captured in self.revoked_audited_results.values() {
-            trace.retained(captured);
-        }
-        for cell in self.active_cells.values() {
-            trace.cell(*cell);
-        }
         let (marked, work) = trace.finish();
-        self.lexical_cells.sweep(&marked, work);
+        self.world_mut().cells.sweep(&marked, work);
         self.capture_contexts.sweep_dead();
         self.callback_sets.sweep_dead();
-    }
-
-    /// Skipped local code can change descriptors or prototypes even when no
-    /// escape to foreign code was observed. Neither set permits prefix reads.
-    fn object_properties_are_settled(&self, object: &u32) -> bool {
-        self.object_accessors_are_settled(object)
-            && !self.unknown_array_contents.contains(object)
-            && !self.primitive_arrays.contains_key(object)
-    }
-
-    fn object_accessors_are_settled(&self, object: &u32) -> bool {
-        self.surface.object_accessors_are_settled(*object)
     }
 }
 
 pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
     state: ExecutionStateSlot,
+    observations: Observations,
     queries: RuntimeQueries<'source, 'rule>,
     allocation_judgment: super::allocation_transfer::AllocationJudgment,
     source_covered: bool,
@@ -1427,6 +1293,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         if sparse {
             self.executor
                 .state
+                .world_mut()
                 .surface
                 .tainted_objects
                 .insert(allocation);
@@ -1506,41 +1373,48 @@ impl OwnDataContext for Executor<'_, '_> {
     }
 
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
-        self.state.object_properties_are_settled(&allocation)
+        self.state.world.object_properties_are_settled(allocation)
     }
 
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
-        self.state.surface.data_values(allocation, property)
+        self.state.world.surface.data_values(allocation, property)
     }
 
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
         self.state
+            .world
             .surface
             .has_accessor_property(allocation, property)
     }
 
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
-        let has_writable_property = match self.state.surface.writable_prefix.get(&allocation) {
+        let has_writable_property = match self.state.world.surface.writable_prefix.get(&allocation)
+        {
             Some(super::allocation_transfer::WritablePrefixState::Proven(properties)) => {
                 properties.contains(property)
             }
             _ => false,
         };
         has_writable_property
-            && self.state.surface.object_accessors_are_settled(allocation)
+            && self
+                .state
+                .world
+                .surface
+                .object_accessors_are_settled(allocation)
             && !self
                 .state
+                .world
                 .surface
                 .has_accessor_property(allocation, property)
     }
 
     fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
         if !self.inputs.index.array_elements.contains_key(&allocation)
-            || !self.state.dense_arrays.contains_key(&allocation)
+            || !self.state.world.arrays.dense.contains_key(&allocation)
         {
             return None;
         }
-        match self.state.surface.writable_prefix.get(&allocation) {
+        match self.state.world.surface.writable_prefix.get(&allocation) {
             Some(super::allocation_transfer::WritablePrefixState::DenseArray { length }) => {
                 Some(*length)
             }
@@ -1551,46 +1425,49 @@ impl OwnDataContext for Executor<'_, '_> {
 
 impl DescriptorContext for Executor<'_, '_> {
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState> {
-        self.state.descriptor_maps.get(&site)
+        self.state.world.descriptors.get(&site)
     }
 
     fn object_surface(&self) -> &ObjectSurfaceStore {
-        &self.state.surface
+        &self.state.world.surface
     }
 
     fn plain_data_object(&self, object: u32) -> bool {
         self.inputs.index.plain_data_objects.contains(&object)
     }
 
-    fn descriptor_conversion_is_ordinary(&self) -> bool {
+    fn descriptor_conversion_is_ordinary(&mut self) -> bool {
         self.ordinary_object_prototype_intact()
     }
 }
 
 impl NativeOperationContext for Executor<'_, '_> {
     fn native_operation_revision(&self) -> u64 {
-        self.state.prefix_revision
+        self.state.world.revision.prefix
     }
 
     fn descriptor_heap(&mut self) -> DescriptorHeap<'_> {
-        let state = &mut *self.state;
-        DescriptorHeap {
-            maps: &mut state.descriptor_maps,
-            surface: &mut state.surface,
-            arrays: &mut state.dense_arrays,
-            revision: &mut state.prefix_revision,
-            track_writable_prefix: true,
-        }
+        self.state.world_mut().descriptor_heap()
     }
 }
 
 impl ArrayContext for Executor<'_, '_> {
     fn writable_array_length(&self, object: u32) -> Option<u32> {
-        if !self.state.object_accessors_are_settled(&object)
-            || self.state.surface.applied_accessors.contains_key(&object)
-            || !self.state.dense_arrays.contains_key(&object)
+        if !self
+            .state
+            .world
+            .surface
+            .object_accessors_are_settled(object)
             || self
                 .state
+                .world
+                .surface
+                .applied_accessors
+                .contains_key(&object)
+            || !self.state.world.arrays.dense.contains_key(&object)
+            || self
+                .state
+                .world
                 .surface
                 .prefix_object_properties
                 .get(&object)?
@@ -1598,13 +1475,13 @@ impl ArrayContext for Executor<'_, '_> {
         {
             return None;
         }
-        match self.state.surface.writable_prefix.get(&object)? {
+        match self.state.world.surface.writable_prefix.get(&object)? {
             super::allocation_transfer::WritablePrefixState::DenseArray { length } => Some(*length),
             _ => None,
         }
     }
 
-    fn array_prototypes_intact(&self) -> bool {
+    fn array_prototypes_intact(&mut self) -> bool {
         self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
     }
 
@@ -1613,14 +1490,18 @@ impl ArrayContext for Executor<'_, '_> {
     }
 
     fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]) {
-        self.state.unknown_array_contents.insert(object);
-        self.state.surface.writable_prefix.insert(
+        self.state
+            .world_mut()
+            .arrays
+            .unknown_contents
+            .insert(object);
+        self.state.world_mut().surface.writable_prefix.insert(
             object,
             super::allocation_transfer::WritablePrefixState::DenseArray { length },
         );
         let values = arguments.iter().flatten().cloned().collect();
         self.literal_heap().write_property(object, None, &values);
-        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        self.state.world_mut().revision.bump_prefix();
     }
 }
 
@@ -1665,9 +1546,9 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
         if self.executor.inputs.top_bindings.contains(binding) {
-            self.executor.state.prefix_values.get(binding)
-        } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
-            Some(&self.executor.state.lexical_cells[cell.0].values)
+            self.executor.state.world.module.prefix_values.get(binding)
+        } else if let Some(cell) = self.executor.state.world.active_cells.get(binding) {
+            Some(&self.executor.state.world.cells[cell.0].values)
         } else {
             frame.environment.get(binding)
         }
@@ -1827,17 +1708,17 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             {
                 continue;
             }
-            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
                 values: frame.environment[binding].clone(),
                 kind: LocalBinding::Parameter,
                 initialization: CellInitialization::Uninitialized,
             });
             self.executor
                 .state
+                .world_mut()
                 .active_cells
                 .insert(binding.clone(), cell);
-            self.executor.state.prefix_revision =
-                self.executor.state.prefix_revision.wrapping_add(1);
+            self.executor.state.world_mut().revision.bump_prefix();
         }
     }
     fn declarative_binding_operation(
@@ -1848,7 +1729,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         if !matches!(
             self.body.bindings.get(binding),
             Some(LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)
-        ) || self.executor.state.active_cells.contains_key(binding)
+        ) || self.executor.state.world.active_cells.contains_key(binding)
             || self
                 .executor
                 .inputs
@@ -1876,7 +1757,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             if self.missing_activation_binding(binding, frame) {
                 // A captured context can carry a prior activation's cell.
                 // Its source binding is not this missing function value.
-                self.executor.state.active_cells.remove(binding);
+                self.executor.state.world_mut().active_cells.remove(binding);
                 continue;
             }
             if !self
@@ -1892,7 +1773,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
                 // self/hoisted-function value from source identity alone.
                 continue;
             };
-            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
                 values: values.clone(),
                 kind: *kind,
                 initialization: match kind {
@@ -1905,6 +1786,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             });
             self.executor
                 .state
+                .world_mut()
                 .active_cells
                 .insert(binding.clone(), cell);
             allocated = true;
@@ -1912,12 +1794,11 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         if allocated {
             // A cached factory result cannot stand in for another activation:
             // its captured cells have distinct identities, even at one site.
-            self.executor.state.prefix_revision =
-                self.executor.state.prefix_revision.wrapping_add(1);
+            self.executor.state.world_mut().revision.bump_prefix();
         }
     }
     fn local_binding_stored(&mut self, binding: &Id, frame: &LocalFrame) {
-        if !self.executor.state.active_cells.contains_key(binding)
+        if !self.executor.state.world.active_cells.contains_key(binding)
             && self
                 .executor
                 .inputs
@@ -1928,28 +1809,27 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             // The prologue could not manufacture this function value. An
             // actually executed initializer now establishes this activation's
             // mutable cell using its evaluated value, as for other locals.
-            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
                 values: frame.environment[binding].clone(),
                 kind: *kind,
                 initialization: CellInitialization::Initialized,
             });
             self.executor
                 .state
+                .world_mut()
                 .active_cells
                 .insert(binding.clone(), cell);
-            self.executor.state.prefix_revision =
-                self.executor.state.prefix_revision.wrapping_add(1);
+            self.executor.state.world_mut().revision.bump_prefix();
         }
-        if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
-            let cell = &mut self.executor.state.lexical_cells[id.0];
+        if let Some(id) = self.executor.state.world.active_cells.get(binding).copied() {
+            let cell = &mut self.executor.state.world_mut().cells[id.0];
             let values = &frame.environment[binding];
             let changed =
                 cell.values != *values || cell.initialization != CellInitialization::Initialized;
             cell.values = values.clone();
             cell.initialization = CellInitialization::Initialized;
             if changed {
-                self.executor.state.prefix_revision =
-                    self.executor.state.prefix_revision.wrapping_add(1);
+                self.executor.state.world_mut().revision.bump_prefix();
             }
         }
     }
@@ -1963,8 +1843,8 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         values: &Values,
         span: Span,
     ) -> Result<super::allocation_transfer::AllocationValue, RemainderDisposition> {
-        if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
-            let cell = &mut self.executor.state.lexical_cells[id.0];
+        if let Some(id) = self.executor.state.world.active_cells.get(binding).copied() {
+            let cell = &mut self.executor.state.world_mut().cells[id.0];
             if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || cell.initialization == CellInitialization::Uninitialized
             {
@@ -1982,8 +1862,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             let before = cell.values.len();
             cell.values.extend(values.iter().cloned());
             if cell.values.len() != before {
-                self.executor.state.prefix_revision =
-                    self.executor.state.prefix_revision.wrapping_add(1);
+                self.executor.state.world_mut().revision.bump_prefix();
             }
             return Ok(super::allocation_transfer::AllocationValue::opaque(result));
         }
@@ -2014,7 +1893,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
         if self.executor.inputs.top_bindings.contains(binding)
-            || (self.executor.state.active_cells.contains_key(binding)
+            || (self.executor.state.world.active_cells.contains_key(binding)
                 && !self.body.bindings.contains_key(binding))
         {
             frame
@@ -2045,7 +1924,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             EffectCoverageFragment::initialized_module_read()
         } else if normal
             && frame.initialized_bindings.contains(binding)
-            && !self.executor.state.active_cells.contains_key(binding)
+            && !self.executor.state.world.active_cells.contains_key(binding)
         {
             EffectCoverageFragment::no_effects()
         } else {
@@ -2054,6 +1933,8 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         let selection = if self.executor.initialized_local_binding(binding) {
             self.executor
                 .state
+                .world
+                .module
                 .prefix_callable_selections
                 .get(binding)
                 .filter(|selection| selection.matches(&values))
@@ -2395,8 +2276,11 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     fn index(&self) -> &ExecutionIndex {
         self.executor.inputs.index
     }
-    fn heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
-        self.executor.literal_heap()
+    fn world(&self) -> &World {
+        &self.executor.state.world
+    }
+    fn world_mut(&mut self) -> &mut World {
+        self.executor.state.world_mut()
     }
     fn settled_dependencies(&self) -> Box<ProofDependencies> {
         self.executor.boxed_settled_prefix_dependencies()
@@ -2565,11 +2449,9 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                 .get(&CallSite::from(span))?
                 .clone();
             self.executor
-                .state
-                .native_operation_input_uses
-                .borrow_mut()
-                .insert(
-                    (span.lo.0, span.hi.0),
+                .observations
+                .record_native_operation_input_use(
+                    span,
                     crate::reports::schema::NativeOperationInputUse {
                         evidence,
                         source_location: None,
@@ -2706,34 +2588,19 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
             }
         }
     }
-    fn publish_throw(&mut self, values: &Values) {
-        self.executor.publish_values(
-            values,
-            ClassMembersPublicationWriter::ThrowValuePublication,
-            None,
-        );
-    }
-    fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome
-            .effects
-            .record_heap_read(cell, self.executor.state.assumption.is_none());
-    }
-    fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome
-            .effects
-            .record_heap_write(cell, self.executor.state.assumption.is_none());
-    }
 }
 
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
         state: Box<ExecutionState>,
+        observations: Observations,
         queries: RuntimeQueries<'source, 'rule>,
     ) -> Self {
         Self {
             inputs,
             state: ExecutionStateSlot(Some(state)),
+            observations,
             queries,
             // Creating an executor establishes no whole-source coverage.
             allocation_judgment: super::allocation_transfer::AllocationJudgment::Opaque,
@@ -2748,6 +2615,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut self,
     ) -> (
         Box<ExecutionState>,
+        Observations,
         super::allocation_transfer::AllocationJudgment,
         EvaluationEffects,
     ) {
@@ -2763,6 +2631,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .depend_on(&self.state.ledger_dependencies);
         (
             self.state.0.expect("the completed transfer owns its state"),
+            self.observations,
             self.allocation_judgment,
             self.evaluation_effects,
         )
@@ -2820,8 +2689,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .0
             .take()
             .expect("the requesting transfer owns its state");
-        let mut result = self.queries.request(state, operation);
+        let observations = std::mem::take(&mut self.observations);
+        let mut result = self.queries.request(state, observations, operation);
         self.state.0 = Some(result.state);
+        self.observations = result.observations;
         self.allocation_judgment
             .compose(&result.allocation_judgment);
         // Transport effects before exposing any payload, including Values.
@@ -2853,7 +2724,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn remember_invocation(&mut self, signature: InvocationSignature, outcome: &Outcome) {
-        if self.state.tainted_functions.contains(&signature.callable) {
+        if self
+            .state
+            .world
+            .native
+            .tainted_functions
+            .contains(&signature.callable)
+        {
             return;
         }
         // This executor owns only this invocation's child ledger. A memo
@@ -2935,7 +2812,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn closed_enum_member_read(&self, value: &ValueExpr) -> bool {
+    fn closed_enum_member_read(&mut self, value: &ValueExpr) -> bool {
         let ValueExpr::Member(receiver, Some(property), _, _) = value else {
             return false;
         };
@@ -2946,7 +2823,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// settled `PlainData` binding holding the key as own data. The read
     /// keeps its ordinary eager dependency, but cannot retrieve a getter or a
     /// callable value.
-    fn closed_enum_member_parts(&self, receiver: &ValueExpr, property: &str) -> Option<Values> {
+    fn closed_enum_member_parts(&mut self, receiver: &ValueExpr, property: &str) -> Option<Values> {
         let ValueExpr::Binding(binding) = receiver else {
             return None;
         };
@@ -2958,10 +2835,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .graph
             .plain_data_inference_uses(binding.0.as_ref())
         {
-            self.state
-                .inference_uses
-                .borrow_mut()
-                .extend(uses.iter().cloned());
+            self.observations
+                .record_inference_uses(uses.iter().cloned());
         }
         Some(values)
     }
@@ -2984,10 +2859,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return;
         };
-        self.state
-            .inference_uses
-            .borrow_mut()
-            .insert(evidence.inference.clone());
+        self.observations
+            .record_inference_use(evidence.inference.clone());
         let proof_use = ReturnedRecordUseFact {
             imported_local: imported_local.0.to_string(),
             evidence: evidence.clone(),
@@ -3002,7 +2875,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Every slot census-intact. A failure records the mutated families.
-    fn native_guard_intact(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) -> bool {
+    fn native_guard_intact(
+        &mut self,
+        guard: NativeIntegrityGuard,
+        slots: &[IntrinsicSlot],
+    ) -> bool {
         self.observe_native_prefix(guard, None);
         let integrity = &self.inputs.index.integrity;
         if let Some(premise) =
@@ -3017,7 +2894,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Every slot census-intact, for a proof that records no inference use.
     /// A failure records the mutated families like [`Self::native_guard_intact`].
-    fn census_slots_intact(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) -> bool {
+    fn census_slots_intact(
+        &mut self,
+        guard: NativeIntegrityGuard,
+        slots: &[IntrinsicSlot],
+    ) -> bool {
         self.observe_native_prefix(guard, None);
         let intact = matches!(
             self.inputs.index.integrity.require(slots, None),
@@ -3029,54 +2910,48 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         intact
     }
 
-    fn record_failed_native_guard(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
-        self.state
-            .native_integrity_checks
-            .borrow_mut()
-            .insert(NativeIntegrityCheck {
+    fn record_failed_native_guard(&mut self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
+        self.observations
+            .record_failed_native_guard(NativeIntegrityCheck {
                 guard,
                 slots: slots.iter().map(ToString::to_string).collect(),
                 affected_roots: self.inputs.index.integrity.mutated_roots(slots),
             });
     }
 
-    fn constructor_field_prototype_absent(&self, class: u32, property: &str) -> bool {
+    fn constructor_field_prototype_absent(&mut self, class: u32, property: &str) -> bool {
         if Self::standard_object_prototype_property(property) {
             return false;
         }
         let premise = (class, property.to_owned());
         if self.state.checking_record_factory_contract {
-            self.state
-                .record_factory_prototype_premises
-                .borrow_mut()
+            self.observations
+                .record_factory_prototype_premises_mut()
                 .constructor_fields
                 .insert(premise);
             return true;
         }
-        self.state
-            .record_factory_prototype_premises
-            .borrow()
+        self.observations
+            .record_factory_prototype_premises()
             .constructor_fields
             .contains(&premise)
             || self.object_prototype_property_absent(property)
     }
 
-    fn input_field_prototype_absent(&self, object: u32, property: &str) -> bool {
+    fn input_field_prototype_absent(&mut self, object: u32, property: &str) -> bool {
         if Self::standard_object_prototype_property(property) {
             return false;
         }
         let premise = (object, property.to_owned());
         if self.state.checking_record_factory_contract {
-            self.state
-                .record_factory_prototype_premises
-                .borrow_mut()
+            self.observations
+                .record_factory_prototype_premises_mut()
                 .missing_input_fields
                 .insert(premise);
             return true;
         }
-        self.state
-            .record_factory_prototype_premises
-            .borrow()
+        self.observations
+            .record_factory_prototype_premises()
             .missing_input_fields
             .contains(&premise)
             || self.object_prototype_property_absent(property)
@@ -3084,7 +2959,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Absence is stronger than getter-freedom: an inherited data value may
     /// contain callbacks missing from an argument-only instance graph.
-    fn object_prototype_property_absent(&self, property: &str) -> bool {
+    fn object_prototype_property_absent(&mut self, property: &str) -> bool {
         self.observe_native_prefix(
             NativeIntegrityGuard::OrdinaryObjectPrototype,
             Some(property),
@@ -3092,20 +2967,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if Self::standard_object_prototype_property(property) {
             return false;
         }
-        let mut checks = self.state.native_prototype_property_checks.borrow_mut();
-        let check = checks.entry(property.to_owned()).or_insert_with(|| {
-            let (intact, blocking_mutation_count) = self
-                .inputs
-                .index
-                .integrity
-                .object_prototype_property(property);
-            NativePrototypePropertyCheck {
-                property: property.to_owned(),
-                intact,
-                blocking_mutation_count,
-            }
-        });
-        let intact = check.intact;
+        let integrity = &self.inputs.index.integrity;
+        let intact = self
+            .observations
+            .prototype_property_check(property, || {
+                let (intact, blocking_mutation_count) =
+                    integrity.object_prototype_property(property);
+                NativePrototypePropertyCheck {
+                    property: property.to_owned(),
+                    intact,
+                    blocking_mutation_count,
+                }
+            })
+            .intact;
         if intact {
             // Finite mutation keys may depend on Symbol/Object/Array identity,
             // which can itself consume a captured-value census refinement.
@@ -3114,12 +2988,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         intact
     }
 
-    fn record_native_integrity_use(&self, guard: NativeIntegrityGuard) {
+    fn record_native_integrity_use(&mut self, guard: NativeIntegrityGuard) {
         self.record_proof_dependencies(guard, &self.inputs.index.native_integrity_dependencies());
     }
 
     fn record_proof_dependencies(
-        &self,
+        &mut self,
         guard: NativeIntegrityGuard,
         dependencies: &crate::analysis_inputs::ProofDependencies,
     ) {
@@ -3128,7 +3002,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !dependencies.no_accessor_install_callables.is_empty()
             || !dependencies.program_premises.is_empty()
         {
-            self.state.native_integrity_uses.borrow_mut().insert(
+            self.observations.record_native_integrity_use(
                 crate::reports::schema::NativeIntegrityUse {
                     guard,
                     value_input_refs: dependencies.value_inputs.clone(),
@@ -3139,16 +3013,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn consume_proof_dependencies(&self, dependencies: &crate::analysis_inputs::ProofDependencies) {
+    fn consume_proof_dependencies(
+        &mut self,
+        dependencies: &crate::analysis_inputs::ProofDependencies,
+    ) {
         self.queries.assume(dependencies);
-        self.state
-            .proof_dependencies
-            .borrow_mut()
-            .extend(dependencies);
+        self.observations.consume_dependencies(dependencies);
     }
 
     fn record_inference_use(
-        &self,
+        &mut self,
         guard: NativeIntegrityGuard,
         proof: crate::analysis_provenance::InferenceUse,
         dependencies: &ProofDependencies,
@@ -3163,8 +3037,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .filter(|input| &input.evidence.reference == reference)
             {
                 let span = input.call_span;
-                self.state.native_operation_input_uses.borrow_mut().insert(
-                    (span.lo.0, span.hi.0),
+                self.observations.record_native_operation_input_use(
+                    span,
                     crate::reports::schema::NativeOperationInputUse {
                         evidence: input.evidence.clone(),
                         source_location: input.evidence.initializer_location.clone(),
@@ -3173,12 +3047,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        self.state.inference_uses.borrow_mut().insert(proof);
+        self.observations.record_inference_use(proof);
     }
 
     /// Descriptor application targets need the ordinary prototype premise;
     /// private constructors keep their separate property-specific checks.
-    fn ordinary_object_prototype_intact(&self) -> bool {
+    fn ordinary_object_prototype_intact(&mut self) -> bool {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(
                 NativeIntegrityGuard::OrdinaryObjectPrototype,
@@ -3197,12 +3071,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
-        let properties = self.state.surface.prefix_object_properties.get(object)?;
+        let properties = self
+            .state
+            .world
+            .surface
+            .prefix_object_properties
+            .get(object)?;
         self.queries.project_own_property(OwnPropertyQuery {
             source_object: *object,
             source_values: values.clone(),
             prefix_properties: properties.clone(),
-            tainted: !self.state.object_properties_are_settled(object),
+            tainted: !self.state.world.object_properties_are_settled(*object),
             request,
         })
     }
@@ -3217,7 +3096,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
         self.state
-            .descriptor_maps
+            .world
+            .descriptors
             .get(&site)
             .map_or_else(Values::new, |map| map.retained_values.clone())
     }
@@ -3228,7 +3108,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = value else {
                 continue;
             };
-            let Some(accessors) = self.state.surface.applied_accessors.get(object) else {
+            let Some(accessors) = self.state.world.surface.applied_accessors.get(object) else {
                 continue;
             };
             if let Some(property) = property {
@@ -3251,7 +3131,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// intact, or asserted at this exact call. Operand eligibility is checked
     /// separately.
     fn exact_native_call_row(
-        &self,
+        &mut self,
         kind: CallKind,
         callee: &ValueExpr,
         site: CallSite,
@@ -3306,7 +3186,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ))
     }
 
-    fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
+    fn native_member_lookup_is_data(&mut self, callee: &ValueExpr, site: Option<u32>) -> bool {
         if !self.inputs.index.dynamic_scope_owners.is_empty() {
             return false;
         }
@@ -3330,17 +3210,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             NativeIntegrityGuard::NativeCallIdentity,
             &premise.dependencies,
         );
-        self.state
-            .inference_uses
-            .borrow_mut()
-            .insert(premise.inference_use);
+        self.observations
+            .record_inference_use(premise.inference_use);
         true
     }
 
     /// Reuse the exact identity/lookup proof of the canonical outer call.
     /// Neither this lookup nor native identity certifies the invocation's
     /// inputs, timing, purity or throws.
-    fn callee_lookup_is_certified(&self, lookup: &Call) -> bool {
+    fn callee_lookup_is_certified(&mut self, lookup: &Call) -> bool {
         if self.native_member_lookup_is_data(&lookup.callee, None) {
             return true;
         }
@@ -3388,10 +3266,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             NativeIntegrityGuard::NativeCallIdentity,
             &premise.dependencies,
         );
-        self.state
-            .inference_uses
-            .borrow_mut()
-            .insert(premise.inference_use);
+        self.observations
+            .record_inference_use(premise.inference_use);
         true
     }
 
@@ -3531,8 +3407,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if let NativeIdentitySource::AuthorInput { evidence } = source {
             let source_span = site.source_span();
-            self.state.native_operation_input_uses.borrow_mut().insert(
-                (source_span.lo.0, source_span.hi.0),
+            self.observations.record_native_operation_input_use(
+                source_span,
                 crate::reports::schema::NativeOperationInputUse {
                     evidence: *evidence,
                     source_location: None,
@@ -3541,16 +3417,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         if let Some(proof) = &own_property_projection {
-            self.state
-                .inference_uses
-                .borrow_mut()
-                .insert(proof.inference_use());
+            self.observations
+                .record_inference_use(proof.inference_use());
         }
         let operation_coverage = if kind == CallKind::New
             && matches!(row.op, IntrinsicOp::Map | IntrinsicOp::WeakMap)
             && expressions.is_empty()
         {
-            let mut dependencies = self.state.proof_dependencies.borrow().clone();
+            let mut dependencies = self.observations.dependencies().clone();
             dependencies.extend(&self.queries.dependencies());
             super::allocation_transfer::keyed_collection_new(row, site, dependencies)
                 .map(|result| result.effects)
@@ -3563,7 +3437,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             args,
             own_property_projection.as_ref(),
             application,
-            self.state.prefix_revision,
+            self.state.world.revision.prefix,
         )?;
         Some(NativeCallResolution {
             row,
@@ -3646,7 +3520,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     pub(super) fn transfer_native_iterable(
-        &self,
+        &mut self,
         operation: NativeIterableUse,
         operand: &Values,
     ) -> Option<NativeIterableReceipt> {
@@ -3666,8 +3540,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .imported_primitive_array_spread_inputs
                 .insert(input.evidence.reference.clone());
             self.record_proof_dependencies(NativeIntegrityGuard::ArrayIntrinsics, &dependencies);
-            self.state.inference_uses.borrow_mut().insert(
-                crate::analysis_provenance::InferenceUse {
+            self.observations
+                .record_inference_use(crate::analysis_provenance::InferenceUse {
                     conclusion: InferenceRule::ImportedPrimitiveArraySpread,
                     derivation_rules: BTreeSet::from([
                         InferenceRule::ImportedPrimitiveArraySpread,
@@ -3681,19 +3555,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .evidence
                         .reference
                         .clone()]),
-                },
-            );
-            let mut input_uses = self
-                .state
-                .imported_primitive_array_spread_input_uses
-                .borrow_mut();
-            let input_use = crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
-                evidence: input.evidence.clone(),
-                operand_index: source_index,
-            };
-            if !input_uses.contains(&input_use) {
-                input_uses.push(input_use);
-            }
+                });
+            self.observations
+                .record_imported_primitive_array_spread_input_use(
+                    crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
+                        evidence: input.evidence.clone(),
+                        operand_index: source_index,
+                    },
+                );
             let yields = source
                 .primitive_slots
                 .iter()
@@ -3712,10 +3581,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if !self.state.object_accessors_are_settled(object)
-            || self.state.unknown_array_contents.contains(object)
-            || self.state.surface.applied_accessors.contains_key(object)
-            || self.state.tainted_native_sets.contains(object)
+        if !self
+            .state
+            .world
+            .surface
+            .object_accessors_are_settled(*object)
+            || self.state.world.arrays.unknown_contents.contains(object)
+            || self
+                .state
+                .world
+                .surface
+                .applied_accessors
+                .contains_key(object)
+            || self.state.world.native.tainted_sets.contains(object)
         {
             return None;
         }
@@ -3749,7 +3627,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if let Some(slots) = self.settled_dense_array_slots(*object) {
                     NativeIterableYields::ExactSlots(slots)
                 } else {
-                    let premise = self.state.primitive_arrays.get(object)?;
+                    let premise = self.state.world.arrays.primitive.get(object)?;
                     dependencies.extend(premise);
                     NativeIterableYields::PrimitiveOnly
                 }
@@ -3785,14 +3663,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     })) { return None; }
                     NativeIterableYields::ExactSlots(slots)
                 } else {
-                    let array_dependencies = self.state.primitive_arrays.get(object)?;
+                    let array_dependencies = self.state.world.arrays.primitive.get(object)?;
                     dependencies.extend(array_dependencies);
                     NativeIterableYields::PrimitiveOnly
                 };
                 if let Some(evidence) = proof.author_input_for_constructor(span).cloned() {
                     self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, premise);
-                    self.state.native_operation_input_uses.borrow_mut().insert(
-                        (span.lo.0, span.hi.0),
+                    self.observations.record_native_operation_input_use(
+                        span,
                         crate::reports::schema::NativeOperationInputUse {
                             evidence,
                             source_location: None,
@@ -3893,8 +3771,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     dependencies
                         .native_operation_inputs
                         .insert(evidence.reference.clone());
-                    self.state.native_operation_input_uses.borrow_mut().insert(
-                        (call.span.lo.0, call.span.hi.0),
+                    self.observations.record_native_operation_input_use(
+                        call.span,
                         crate::reports::schema::NativeOperationInputUse {
                             evidence: evidence.clone(),
                             source_location: None,
@@ -4039,7 +3917,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && row.returns == expected_return
             && row.throws == Throws::Never
         {
-            let mut dependencies = self.state.proof_dependencies.borrow().clone();
+            let mut dependencies = self.observations.dependencies().clone();
             dependencies.extend(&self.queries.dependencies());
             self.native_initializer_transfer =
                 Some(NativeConstructorTransfer::applied(candidate, dependencies));
@@ -4125,17 +4003,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// value, and their ordinary member-read fallback must remain conservative.
     /// A11 also excludes an inherited user getter unless a visible mutation
     /// has invalidated the ordinary Object.prototype assumption.
-    fn absent_plain_data_property(&self, object: u32, property: &str) -> bool {
-        if (self.state.private_constructor_result_owners.is_empty()
-            && !self.state.checked_constructor_inputs.contains(&object))
+    fn absent_plain_data_property(&mut self, object: u32, property: &str) -> bool {
+        if (self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .is_empty()
+            && !self
+                .state
+                .world
+                .classes
+                .checked_constructor_inputs
+                .contains(&object))
             || Self::standard_object_prototype_property(property)
             || !self.inputs.index.plain_data_objects.contains(&object)
-            || !self.state.object_properties_are_settled(&object)
+            || !self.state.world.object_properties_are_settled(object)
             || !self.input_field_prototype_absent(object, property)
         {
             return false;
         }
         self.state
+            .world
             .surface
             .prefix_object_properties
             .get(&object)
@@ -4172,6 +4061,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
         if self
             .state
+            .world
             .surface
             .applied_accessors
             .get(&object)
@@ -4199,9 +4089,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // An ambiguous source literal has neither, so its pooled payload does
         // not establish the descriptor selected by a later property lookup.
         self.inputs.index.array_elements.contains_key(&object)
-            || self.state.surface.ordinary_spread_copies.contains(&object)
-            || self.state.surface.descriptor_copy_results.contains(&object)
-            || self.state.parameter_initialized_objects.contains(&object)
+            || self
+                .state
+                .world
+                .surface
+                .ordinary_spread_copies
+                .contains(&object)
+            || self
+                .state
+                .world
+                .surface
+                .descriptor_copy_results
+                .contains(&object)
+            || self
+                .state
+                .world
+                .publication
+                .parameter_initialized_objects
+                .contains(&object)
     }
 
     /// Capabilities retained by the selected member, not its Get result.
@@ -4211,8 +4116,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for receiver in receivers {
             match receiver {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    if let Some(properties) =
-                        self.state.surface.prefix_object_properties.get(object)
+                    if let Some(properties) = self
+                        .state
+                        .world
+                        .surface
+                        .prefix_object_properties
+                        .get(object)
                     {
                         if let Some(property) = property {
                             selected.extend(
@@ -4256,7 +4165,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn known_local_instance_member(&self, key: u32, property: Option<&str>) -> bool {
-        !self.state.tainted_classes.contains(&key)
+        !self.state.world.classes.tainted.contains(&key)
             && property.is_some_and(|property| {
                 self.inputs
                     .index
@@ -4287,27 +4196,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if !self.state.object_properties_are_settled(object)
-            || self.state.surface.applied_accessors.contains_key(object)
+        if !self.state.world.object_properties_are_settled(*object)
+            || self
+                .state
+                .world
+                .surface
+                .applied_accessors
+                .contains_key(object)
             || (!self.inputs.index.plain_data_objects.contains(object)
-                && !self.state.surface.ordinary_spread_copies.contains(object))
+                && !self
+                    .state
+                    .world
+                    .surface
+                    .ordinary_spread_copies
+                    .contains(object))
         {
             return None;
         }
-        let properties = self.state.surface.prefix_object_properties.get(object)?;
+        let properties = self
+            .state
+            .world
+            .surface
+            .prefix_object_properties
+            .get(object)?;
         if properties.contains_key(&None) {
             return None;
         }
         Some(properties.clone())
     }
 
-    fn array_intrinsics_intact(&self) -> bool {
+    fn array_intrinsics_intact(&mut self) -> bool {
         self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
     }
 
-    fn array_slots_intact(&self, slots: &[IntrinsicSlot]) -> bool {
+    fn array_slots_intact(&mut self, slots: &[IntrinsicSlot]) -> bool {
         let array = ("Array".into(), SyntaxContext::empty());
-        !self.state.array_intrinsic_mutated
+        !self.state.world.arrays.intrinsic_mutated
             && !self.inputs.flow.is_declared(&array)
             && !self.inputs.shadowed.contains("Array")
             && self.inputs.index.dynamic_scope_owners.is_empty()
@@ -4316,10 +4240,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn settled_dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
         self.state
-            .object_properties_are_settled(&object)
+            .world
+            .object_properties_are_settled(object)
             .then(|| {
                 self.state
-                    .dense_arrays
+                    .world
+                    .arrays
+                    .dense
                     .get(&object)
                     .map(|array| array.slots.clone())
             })
@@ -4331,9 +4258,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// protocol premise (Set's typed certificate or a spread's exact Array
     /// slots) at the same point the previous dense-source check consulted it.
     fn dense_array_iteration_transfer(
-        &self,
+        &mut self,
         values: &Values,
-        protocol_intact: impl FnOnce() -> bool,
+        protocol_intact: impl FnOnce(&mut Self) -> bool,
     ) -> DenseArrayIterationTransfer {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             values.iter().collect::<Vec<_>>().as_slice()
@@ -4343,7 +4270,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Exact singleton matching rejects an Unavailable throw alternative
         // before consulting protocol slots, as the previous dense-source
         // guard did.
-        if !protocol_intact() {
+        if !protocol_intact(self) {
             return DenseArrayIterationTransfer::Refused;
         }
         match self.settled_dense_array_slots(*object) {
@@ -4355,14 +4282,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn dense_array_push_receiver(&self, receiver: &Values) -> Option<u32> {
+    fn dense_array_push_receiver(&mut self, receiver: &Values) -> Option<u32> {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             receiver.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
         };
-        (self.state.dense_arrays.contains_key(object)
-            && self.state.object_accessors_are_settled(object)
+        (self.state.world.arrays.dense.contains_key(object)
+            && self
+                .state
+                .world
+                .surface
+                .object_accessors_are_settled(*object)
             && self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS))
         .then_some(*object)
     }
@@ -4398,8 +4329,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // contents after this real mutation. No descriptor replacement or
         // getter installation occurred. Refuse exact array snapshots without
         // claiming a fresh value or modeling how often this site executed.
-        if self.state.unknown_array_contents.insert(object) {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        if self
+            .state
+            .world_mut()
+            .arrays
+            .unknown_contents
+            .insert(object)
+        {
+            self.state.world_mut().revision.bump_prefix();
         }
         self.invalidate_writable_object(object);
         true
@@ -4410,7 +4347,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn literal_heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
-        self.descriptor_heap().into_literal()
+        self.state.world_mut().literal_heap()
     }
 
     fn evaluate_array(&mut self, object: u32, env: &Context, captures: &Context) -> Values {
@@ -4481,6 +4418,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             };
         }
         self.state
+            .world_mut()
             .surface
             .prefix_object_properties
             .entry(object)
@@ -4494,15 +4432,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // One source origin may represent several allocations. Drop exact
             // slots but retain the reachability properties; qualitative
             // contents make ordinary property projection refuse this origin.
-            self.state.dense_arrays.remove(&object);
+            self.state.world_mut().arrays.dense.remove(&object);
             self.state
-                .primitive_arrays
+                .world_mut()
+                .arrays
+                .primitive
                 .insert(object, iterable_dependencies);
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         } else {
-            self.state.primitive_arrays.remove(&object);
+            self.state.world_mut().arrays.primitive.remove(&object);
             self.literal_heap().invalidate_dense_array(object);
-            self.state.surface.tainted_objects.insert(object);
+            self.state
+                .world_mut()
+                .surface
+                .tainted_objects
+                .insert(object);
         }
         let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
         if may_throw {
@@ -4527,8 +4471,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         proof.result?;
         let values = self.evaluate(&proof.source, env, captures);
         let DenseArrayIterationTransfer::Yielded { source, slots } = self
-            .dense_array_iteration_transfer(&values, || {
-                self.array_slots_intact(proof.row.requires)
+            .dense_array_iteration_transfer(&values, |executor| {
+                executor.array_slots_intact(proof.row.requires)
             })
         else {
             return None;
@@ -4542,11 +4486,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 || values.iter().any(|value| match value {
                     AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                         (!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.surface.ordinary_spread_copies.contains(object))
-                            || !self.state.object_properties_are_settled(object)
+                            && !self
+                                .state
+                                .world
+                                .surface
+                                .ordinary_spread_copies
+                                .contains(object))
+                            || !self.state.world.object_properties_are_settled(*object)
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
+                    | AbstractValue::Closure(key, _) => {
+                        self.state.world.native.tainted_functions.contains(key)
+                    }
                     AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
                         self.class_may_run_on_borrowed_receiver(*key)
                     }
@@ -4596,18 +4547,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             // Not yet transferred: what the accumulator can hold is unknown,
             // but every callback it can reach stays retained.
-            IterationResult::Accumulated => match self.state.accumulated_values.get(&result) {
-                Some(values) => values.clone(),
-                None => {
-                    let mut reachable: Values = dense.slots.iter().flatten().cloned().collect();
-                    reachable.insert(AbstractValue::Value(Value::Alloc(Kind::Object, result)));
-                    let callbacks = self.callback_values(&reachable);
-                    Values::from([
-                        self.deferred_callbacks(callbacks),
-                        AbstractValue::Value(Value::Top),
-                    ])
+            IterationResult::Accumulated => {
+                match self.state.world.arrays.accumulated_values.get(&result) {
+                    Some(values) => values.clone(),
+                    None => {
+                        let mut reachable: Values = dense.slots.iter().flatten().cloned().collect();
+                        reachable.insert(AbstractValue::Value(Value::Alloc(Kind::Object, result)));
+                        let callbacks = self.callback_values(&reachable);
+                        Values::from([
+                            self.deferred_callbacks(callbacks),
+                            AbstractValue::Value(Value::Top),
+                        ])
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -4654,10 +4607,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::Value(Value::Alloc(Kind::Function, _))
             | AbstractValue::Closure(_, _) => true,
             AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                self.state.object_properties_are_settled(object)
+                self.state.world.object_properties_are_settled(*object)
                     && (self.inputs.index.plain_data_objects.contains(object)
-                        || self.state.surface.ordinary_spread_copies.contains(object)
-                        || self.state.dense_arrays.contains_key(object))
+                        || self
+                            .state
+                            .world
+                            .surface
+                            .ordinary_spread_copies
+                            .contains(object)
+                        || self.state.world.arrays.dense.contains_key(object))
             }
             _ => false,
         }
@@ -4672,7 +4630,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .iter()
             .filter_map(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    self.state.dense_arrays.get(object)
+                    self.state.world.arrays.dense.get(object)
                 }
                 _ => None,
             })
@@ -4734,14 +4692,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let callback_executed_completely = nested.body_invoked && nested.complete;
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
-            let current_source = self.dense_array_iteration_transfer(&current_source, || {
-                self.array_slots_intact(row.requires)
+            let current_source = self.dense_array_iteration_transfer(&current_source, |executor| {
+                executor.array_slots_intact(row.requires)
             });
             let valid = !unsupported && matches!(current_source,
                 DenseArrayIterationTransfer::Yielded { source: current_object, slots }
                     if current_object == source && slots == dense.slots)
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.world.object_properties_are_settled(*object)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.world.native.tainted_functions.contains(key)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed) if self.class_may_run_on_borrowed_receiver(*key)));
             let valid = valid
                 && (row.result != IterationResult::Mapped
@@ -4768,8 +4726,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
-                self.state.surface.tainted_objects.insert(result);
                 self.state
+                    .world_mut()
+                    .surface
+                    .tainted_objects
+                    .insert(result);
+                self.state
+                    .world_mut()
                     .surface
                     .prefix_object_properties
                     .entry(result)
@@ -4799,6 +4762,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 IterationResult::Mapped => {
                     let contents = self
                         .state
+                        .world_mut()
                         .surface
                         .prefix_object_properties
                         .entry(result)
@@ -4808,7 +4772,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     let before = contents.len();
                     contents.extend(returned.iter().cloned());
                     if contents.len() != before {
-                        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        self.state.world_mut().revision.bump_prefix();
                     }
                     if returned
                         .iter()
@@ -4824,6 +4788,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         // reachable from the result's unknown contents.
                         let contents = self
                             .state
+                            .world_mut()
                             .surface
                             .prefix_object_properties
                             .entry(result)
@@ -4833,16 +4798,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         let before = contents.len();
                         contents.extend(original_callbacks.iter().cloned());
                         if contents.len() != before {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                            self.state.world_mut().revision.bump_prefix();
                         }
                         // The same allocation site may have a prior exact result.
                         // Revoke it before the next callback can read that site.
                         self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed =
-                            self.state.primitive_arrays.remove(&result).is_some();
-                        let newly_tainted = self.state.surface.tainted_objects.insert(result);
+                        let primitive_removed = self
+                            .state
+                            .world_mut()
+                            .arrays
+                            .primitive
+                            .remove(&result)
+                            .is_some();
+                        let newly_tainted = self
+                            .state
+                            .world_mut()
+                            .surface
+                            .tainted_objects
+                            .insert(result);
                         if primitive_removed || newly_tainted {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                            self.state.world_mut().revision.bump_prefix();
                         }
                     }
                 }
@@ -4864,10 +4839,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             for value in &returned {
                                 match value {
                                     AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                                        if self.state.dense_arrays.contains_key(object) =>
+                                        if self.state.world.arrays.dense.contains_key(object) =>
                                     {
                                         contents.extend(
-                                            self.state.dense_arrays[object]
+                                            self.state.world.arrays.dense[object]
                                                 .slots
                                                 .iter()
                                                 .flatten()
@@ -4880,6 +4855,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 }
                             }
                             self.state
+                                .world_mut()
                                 .surface
                                 .prefix_object_properties
                                 .entry(result)
@@ -4903,11 +4879,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
                         self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed =
-                            self.state.primitive_arrays.remove(&result).is_some();
-                        let newly_tainted = self.state.surface.tainted_objects.insert(result);
+                        let primitive_removed = self
+                            .state
+                            .world_mut()
+                            .arrays
+                            .primitive
+                            .remove(&result)
+                            .is_some();
+                        let newly_tainted = self
+                            .state
+                            .world_mut()
+                            .surface
+                            .tainted_objects
+                            .insert(result);
                         if primitive_removed || newly_tainted {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                            self.state.world_mut().revision.bump_prefix();
                         }
                     }
                 }
@@ -4928,11 +4914,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Repeated evaluations of one `reduce` call join their accumulators.
     fn join_accumulated_value(&mut self, result: u32, values: Values) {
-        let current = self.state.accumulated_values.entry(result).or_default();
+        let current = self
+            .state
+            .world_mut()
+            .arrays
+            .accumulated_values
+            .entry(result)
+            .or_default();
         let before = current.len();
         current.extend(values);
         if current.len() != before {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -5011,7 +5003,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if !self.state.object_properties_are_settled(array) {
+        if !self.state.world.object_properties_are_settled(*array) {
             return None;
         }
         let count = *self.inputs.index.dense_array_literals.get(array)?;
@@ -5034,12 +5026,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .index
                         .primitive_data_properties
                         .contains(&(entry, proof.key.clone()))
-                    || !self.state.object_properties_are_settled(&entry)
+                    || !self.state.world.object_properties_are_settled(entry)
                 {
                     return None;
                 }
                 let key_values = self
                     .state
+                    .world
                     .surface
                     .prefix_object_properties
                     .get(&entry)
@@ -5052,6 +5045,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let actual_entries = self
             .state
+            .world
             .surface
             .prefix_object_properties
             .get(array)
@@ -5091,10 +5085,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !self.inputs.index.dynamic_scope_owners.is_empty()
             || !self
                 .state
+                .world
+                .module
                 .initialized_bindings
                 .contains(&application.helper)
             || !self
                 .state
+                .world
+                .module
                 .initialized_bindings
                 .contains(&application.target)
         {
@@ -5198,7 +5196,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) {
         let (reads, rebinds) = self
             .inputs
-            .synchronous_effects(owner, self.state.reachability.incomplete);
+            .synchronous_effects(owner, self.state.world.reachability.incomplete);
         self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
     }
 
@@ -5241,7 +5239,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let uninitialized: Vec<&Id> = promoted_reads
             .iter()
             .copied()
-            .filter(|id| !self.state.initialized_bindings.contains(*id))
+            .filter(|id| !self.state.world.module.initialized_bindings.contains(*id))
             .collect();
         let effects = &mut outcome.effects;
         let assumed = &mut effects.fallback_only;
@@ -5292,7 +5290,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let observed = self.state.assumption.is_none();
         promoted_reads.iter().all(|&id| {
             effects.reads.contains(&(id.clone(), effect_owner))
-                && (self.state.initialized_bindings.contains(id)
+                && (self.state.world.module.initialized_bindings.contains(id)
                     || effects.uninitialized_reads.contains(id))
                 && !(observed
                     && (assumed.reads.contains_key(id)
@@ -5323,13 +5321,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     //   non-literal operand, and a coverage producer replacing
     //   `FrozenNamespaceProof.initialization_dependencies` for the eight
     //   `native_browser_reentry_test`/`local_array_push_order_test` cases.
-    fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
+    fn private_frozen_namespace(&mut self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
             || !self.inputs.index.const_call_owners.contains(&fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
-            || self.state.reachability.incomplete
+            || self.state.world.reachability.incomplete
             || !self.inputs.index.dynamic_scope_owners.is_empty()
             || self.inputs.index.opaque_top.contains(&fact.ordinal)
             || !self.inputs.index.top_property_writes[fact.ordinal.0].is_empty()
@@ -5438,10 +5436,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 match value {
                     ValueExpr::Alloc(Kind::Function, _) => {}
                     ValueExpr::Binding(id) => {
-                        if !self.state.prefix_values.get(id).is_some_and(|values| {
-                            !values.is_empty()
-                                && !values.contains(&AbstractValue::Value(Value::Unavailable))
-                        }) {
+                        if !self
+                            .state
+                            .world
+                            .module
+                            .prefix_values
+                            .get(id)
+                            .is_some_and(|values| {
+                                !values.is_empty()
+                                    && !values.contains(&AbstractValue::Value(Value::Unavailable))
+                            })
+                        {
                             return None;
                         }
                         stored_bindings.insert(id.clone());
@@ -5505,7 +5510,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn fact_roots(
-        &self,
+        &mut self,
         fact: &StatementFacts,
         metadata_target: Option<SourceUnitOrdinal>,
         private_constructor_result_owners: &BTreeSet<SourceUnitOrdinal>,
@@ -5518,6 +5523,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Its ordinary eager read and all graph ordering edges remain intact.
         if self
             .state
+            .world
+            .publication
             .accepted_deferred_global_writes
             .contains(&fact.ordinal)
         {
@@ -5551,11 +5558,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Reading an initialized ordinary class as heritage does not invoke
         // its constructor or methods. This proof covers only that operation;
         // eager class work and publication retain their ordinary roots.
-        let heritage_read = self.noninvoking_class_heritage_read(fact);
-        if let Some(proof) = &heritage_read {
-            self.consume_proof_dependencies(&proof.dependencies);
+        let (inert_heritage, heritage_dependencies) =
+            match self.noninvoking_class_heritage_read(fact) {
+                Some(proof) => (Some(proof.binding.clone()), Some(proof.dependencies)),
+                None => (None, None),
+            };
+        if let Some(dependencies) = &heritage_dependencies {
+            self.consume_proof_dependencies(dependencies);
         }
-        let inert_heritage = heritage_read.map(|proof| proof.binding);
         roots.extend(
             self.inputs
                 .source_unit_read_closure
@@ -5564,7 +5574,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .eager
                         .iter()
                         .filter(|id| {
-                            Some(*id) != inert_heritage
+                            Some(*id) != inert_heritage.as_ref()
                                 && !frozen_namespace
                                     .is_some_and(|proof| proof.stored_bindings.contains(*id))
                         })
@@ -5653,7 +5663,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
-            || self.state.reachability.incomplete
+            || self.state.world.reachability.incomplete
             || !self.inputs.index.dynamic_scope_owners.is_empty()
             || self.inputs.index.opaque_top.contains(&fact.ordinal)
             || !self.inputs.index.top_property_writes[fact.ordinal.0].is_empty()
@@ -5811,7 +5821,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// and only supplies premises at an exact, syntactically fresh call site.
     /// `Err` names the refused argument shape of a direct annotated call.
     fn annotated_record_factory(
-        &self,
+        &mut self,
         fact: &StatementFacts,
     ) -> Option<Result<(Id, Span), LocalRecordFactoryRejection>> {
         let [(_, ValueExpr::Call(callee, _, site))] =
@@ -5868,7 +5878,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The first record property the checked constructor proof refused, for
     /// an annotated call whose argument passed the syntax check.
     fn record_factory_input_rejection(
-        &self,
+        &mut self,
         fact: &StatementFacts,
     ) -> Option<(RecordFactoryRejectionReason, Option<String>)> {
         let [(_, ValueExpr::Call(_, args, _))] =
@@ -5888,7 +5898,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The failed check of the factory's returned top-level allocation, with
     /// its class identity when the source resolves one.
     fn returned_class_construction_rejection(
-        &self,
+        &mut self,
         factory: &Id,
     ) -> Option<(Option<u32>, ConstructionRejection)> {
         let key = self.inputs.index.hoisted_bindings.get(factory)?;
@@ -5916,7 +5926,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn unclosed_constructor_input(
-        &self,
+        &mut self,
         value: &ValueExpr,
     ) -> Option<RecordFactoryRejectionReason> {
         if self.closed_constructor_input(value) {
@@ -5938,10 +5948,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// the wrapper and constructor. Exported results require a closure that
     /// rules out synchronous importer reentry during provider initialization.
     fn closed_local_constructor_factory_result(
-        &self,
+        &mut self,
         fact: &StatementFacts,
     ) -> Result<CheckedLocalConstructorFactory, RecordFactoryRejectionReason> {
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             return Err(RecordFactoryRejectionReason::IncompleteExecution);
         }
         if self.inputs.exported_owners.contains(&fact.ordinal) {
@@ -5999,6 +6009,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if self
             .state
+            .world
+            .publication
             .global_escaped_callbacks
             .contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
         {
@@ -6013,10 +6025,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return Err(RecordFactoryRejectionReason::FactoryFlowIdentity);
         }
-        if !self.state.prefix_values.get(factory).is_some_and(|values| {
-            values.len() == 1
-                && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
-        }) {
+        if !self
+            .state
+            .world
+            .module
+            .prefix_values
+            .get(factory)
+            .is_some_and(|values| {
+                values.len() == 1
+                    && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
+            })
+        {
             return Err(RecordFactoryRejectionReason::FactoryPrefixIdentity);
         }
         if call.kind != CallKind::Call || call.has_spread || CallSite::from(call.span) != *site {
@@ -6106,7 +6125,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
-    fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
+    fn closed_constructor_input(&mut self, value: &ValueExpr) -> bool {
         match value {
             ValueExpr::ObjectLiteral(key, properties) => {
                 if let Some(elements) = self.inputs.index.array_elements.get(key) {
@@ -6150,7 +6169,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// A proven primitive: an initialized literal `const` or a closed enum's
     /// own primitive member.
-    fn closed_primitive_input(&self, value: &ValueExpr) -> bool {
+    fn closed_primitive_input(&mut self, value: &ValueExpr) -> bool {
         match value {
             ValueExpr::Binding(binding) => self.closed_primitive_binding(binding),
             ValueExpr::Member(..) => self.closed_enum_member_read(value),
@@ -6163,10 +6182,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .index
             .direct_primitive_const_bindings
             .contains(binding)
-            && self.state.initialized_bindings.contains(binding)
-            && self.state.prefix_values.get(binding).is_some_and(|values| {
-                !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
-            })
+            && self
+                .state
+                .world
+                .module
+                .initialized_bindings
+                .contains(binding)
+            && self
+                .state
+                .world
+                .module
+                .prefix_values
+                .get(binding)
+                .is_some_and(|values| {
+                    !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
+                })
     }
 
     /// An initialized top-level binding whose every whole-chunk value is one
@@ -6175,7 +6205,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn closed_function_binding(&self, binding: &Id) -> bool {
         if !self.inputs.top_bindings.contains(binding)
             || !self.inputs.index.dynamic_scope_owners.is_empty()
-            || !self.state.initialized_bindings.contains(binding)
+            || !self
+                .state
+                .world
+                .module
+                .initialized_bindings
+                .contains(binding)
         {
             return false;
         }
@@ -6188,13 +6223,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return false;
         };
-        self.state.prefix_values.get(binding).is_some_and(|values| {
-            values.len() == 1
-                && values.iter().all(|value| {
-                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, function))
+        self.state
+            .world
+            .module
+            .prefix_values
+            .get(binding)
+            .is_some_and(|values| {
+                values.len() == 1
+                    && values.iter().all(|value| {
+                        matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, function))
                         | AbstractValue::Closure(function, _) if *function == key)
-                })
-        })
+                    })
+            })
     }
 
     /// An initialized top-level binding to one untainted literal array or
@@ -6204,7 +6244,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn closed_primitive_data_binding(&self, binding: &Id) -> bool {
         if !self.inputs.top_bindings.contains(binding)
             || !self.inputs.index.dynamic_scope_owners.is_empty()
-            || !self.state.initialized_bindings.contains(binding)
+            || !self
+                .state
+                .world
+                .module
+                .initialized_bindings
+                .contains(binding)
         {
             return false;
         }
@@ -6223,13 +6268,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.inputs.index.plain_data_objects.contains(&object)
         };
         literal
-            && self.state.object_properties_are_settled(&object)
-            && self.state.prefix_values.get(binding).is_some_and(|values| {
-                values.len() == 1
-                    && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Object, object)))
-            })
+            && self.state.world.object_properties_are_settled(object)
             && self
                 .state
+                .world
+                .module
+                .prefix_values
+                .get(binding)
+                .is_some_and(|values| {
+                    values.len() == 1
+                        && values
+                            .contains(&AbstractValue::Value(Value::Alloc(Kind::Object, object)))
+                })
+            && self
+                .state
+                .world
                 .surface
                 .prefix_object_properties
                 .get(&object)
@@ -6239,29 +6292,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .flatten()
                         .all(AbstractValue::is_primitive)
                 })
-            && self.state.dense_arrays.get(&object).is_none_or(|dense| {
-                dense
-                    .slots
-                    .iter()
-                    .flatten()
-                    .all(AbstractValue::is_primitive)
-            })
+            && self
+                .state
+                .world
+                .arrays
+                .dense
+                .get(&object)
+                .is_none_or(|dense| {
+                    dense
+                        .slots
+                        .iter()
+                        .flatten()
+                        .all(AbstractValue::is_primitive)
+                })
     }
 
     fn stable_local_class_key(&self, binding: &Id) -> Option<u32> {
-        let values = self.state.prefix_values.get(binding)?;
+        let values = self.state.world.module.prefix_values.get(binding)?;
         let [AbstractValue::Value(Value::Alloc(Kind::Class, key))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
         };
-        (self.state.initialized_bindings.contains(binding)
+        (self
+            .state
+            .world
+            .module
+            .initialized_bindings
+            .contains(binding)
             && self.inputs.index.class_bindings.get(key) == Some(binding))
         .then_some(*key)
     }
 
     fn checked_constructor_return(
-        &self,
+        &mut self,
         value: &ValueExpr,
         params: &BTreeMap<Id, &ValueExpr>,
         nested: bool,
@@ -6283,6 +6347,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if nested && !constructor.inert_allocation {
             return false;
         }
+        let property_reads = constructor.property_reads.clone();
         class_reads.insert(class.clone());
         *allocations.entry((key, args.len())).or_insert(0) += 1;
         for arg in args.iter() {
@@ -6305,7 +6370,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 _ => return false,
             }
         }
-        for (index, property) in &constructor.property_reads {
+        for (index, property) in &property_reads {
             let Some(arg) = args.get(*index) else {
                 return false;
             };
@@ -6339,7 +6404,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> Option<NonInvokingClassHeritageRead<'a>> {
         if !matches!(fact.kind, StatementKind::ClassDecl)
             || self.inputs.exported_owners.contains(&fact.ordinal)
-            || self.state.reachability.incomplete
+            || self.state.world.reachability.incomplete
         {
             return None;
         }
@@ -6360,17 +6425,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .lexical_heritage
             .as_ref()?
             .binding();
-        let values = self.state.prefix_values.get(base)?;
+        let values = self.state.world.module.prefix_values.get(base)?;
         let Some(AbstractValue::Value(Value::Alloc(Kind::Class, base_key))) = values.first() else {
             return None;
         };
         let base_owner = *self.inputs.index.class_owners.get(base_key)?;
-        if !self.state.initialized_bindings.contains(base)
+        if !self.state.world.module.initialized_bindings.contains(base)
             || !fact.reads.eager.contains(base)
             || self.inputs.index.class_bindings.get(base_key) != Some(base)
             || base_owner.0 >= fact.ordinal.0
-            || self.state.tainted_classes.contains(base_key)
-            || self.state.escaped_class_capabilities.contains(base_key)
+            || self.state.world.classes.tainted.contains(base_key)
+            || self
+                .state
+                .world
+                .classes
+                .escaped_capabilities
+                .contains(base_key)
             || values.len() != 1
         {
             return None;
@@ -6389,26 +6459,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         roots: impl IntoIterator<Item = SourceUnitOrdinal>,
     ) -> bool {
-        let before = self.state.reachability.owners.len();
+        let before = self.state.world.reachability.owners.len();
         // A reachable callback can read only its synchronous prefix while the
         // chunk is initializing. In particular, a binding used after a
         // definite await cannot make the body of its future value executable
         // during an opaque call at this prefix.
-        let state = &mut *self.state;
+        let world = self.state.world_mut();
         let reached = self.inputs.extend_available_source_units(
             roots,
-            &state.initialized_bindings,
-            state.reachability.incomplete,
-            &mut state.reachability.expanded,
-            &mut state.reachability.deferred,
+            &world.module.initialized_bindings,
+            world.reachability.incomplete,
+            &mut world.reachability.expanded,
+            &mut world.reachability.deferred,
         );
         self.state
+            .world_mut()
             .reachability
             .owners
             .extend(reached.iter().copied());
-        let changed = self.state.reachability.owners.len() != before;
+        let changed = self.state.world.reachability.owners.len() != before;
         if changed {
-            self.state.reachability.revision = self.state.reachability.revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_reachability();
         }
         if reached
             .iter()
@@ -6421,9 +6492,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn mark_reachability_incomplete(&mut self) {
         self.widen_native_effects();
-        if !self.state.reachability.incomplete {
-            self.state.reachability.incomplete = true;
-            self.state.reachability.revision = self.state.reachability.revision.wrapping_add(1);
+        if !self.state.world.reachability.incomplete {
+            self.state.world_mut().reachability.incomplete = true;
+            self.state.world_mut().revision.bump_reachability();
         }
         // Incomplete reachability always falls back to the whole chunk.
         self.state.prior_reachability_roots = None;
@@ -6435,12 +6506,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // module. Builtin iteration without such reentry remains precise.
         if self.inputs.export_reentry_enabled {
             let mut exported = if self.inputs.reentry_default {
-                self.state.exported_runtime_values.clone()
+                self.state.world.publication.exported_runtime_values.clone()
             } else {
                 Values::new()
             };
             exported.extend(self.inputs.reentry_bindings.iter().flat_map(|binding| {
                 self.state
+                    .world
+                    .module
                     .prefix_values
                     .get(binding)
                     .into_iter()
@@ -6450,8 +6523,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.expose_class_capabilities(&exported);
             self.taint_objects(&exported);
         }
-        let mut changed = !self.state.reachability.unknown_call_seen;
-        self.state.reachability.unknown_call_seen = true;
+        let mut changed = !self.state.world.reachability.unknown_call_seen;
+        self.state.world_mut().reachability.unknown_call_seen = true;
         let roots = self
             .state
             .prior_reachability_roots
@@ -6461,7 +6534,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .chain(self.roots_for_owner(owner));
         changed |= self.extend_reachable_owners(roots);
         if changed {
-            self.state.reachability.revision = self.state.reachability.revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_reachability();
         }
     }
 
@@ -6475,13 +6548,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn record_executed_owner(&mut self, owner: SourceUnitOrdinal) {
         if self
             .state
+            .world
+            .classes
             .private_constructor_result_owners
             .contains(&owner)
         {
             return;
         }
         self.state.statement_executed_owners.insert(owner);
-        if self.state.reachability.unknown_call_seen {
+        if self.state.world.reachability.unknown_call_seen {
             self.extend_reachable_owners([owner]);
         } else if let Some(roots) = &mut self.state.prior_reachability_roots {
             roots.insert(owner);
@@ -6498,7 +6573,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         let unknown_call = outcome.unknown_call
-            || self.state.reachability.unknown_call_seen
+            || self.state.world.reachability.unknown_call_seen
             || self.state.fallback_outcome.unknown_call;
         if self.inputs.index.setter_owners.is_empty() && !unknown_call {
             return;
@@ -6509,6 +6584,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             |candidate| {
                 !self
                     .state
+                    .world
+                    .publication
                     .accepted_deferred_global_writes
                     .contains(candidate)
             },
@@ -6524,13 +6601,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if unknown_call {
             possible_owners.extend(
                 self.state
+                    .world
                     .reachability
                     .owners
                     .iter()
                     .copied()
                     .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
             );
-            if self.state.reachability.incomplete {
+            if self.state.world.reachability.incomplete {
                 possible_owners.extend(self.all_owners());
             }
         } else if unknown_receiver {
@@ -6601,7 +6679,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn may_be_available_accessor_owner(&self, candidate: SourceUnitOrdinal) -> bool {
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             // Direct eval and `with` can manufacture references to lexical
             // values outside the statically known read closure.
             return true;
@@ -6640,7 +6718,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return true;
             }
             if !self.inputs.single_writer_bindings.contains(current)
-                || !self.state.initialized_bindings.contains(current)
+                || !self
+                    .state
+                    .world
+                    .module
+                    .initialized_bindings
+                    .contains(current)
             {
                 return false;
             }
@@ -6664,7 +6747,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// previously installed by reachable code. Its returned value is Top, but
     /// its synchronous binding effects still occur at this read's prefix.
     fn promote_possible_getter(&mut self, call: &Call, receivers: &Values, outcome: &mut Outcome) {
-        let no_prior_skipped_execution = !self.state.uncertain_native_execution;
+        let no_prior_skipped_execution = !self.state.world.native.uncertain_execution;
         if self.state.array_iteration_depth > 0 {
             self.state.array_iteration_unsupported = true;
         }
@@ -6679,7 +6762,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ValueExpr::Binding(binding)
                     if self.external_binding_root(binding)))
             && self.inputs.index.dynamic_scope_owners.is_empty()
-            && !self.state.reachability.incomplete
+            && !self.state.world.reachability.incomplete
             && no_prior_skipped_execution
             && !receivers
                 .iter()
@@ -6688,6 +6771,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             BTreeSet::new()
         } else {
             self.state
+                .world
                 .reachability
                 .owners
                 .iter()
@@ -6699,7 +6783,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             owners.extend(outcome.executed_owners.iter().copied());
             owners.insert(call.owner);
         }
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             owners.extend(self.all_owners());
         }
         let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
@@ -6735,7 +6819,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .effects
             .reads
             .iter()
-            .filter_map(|(binding, _)| self.state.prefix_values.get(binding))
+            .filter_map(|(binding, _)| self.state.world.module.prefix_values.get(binding))
             .flatten()
             .cloned()
             .collect();
@@ -6838,8 +6922,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // does not make regex properties or prototype behavior
                     // an ordinary-record fact.
                     if include_object_properties
-                        && let Some(properties) =
-                            self.state.surface.prefix_object_properties.get(object)
+                        && let Some(properties) = self
+                            .state
+                            .world
+                            .surface
+                            .prefix_object_properties
+                            .get(object)
                     {
                         for (property, values) in properties {
                             let edge = if matches!(kind, Kind::Array) {
@@ -6852,7 +6940,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             }
                         }
                     }
-                    if let Some(accessors) = self.state.surface.applied_accessors.get(object) {
+                    if let Some(accessors) = self.state.world.surface.applied_accessors.get(object)
+                    {
                         for (property, accessor) in accessors {
                             for getter in &accessor.getter {
                                 visit(getter, StoredReferenceEdge::AppliedGetter(property));
@@ -6882,7 +6971,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 for (binding, cell) in &captured.values.cells {
-                    for value in &self.state.lexical_cells[cell.0].values {
+                    for value in &self.state.world.cells[cell.0].values {
                         visit(value, StoredReferenceEdge::ClosureCell(binding.0.as_ref()));
                     }
                 }
@@ -6903,7 +6992,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             AbstractValue::OwnDescriptorMap(site) => {
-                if let Some(map) = self.state.descriptor_maps.get(site) {
+                if let Some(map) = self.state.world.descriptors.get(site) {
                     for value in &map.retained_values {
                         visit(value, StoredReferenceEdge::DescriptorMapRetainedValue);
                     }
@@ -7025,6 +7114,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     expanded_escaped = true;
                     for escaped in self
                         .state
+                        .world
+                        .publication
                         .global_escaped_callbacks
                         .iter()
                         .filter(|value| !matches!(value, AbstractValue::Value(Value::Top)))
@@ -7133,7 +7224,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         result
     }
 
-    fn record_foreign_call_use(&self, summary: &crate::analysis_inputs::ForeignCallSummary) {
+    fn record_foreign_call_use(&mut self, summary: &crate::analysis_inputs::ForeignCallSummary) {
         use crate::analysis_provenance::{InferenceRule, InferenceUse};
         let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
         if !summary.native_constructions.is_empty() {
@@ -7302,7 +7393,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::Value(Value::Alloc(Kind::Function, key))
                         | AbstractValue::Closure(key, _) => {
                             self.inputs.index.callables.contains_key(key)
-                                && !self.state.tainted_functions.contains(key)
+                                && !self.state.world.native.tainted_functions.contains(key)
                         }
                         AbstractValue::AuditedRetainedResult(kind, captured) => {
                             (*kind == RetainedResultKind::Factory
@@ -7361,9 +7452,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     )
                     .any(|write| mutating_receiver(&write.receiver));
             if mutated
-                || retained
-                    .iter()
-                    .any(|value| self.state.global_escaped_callbacks.contains(value))
+                || retained.iter().any(|value| {
+                    self.state
+                        .world
+                        .publication
+                        .global_escaped_callbacks
+                        .contains(value)
+                })
             {
                 continue;
             }
@@ -7413,14 +7508,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             else {
                 return BTreeSet::new();
             };
-            if !self.state.object_properties_are_settled(object)
+            if !self.state.world.object_properties_are_settled(*object)
                 || self
                     .state
                     .array_iteration_protected_objects
                     .contains(object)
                 || (!self.inputs.index.plain_data_objects.contains(object)
-                    && !self.state.surface.ordinary_spread_copies.contains(object))
-                || self.state.dense_arrays.contains_key(object)
+                    && !self
+                        .state
+                        .world
+                        .surface
+                        .ordinary_spread_copies
+                        .contains(object))
+                || self.state.world.arrays.dense.contains_key(object)
             {
                 return BTreeSet::new();
             }
@@ -7475,8 +7575,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     any_object = true;
                     objects.insert(*object);
                     executor.inputs.index.plain_data_objects.contains(object)
-                        && executor.state.object_properties_are_settled(object)
-                        && !executor.state.dense_arrays.contains_key(object)
+                        && executor.state.world.object_properties_are_settled(*object)
+                        && !executor.state.world.arrays.dense.contains_key(object)
                 }
                 _ => false,
             }) && any_object
@@ -7555,7 +7655,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if deferred_global_write && receiver == AbstractValue::GlobalObject {
                             continue;
                         }
-                        self.state.array_intrinsic_mutated |=
+                        self.state.world_mut().arrays.intrinsic_mutated |=
                             receiver == AbstractValue::ArrayIntrinsic;
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -7569,10 +7669,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
-                        let may_be_published = self.state.surface.tainted_objects.contains(&object)
-                            || self.state.surface.unsettled_objects.contains(&object);
+                        let may_be_published =
+                            self.state.world.surface.tainted_objects.contains(&object)
+                                || self.state.world.surface.unsettled_objects.contains(&object);
                         if !certified_data_receivers.contains(&object) {
-                            self.state.surface.tainted_objects.insert(object);
+                            self.state
+                                .world_mut()
+                                .surface
+                                .tainted_objects
+                                .insert(object);
                         }
                         // RegExp slots share this heap only for callback
                         // containment. Ordinary-record shape and member-read
@@ -7588,7 +7693,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     }
                     AbstractValue::Instance(key, captured, _) => {
-                        self.state.tainted_classes.insert(key);
+                        self.state.world_mut().classes.tainted.insert(key);
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -7745,8 +7850,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
-                        self.state.surface.tainted_objects.contains(object)
-                            || self.state.surface.unsettled_objects.contains(object)
+                        self.state.world.surface.tainted_objects.contains(object)
+                            || self.state.world.surface.unsettled_objects.contains(object)
                     }
                     AbstractValue::Value(Value::Top)
                     | AbstractValue::ForeignDeferredRecord
@@ -7768,6 +7873,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 let stored = self
                     .state
+                    .world_mut()
                     .surface
                     .prefix_object_properties
                     .entry(*object)
@@ -7780,7 +7886,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         if changed {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -7796,7 +7902,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for (binding, cell) in &captures.cells {
             values.insert(
                 binding.clone(),
-                self.state.lexical_cells[cell.0].values.clone(),
+                self.state.world.cells[cell.0].values.clone(),
             );
         }
         values
@@ -7805,7 +7911,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn havoc_cells(&mut self, cells: impl IntoIterator<Item = LexicalCellId>) {
         let mut changed = false;
         for id in cells {
-            let cell = &mut self.state.lexical_cells[id.0];
+            let cell = &mut self.state.world_mut().cells[id.0];
             if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 && cell.initialization == CellInitialization::Initialized
             {
@@ -7820,7 +7926,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             changed |= cell.values.insert(AbstractValue::Value(Value::Top));
         }
         if changed {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -7848,8 +7954,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let AbstractValue::Value(Value::Alloc(Kind::Function, key)) = callback else {
                     continue;
                 };
-                if !self.state.global_escaped_callbacks.contains(callback) {
+                if !self
+                    .state
+                    .world
+                    .publication
+                    .global_escaped_callbacks
+                    .contains(callback)
+                {
                     self.state
+                        .world_mut()
+                        .publication
                         .first_callback_publication_owners
                         .entry(*key)
                         .or_insert(owner);
@@ -7873,7 +7987,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let AbstractValue::ClassMembers(key) = callback else {
                 continue;
             };
-            if self.state.global_escaped_callbacks.contains(callback) {
+            if self
+                .state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .contains(callback)
+            {
                 continue;
             }
             let top_level_owner = self.state.current_top_owner;
@@ -7895,7 +8015,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .then(|| fallback_diagnostic.and_then(|diagnostic| diagnostic.callsite.clone()))
                 .flatten();
             self.state
-                .first_class_members_publications
+                .world_mut()
+                .classes
+                .first_members_publications
                 .entry(*key)
                 .or_insert(FirstClassMembersPublication {
                     writer,
@@ -7907,12 +8029,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     bounded_fallback_callsite,
                 });
         }
-        let before = self.state.global_escaped_callbacks.len();
+        let before = self.state.world.publication.global_escaped_callbacks.len();
         self.state
+            .world_mut()
+            .publication
             .global_escaped_callbacks
             .extend(callbacks.iter().cloned());
-        if self.state.global_escaped_callbacks.len() != before {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        if self.state.world.publication.global_escaped_callbacks.len() != before {
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -7927,10 +8051,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn audited_result_is_clean(&self, captured: &Captured<Values>) -> bool {
         if self
             .state
+            .world
+            .native
             .revoked_audited_results
             .contains_key(&captured.cache_identity())
             || self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::AuditedRetainedResult(
                     RetainedResultKind::Factory,
@@ -7938,6 +8066,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ))
             || self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::AuditedRetainedResult(
                     RetainedResultKind::Constructor,
@@ -7945,18 +8075,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ))
             || self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::DeferredCallbacks(captured.clone()))
         {
             return false;
         }
         self.callback_values(&captured.values).iter().all(|value| {
-            !self.state.global_escaped_callbacks.contains(value)
+            !self
+                .state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .contains(value)
                 && match value {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => !self.state.tainted_functions.contains(key),
+                    | AbstractValue::Closure(key, _) => {
+                        !self.state.world.native.tainted_functions.contains(key)
+                    }
                     AbstractValue::AuditedRetainedResult(_, nested) => !self
                         .state
+                        .world
+                        .native
                         .revoked_audited_results
                         .contains_key(&nested.cache_identity()),
                     _ => true,
@@ -7969,11 +8110,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // revocation only loses precision; it never proves freshness or privacy.
         if self
             .state
+            .world_mut()
+            .native
             .revoked_audited_results
             .insert(captured.cache_identity(), captured.clone())
             .is_none()
         {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -8012,7 +8155,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
-                    changed |= self.state.surface.unsettled_objects.insert(*object);
+                    changed |= self
+                        .state
+                        .world_mut()
+                        .surface
+                        .unsettled_objects
+                        .insert(*object);
                     self.invalidate_writable_object(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
@@ -8023,7 +8171,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 .reads
                                 .iter()
                                 .filter(|binding| expanded_prefix_reads.insert(*binding))
-                                .filter_map(|binding| self.state.prefix_values.get(binding))
+                                .filter_map(|binding| {
+                                    self.state.world.module.prefix_values.get(binding)
+                                })
                                 .flatten()
                                 .cloned(),
                         );
@@ -8038,7 +8188,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if changed {
             // Invocation memos must not reuse property proofs from before
             // a bounded callback made these objects unknown.
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
         }
     }
 
@@ -8056,18 +8206,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.revoke_audited_result(captured);
                 }
                 AbstractValue::ArrayIntrinsic => {
-                    self.state.array_intrinsic_mutated = true;
+                    self.state.world_mut().arrays.intrinsic_mutated = true;
                 }
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
                     self.invalidate_writable_object(*object);
-                    if !self.state.surface.tainted_objects.insert(*object) {
+                    if !self
+                        .state
+                        .world_mut()
+                        .surface
+                        .tainted_objects
+                        .insert(*object)
+                    {
                         expand_stored_references = false;
                     }
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Set, site))
-                    if !self.state.tainted_native_sets.insert(*site) =>
+                    if !self.state.world_mut().native.tainted_sets.insert(*site) =>
                 {
                     expand_stored_references = false;
                 }
@@ -8075,12 +8231,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invalidate_own_descriptor_map(*site);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
-                    self.state.tainted_functions.insert(*key);
+                    self.state.world_mut().native.tainted_functions.insert(*key);
                 }
                 AbstractValue::Closure(key, captured) => {
                     let cells: Vec<_> = captured.values.cells.values().copied().collect();
                     self.havoc_cells(cells);
-                    self.state.tainted_functions.insert(*key);
+                    self.state.world_mut().native.tainted_functions.insert(*key);
                 }
                 _ => {}
             }
@@ -8093,7 +8249,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn eligible_local_constructor(
-        &self,
+        &mut self,
         key: u32,
         arg_count: usize,
     ) -> Result<&LocalConstructor, ConstructionRejection> {
@@ -8122,7 +8278,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 return Err(ConstructionRejection::ExportedClass);
             }
-            if self.state.tainted_classes.contains(&key) {
+            if self.state.world.classes.tainted.contains(&key) {
                 return Err(ConstructionRejection::ClassMutated);
             }
             if let Some(property) = constructor
@@ -8136,6 +8292,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::ClassMembers(key))
             {
@@ -8184,6 +8342,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .flat_map(|id| {
                     self.state
+                        .world
+                        .module
                         .prefix_values
                         .get(id)
                         .into_iter()
@@ -8201,7 +8361,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     matches!(value,
                     AbstractValue::Value(Value::Alloc(Kind::Object, object))
                         if self.inputs.index.plain_data_objects.contains(object)
-                            && self.state.object_properties_are_settled(object))
+                            && self.state.world.object_properties_are_settled(*object))
                 })
             {
                 return Err(unchecked);
@@ -8238,8 +8398,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .native_operation_inputs
                     .contains(&evidence.reference)
             {
-                self.state.native_operation_input_uses.borrow_mut().insert(
-                    (span.lo.0, span.hi.0),
+                self.observations.record_native_operation_input_use(
+                    *span,
                     crate::reports::schema::NativeOperationInputUse {
                         evidence: evidence.clone(),
                         source_location: None,
@@ -8248,8 +8408,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        let previous_inputs = std::mem::take(&mut self.state.checked_constructor_inputs);
-        self.state.checked_constructor_inputs = args
+        let previous_inputs =
+            std::mem::take(&mut self.state.world_mut().classes.checked_constructor_inputs);
+        self.state.world_mut().classes.checked_constructor_inputs = args
             .iter()
             .flatten()
             .filter_map(|value| match value {
@@ -8264,7 +8425,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
             |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
         );
-        self.state.checked_constructor_inputs = previous_inputs;
+        self.state.world_mut().classes.checked_constructor_inputs = previous_inputs;
         let values: Values = args.iter().flatten().cloned().collect();
         let instance = AbstractValue::Instance(
             key,
@@ -8305,7 +8466,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::ClassMembers(key)
             | AbstractValue::Instance(key, _, _) = &value
             {
-                self.state.escaped_class_capabilities.insert(*key);
+                self.state
+                    .world_mut()
+                    .classes
+                    .escaped_capabilities
+                    .insert(*key);
             }
             self.visit_stored_references(&value, true, |reference| {
                 pending.push(reference.clone());
@@ -8329,7 +8494,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args: &[Values],
         captured: &Context,
     ) -> HavocReach {
-        if self.state.tainted_functions.contains(&key) {
+        if self.state.world.native.tainted_functions.contains(&key) {
             return self.dynamic_scope_reach().unwrap_or(HavocReach::Global {
                 cause: GlobalReachCause::BorrowedReceiver,
             });
@@ -8341,19 +8506,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn dynamic_scope_reach(&self) -> Option<HavocReach> {
-        (self.state.reachability.incomplete || !self.inputs.index.dynamic_scope_owners.is_empty())
-            .then_some(HavocReach::Global {
-                cause: GlobalReachCause::DynamicScope,
-            })
+        (self.state.world.reachability.incomplete
+            || !self.inputs.index.dynamic_scope_owners.is_empty())
+        .then_some(HavocReach::Global {
+            cause: GlobalReachCause::DynamicScope,
+        })
     }
 
     /// Opaque code may hold the class or its prototype and install or borrow
     /// methods its constructor and fields run.
     fn class_may_run_on_borrowed_receiver(&self, key: u32) -> bool {
-        self.state.tainted_classes.contains(&key)
-            || self.state.escaped_class_capabilities.contains(&key)
+        self.state.world.classes.tainted.contains(&key)
+            || self.state.world.classes.escaped_capabilities.contains(&key)
             || self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::ClassMembers(key))
             || self
@@ -8388,7 +8556,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            if self.state.global_escaped_callbacks.contains(&value) {
+            if self
+                .state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .contains(&value)
+            {
                 return global(GlobalReachCause::TaintedInput);
             }
             match &value {
@@ -8397,6 +8571,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 | AbstractValue::AuditedRetainedResult(_, captured)
                     if self
                         .state
+                        .world
+                        .native
                         .revoked_audited_results
                         .contains_key(&captured.cache_identity()) =>
                 {
@@ -8420,18 +8596,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties()
-                        && !self.state.object_properties_are_settled(object) =>
+                        && !self.state.world.object_properties_are_settled(*object) =>
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Set, site))
-                    if self.state.tainted_native_sets.contains(site) =>
+                    if self.state.world.native.tainted_sets.contains(site) =>
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
-                    if self.state.tainted_functions.contains(key) {
+                    if self.state.world.native.tainted_functions.contains(key) {
                         return global(GlobalReachCause::TaintedInput);
                     }
                     let Some(callable) = self.inputs.index.callables.get(key) else {
@@ -8485,11 +8661,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         .collect();
         let state = &*self.state;
         if state
-            .tainted_classes
+            .world
+            .classes
+            .tainted
             .iter()
-            .chain(&state.escaped_class_capabilities)
+            .chain(&state.world.classes.escaped_capabilities)
             .chain(
                 state
+                    .world
+                    .publication
                     .global_escaped_callbacks
                     .iter()
                     .filter_map(|value| match value {
@@ -8521,10 +8701,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .class_values
             .get(key)
             .is_some_and(|class| class.default_has_instance)
-            && !self.state.tainted_classes.contains(key)
-            && !self.state.escaped_class_capabilities.contains(key)
+            && !self.state.world.classes.tainted.contains(key)
+            && !self.state.world.classes.escaped_capabilities.contains(key)
             && !self
                 .state
+                .world
+                .publication
                 .global_escaped_callbacks
                 .contains(&AbstractValue::ClassMembers(*key))
             && self
@@ -8538,16 +8720,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 })
     }
 
-    fn ordinary_prototype_chain(&self, values: &Values) -> bool {
+    fn ordinary_prototype_chain(&mut self, values: &Values) -> bool {
         !values.is_empty()
             && values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Prim(_)) => true,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    self.state.object_properties_are_settled(object)
+                    self.state.world.object_properties_are_settled(*object)
                         && self.array_intrinsics_intact()
                         && (self.inputs.index.plain_data_objects.contains(object)
-                            || self.state.surface.ordinary_spread_copies.contains(object)
-                            || self.state.dense_arrays.contains_key(object))
+                            || self
+                                .state
+                                .world
+                                .surface
+                                .ordinary_spread_copies
+                                .contains(object)
+                            || self.state.world.arrays.dense.contains_key(object))
                 }
                 _ => false,
             })
@@ -8556,7 +8743,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn contains_dense_array(&self, values: &Values) -> bool {
         self.reachable_objects(values)
             .iter()
-            .any(|object| self.state.dense_arrays.contains_key(object))
+            .any(|object| self.state.world.arrays.dense.contains_key(object))
     }
 
     /// [`Self::promote_raw_callbacks`] for values handed to opaque code, which
@@ -8610,7 +8797,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             };
             owners.extend(owner);
         }
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             for owner in owners {
                 let (reads, rebinds) = self
                     .inputs
@@ -8622,6 +8809,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .iter()
                     .flat_map(|id| {
                         self.state
+                            .world
+                            .module
                             .prefix_values
                             .get(id)
                             .into_iter()
@@ -8650,6 +8839,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .flat_map(|id| {
                     self.state
+                        .world
+                        .module
                         .prefix_values
                         .get(id)
                         .into_iter()
@@ -8697,7 +8888,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 roots.insert(callable.owner);
             }
         }
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             for owner in roots {
                 let (reads, rebinds) = self
                     .inputs
@@ -8740,10 +8931,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .callables
                         .get(key)
                         .is_some_and(|callable| {
-                            let state = &mut *self.state;
-                            state
+                            let world = self.state.world_mut();
+                            let incomplete = world.reachability.incomplete;
+                            world
+                                .publication
                                 .returned_callback_owners
-                                .insert((state.reachability.incomplete, callable.owner))
+                                .insert((incomplete, callable.owner))
                         }),
                     // Keep class capability/superclass checks on their existing
                     // path. Other aggregate values have already been expanded by
@@ -8819,7 +9012,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Class expressions may have only their containing statement owner,
         // while their constructor and methods still contribute lazy reads to
         // that owner's summary.
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             let (reads, rebinds) = self
                 .inputs
                 .source_unit_read_closure
@@ -8869,7 +9062,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let values = self
             .state
-            .class_superclasses
+            .world
+            .classes
+            .superclasses
             .get(&key)
             .cloned()
             .unwrap_or_else(unknown);
@@ -8944,7 +9139,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 continue;
             }
-            if let Some(cell) = self.state.active_cells.get(id) {
+            if let Some(cell) = self.state.world.active_cells.get(id) {
                 captured.cells.insert(id.clone(), *cell);
                 continue;
             }
@@ -9003,7 +9198,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut visit: impl FnMut(Option<&Id>, AbstractValue),
     ) {
         for binding in bindings {
-            if let Some(exported) = self.state.prefix_values.get(binding) {
+            if let Some(exported) = self.state.world.module.prefix_values.get(binding) {
                 for value in exported {
                     visit(Some(binding), value.clone());
                 }
@@ -9016,7 +9211,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(Kind::Function, *key)),
                 );
             }
-            for value in &self.state.exported_runtime_values {
+            for value in &self.state.world.publication.exported_runtime_values {
                 visit(None, value.clone());
             }
         }
@@ -9098,7 +9293,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             // Invocation memos keyed by the pre-pass revision describe the
             // smaller state; changes outside prefix values do not bump it.
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.world_mut().revision.bump_prefix();
             self.state.invocation_count += 1;
         }
         // An opaque callee can retain any callback passed to it and invoke it
@@ -9121,7 +9316,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         foreign_promoted: &mut bool,
         outcome: &mut Outcome,
     ) -> Values {
-        let mut callbacks = self.state.global_escaped_callbacks.clone();
+        let mut callbacks = self
+            .state
+            .world
+            .publication
+            .global_escaped_callbacks
+            .clone();
         callbacks.extend(self.available_export_callbacks());
         // A callback-argument exemption does not certify foreign getters or
         // direct live-cell captures reachable through a returned record.
@@ -9149,34 +9349,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn callback_pool_observation(&self) -> CallbackPoolObservation {
         let state = &*self.state;
         CallbackPoolObservation {
-            prefix_revision: state.prefix_revision,
-            reachability_revision: state.reachability.revision,
-            prefix_object_properties: state.surface.prefix_object_properties.clone(),
-            dense_arrays: state.dense_arrays.clone(),
-            primitive_arrays: state.primitive_arrays.clone(),
-            accumulated_values: state.accumulated_values.clone(),
-            applied_accessors: state.surface.applied_accessors.clone(),
-            class_superclasses: state.class_superclasses.clone(),
+            prefix_revision: state.world.revision.prefix,
+            reachability_revision: state.world.revision.reachability,
+            prefix_object_properties: state.world.surface.prefix_object_properties.clone(),
+            dense_arrays: state.world.arrays.dense.clone(),
+            primitive_arrays: state.world.arrays.primitive.clone(),
+            accumulated_values: state.world.arrays.accumulated_values.clone(),
+            applied_accessors: state.world.surface.applied_accessors.clone(),
+            class_superclasses: state.world.classes.superclasses.clone(),
             set_sizes: [
-                state.global_escaped_callbacks.len(),
-                state.unknown_array_contents.len(),
-                state.exported_runtime_values.len(),
-                state.surface.tainted_objects.len(),
-                state.tainted_native_sets.len(),
-                state.tainted_functions.len(),
-                state.revoked_audited_results.len(),
-                state.tainted_classes.len(),
-                state.escaped_class_capabilities.len(),
-                state.surface.ordinary_spread_copies.len(),
-                state.surface.descriptor_copy_results.len(),
+                state.world.publication.global_escaped_callbacks.len(),
+                state.world.arrays.unknown_contents.len(),
+                state.world.publication.exported_runtime_values.len(),
+                state.world.surface.tainted_objects.len(),
+                state.world.native.tainted_sets.len(),
+                state.world.native.tainted_functions.len(),
+                state.world.native.revoked_audited_results.len(),
+                state.world.classes.tainted.len(),
+                state.world.classes.escaped_capabilities.len(),
+                state.world.surface.ordinary_spread_copies.len(),
+                state.world.surface.descriptor_copy_results.len(),
                 state
-                    .descriptor_maps
+                    .world
+                    .descriptors
                     .values()
                     .filter(|map| map.valid)
                     .count(),
             ],
-            array_intrinsic_mutated: state.array_intrinsic_mutated,
-            uncertain_native_execution: state.uncertain_native_execution,
+            array_intrinsic_mutated: state.world.arrays.intrinsic_mutated,
+            uncertain_native_execution: state.world.native.uncertain_execution,
         }
     }
 
@@ -9277,7 +9478,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 return true;
             }
-            let writable_before = self.state.surface.writable_prefix.clone();
+            let writable_before = self.state.world.surface.writable_prefix.clone();
             let nested = match callback {
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
@@ -9315,9 +9516,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // post-state cannot replace the entry witness as though the call
             // occurred once. Widen before another member or fixed-point pass
             // observes it; otherwise pushes grow exact lengths to the budget.
-            if !self.state.surface.writable_prefix.ptr_eq(&writable_before) {
+            if !self
+                .state
+                .world
+                .surface
+                .writable_prefix
+                .ptr_eq(&writable_before)
+            {
                 let changed: Vec<_> = self
                     .state
+                    .world
                     .surface
                     .writable_prefix
                     .iter()
@@ -9335,18 +9543,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
         for (id, _) in rebinds {
-            self.state.prefix_callable_selections.remove(id);
+            self.state
+                .world_mut()
+                .module
+                .prefix_callable_selections
+                .remove(id);
             if !self.inputs.top_bindings.contains(id) {
                 continue;
             }
             let changed = self
                 .state
+                .world_mut()
+                .module
                 .prefix_values
                 .entry(id.clone())
                 .or_default()
                 .insert(AbstractValue::Value(Value::Top));
             if changed {
-                self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                self.state.world_mut().revision.bump_prefix();
             }
         }
     }
@@ -9403,7 +9617,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // recursion into a whole-chunk reachability root.
         let mut possible_values: Values = args.iter().flatten().cloned().collect();
         possible_values.extend(captured.values().flatten().cloned());
-        possible_values.extend(self.state.global_escaped_callbacks.iter().cloned());
+        possible_values.extend(
+            self.state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .iter()
+                .cloned(),
+        );
         let export_callbacks = self.available_export_callbacks();
         possible_values.extend(export_callbacks.iter().cloned());
 
@@ -9412,7 +9633,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .iter()
             .filter_map(|callback| match callback {
                 AbstractValue::ClassMembers(key)
-                    if !self.state.global_escaped_callbacks.contains(callback) =>
+                    if !self
+                        .state
+                        .world
+                        .publication
+                        .global_escaped_callbacks
+                        .contains(callback) =>
                 {
                     Some(*key)
                 }
@@ -9449,7 +9675,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     });
                 }
             }
-            for value in &self.state.global_escaped_callbacks {
+            for value in &self.state.world.publication.global_escaped_callbacks {
                 path_roots.insert(value.clone());
                 fallback_seeds
                     .entry(value.clone())
@@ -9534,6 +9760,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .filter(|candidate| {
                     !self
                         .state
+                        .world
+                        .publication
                         .accepted_deferred_global_writes
                         .contains(candidate)
                 }),
@@ -9542,12 +9770,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let state = &mut *self.state;
         let mut reached = self.inputs.extend_available_source_units(
             roots.iter().copied(),
-            &state.initialized_bindings,
-            state.reachability.incomplete,
+            &state.world.module.initialized_bindings,
+            state.world.reachability.incomplete,
             &mut state.callback_fallback.expanded,
             &mut state.callback_fallback.deferred,
         );
-        if self.state.reachability.incomplete {
+        if self.state.world.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
             // Revisit even previously expanded owners: their cached prefix
             // effects may have omitted reads that eval or with can reach.
@@ -9562,7 +9790,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for reached_owner in reached {
             let (reads, rebinds) = self
                 .inputs
-                .synchronous_effects(reached_owner, self.state.reachability.incomplete);
+                .synchronous_effects(reached_owner, self.state.world.reachability.incomplete);
             for id in reads
                 .iter()
                 .filter(|id| self.inputs.top_bindings.contains(*id))
@@ -9617,15 +9845,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let state = &mut *self.state;
             let reached = self.inputs.extend_available_source_units(
                 [owner],
-                &state.initialized_bindings,
-                state.reachability.incomplete,
+                &state.world.module.initialized_bindings,
+                state.world.reachability.incomplete,
                 &mut state.fallback_local_owners,
                 &mut state.fallback_local_deferred,
             );
             for reached_owner in reached {
                 let (reads, rebinds) = self
                     .inputs
-                    .synchronous_effects(reached_owner, self.state.reachability.incomplete);
+                    .synchronous_effects(reached_owner, self.state.world.reachability.incomplete);
                 let reads = reads
                     .difference(&self.state.callback_fallback.reads)
                     .cloned()
@@ -9675,7 +9903,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// graph. The author certifies the provider's native slots and return-only
     /// retention; the source index proves the exact input and key collisions.
     fn descriptor_copy_projection(
-        &self,
+        &mut self,
         callee: &ValueExpr,
         args: &[Values],
         site: CallSite,
@@ -9703,10 +9931,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
         )?;
         self.queries.assume(&proof.dependencies);
-        self.state
-            .inference_uses
-            .borrow_mut()
-            .insert(proof.inference_use());
+        self.observations
+            .record_inference_use(proof.inference_use());
         Some(proof)
     }
 
@@ -9725,7 +9951,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.descriptor_heap().capture(site, projection);
         let application = self
             .state
-            .descriptor_maps
+            .world
+            .descriptors
             .get(&site)
             .and_then(|map| DescriptorApplication::from_map(result, map));
         let commit = match application {
@@ -9744,6 +9971,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let method = Values::from([self.deferred_callbacks(captured)]);
         let properties = self
             .state
+            .world_mut()
             .surface
             .prefix_object_properties
             .entry(result)
@@ -9751,13 +9979,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for key in keys {
             properties.insert(Some(key.clone()), method.clone());
         }
-        if let Some(accessors) = self.state.surface.applied_accessors.get_mut(&result) {
+        if let Some(accessors) = self
+            .state
+            .world_mut()
+            .surface
+            .applied_accessors
+            .get_mut(&result)
+        {
             for key in &certificate.signature.assigned_data_keys {
                 accessors.remove(key);
             }
         }
-        self.state.surface.descriptor_copy_results.insert(result);
-        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        self.state
+            .world_mut()
+            .surface
+            .descriptor_copy_results
+            .insert(result);
+        self.state.world_mut().revision.bump_prefix();
         // Provider code and native operations may still throw after argument
         // evaluation. Keep normal-return identity and abrupt completion apart.
         Values::from([
@@ -9796,10 +10034,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let OwnPropertyProjection::Ordinary { source_object } = &input.projection else {
             return None;
         };
-        self.state
-            .inference_uses
-            .borrow_mut()
-            .insert(input.inference_use());
+        self.observations
+            .record_inference_use(input.inference_use());
         self.record_inference_use(
             NativeIntegrityGuard::NativeCallIdentity,
             summary.inference.clone(),
@@ -9816,7 +10052,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Foreign code cannot assign an ESM import binding directly. A
             // retained importer callback can perform any source rebind; eval
             // or with defeats that finite source census.
-            let rebinds: BTreeSet<_> = if this.state.reachability.incomplete {
+            let rebinds: BTreeSet<_> = if this.state.world.reachability.incomplete {
                 this.inputs.binding_owner.keys().cloned().collect()
             } else {
                 this.inputs
@@ -9839,11 +10075,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.apply_rebind_effects(&outcome.effects.rebinds);
         let reached = self
             .state
+            .world
+            .module
             .prefix_values
             .values()
             .flatten()
-            .chain(self.state.exported_runtime_values.iter())
-            .chain(self.state.global_escaped_callbacks.iter())
+            .chain(self.state.world.publication.exported_runtime_values.iter())
+            .chain(self.state.world.publication.global_escaped_callbacks.iter())
             .cloned()
             .collect();
         self.unsettle(&reached);
@@ -9890,7 +10128,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn initialized_local_binding(&self, id: &Id) -> bool {
         self.inputs.top_bindings.contains(id)
             && !self.inputs.index.imported_bindings.contains(id)
-            && self.state.initialized_bindings.contains(id)
+            && self.state.world.module.initialized_bindings.contains(id)
     }
 
     /// The flattened call pass and later initializer projection see the same
@@ -9946,7 +10184,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return None;
         }
-        let receivers = self.state.prefix_values.get(receiver)?;
+        let receivers = self.state.world.module.prefix_values.get(receiver)?;
         self.present_own_data_read(receivers, property)
     }
 
@@ -9966,6 +10204,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .contains(&slot.object())
             || self
                 .state
+                .world
                 .surface
                 .applied_accessors
                 .get(&slot.object())
@@ -10028,9 +10267,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         ))])),
                         false,
                     ),
-                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => {
-                        (self.state.prefix_values.get(binding).cloned(), false)
-                    }
+                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
+                        self.state.world.module.prefix_values.get(binding).cloned(),
+                        false,
+                    ),
                     ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
                         let ValueExpr::Binding(receiver) = receiver.as_ref() else {
                             return false;
@@ -10038,10 +10278,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if !self.initialized_local_binding(receiver) {
                             return false;
                         }
-                        let targets = self.state.prefix_values.get(receiver).and_then(|values| {
-                            self.present_own_data_read(values, property)
-                                .map(|read| read.values)
-                        });
+                        let targets = self
+                            .state
+                            .world
+                            .module
+                            .prefix_values
+                            .get(receiver)
+                            .and_then(|values| {
+                                self.present_own_data_read(values, property)
+                                    .map(|read| read.values)
+                            });
                         (targets, true)
                     }
                     _ => return false,
@@ -10079,9 +10325,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Values::from([AbstractValue::Value(*value)]);
         }
         if self.inputs.top_bindings.contains(id) {
-            if let Some(prefix_values) = self.state.prefix_values.get(id) {
+            if let Some(prefix_values) = self.state.world.module.prefix_values.get(id) {
                 let mut values = prefix_values.clone();
-                if !self.state.initialized_bindings.contains(id) {
+                if !self.state.world.module.initialized_bindings.contains(id) {
                     values.insert(if self.inputs.var_bindings.contains(id) {
                         AbstractValue::UNDEFINED
                     } else {
@@ -10096,8 +10342,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // missing prefix value for a local binding is TDZ.
                 Values::from([AbstractValue::Value(Value::Unavailable)])
             }
-        } else if let Some(cell) = self.state.active_cells.get(id) {
-            self.state.lexical_cells[cell.0].values.clone()
+        } else if let Some(cell) = self.state.world.active_cells.get(id) {
+            self.state.world.cells[cell.0].values.clone()
         } else if let Some(values) = env.get(id) {
             values.clone()
         } else if self
@@ -10320,10 +10566,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     let source = self.evaluate(source, env, captures);
                     if let Some(properties) = self.ordinary_data_properties(&source) {
-                        let previously_evaluated =
-                            self.state.surface.ordinary_spread_copies.contains(key);
+                        let previously_evaluated = self
+                            .state
+                            .world
+                            .surface
+                            .ordinary_spread_copies
+                            .contains(key);
                         let current = self
                             .state
+                            .world_mut()
                             .surface
                             .prefix_object_properties
                             .entry(*key)
@@ -10347,15 +10598,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             changed |= slot.len() != before;
                         }
                         if changed {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                            self.state.world_mut().revision.bump_prefix();
                         }
-                        self.state.surface.ordinary_spread_copies.insert(*key);
+                        self.state
+                            .world_mut()
+                            .surface
+                            .ordinary_spread_copies
+                            .insert(*key);
                         return Values::from([AbstractValue::Value(Value::Alloc(
                             Kind::Object,
                             *key,
                         ))]);
                     }
-                    self.state.surface.tainted_objects.insert(*key);
+                    self.state.world_mut().surface.tainted_objects.insert(*key);
                     if self.state.array_iteration_depth > 0 {
                         self.state.array_iteration_unsupported = true;
                     }
@@ -10408,10 +10663,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         NativeIntegrityGuard::NativeCallIdentity,
                         &premise.dependencies,
                     );
-                    self.state
-                        .inference_uses
-                        .borrow_mut()
-                        .insert(premise.inference_use);
+                    self.observations
+                        .record_inference_use(premise.inference_use);
                     return Values::from([AbstractValue::PRIMITIVE]);
                 }
                 if let Some(read) = self.root_own_data_read(expr) {
@@ -10487,7 +10740,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         AbstractValue::Instance(key, captured, _) => {
                             if matches!(property.as_deref(), Some("constructor" | "__proto__")) {
-                                self.state.tainted_classes.insert(key);
+                                self.state.world_mut().classes.tainted.insert(key);
                             }
                             values.insert(AbstractValue::Instance(
                                 key,
@@ -10496,7 +10749,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             ));
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
-                            if !self.state.object_properties_are_settled(&object_id) {
+                            if !self.state.world.object_properties_are_settled(object_id) {
                                 values.insert(AbstractValue::Value(Value::Top));
                                 continue;
                             }
@@ -10504,7 +10757,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 values.insert(AbstractValue::Value(Value::Top));
                                 continue;
                             }
-                            if self.state.dense_arrays.contains_key(&object_id)
+                            if self.state.world.arrays.dense.contains_key(&object_id)
                                 && (property.is_none()
                                     || matches!(
                                         property.as_deref(),
@@ -10514,23 +10767,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 values.insert(AbstractValue::ArrayIntrinsic);
                             }
 
-                            if let Some(properties) =
-                                self.state.surface.prefix_object_properties.get(&object_id)
+                            if let Some(properties) = self
+                                .state
+                                .world
+                                .surface
+                                .prefix_object_properties
+                                .get(&object_id)
                             {
                                 if let Some(property) = property {
-                                    if let Some(found) = properties.get(&Some(property.clone())) {
-                                        values.extend(found.iter().cloned());
-                                    } else if self.absent_plain_data_property(object_id, property) {
-                                        values.insert(AbstractValue::UNDEFINED);
-                                    } else {
-                                        values.insert(AbstractValue::Value(Value::Top));
+                                    let found = properties.get(&Some(property.clone())).cloned();
+                                    let dynamic = properties.get(&None).cloned();
+                                    match found {
+                                        Some(found) => values.extend(found.iter().cloned()),
+                                        None if self
+                                            .absent_plain_data_property(object_id, property) =>
+                                        {
+                                            values.insert(AbstractValue::UNDEFINED);
+                                        }
+                                        None => {
+                                            values.insert(AbstractValue::Value(Value::Top));
+                                        }
                                     }
-                                    values.extend(
-                                        properties
-                                            .get(&None)
-                                            .into_iter()
-                                            .flat_map(|found| found.iter().cloned()),
-                                    );
+                                    if let Some(dynamic) = dynamic {
+                                        values.extend(dynamic.iter().cloned());
+                                    }
                                 } else {
                                     values.extend(
                                         properties.values().flat_map(|found| found.iter().cloned()),
@@ -10556,7 +10816,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 values
             }
             ValueExpr::Call(callee, args, span) => {
-                if self.state.frozen_namespace_calls.contains(span) {
+                if self
+                    .state
+                    .world
+                    .publication
+                    .frozen_namespace_calls
+                    .contains(span)
+                {
                     return self.evaluate(&args[0], env, captures);
                 }
                 if let Some((proof, _, dense, _, _)) =
@@ -10860,9 +11126,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         reached.extend(frame.environment.values().flatten().cloned());
         reached.extend(
             self.state
+                .world
                 .active_cells
                 .values()
-                .flat_map(|cell| self.state.lexical_cells[cell.0].values.iter().cloned()),
+                .flat_map(|cell| self.state.world.cells[cell.0].values.iter().cloned()),
         );
         reached.extend(
             frame
@@ -10870,7 +11137,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
-        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+        let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
         self.havoc_cells(cells);
         self.publish_values(
             &reached,
@@ -10951,6 +11218,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             body,
             LocalContinuation::new(frame),
         );
+        // The kernel returns the cells it touched and the values it threw;
+        // this scope records them as the owner's effects and publications.
+        let non_assumed = self.state.assumption.is_none();
+        for cell in frame.ledger.heap_accesses.reads.iter().cloned() {
+            outcome.effects.record_heap_read(cell, non_assumed);
+        }
+        for cell in frame.ledger.heap_accesses.writes.iter().cloned() {
+            outcome.effects.record_heap_write(cell, non_assumed);
+        }
+        for thrown in frame.ledger.completion.exact_abrupt() {
+            self.publish_values(
+                &thrown.values,
+                ClassMembersPublicationWriter::ThrowValuePublication,
+                None,
+            );
+        }
         match attempt {
             LocalExecutionAttempt::Completed(result) => {
                 outcome.effect_coverage = result.ledger.effects;
@@ -11059,7 +11342,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         fresh_checked_constructor: bool,
     ) -> Outcome {
         let outer_cells = std::mem::replace(
-            &mut self.state.active_cells,
+            &mut self.state.world_mut().active_cells,
             captured
                 .as_ref()
                 .map(|context| context.values.cells.clone())
@@ -11093,10 +11376,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(AbstractValue::Value(Value::Unavailable));
         }
         if !outcome.complete || outcome.unknown_call {
-            let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+            let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
             self.havoc_cells(cells);
         }
-        self.state.active_cells = outer_cells;
+        self.state.world_mut().active_cells = outer_cells;
         outcome
     }
 
@@ -11171,12 +11454,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             argument_selections: argument_selections.clone(),
             captured_context: captured.clone(),
             fresh_checked_constructor,
-            reachability_revision: self.state.reachability.revision,
-            prefix_revision: self.state.prefix_revision,
+            reachability_revision: self.state.world.revision.reachability,
+            prefix_revision: self.state.world.revision.prefix,
             top_owner: self.state.current_top_owner,
         };
         if self.state.array_iteration_depth == 0
-            && !self.state.tainted_functions.contains(&key)
+            && !self.state.world.native.tainted_functions.contains(&key)
             && let Some(point) = self.state.invocation_memos.get(&signature)
         {
             let outcome = self.queries.invocation_memo(point);
@@ -11233,7 +11516,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && body
                         .captured_writes()
                         .iter()
-                        .all(|binding| self.state.active_cells.contains_key(binding))
+                        .all(|binding| self.state.world.active_cells.contains_key(binding))
                     && body.free_reads().iter().all(|binding| {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
@@ -11278,11 +11561,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             AbstractValue::Value(Value::Prim(_)) => false,
                             AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                                 (!self.inputs.index.plain_data_objects.contains(object)
-                                    && !self.state.surface.ordinary_spread_copies.contains(object)
-                                    && !self.state.dense_arrays.contains_key(object))
-                                    || !self.state.object_properties_are_settled(object)
+                                    && !self
+                                        .state
+                                        .world
+                                        .surface
+                                        .ordinary_spread_copies
+                                        .contains(object)
+                                    && !self.state.world.arrays.dense.contains_key(object))
+                                    || !self.state.world.object_properties_are_settled(*object)
                                     || !self
                                         .state
+                                        .world
                                         .surface
                                         .prefix_object_properties
                                         .get(object)
@@ -11320,7 +11609,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && body
                 .captured_writes()
                 .iter()
-                .all(|binding| self.state.active_cells.contains_key(binding))
+                .all(|binding| self.state.world.active_cells.contains_key(binding))
             && body.free_reads().iter().all(|binding| {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
@@ -11380,12 +11669,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // Source-summary lanes pre-evaluate assignments and flatten control flow.
         // They cannot preserve a live mutable capture's ordered value proof.
-        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+        let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
         self.havoc_cells(cells);
-        for (binding, cell) in &self.state.active_cells {
+        for (binding, cell) in &self.state.world.active_cells {
             env.insert(
                 binding.clone(),
-                self.state.lexical_cells[cell.0].values.clone(),
+                self.state.world.cells[cell.0].values.clone(),
             );
         }
         for (id, value) in &callable.local_assignments {
@@ -11397,13 +11686,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // calls; a lexical binding still in TDZ throws instead of storing.
             if self.inputs.top_bindings.contains(id)
                 && (self.inputs.var_bindings.contains(id)
-                    || self.state.initialized_bindings.contains(id))
+                    || self.state.world.module.initialized_bindings.contains(id))
             {
-                let possible = self.state.prefix_values.entry(id.clone()).or_default();
+                let possible = self
+                    .state
+                    .world_mut()
+                    .module
+                    .prefix_values
+                    .entry(id.clone())
+                    .or_default();
                 let before = possible.len();
                 possible.extend(values.iter().cloned());
                 if possible.len() != before {
-                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    self.state.world_mut().revision.bump_prefix();
                 }
             }
             env.entry(id.clone()).or_default().extend(values);
@@ -11438,7 +11733,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for id in &callable.reads {
             if self.inputs.top_bindings.contains(id) {
                 outcome.effects.reads.insert((id.clone(), callable.owner));
-                if !self.state.initialized_bindings.contains(id) {
+                if !self.state.world.module.initialized_bindings.contains(id) {
                     outcome.effects.uninitialized_reads.insert(id.clone());
                 }
             }
@@ -11455,6 +11750,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let fresh_data_writes = self.fresh_data_writes(callable, &env);
         if let Some(objects) = &fresh_data_writes {
             self.state
+                .world_mut()
+                .publication
                 .parameter_initialized_objects
                 .extend(objects.iter().copied());
         }
@@ -11499,14 +11796,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .or_default()
                         .insert(AbstractValue::Value(Value::Top));
                     if self.inputs.top_bindings.contains(binding)
-                        && let Some(values) = self.state.prefix_values.get_mut(binding)
+                        && let Some(values) =
+                            self.state.world_mut().module.prefix_values.get_mut(binding)
                         && values.insert(AbstractValue::Value(Value::Top))
                     {
                         widened = true;
                     }
                 }
                 if widened {
-                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    self.state.world_mut().revision.bump_prefix();
                 }
             }
         }
@@ -11515,9 +11813,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 || !self.array_intrinsics_intact()
                 || certified_data_receivers
                     .iter()
-                    .any(|object| !self.state.object_properties_are_settled(object)))
+                    .any(|object| !self.state.world.object_properties_are_settled(*object)))
         {
             self.state
+                .world_mut()
                 .surface
                 .tainted_objects
                 .extend(certified_data_receivers.iter().copied());
@@ -11623,7 +11922,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .effects
                     .reads
                     .iter()
-                    .filter_map(|(binding, _)| self.state.prefix_values.get(binding))
+                    .filter_map(|(binding, _)| self.state.world.module.prefix_values.get(binding))
                     .flatten()
                     .cloned(),
             );
@@ -11722,7 +12021,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .eager
                         .iter()
                         .chain(&fact.reads.lazy)
-                        .filter_map(|binding| self.state.prefix_values.get(binding))
+                        .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
                         .flatten(),
                 )
                 .cloned()
@@ -11757,6 +12056,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::Call
             && self
                 .state
+                .world
+                .publication
                 .frozen_namespace_calls
                 .contains(&CallSite::from(call.span))
         {
@@ -11789,7 +12090,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || matches!(value, AbstractValue::Value(Value::Alloc(Kind::RegExp, _)))
                     || matches!(value,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.object_accessors_are_settled(object))
+                    if !self.state.world.surface.object_accessors_are_settled(*object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
                 return CallTransfer::EffectsOnly;
@@ -11890,10 +12191,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     NativeIntegrityGuard::NativeCallIdentity,
                     &premise.dependencies,
                 );
-                self.state
-                    .inference_uses
-                    .borrow_mut()
-                    .insert(premise.inference_use);
+                self.observations
+                    .record_inference_use(premise.inference_use);
                 // Data and primitive do not imply a constant property value.
                 // Keep its external heap observation on the ordinary timeline.
                 outcome.effects.heap_contents.opaque = true;
@@ -11936,7 +12235,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 matches!(value, AbstractValue::Value(Value::Top))
                     || matches!(value,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.object_accessors_are_settled(object))
+                    if !self.state.world.surface.object_accessors_are_settled(*object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
                 return CallTransfer::EffectsOnly;
@@ -11960,22 +12259,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.supports_ordinary_own_data_read_proof() =>
                 {
-                    !self.state.object_properties_are_settled(object)
-                        || ((!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.surface.ordinary_spread_copies.contains(object)
-                            && !self.state.surface.descriptor_copy_results.contains(object)
-                            && !self.state.dense_arrays.contains_key(object))
-                            || !self
+                    if !self.state.world.object_properties_are_settled(*object)
+                        || (!self.inputs.index.plain_data_objects.contains(object)
+                            && !self
                                 .state
+                                .world
+                                .surface
+                                .ordinary_spread_copies
+                                .contains(object)
+                            && !self
+                                .state
+                                .world
+                                .surface
+                                .descriptor_copy_results
+                                .contains(object)
+                            && !self.state.world.arrays.dense.contains_key(object))
+                    {
+                        true
+                    } else {
+                        let own_key_present = property.as_ref().and_then(|property| {
+                            self.state
+                                .world
                                 .surface
                                 .prefix_object_properties
                                 .get(object)
-                                .is_some_and(|properties| {
-                                    property.as_ref().is_some_and(|property| {
-                                        properties.contains_key(&Some(property.clone()))
-                                            || self.absent_plain_data_property(*object, property)
-                                    })
-                                }))
+                                .map(|properties| properties.contains_key(&Some(property.clone())))
+                        });
+                        match (property.as_ref(), own_key_present) {
+                            (Some(_), Some(true)) => false,
+                            (Some(property), Some(false)) => {
+                                !self.absent_plain_data_property(*object, property)
+                            }
+                            _ => true,
+                        }
+                    }
                 }
                 // Non-ordinary allocation kinds retain identity or containment
                 // only. Their own and inherited property semantics still
@@ -11997,7 +12314,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if values.iter().any(|value| {
                     matches!(value,
                     AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if self.state.surface.descriptor_copy_results.contains(object))
+                    if self.state.world.surface.descriptor_copy_results.contains(object))
                 }) {
                     self.promote_escaped_callbacks(&values, outcome);
                 }
@@ -12660,6 +12977,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.taint_objects(&possible_objects);
                     let mut possible_accessors: BTreeSet<_> = self
                         .state
+                        .world
                         .reachability
                         .owners
                         .iter()
@@ -12667,7 +12985,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .filter(|candidate| self.may_be_available_accessor_owner(*candidate))
                         .collect();
                     possible_accessors.extend(outcome.executed_owners.iter().copied());
-                    if self.state.reachability.incomplete {
+                    if self.state.world.reachability.incomplete {
                         possible_accessors.extend(self.all_owners());
                     }
                     let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
@@ -12712,7 +13030,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             );
                             outcome.unknown_call = true;
                             self.note_unknown_call(call);
-                            self.state.escaped_class_capabilities.insert(key);
+                            self.state
+                                .world_mut()
+                                .classes
+                                .escaped_capabilities
+                                .insert(key);
                             // Unsupported constructors still execute their
                             // instance fields and body at `new`, even without a
                             // callback argument to seed the opaque fallback.
@@ -13810,68 +14132,34 @@ pub(crate) fn annotate_synchronous_calls(
         unknown_callee_owners: unknown_callee_owners(&index, flow),
         reaches_unknown_callee: std::sync::OnceLock::new(),
     };
+    let mut world = World::new(WorldScope::Application);
+    world.module.prefix_values = initial_values;
+    world.module.initialized_bindings = initialized_bindings;
+    world.publication.exported_runtime_values = index
+        .exported_hoisted_functions
+        .iter()
+        .copied()
+        .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key)))
+        .collect();
     let state = ExecutionState {
+        world: Arc::new(world),
         ledger_dependencies: ProofDependencies::default(),
-        native_integrity_checks: RefCell::default(),
-        native_prototype_property_checks: RefCell::default(),
-        native_prefix_observations: RefCell::default(),
         native_point_effects: index.initial_native_point_effects.clone(),
         activated_native_effects: BTreeSet::new(),
-        uncertain_native_execution: false,
         author_host_contract_uses: Vec::new(),
-        native_integrity_uses: RefCell::default(),
-        native_operation_input_uses: RefCell::default(),
-        imported_primitive_array_spread_input_uses: RefCell::default(),
-        proof_dependencies: RefCell::default(),
-        inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
-        class_superclasses: OrdMap::new(),
         active_class_member_promotions: BTreeSet::new(),
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
         proof_uses: Vec::new(),
         returned_record_proof_uses: Vec::new(),
-        private_constructor_result_owners: BTreeSet::new(),
-        checked_constructor_inputs: BTreeSet::new(),
-        unknown_array_contents: BTreeSet::new(),
-        record_factory_prototype_premises: RefCell::default(),
         checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
         statement_executed_owners: BTreeSet::new(),
-        parameter_initialized_objects: BTreeSet::new(),
         statement_invoked_callables: BTreeSet::new(),
-        accepted_deferred_global_writes: BTreeSet::new(),
-        frozen_namespace_calls: BTreeSet::new(),
-        reachability: ReachabilityState::default(),
-        prefix_values: initial_values,
-        prefix_callable_selections: OrdMap::new(),
-        initialized_bindings,
-        global_escaped_callbacks: Values::new(),
-        first_callback_publication_owners: BTreeMap::new(),
-        first_class_members_publications: BTreeMap::new(),
-        top_env: Context::new(),
-        top_captures: Context::new(),
-        surface: ObjectSurfaceStore::default(),
-        descriptor_maps: OrdMap::new(),
-        dense_arrays: OrdMap::new(),
-        primitive_arrays: OrdMap::new(),
-        accumulated_values: OrdMap::new(),
         array_iteration_depth: 0,
         array_iteration_protected_objects: BTreeSet::new(),
         array_iteration_unsupported: false,
-        array_intrinsic_mutated: false,
-        tainted_native_sets: BTreeSet::new(),
-        tainted_functions: BTreeSet::new(),
-        revoked_audited_results: BTreeMap::new(),
-        tainted_classes: BTreeSet::new(),
-        escaped_class_capabilities: BTreeSet::new(),
-        exported_runtime_values: index
-            .exported_hoisted_functions
-            .iter()
-            .copied()
-            .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key)))
-            .collect(),
-        prefix_revision: 0,
         invocation_depth: 0,
         invocation_count: 0,
         callback_fallback: CallbackFallbackSummary::default(),
@@ -13880,10 +14168,7 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
         fallback_local_deferred: BTreeMap::new(),
-        returned_callback_owners: BTreeSet::new(),
         capture_contexts: CaptureInterner::default(),
-        lexical_cells: LexicalCells::default(),
-        active_cells: OrdMap::new(),
         callback_sets: CaptureInterner::default(),
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
@@ -13903,14 +14188,14 @@ pub(crate) fn annotate_synchronous_calls(
 
 impl Executor<'_, '_> {
     fn widen_native_effects(&mut self) {
-        if !self.state.uncertain_native_execution {
+        if !self.state.world.native.uncertain_execution {
             self.state.native_point_effects = self.inputs.index.all_native_point_effects.clone();
-            self.state.uncertain_native_execution = true;
+            self.state.world_mut().native.uncertain_execution = true;
         }
     }
 
     fn activate_native_effects(&mut self, owner: SourceUnitOrdinal, callable: Option<u32>) {
-        if self.state.uncertain_native_execution
+        if self.state.world.native.uncertain_execution
             || !self
                 .state
                 .activated_native_effects
@@ -13928,21 +14213,19 @@ impl Executor<'_, '_> {
         }
     }
 
-    fn observe_native_prefix(&self, guard: NativeIntegrityGuard, property: Option<&str>) {
+    fn observe_native_prefix(&mut self, guard: NativeIntegrityGuard, property: Option<&str>) {
         let prior_blocking_prototype_mutations = self
             .state
             .native_point_effects
             .blocking_prototype_mutations(property);
-        self.state
-            .native_prefix_observations
-            .borrow_mut()
-            .push(NativePrefixObservation {
+        self.observations
+            .observe_native_prefix(NativePrefixObservation {
                 guard,
                 program_point_path: self.queries.point_path(),
                 property: property.map(str::to_owned),
                 prior_affected_roots: self.state.native_point_effects.roots.clone(),
                 prior_blocking_prototype_mutations,
-                uncertain_execution: self.state.uncertain_native_execution,
+                uncertain_execution: self.state.world.native.uncertain_execution,
             });
     }
     /// The elements of each plain-array binding `fact` reads, settled at its
@@ -13957,7 +14240,7 @@ impl Executor<'_, '_> {
                 .iter()
                 .chain(&fact.reads.lazy)
                 .filter(|binding| *binding != exclude)
-                .filter_map(|binding| self.state.prefix_values.get(binding))
+                .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
                 .flatten()
                 .cloned()
                 .collect();
@@ -13976,18 +14259,18 @@ impl Executor<'_, '_> {
             if !inputs.graph.is_plain_array(root.0.as_ref())
                 || !inputs.single_writer_bindings.contains(root)
                 || !inputs.needed_bindings.contains(root)
-                || !self.state.initialized_bindings.contains(root)
+                || !self.state.world.module.initialized_bindings.contains(root)
             {
                 continue;
             }
-            let Some(values) = self.state.prefix_values.get(root) else {
+            let Some(values) = self.state.world.module.prefix_values.get(root) else {
                 continue;
             };
             let mut elements = Values::new();
             let arrays = values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
-                    match self.state.dense_arrays.get(array) {
-                        Some(dense) if self.state.object_properties_are_settled(array) => {
+                    match self.state.world.arrays.dense.get(array) {
+                        Some(dense) if self.state.world.object_properties_are_settled(*array) => {
                             elements.extend(dense.slots.iter().flatten().cloned());
                             true
                         }
@@ -14009,14 +14292,24 @@ impl Executor<'_, '_> {
             // array has only object elements.
             let records = elements.iter().all(|element| match element {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    let Some(properties) = self.state.surface.prefix_object_properties.get(object)
+                    let Some(properties) = self
+                        .state
+                        .world
+                        .surface
+                        .prefix_object_properties
+                        .get(object)
                     else {
                         return false;
                     };
                     if !inputs.index.plain_data_objects.contains(object)
-                        || !self.state.object_properties_are_settled(object)
-                        || self.state.surface.applied_accessors.contains_key(object)
-                        || self.state.dense_arrays.contains_key(object)
+                        || !self.state.world.object_properties_are_settled(*object)
+                        || self
+                            .state
+                            .world
+                            .surface
+                            .applied_accessors
+                            .contains_key(object)
+                        || self.state.world.arrays.dense.contains_key(object)
                         || others.contains(element)
                         || properties.contains_key(&None)
                     {
@@ -14057,7 +14350,7 @@ impl Executor<'_, '_> {
             .iter()
             .chain(&fact.reads.lazy)
             .chain(effects.reads.iter().map(|(binding, _)| binding))
-            .filter_map(|binding| self.state.prefix_values.get(binding))
+            .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
             .flatten()
             .cloned()
             .collect();
@@ -14080,6 +14373,8 @@ impl Executor<'_, '_> {
                             || !self.inputs.needed_bindings.contains(*binding)
                             || self
                                 .state
+                                .world
+                                .module
                                 .prefix_values
                                 .get(*binding)
                                 .is_some_and(|values| {
@@ -14126,22 +14421,8 @@ impl Executor<'_, '_> {
         };
         let mut evaluated_initializer = None;
         let needed = &inputs.needed_bindings;
-        let mut top_env = std::mem::take(&mut self.state.top_env);
-        let mut top_captures = std::mem::take(&mut self.state.top_captures);
-        self.state.native_integrity_checks.borrow_mut().clear();
-        self.state
-            .native_prototype_property_checks
-            .borrow_mut()
-            .clear();
-        self.state.native_prefix_observations.borrow_mut().clear();
-        self.state.native_integrity_uses.borrow_mut().clear();
-        self.state.native_operation_input_uses.borrow_mut().clear();
-        self.state
-            .imported_primitive_array_spread_input_uses
-            .borrow_mut()
-            .clear();
-        *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
-        self.state.inference_uses.borrow_mut().clear();
+        let mut top_env = std::mem::take(&mut self.state.world_mut().module.top_env);
+        let mut top_captures = std::mem::take(&mut self.state.world_mut().module.top_captures);
         self.state.current_top_owner = Some(fact.ordinal);
         self.activate_native_effects(fact.ordinal, None);
         self.state.proof_uses.clear();
@@ -14153,8 +14434,11 @@ impl Executor<'_, '_> {
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
         self.state.fallback_local_deferred.clear();
-        self.state.returned_callback_owners.clear();
-        *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
+        self.state
+            .world_mut()
+            .publication
+            .returned_callback_owners
+            .clear();
         let (annotated_record_factory, mut record_factory_rejection) =
             match self.annotated_record_factory(fact) {
                 Some(Ok(factory)) => (Some(factory), None),
@@ -14187,7 +14471,13 @@ impl Executor<'_, '_> {
                         .index
                         .hoisted_bindings
                         .get(factory)
-                        .and_then(|key| self.state.first_callback_publication_owners.get(key))
+                        .and_then(|key| {
+                            self.state
+                                .world
+                                .publication
+                                .first_callback_publication_owners
+                                .get(key)
+                        })
                         .copied()
                 } else {
                     None
@@ -14198,7 +14488,9 @@ impl Executor<'_, '_> {
             ) {
                 construction_class_key.and_then(|key| {
                     self.state
-                        .first_class_members_publications
+                        .world
+                        .classes
+                        .first_members_publications
                         .get(&key)
                         .cloned()
                 })
@@ -14218,12 +14510,21 @@ impl Executor<'_, '_> {
             });
         }
         let checked_local_constructor_factory = checked_local_constructor_factory.ok();
-        self.state.private_constructor_result_owners = checked_local_constructor_factory
+        self.state
+            .world_mut()
+            .classes
+            .private_constructor_result_owners = checked_local_constructor_factory
             .as_ref()
             .map_or_else(BTreeSet::new, |proof| proof.checked_owners.clone());
         self.state.checking_record_factory_contract = false;
-        if self.state.private_constructor_result_owners.is_empty() {
-            *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
+        if self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .is_empty()
+        {
+            self.observations.clear_record_factory_prototype_premises();
         }
         // A recognized metadata statement is a whole call expression. Its
         // eligibility proof is stable across this statement's preparatory
@@ -14242,26 +14543,42 @@ impl Executor<'_, '_> {
         let certified_deferred_write = self.accepts_deferred_global_write(fact.ordinal, &top_env);
         if certified_deferred_write {
             self.state
+                .world_mut()
+                .publication
                 .accepted_deferred_global_writes
                 .insert(fact.ordinal);
         }
         let frozen_namespace = self.private_frozen_namespace(fact);
         if let Some(proof) = &frozen_namespace {
-            self.state.frozen_namespace_calls.insert(proof.freeze_site);
-            self.state.frozen_namespace_calls.insert(proof.define_site);
+            self.state
+                .world_mut()
+                .publication
+                .frozen_namespace_calls
+                .insert(proof.freeze_site);
+            self.state
+                .world_mut()
+                .publication
+                .frozen_namespace_calls
+                .insert(proof.define_site);
         }
         let closed_result = self.private_callback_factory_result(fact);
+        let private_constructor_result_owners = self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .clone();
         let fact_roots = self.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
-            &self.state.private_constructor_result_owners,
+            &private_constructor_result_owners,
             frozen_namespace.as_ref(),
             closed_result.as_ref(),
         );
         if let Some(proof) = closed_result {
             self.record_callback_factory_use_fact(proof.proof_use);
         }
-        if self.state.reachability.unknown_call_seen {
+        if self.state.world.reachability.unknown_call_seen {
             self.extend_reachable_owners(fact_roots.iter().copied());
         } else if let Some(roots) = &mut self.state.prior_reachability_roots {
             // Include the active call site before any nested unknown call can
@@ -14288,7 +14605,11 @@ impl Executor<'_, '_> {
                 ValueExpr::Binding(_) => self.evaluate(super_class, &top_env, &top_captures),
                 _ => unknown(),
             };
-            self.state.class_superclasses.insert(*key, values);
+            self.state
+                .world_mut()
+                .classes
+                .superclasses
+                .insert(*key, values);
         }
         let mut outcome = Outcome {
             complete: true,
@@ -14460,7 +14781,7 @@ impl Executor<'_, '_> {
                 if !needed.contains(id)
                     || !fact.rebinds.eager.contains(id)
                     || !(self.inputs.var_bindings.contains(id)
-                        || self.state.initialized_bindings.contains(id))
+                        || self.state.world.module.initialized_bindings.contains(id))
                 {
                     continue;
                 }
@@ -14469,11 +14790,17 @@ impl Executor<'_, '_> {
                     .entry(id.clone())
                     .or_default()
                     .extend(values.iter().cloned());
-                let possible = self.state.prefix_values.entry(id.clone()).or_default();
+                let possible = self
+                    .state
+                    .world_mut()
+                    .module
+                    .prefix_values
+                    .entry(id.clone())
+                    .or_default();
                 let before = possible.len();
                 possible.extend(values);
                 if possible.len() != before {
-                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    self.state.world_mut().revision.bump_prefix();
                 }
             }
             // Like callable writes above, top-level property writes are kept in a
@@ -14560,18 +14887,29 @@ impl Executor<'_, '_> {
         outcome.effects.global_object_aliases = global_object_aliases;
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.
-        if !self.state.private_constructor_result_owners.is_empty()
+        if !self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .is_empty()
             && (!outcome.complete || outcome.unknown_call)
         {
-            let owners = std::mem::take(&mut self.state.private_constructor_result_owners);
-            *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
+            let owners = std::mem::take(
+                &mut self
+                    .state
+                    .world_mut()
+                    .classes
+                    .private_constructor_result_owners,
+            );
+            self.observations.clear_record_factory_prototype_premises();
             self.extend_reachable_owners(owners.into_iter().chain([fact.ordinal]));
             // The source proof normally makes this unreachable. If an actual
             // executor path fails, restore the current statement's omitted
             // callback effects as well as all future reachability roots.
             let mut restored = Outcome::default();
             let reason = AssumedEffectReason::PrivateConstructorRestore;
-            for owner in self.state.reachability.owners.clone() {
+            for owner in self.state.world.reachability.owners.clone() {
                 self.promote_lazy_owner(owner, fact.ordinal, &mut restored);
             }
             outcome.absorb_call_effects(&mut restored.effects, Some(&reason));
@@ -14580,16 +14918,16 @@ impl Executor<'_, '_> {
         // These are available roots for the remainder of this owner's value
         // evaluation, independently of the completed prior-effect frontier.
         let state = &mut *self.state;
-        if !state.reachability.unknown_call_seen
+        if !state.world.reachability.unknown_call_seen
             && let Some(roots) = &mut state.prior_reachability_roots
         {
-            roots.extend(
-                outcome
-                    .executed_owners
-                    .iter()
-                    .copied()
-                    .filter(|owner| !state.private_constructor_result_owners.contains(owner)),
-            );
+            roots.extend(outcome.executed_owners.iter().copied().filter(|owner| {
+                !state
+                    .world
+                    .classes
+                    .private_constructor_result_owners
+                    .contains(owner)
+            }));
         }
         for (id, expression) in assignments {
             if !needed.contains(id) && initializer_source.is_none() {
@@ -14662,47 +15000,62 @@ impl Executor<'_, '_> {
                 .or_default()
                 .extend(values.clone());
             if self.inputs.top_bindings.contains(id) {
-                self.state.prefix_callable_selections.remove(id);
                 self.state
+                    .world_mut()
+                    .module
+                    .prefix_callable_selections
+                    .remove(id);
+                self.state
+                    .world_mut()
+                    .module
                     .prefix_values
                     .entry(id.clone())
                     .or_default()
                     .extend(values);
                 if let Some(selection) = selection
-                    && selection.matches(&self.state.prefix_values[id])
+                    && selection.matches(&self.state.world.module.prefix_values[id])
                 {
                     self.state
+                        .world_mut()
+                        .module
                         .prefix_callable_selections
                         .insert(id.clone(), selection);
                 }
-                self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                self.state.world_mut().revision.bump_prefix();
             }
         }
-        self.state.initialized_bindings.extend(
+        self.state.world_mut().module.initialized_bindings.extend(
             index.top_definite_initializers[fact.ordinal.0]
                 .iter()
                 .cloned(),
         );
         for expression in &index.top_exported_values[fact.ordinal.0] {
             let values = self.evaluate(expression, &top_env, &top_captures);
-            self.state.exported_runtime_values.extend(values);
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state
+                .world_mut()
+                .publication
+                .exported_runtime_values
+                .extend(values);
+            self.state.world_mut().revision.bump_prefix();
         }
-        if !self.state.private_constructor_result_owners.is_empty()
+        if !self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .is_empty()
             && let Some((factory, span)) = annotated_record_factory
             && !self
-                .state
-                .record_factory_prototype_premises
-                .borrow()
+                .observations
+                .record_factory_prototype_premises()
                 .is_empty()
         {
             outcome.effects.local_record_factory_uses.push(
                 crate::reports::schema::LocalRecordFactoryUse {
                     factory_binding: factory.0.to_string(),
                     prototype_properties: self
-                        .state
-                        .record_factory_prototype_premises
-                        .borrow()
+                        .observations
+                        .record_factory_prototype_premises()
                         .properties(),
                     lexical_statement_ordinal: fact.ordinal,
                     source_location: None,
@@ -14723,40 +15076,20 @@ impl Executor<'_, '_> {
             std::mem::take(&mut self.state.returned_record_proof_uses);
         outcome.effects.author_host_contract_uses =
             std::mem::take(&mut self.state.author_host_contract_uses);
-        outcome.effects.native_integrity_checks =
-            std::mem::take(self.state.native_integrity_checks.get_mut())
-                .into_iter()
-                .collect();
-        outcome.effects.native_prototype_property_checks =
-            std::mem::take(self.state.native_prototype_property_checks.get_mut())
-                .into_values()
-                .collect();
-        outcome.effects.native_prefix_observations =
-            std::mem::take(self.state.native_prefix_observations.get_mut());
-        outcome.effects.native_integrity_uses =
-            std::mem::take(self.state.native_integrity_uses.get_mut())
-                .into_iter()
-                .collect();
-        outcome.effects.native_operation_input_uses =
-            std::mem::take(self.state.native_operation_input_uses.get_mut())
-                .into_values()
-                .collect();
-        outcome.effects.imported_primitive_array_spread_input_uses = std::mem::take(
-            self.state
-                .imported_primitive_array_spread_input_uses
-                .get_mut(),
-        );
-        outcome.effects.inference_uses = std::mem::take(self.state.inference_uses.get_mut())
-            .into_iter()
-            .collect();
-        if !self.state.private_constructor_result_owners.is_empty()
+        self.observations.drain_reports_into(&mut outcome.effects);
+        if !self
+            .state
+            .world
+            .classes
+            .private_constructor_result_owners
+            .is_empty()
             && outcome.complete
             && !outcome.unknown_call
             && outcome.effects.precision_losses.is_empty()
             && outcome.effects.uninitialized_reads.is_empty()
             && let Some(proof) = checked_local_constructor_factory
         {
-            let dependencies = self.state.proof_dependencies.borrow().clone();
+            let dependencies = self.observations.dependencies().clone();
             outcome.effects.local_record_factory_purity =
                 Some(crate::facts::LocalRecordFactoryPurityCertificate {
                     call_span: proof.call_span,
@@ -14764,8 +15097,8 @@ impl Executor<'_, '_> {
                     dependencies,
                 });
         }
-        self.state.top_env = top_env;
-        self.state.top_captures = top_captures;
+        self.state.world_mut().module.top_env = top_env;
+        self.state.world_mut().module.top_captures = top_captures;
         self.clear_invocation_memos();
         self.state.invocation_count = 0;
         self.state.fallback_outcome = Outcome::default();
@@ -14781,22 +15114,41 @@ impl Executor<'_, '_> {
             .queries
             .complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
         let mut prior_effect_owners = outcome.executed_owners.clone();
-        prior_effect_owners
-            .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
+        prior_effect_owners.retain(|owner| {
+            !self
+                .state
+                .world
+                .classes
+                .private_constructor_result_owners
+                .contains(owner)
+        });
         // Ordered execution records the root too; the completed private-result proof covers it.
         if outcome.effects.local_record_factory_purity.is_some() {
             prior_effect_owners.remove(&fact.ordinal);
         }
         if !self.queries.completed_statement_is_pure(fact.ordinal)
-            && self.state.private_constructor_result_owners.is_empty()
+            && self
+                .state
+                .world
+                .classes
+                .private_constructor_result_owners
+                .is_empty()
         {
             prior_effect_owners.insert(fact.ordinal);
         }
         self.state.prior_effect_owners.extend(prior_effect_owners);
         self.state.statement_executed_owners.clear();
-        self.state.returned_callback_owners.clear();
-        self.state.private_constructor_result_owners.clear();
-        *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
+        self.state
+            .world_mut()
+            .publication
+            .returned_callback_owners
+            .clear();
+        self.state
+            .world_mut()
+            .classes
+            .private_constructor_result_owners
+            .clear();
+        self.observations.clear_record_factory_prototype_premises();
         self.state.checking_record_factory_contract = false;
         self.state.current_top_owner = None;
         outcome
@@ -14818,8 +15170,11 @@ impl Executor<'_, '_> {
             && outcome.effects.uninitialized_reads.is_empty()
             && let (Some(source), Some(evaluated)) = (initializer_source, evaluated_initializer)
         {
-            outcome.effects.completed_initialization =
-                source.complete(evaluated, owner, &self.state.initialized_bindings);
+            outcome.effects.completed_initialization = source.complete(
+                evaluated,
+                owner,
+                &self.state.world.module.initialized_bindings,
+            );
         }
         if outcome.effects.completed_initialization.is_none()
             && outcome.complete
@@ -14841,7 +15196,7 @@ impl Executor<'_, '_> {
                 owner,
                 binding,
                 span,
-                &self.state.initialized_bindings,
+                &self.state.world.module.initialized_bindings,
                 namespace_coverage
                     .as_ref()
                     .unwrap_or(&outcome.effect_coverage),
@@ -14876,7 +15231,7 @@ impl Executor<'_, '_> {
                     && identity.binding == *binding
                     && identity.initializer_span == Some(span)
                     && source.matches(owner, binding, span)
-                    && self.state.initialized_bindings.contains(binding)
+                    && self.state.world.module.initialized_bindings.contains(binding)
                     // A later fallback/precision path may be absorbed after
                     // the ordered kernel returned an apparently covered
                     // fragment. Whole-owner lexical authority requires the

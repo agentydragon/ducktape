@@ -16,7 +16,7 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::facts::sync_effects) struct OwnDescriptorMapState {
     pub(in crate::facts::sync_effects) source_object: u32,
     /// A pooled site that captured a different source or shape, or whose
@@ -37,7 +37,7 @@ pub(in crate::facts::sync_effects) trait DescriptorContext:
     /// `[[DefineOwnProperty]]` on it runs no user code.
     fn plain_data_object(&self, object: u32) -> bool;
     /// `ToPropertyDescriptor` reads inherited fields of every descriptor record.
-    fn descriptor_conversion_is_ordinary(&self) -> bool;
+    fn descriptor_conversion_is_ordinary(&mut self) -> bool;
 }
 
 /// A checked `Object.defineProperties(target, map)` whose every definition is
@@ -73,7 +73,7 @@ impl DescriptorApplication {
 /// plain-data target with no own data or accessors yet, from a valid map,
 /// with the ordinary `Object.prototype` intact for descriptor conversion.
 pub(in crate::facts::sync_effects) fn application(
-    context: &impl DescriptorContext,
+    context: &mut impl DescriptorContext,
     target: &Values,
     descriptors: &Values,
 ) -> Option<DescriptorApplication> {
@@ -86,13 +86,14 @@ pub(in crate::facts::sync_effects) fn application(
     let AbstractValue::OwnDescriptorMap(site) = descriptors.first()? else {
         return None;
     };
-    let surface = context.object_surface();
     if !context.descriptor_conversion_is_ordinary()
         || !context.plain_data_object(*object)
         || !context.object_properties_are_settled(*object)
-        || !surface.has_no_own_data(*object)
-        || surface.has_any_accessors(*object)
     {
+        return None;
+    }
+    let surface = context.object_surface();
+    if !surface.has_no_own_data(*object) || surface.has_any_accessors(*object) {
         return None;
     }
     DescriptorApplication::from_map(*object, context.descriptor_map(*site)?)

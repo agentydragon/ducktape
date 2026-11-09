@@ -4,9 +4,11 @@ use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
 use crate::facts::abstract_domain::value::Value;
+use crate::facts::statement_facts::HeapContentAccesses;
 
 /// A completion summary. `OpaqueMayNormal` preserves a possible normal
 /// payload while recording unresolved behavior separately from throws.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Completion<N, A> {
     Normal(N),
@@ -71,6 +73,21 @@ impl<N, A> Completion<N, A> {
             Self::Alternatives {
                 abrupt, non_normal, ..
             } => !abrupt.is_empty() || *non_normal != NonNormalPossibilities::default(),
+        }
+    }
+
+    /// The exact abrupt completions among the represented paths.
+    pub(super) fn exact_abrupt(&self) -> Vec<&A> {
+        match self {
+            Self::Normal(_) | Self::UnknownThrow(_) | Self::OpaqueMayNormal(_) => Vec::new(),
+            Self::Abrupt(abrupt) => vec![abrupt],
+            Self::Alternatives { abrupt, .. } => abrupt
+                .iter()
+                .filter_map(|alternative| match alternative {
+                    AbruptAlternative::Exact(abrupt) => Some(abrupt),
+                    AbruptAlternative::Unknown(_) => None,
+                })
+                .collect(),
         }
     }
 
@@ -193,11 +210,16 @@ impl Default for Completion<(), ()> {
 /// The completion, effects and allocation judgment of one transfer.
 /// Allocation precision is orthogonal to completion: an abrupt path makes the
 /// judgment opaque, but a covered allocation never proves normal completion.
+#[must_use]
 #[derive(Clone)]
 pub(super) struct TransferLedger<N, A> {
     pub(super) completion: Completion<N, A>,
     pub(super) effects: EffectCoverageFragment,
     pub(super) allocation: AllocationJudgment,
+    /// Heap cells this transfer read or wrote. Whether the path was assumed,
+    /// and whether an isolated scope keeps them private, is the adopter's
+    /// decision.
+    pub(super) heap_accesses: HeapContentAccesses,
 }
 
 impl<N, A> TransferLedger<N, A> {
@@ -210,6 +232,7 @@ impl<N, A> TransferLedger<N, A> {
             completion,
             effects,
             allocation,
+            heap_accesses: HeapContentAccesses::default(),
         }
     }
 }

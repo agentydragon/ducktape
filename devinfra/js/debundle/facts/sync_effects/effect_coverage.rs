@@ -327,6 +327,7 @@ impl LexicalBindingEffectReceipt {
 
 /// This describes only the operations of one execution. It never identifies
 /// or certifies a whole source owner, and may travel through invocation memos.
+#[must_use]
 #[derive(Debug, Clone, Default)]
 pub(super) struct EffectCoverageFragment {
     initialization: Option<Box<InitializationEffectCoverage>>,

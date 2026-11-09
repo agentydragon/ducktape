@@ -4,7 +4,9 @@
 use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::Call;
-use super::interpreter::{ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery};
+use super::interpreter::{
+    ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
+};
 use super::kernel::frame::{CallableSelection, EvaluatedCallee};
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::property_inference::OwnPropertyProof;
@@ -151,11 +153,15 @@ pub(super) enum RuntimeValue {
 
 struct RuntimeRequest {
     state: Box<ExecutionState>,
+    /// The parent's run-level admission facts so far; see [`Observations`].
+    observations: Observations,
     operation: RuntimeOperation,
 }
 
+#[must_use]
 pub(super) struct RuntimeResult {
     pub(super) state: Box<ExecutionState>,
+    pub(super) observations: Observations,
     pub(super) value: RuntimeValue,
     pub(super) allocation_judgment: AllocationJudgment,
     pub(super) evaluation_effects: EvaluationEffects,
@@ -316,6 +322,7 @@ impl RuntimeQueries<'_, '_> {
     pub(super) fn request(
         &self,
         state: Box<ExecutionState>,
+        observations: Observations,
         operation: RuntimeOperation,
     ) -> RuntimeResult {
         let kind = match &operation {
@@ -332,7 +339,11 @@ impl RuntimeQueries<'_, '_> {
         let mut context = self.context.borrow_mut();
         context.propose(
             RuntimeKey::Request(point.clone()),
-            RuntimeFact::Request(Box::new(RuntimeRequest { state, operation })),
+            RuntimeFact::Request(Box::new(RuntimeRequest {
+                state,
+                observations,
+                operation,
+            })),
         );
         RuntimeRules::transfer(self.inputs, &point, &mut **context);
         let Some(RuntimeFact::Result(result)) = context.take_final(RuntimeKey::Result(point))
@@ -478,10 +489,10 @@ impl RuntimeRules<'_, '_> {
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(self.inputs, state, queries);
+        let mut executor = Executor::new(self.inputs, state, Observations::default(), queries);
         let effects = executor.execute_owner(owner);
         executor.mark_allocation_opaque();
-        let (mut state, _, _) = executor.into_transfer();
+        let (mut state, _, _, _) = executor.into_transfer();
         // Requests/results are taken at their single-consumer sites, and
         // owner finalization retires invocation memos. No active transfer
         // frame can hold a cell reference outside this settled prefix now.
@@ -506,7 +517,11 @@ impl RuntimeRules<'_, '_> {
         else {
             return;
         };
-        let RuntimeRequest { state, operation } = *request;
+        let RuntimeRequest {
+            state,
+            observations,
+            operation,
+        } = *request;
         let queries = RuntimeQueries {
             inputs,
             point: point.clone(),
@@ -514,7 +529,7 @@ impl RuntimeRules<'_, '_> {
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(inputs, state, queries);
+        let mut executor = Executor::new(inputs, state, observations, queries);
         if !matches!(
             &operation,
             RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. }
@@ -610,11 +625,13 @@ impl RuntimeRules<'_, '_> {
                 RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
             }
         };
-        let (state, allocation_judgment, evaluation_effects) = executor.into_transfer();
+        let (state, observations, allocation_judgment, evaluation_effects) =
+            executor.into_transfer();
         context.propose(
             RuntimeKey::Result(point.clone()),
             RuntimeFact::Result(Box::new(RuntimeResult {
                 state,
+                observations,
                 value,
                 allocation_judgment,
                 evaluation_effects,

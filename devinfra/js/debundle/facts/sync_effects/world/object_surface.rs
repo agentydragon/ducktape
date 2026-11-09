@@ -17,7 +17,7 @@ pub(in crate::facts::sync_effects) struct AppliedAccessor {
 
 /// Object-surface state of one prefix, grouped so every surface read, write,
 /// native descriptor operation and invalidation goes through one owner.
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(in crate::facts::sync_effects) struct ObjectSurfaceStore {
     /// Stored data payloads by allocation origin; `None` is the dynamic-key
     /// slot. Values only accumulate within a prefix.
