@@ -21,6 +21,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,6 +40,8 @@ const (
 	recheckInterval = 5 * time.Second
 	writeTimeout    = 5 * time.Second
 	snapshotChunk   = 64
+	// fluxNameLabel marks an object Flux applies from git, which Flux would recreate if deleted.
+	fluxNameLabel = "kustomize.toolkit.fluxcd.io/name"
 )
 
 type Service struct {
@@ -73,6 +76,8 @@ func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Metho
 		policypb.PolicyService_WatchPolicyBindings_FullMethodName:        rule,
 		policypb.PolicyService_WatchPolicySets_FullMethodName:            rule,
 		policypb.PolicyService_ListPolicySetNames_FullMethodName:         rule,
+		policypb.PolicyService_WatchIdentities_FullMethodName:            rule,
+		policypb.PolicyService_DeleteIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
 	}
 }
 
@@ -202,7 +207,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if string(binding.UID) != request.GetBindingUid() {
 		return nil, status.Error(codes.Aborted, "PolicyBinding changed; refresh the Sandbox policy view")
 	}
-	if _, fromFlux := binding.Labels["kustomize.toolkit.fluxcd.io/name"]; fromFlux {
+	if _, fromFlux := binding.Labels[fluxNameLabel]; fromFlux {
 		return nil, status.Error(codes.Aborted, "PolicyBinding is managed by Flux")
 	}
 	for _, owner := range binding.OwnerReferences {
@@ -317,15 +322,9 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 	if err != nil {
 		return err
 	}
-	subject := request.GetSubject()
-	if subject == nil {
-		subject = &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
-	}
-	if subject.GetNamespace() == "" || subject.GetName() == "" {
-		return status.Error(codes.InvalidArgument, "subject namespace and name are required")
-	}
-	if !broad && (caller.Namespace != subject.GetNamespace() || caller.Name != subject.GetName()) {
-		return status.Error(codes.PermissionDenied, "caller cannot read this subject")
+	selected, err := selectBindings(request, caller, broad)
+	if err != nil {
+		return err
 	}
 	bindingWatch, err := s.watch(ctx, &policyapi.PolicyBindingList{})
 	if err != nil {
@@ -340,7 +339,7 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 		out := make(map[string]*policypb.PolicyBinding)
 		for i := range list.Items {
 			binding := &list.Items[i]
-			if binding.Spec.Subject.Namespace != subject.GetNamespace() || binding.Spec.Subject.Name != subject.GetName() {
+			if !selected(binding.Spec.Subject) {
 				continue
 			}
 			converted, err := bindingMessage(binding)
@@ -365,6 +364,144 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Removed{Removed: id}})
 		},
 		func(item *policypb.PolicyBinding) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+}
+
+// selectBindings answers which binding subjects a watch request selects, refusing a subject the
+// caller may not read.
+func selectBindings(request *policypb.WatchPolicyBindingsRequest, caller auth.Account, broad bool) (func(policyapi.Subject) bool, error) {
+	if name := request.GetIdentity(); name != "" {
+		if request.GetSubject() != nil {
+			return nil, status.Error(codes.InvalidArgument, "select either a ServiceAccount subject or an identity")
+		}
+		if !broad {
+			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
+		}
+		return func(bound policyapi.Subject) bool { return bound.Identity != nil && bound.Identity.Name == name }, nil
+	}
+	subject := request.GetSubject()
+	if subject == nil {
+		subject = &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
+	}
+	if subject.GetNamespace() == "" || subject.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "subject namespace and name are required")
+	}
+	if !broad && (caller.Namespace != subject.GetNamespace() || caller.Name != subject.GetName()) {
+		return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
+	}
+	return func(bound policyapi.Subject) bool {
+		return bound.Identity == nil && bound.Namespace == subject.GetNamespace() && bound.Name == subject.GetName()
+	}, nil
+}
+
+func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
+	ctx := stream.Context()
+	_, broad, err := s.caller(ctx)
+	if err != nil {
+		return err
+	}
+	if !broad {
+		return status.Error(codes.PermissionDenied, "caller cannot read identities")
+	}
+	identities, err := s.watch(ctx, &policyapi.IdentityList{})
+	if err != nil {
+		return err
+	}
+	defer identities.Stop()
+	read := func() (map[string]*policypb.Identity, error) {
+		var list policyapi.IdentityList
+		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
+			return nil, unavailable(ctx, err)
+		}
+		out := make(map[string]*policypb.Identity, len(list.Items))
+		for i := range list.Items {
+			converted, err := identityMessage(&list.Items[i])
+			if err != nil {
+				return nil, status.Error(codes.Internal, "invalid identity")
+			}
+			out[list.Items[i].Name] = converted
+		}
+		return out, nil
+	}
+	return follow(ctx, []watch.Interface{identities}, read,
+		func(items []*policypb.Identity) error {
+			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: items}}})
+		},
+		func() error {
+			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}})
+		},
+		func(item *policypb.Identity) error {
+			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Upsert{Upsert: item}})
+		},
+		func(id *policypb.PolicyResourceIdentity) error {
+			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Removed{Removed: id}})
+		},
+		func(item *policypb.Identity) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+}
+
+func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteIdentityRequest) (*policypb.DeleteIdentityResponse, error) {
+	if request.GetNamespace() == "" || request.GetName() == "" || request.GetUid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity namespace, name, and UID are required")
+	}
+	if request.GetNamespace() != s.namespace {
+		return nil, status.Error(codes.NotFound, "Identity not found")
+	}
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetName()}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "Identity not found")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	if string(identity.UID) != request.GetUid() || identity.ResourceVersion == "" {
+		return nil, status.Error(codes.Aborted, "Identity changed; refresh the identities view")
+	}
+	if _, fromFlux := identity.Labels[fluxNameLabel]; fromFlux {
+		return nil, status.Error(codes.FailedPrecondition, "Identity is managed by Flux")
+	}
+	var bindings policyapi.PolicyBindingList
+	if err := s.objects.List(ctx, &bindings, client.InNamespace(s.namespace)); err != nil {
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "PolicyBinding inventory is unavailable")
+	}
+	var referencing []string
+	for _, binding := range bindings.Items {
+		bound := binding.Spec.Subject.Identity
+		if bound == nil || bound.Name != identity.Name || ownedBy(binding.OwnerReferences, identity.UID) {
+			continue
+		}
+		referencing = append(referencing, binding.Name)
+	}
+	if len(referencing) > 0 {
+		slices.Sort(referencing)
+		failure := &errdetails.PreconditionFailure{}
+		for _, name := range referencing {
+			failure.Violations = append(failure.Violations, &errdetails.PreconditionFailure_Violation{
+				Type: "PolicyBinding", Subject: name, Description: "names this Identity and is not owned by it",
+			})
+		}
+		refusal, err := status.New(codes.FailedPrecondition, "Identity is named by PolicyBindings it does not own: "+strings.Join(referencing, ", ")).WithDetails(failure)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "Identity refusal could not be encoded")
+		}
+		return nil, refusal.Err()
+	}
+	uid, resourceVersion := identity.UID, identity.ResourceVersion
+	if err := s.objects.Delete(ctx, identity, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "Identity not found")
+		}
+		if apierrors.IsConflict(err) {
+			return nil, status.Error(codes.Aborted, "Identity changed; refresh the identities view")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity deletion failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity could not be deleted")
+	}
+	return &policypb.DeleteIdentityResponse{}, nil
+}
+
+func ownedBy(owners []metav1.OwnerReference, uid types.UID) bool {
+	return slices.ContainsFunc(owners, func(owner metav1.OwnerReference) bool { return owner.UID == uid })
 }
 
 func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicySetsResponse]) error {
@@ -484,6 +621,14 @@ func bindingMessage(obj *policyapi.PolicyBinding) (*policypb.PolicyBinding, erro
 		result.OwnerReferences = append(result.OwnerReferences, &kubernetespb.OwnerReference{ApiVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, Uid: string(owner.UID), Controller: owner.Controller != nil && *owner.Controller})
 	}
 	return result, nil
+}
+
+func identityMessage(obj *policyapi.Identity) (*policypb.Identity, error) {
+	spec := &resourcepb.IdentitySpec{}
+	if err := convert(obj.Spec, spec); err != nil {
+		return nil, err
+	}
+	return &policypb.Identity{Identity: identity(obj.ObjectMeta), Generation: obj.Generation, Labels: obj.Labels, Spec: spec}, nil
 }
 
 func policySetMessage(obj *policyapi.PolicySet) (*policypb.PolicySet, error) {
