@@ -4,7 +4,10 @@ Two always-running KubeVirt VMs each contain a BuildBuddy executor for the manua
 `kvm-vm` pool; the pool schedules across them, one action per VM. Required pod anti-affinity keeps the
 two on different nodes without naming a node, so one node failure or its disk contention
 reaches only one worker. Each VM runs the configuration below. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
-vCPUs, 16 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
+vCPUs, 16 GiB RAM and an 80 GiB block volume from `piraeus-ssd-local` for Docker layers, action workspaces and cache.
+The claim is one unreplicated copy on the node's SSD pool: the contents rebuild, the volume survives
+a VM restart, and it keeps the VM on its node. The class retains deleted volumes, so remove a
+leftover volume by hand when deleting a worker.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
@@ -37,7 +40,7 @@ First boot configures the dedicated guest for nested KVM and reboots once before
 executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
 `svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
 including control-plane nodes, that advertises either CPU feature and has capacity for
-the 4-CPU, 16-GiB reservation. It has no hostname, region or explicit OS selector. The executor advertises four CPUs and 14 GiB, leaving
+the 4-CPU, 16-GiB reservation. It is limited to the `hil` region, where the SSD pools are, and has no hostname or explicit OS selector. The executor advertises four CPUs and 14 GiB, leaving
 2 GiB for the guest OS and Docker. KVM test actions request four compute units. The
 `kvm-vm` pool name is independent of the node placement.
 The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device
@@ -53,4 +56,4 @@ The outer policy denies ingress and admits DNS, BuildBuddy and its registry, Ubu
 repositories over TLS, and Zot. Use
 `virtctl -n buildbuddy-executor console buildbuddy-kvm-worker` for diagnostics. Updating the
 VM template requires `virtctl -n buildbuddy-executor restart buildbuddy-kvm-worker`; this
-recreates its root and work disk, discarding the cache. Rotate the key too if the guest was compromised.
+recreates its root disk; the work disk and its cache persist. Rotate the key too if the guest was compromised.

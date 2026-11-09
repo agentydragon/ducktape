@@ -22,8 +22,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
-    VirtualMachineSpecTemplateSpecVolumesEmptyDisk,
-    VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity,
+    VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 from python.runfiles import Runfiles
@@ -134,12 +133,27 @@ def chart(app: App) -> Chart:
         },
     )
     for index, name in enumerate(WORKER_NAMES):
+        # Heavy scratch (Docker and containerd layers, K3s, action workspaces, cache) is rebuildable, so one
+        # unreplicated copy on the node's SSD pool; the claim then keeps this VM on the node that holds it.
+        k8s.KubePersistentVolumeClaim(
+            chart,
+            "work-claim" if index == 0 else f"work-claim-{index + 1}",
+            metadata=k8s.ObjectMeta(name=f"{name}-work", namespace=NAMESPACE),
+            spec=k8s.PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                storage_class_name="piraeus-ssd-local",
+                volume_mode="Block",
+                resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("80Gi")}),
+            ),
+        )
         container_disk_vm(
             chart,
             "worker" if index == 0 else f"worker-{index + 1}",
             name=name,
             namespace=NAMESPACE,
             image=_IMAGE,
+            # Only OVH nodes carry the SSD pool sized for this disk.
+            node_selector={"topology.kubernetes.io/region": "hil"},
             cpu=VirtualMachineSpecTemplateSpecDomainCpu(
                 cores=4,
                 model="host-passthrough",
@@ -188,8 +202,8 @@ def chart(app: App) -> Chart:
             disks={
                 "work": VirtualMachineSpecTemplateSpecVolumes(
                     name="work",
-                    empty_disk=VirtualMachineSpecTemplateSpecVolumesEmptyDisk(
-                        capacity=VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity.from_string("80Gi")
+                    persistent_volume_claim=VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim(
+                        claim_name=f"{name}-work"
                     ),
                 ),
                 "bbkey": VirtualMachineSpecTemplateSpecVolumes(
