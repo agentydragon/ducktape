@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
+import { timestampDate } from "@bufbuild/protobuf/wkt";
+
+import { SystemComponentState } from "../app_service_pb";
 import { getSystemStatus } from "./system_status_client";
 
 afterEach(() => {
@@ -8,7 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("decodes the generated AppService ProtoJSON response into the system status view", async () => {
+it("decodes the generated AppService ProtoJSON response", async () => {
   const paths: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -32,18 +35,26 @@ it("decodes the generated AppService ProtoJSON response into the system status v
     })
   );
 
-  await expect(getSystemStatus()).resolves.toEqual([
+  const components = await getSystemStatus();
+  expect(
+    components.map(({ name, state, detail, checkedAt }) => ({
+      name,
+      state,
+      detail,
+      checkedAt: timestampDate(checkedAt),
+    }))
+  ).toEqual([
     {
       name: "Healthy component",
-      state: "ok",
-      detail: null,
-      checked_at: "2026-01-01T00:00:00Z",
+      state: SystemComponentState.OK,
+      detail: undefined,
+      checkedAt: new Date("2026-01-01T00:00:00Z"),
     },
     {
       name: "Down component",
-      state: "down",
+      state: SystemComponentState.DOWN,
       detail: "UNAVAILABLE: fixture connection refused",
-      checked_at: "2026-01-01T00:00:00Z",
+      checkedAt: new Date("2026-01-01T00:00:00Z"),
     },
   ]);
   expect(paths).toEqual(["/upstream/app/v1/system/status"]);

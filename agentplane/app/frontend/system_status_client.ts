@@ -1,38 +1,21 @@
-import { fromJsonString, toJson } from "@bufbuild/protobuf";
-import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import { fromJsonString } from "@bufbuild/protobuf";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
-import { GetSystemStatusResponseSchema, SystemComponentState } from "../app_service_pb";
+import { GetSystemStatusResponseSchema, SystemComponentState, type SystemComponentStatus } from "../app_service_pb";
 import { createAppServiceClient } from "./app_service_client";
 
-export type SystemComponentStatus = {
-  name: string;
-  state: "ok" | "down";
-  detail: string | null;
-  checked_at: string;
-};
+/** A component status whose state is known and whose check time is present. */
+export type CheckedComponentStatus = SystemComponentStatus & { checkedAt: Timestamp };
 
 const appServiceClient = createAppServiceClient("/upstream/app/v1");
 
-function stateName(state: SystemComponentState): SystemComponentStatus["state"] {
-  switch (state) {
-    case SystemComponentState.OK:
-      return "ok";
-    case SystemComponentState.DOWN:
-      return "down";
-    default:
-      throw new Error(`App status returned an unknown system component state (${state}).`);
-  }
-}
-
-export async function getSystemStatus(): Promise<SystemComponentStatus[]> {
+export async function getSystemStatus(): Promise<CheckedComponentStatus[]> {
   const response = fromJsonString(GetSystemStatusResponseSchema, await appServiceClient.getText("/system/status"));
   return response.components.map((component) => {
-    if (component.checkedAt === undefined) throw new Error("System status omitted a component check time.");
-    return {
-      name: component.name,
-      state: stateName(component.state),
-      detail: component.detail ?? null,
-      checked_at: toJson(TimestampSchema, component.checkedAt) as string,
-    };
+    if (component.state !== SystemComponentState.OK && component.state !== SystemComponentState.DOWN)
+      throw new Error(`App status returned an unknown system component state (${component.state}).`);
+    const checkedAt = component.checkedAt;
+    if (checkedAt === undefined) throw new Error("System status omitted a component check time.");
+    return { ...component, checkedAt };
   });
 }
