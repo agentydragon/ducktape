@@ -171,7 +171,7 @@ Wave 3 is ordered from the hosted inventory below instead) and L1e (devel has
 no module-cell identities yet; the saved identities land with Wave 3 slice 6).
 Still open from this wave: the `private_frozen_namespace` recognizer
 tombstoned by #15052 (Wave 3 slice 1). Cleanups landed alongside: #15055,
-#15056, #15058, #15060, #15062, #15063.
+#15056, #15058, #15060, #15062, #15063, #15066.
 
 **Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
 `World` and its join, the one driver, the completion ledger as sole coverage
@@ -186,7 +186,7 @@ cold Tana analysis was about 320 seconds; a slice that regresses wall time or
 RSS by more than 10 percent is profiled with `perf` before it lands, and a
 persistent regression means the structure, not a budget knob, is wrong.
 
-- L2a. **In review as #15069** (2026-11-09): `kernel/{context,continuation,
+- L2a. **Landed as #15069** (2026-11-09): `kernel/{context,continuation,
 driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   deleted. Tana cost gate: +3.3 % wall, +0.4 % RSS. Kept with tombstones gated
   on L2b: the cell-owning `BindingContext` methods, `settled_dependencies`,
