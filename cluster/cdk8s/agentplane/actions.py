@@ -446,11 +446,13 @@ class Actions(Construct):
         # The runtime policy and caller watch scopes are independent. Keep the policy
         # CR permissions in the policy namespace, and grant only ServiceAccount reads in
         # caller namespaces. No Secrets or serviceaccounts/token permissions are needed. The
-        # policy informer lists and watches both and reads only what it holds: no `get`.
+        # policy informer lists and watches them and reads only what it holds: no `get`.
         rules_by_namespace: dict[str, list[RolePolicyRule]] = {
             namespace: [
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
+                    resources=[
+                        custom_resource(GROUP, resource) for resource in ("policysets", "policybindings", "identities")
+                    ],
                     verbs=["list", "watch"],
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),

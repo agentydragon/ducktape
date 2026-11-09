@@ -107,7 +107,7 @@ func (i *Index) Resolve(subject policyapi.ServiceAccountRef) ([]reader.BindingRe
 	if !i.Health.Available() {
 		return nil, false
 	}
-	return i.Rules.Bindings(subject), true
+	return i.Rules.Bindings(reader.ServiceAccount(subject)), true
 }
 
 // ResolveBindings is the caller's PolicyBindings as admission decides from them, in name order, each with the sets it

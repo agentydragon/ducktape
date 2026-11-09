@@ -969,7 +969,13 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path, via: Sev
                 k8s_client.V1PolicyRule(api_groups=[""], resources=["serviceaccounts"], verbs=["get"]),
                 k8s_client.V1PolicyRule(
                     api_groups=[GROUP],
-                    resources=[CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "sandboxes"],
+                    resources=[
+                        CREDENTIALS_PLURAL,
+                        POLICY_SETS_PLURAL,
+                        POLICY_BINDINGS_PLURAL,
+                        "identities",
+                        "sandboxes",
+                    ],
                     verbs=["get", "list", "watch"],
                 ),
                 k8s_client.V1PolicyRule(

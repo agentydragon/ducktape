@@ -89,7 +89,7 @@ type match struct {
 // came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
 // credential away from it.
 func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext) Decision {
-	grants := i.Rules.Grants(caller)
+	grants := i.Rules.Grants(reader.ServiceAccount(caller))
 	if len(grants) == 0 {
 		return Denied{decision.NoBinding}
 	}
