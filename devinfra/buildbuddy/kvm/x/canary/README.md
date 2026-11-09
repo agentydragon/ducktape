@@ -60,9 +60,14 @@ CPU quota, so the outer VM provides the actual four/eight CPU boundary.
 Capture existing phase/OTel outputs, BuildBuddy execution timestamps and input
 identity, guest `pidstat -durh -p ALL 1`, `iostat -xz 1`, host pressure, and the
 action Docker cgroup's `cpu.stat`, `memory.peak`, `memory.events` and `io.stat`.
-Do not export Docker environment/credential files. A sampled RSS maximum is not
-the cgroup peak. These observations distinguish phase wall time, process CPU,
-memory peaks and shared-host contention. CPU availability does not imply usage.
+Include `sar -r ALL` for whole-guest available memory: a cgroup high-water mark
+includes reclaimable cache. Read cgroup counters while the action is alive;
+Docker can remove the cgroup before `docker wait` returns, and held-open counter
+files then fail with `ENODEV`. Retain the last sample time and call its high-water
+mark an observed lower bound. A sampled RSS maximum is a different measure.
+Do not export Docker environment/credential files. These observations distinguish
+phase wall time, process CPU, memory demand and shared-host contention. CPU
+availability does not imply usage.
 
 Start with three serial pairs; classify recreated guests as cold and repeat
 within an arm for warm behavior. A stopped VM's `emptyDisk` is discarded.
@@ -84,8 +89,12 @@ Keep this fresh opt-in pool a sole-producer experiment: one locally recorded
 invocation at a time, no external workflow selection. Record every parent/child
 invocation and execution ID, worker identity, scheduled node and test result.
 Before stopping the guest, reconcile all owned invocations to terminal status
-and match each physical execution to the executor's action-completion logs.
-Terminal invocation state alone does not prove that its action stopped.
+and match physical execution metadata to the unique worker and owned Docker
+container lifecycle/exit status. The pinned executor's INFO journal does not
+emit per-action completion lines. Reconcile its successful execution counter
+with all owned actions and require assigned/queued CPU and RAM plus every group
+queue length to be zero. Terminal invocation state alone does not prove that
+its action stopped.
 
 From the administrative guest console, retain the executor journal privately and
 inspect `docker ps -a` using only ID/name/state/image fields. The only live Docker
@@ -97,7 +106,10 @@ Resolve any pending or unmatched execution before teardown.
 After those idle checks, run `systemctl stop buildbuddy-executor` in this canary
 guest. Require a successful systemd result, executor shutdown/completion logs,
 no live executor process/container, and no action/K3s process or mount. The service
-stop disables its automatic restart until explicitly started. Retain the last
-action completion and executor-stop journal as the drain receipt, then stop the
-owned VM and wait for its VMI/launcher Pod to disappear. Do not read a stronger
-BuildBuddy credential to obtain queue visibility.
+stop disables its automatic restart until explicitly started. Retain the action
+metadata, lifecycle, counters and executor-stop journal as the drain receipt,
+then stop the owned VM and wait for its VMI/launcher Pod to disappear. Do not
+read a stronger BuildBuddy credential to obtain queue visibility.
+
+The [November 9 experiment](../../../debug/2026_11_09_hil_kvm_worker_canary.md)
+records actual placement, comparison limits, profiles and cleanup.

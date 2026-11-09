@@ -1,0 +1,780 @@
+{
+  "observed_at_utc": "2026-11-09T10:57:53.329998+00:00",
+  "fixed_cpu_experiment_source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+  "placement": {
+    "constraint": {
+      "topology.kubernetes.io/zone": "hil-ovh"
+    },
+    "hostname_pinned": false,
+    "actual_node_both_arms": "ovh-ns1001419",
+    "host_cpu": "Intel Xeon E-2236, 6 physical cores / 12 threads",
+    "scratch_backend": "guest ext4 work disk, KubeVirt emptyDisk/QCOW2, launcher emptyDir, host /var/lib/kubelet on physical WDC SN720 NVMe /dev/nvme0n1p8"
+  },
+  "resource_contract": {
+    "max_vms": 1,
+    "guest_cpu_arms": [4, 8],
+    "guest_memory_gib": 16,
+    "work_disk_gib": 80,
+    "ephemeral_scheduler_request_gib": 80,
+    "max_concurrent_actions": 1,
+    "advertised_memory_gib": 14,
+    "action_memory_reservation_bytes": 10737418240,
+    "live_scheduler_millicpu_confirmed": [4000, 8000],
+    "cpu8_process_allowed_list": "0-7",
+    "docker_cpu_quota_and_nanocpu_limits": 0
+  },
+  "input_proof": {
+    "same_input_root_digest": true,
+    "action_platform_difference": {
+      "EstimatedCPU": ["4", "8"]
+    },
+    "command_platform_difference": {
+      "EstimatedCPU": ["4", "8"]
+    },
+    "command_args_environment_and_outputs_equal": true,
+    "other_action_fields_equal": true,
+    "input_root_digest": {
+      "hash": "e71c9682f28f30c8931cde12047f1d58ead52e4f170e6409b3426484cfc5bbe7",
+      "sizeBytes": "165"
+    },
+    "command_non_platform_differing_fields": []
+  },
+  "runs": [
+    {
+      "arm": "cpu4-arm1",
+      "cpu": 4,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "cold worker filecache, RBE image warmed by smoke",
+      "invocation_id": "867d788d-2430-4169-9ffa-4c1557fb776c",
+      "execution_id": "/uploads/b1449f0e-cea6-44ff-8739-431b1a241a28/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T09:56:45.812128Z",
+      "command_end": "2026-11-09T10:01:24.156850Z",
+      "command_s": 278.344722032547,
+      "fetch_s": 12.28250002861023,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 120.2914,
+        "sampled_cpu_s": 114.8608,
+        "cpu_sample_boundary_error_s": [0.352, 0.06],
+        "guest_psi_stall_pct": {
+          "cpu_some": 16.512,
+          "cpu_full": 0.0,
+          "memory_some": 0.202,
+          "memory_full": 0.18,
+          "io_some": 6.737,
+          "io_full": 5.146
+        },
+        "whole_guest_cpu": {
+          "samples": 120,
+          "mean_busy_cores": 1.6448433333333334,
+          "peak_1s_busy_cores": 3.95,
+          "mean_steal_percent": 0.2871666666666667
+        }
+      },
+      "case_s": 138.6965,
+      "scenario_s": 123.3467,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 69.44913840293884,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 4,
+        "mean_busy_cores": 1.1361075268817205,
+        "peak_1s_busy_cores": 3.95
+      },
+      "whole_guest_memory_sar": null,
+      "observed_cgroup_memory_peak_bytes": 6992162816,
+      "last_counter_sample_before_command_end_s": 1.1568500995635986,
+      "sampled_cgroup_cpu_total_s": 138.208595,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 9.847,
+        "cpu_full": 0.0,
+        "memory_some": 0.519,
+        "memory_full": 0.456,
+        "io_some": 4.947,
+        "io_full": 3.97
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 57.465069759464605,
+        "write_iops_weighted_await_ms": 21.047383427115737,
+        "flush_iops_weighted_await_ms": 1.0499729148865782,
+        "mean_util_fill_idle": 17.762508960573477
+      },
+      "native_profile": {
+        "sha256": "61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed",
+        "size_bytes": 1182303,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed/1182303",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    },
+    {
+      "arm": "cpu4-arm2",
+      "cpu": 4,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "warm worker filecache",
+      "invocation_id": "2ea5b83f-df7e-4139-9d5b-9723b5604953",
+      "execution_id": "/uploads/1a8fa021-1d1c-4dff-bce6-b53d082d36ea/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:14:06.439233Z",
+      "command_end": "2026-11-09T10:18:16.722345Z",
+      "command_s": 250.28311204910278,
+      "fetch_s": 0.48088908195495605,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 120.2131,
+        "sampled_cpu_s": 113.0535,
+        "cpu_sample_boundary_error_s": [-0.424, 0.363],
+        "guest_psi_stall_pct": {
+          "cpu_some": 17.789,
+          "cpu_full": 0.0,
+          "memory_some": 0.011,
+          "memory_full": 0.009,
+          "io_some": 4.052,
+          "io_full": 3.202
+        },
+        "whole_guest_cpu": {
+          "samples": 120,
+          "mean_busy_cores": 1.7062233333333334,
+          "peak_1s_busy_cores": 3.95,
+          "mean_steal_percent": 0.4175
+        }
+      },
+      "case_s": 111.2868,
+      "scenario_s": 95.3666,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 67.50391745567322,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 4,
+        "mean_busy_cores": 1.2849184,
+        "peak_1s_busy_cores": 3.95
+      },
+      "whole_guest_memory_sar": {
+        "samples": 250,
+        "min_available_kib": 12437724.0,
+        "max_used_kib": 3346868.0,
+        "max_used_percent": 20.46,
+        "max_committed_percent": 67.1
+      },
+      "observed_cgroup_memory_peak_bytes": 8212283392,
+      "last_counter_sample_before_command_end_s": 0.7223451137542725,
+      "sampled_cgroup_cpu_total_s": 147.131071,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 11.726,
+        "cpu_full": 0.0,
+        "memory_some": 0.455,
+        "memory_full": 0.381,
+        "io_some": 3.557,
+        "io_full": 2.865
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 60.3018058984375,
+        "write_iops_weighted_await_ms": 13.444861782561334,
+        "flush_iops_weighted_await_ms": 0.4983856007002954,
+        "mean_util_fill_idle": 13.01004
+      },
+      "native_profile": {
+        "sha256": "6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd",
+        "size_bytes": 1143479,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd/1143479",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    },
+    {
+      "arm": "cpu4-arm3",
+      "cpu": 4,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "warm worker filecache",
+      "invocation_id": "611e9676-fbf4-4a4b-9d30-8d529d35f4f9",
+      "execution_id": "/uploads/6d611774-2708-4329-9bcf-29d37568f299/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:21:13.476690Z",
+      "command_end": "2026-11-09T10:25:25.320880Z",
+      "command_s": 251.84418988227844,
+      "fetch_s": 0.2513141632080078,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 119.1864,
+        "sampled_cpu_s": 122.6682,
+        "cpu_sample_boundary_error_s": [0.012, -0.174],
+        "guest_psi_stall_pct": {
+          "cpu_some": 17.585,
+          "cpu_full": 0.0,
+          "memory_some": 0.0,
+          "memory_full": 0.0,
+          "io_some": 3.037,
+          "io_full": 2.317
+        },
+        "whole_guest_cpu": {
+          "samples": 120,
+          "mean_busy_cores": 1.7317066666666667,
+          "peak_1s_busy_cores": 3.96,
+          "mean_steal_percent": 0.3016666666666667
+        }
+      },
+      "case_s": 112.4527,
+      "scenario_s": 96.2163,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 66.49500560760498,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 4,
+        "mean_busy_cores": 1.3128539682539682,
+        "peak_1s_busy_cores": 3.96
+      },
+      "whole_guest_memory_sar": {
+        "samples": 252,
+        "min_available_kib": 12515112.0,
+        "max_used_kib": 3270600.0,
+        "max_used_percent": 19.99,
+        "max_committed_percent": 67.1
+      },
+      "observed_cgroup_memory_peak_bytes": 8913137664,
+      "last_counter_sample_before_command_end_s": 1.3208799362182617,
+      "sampled_cgroup_cpu_total_s": 150.313911,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 11.37,
+        "cpu_full": 0.0,
+        "memory_some": 0.528,
+        "memory_full": 0.468,
+        "io_some": 3.4,
+        "io_full": 2.775
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 59.664094277033726,
+        "write_iops_weighted_await_ms": 9.076568980899955,
+        "flush_iops_weighted_await_ms": 0.4229085668114962,
+        "mean_util_fill_idle": 12.901825396825398
+      },
+      "native_profile": {
+        "sha256": "2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e",
+        "size_bytes": 1039319,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e/1039319",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    },
+    {
+      "arm": "cpu8-arm1",
+      "cpu": 8,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "cold worker filecache, RBE image warmed by smoke",
+      "invocation_id": "37ba5347-411b-4045-95ff-89798015dc9e",
+      "execution_id": "/uploads/f287f796-eef9-4a2f-af27-4d9da79547d0/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:32:54.749675Z",
+      "command_end": "2026-11-09T10:37:35.455656Z",
+      "command_s": 280.70598101615906,
+      "fetch_s": 12.955572128295898,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 124.9466,
+        "sampled_cpu_s": 140.4481,
+        "cpu_sample_boundary_error_s": [-0.293, -0.239],
+        "guest_psi_stall_pct": {
+          "cpu_some": 4.52,
+          "cpu_full": 0.0,
+          "memory_some": 0.096,
+          "memory_full": 0.091,
+          "io_some": 5.598,
+          "io_full": 5.105
+        },
+        "whole_guest_cpu": {
+          "samples": 125,
+          "mean_busy_cores": 1.9466304,
+          "peak_1s_busy_cores": 6.6968000000000005,
+          "mean_steal_percent": 0.94976
+        }
+      },
+      "case_s": 137.3407,
+      "scenario_s": 119.2805,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 71.82874488830566,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 8,
+        "mean_busy_cores": 1.333859074733096,
+        "peak_1s_busy_cores": 6.6968000000000005
+      },
+      "whole_guest_memory_sar": {
+        "samples": 281,
+        "min_available_kib": 10837916.0,
+        "max_used_kib": 4929072.0,
+        "max_used_percent": 30.14,
+        "max_committed_percent": 69.81
+      },
+      "observed_cgroup_memory_peak_bytes": 7183945728,
+      "last_counter_sample_before_command_end_s": 0.4556560516357422,
+      "sampled_cgroup_cpu_total_s": 173.574694,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 2.859,
+        "cpu_full": 0.0,
+        "memory_some": 0.834,
+        "memory_full": 0.778,
+        "io_some": 4.652,
+        "io_full": 4.302
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 56.63443373276245,
+        "write_iops_weighted_await_ms": 17.995524504913444,
+        "flush_iops_weighted_await_ms": 1.050512610647347,
+        "mean_util_fill_idle": 18.096975088967973
+      },
+      "native_profile": {
+        "sha256": "05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c",
+        "size_bytes": 1457285,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c/1457285",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    },
+    {
+      "arm": "cpu8-arm2",
+      "cpu": 8,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "warm worker filecache",
+      "invocation_id": "42bad75a-1d02-4beb-8b24-dd7870d1bc8f",
+      "execution_id": "/uploads/58c12280-7ee4-4b45-9c04-196f6a378c24/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:40:00.682270Z",
+      "command_end": "2026-11-09T10:44:20.149504Z",
+      "command_s": 259.4672338962555,
+      "fetch_s": 0.21500015258789062,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 124.9791,
+        "sampled_cpu_s": 155.5716,
+        "cpu_sample_boundary_error_s": [-0.294, -0.273],
+        "guest_psi_stall_pct": {
+          "cpu_some": 5.009,
+          "cpu_full": 0.0,
+          "memory_some": 0.016,
+          "memory_full": 0.016,
+          "io_some": 2.959,
+          "io_full": 2.53
+        },
+        "whole_guest_cpu": {
+          "samples": 125,
+          "mean_busy_cores": 2.027328,
+          "peak_1s_busy_cores": 6.5127999999999995,
+          "mean_steal_percent": 1.63456
+        }
+      },
+      "case_s": 115.1652,
+      "scenario_s": 97.4905,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 71.61019325256348,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 8,
+        "mean_busy_cores": 1.4317907692307692,
+        "peak_1s_busy_cores": 6.5127999999999995
+      },
+      "whole_guest_memory_sar": {
+        "samples": 260,
+        "min_available_kib": 12443056.0,
+        "max_used_kib": 3322316.0,
+        "max_used_percent": 20.31,
+        "max_committed_percent": 69.52
+      },
+      "observed_cgroup_memory_peak_bytes": 9315799040,
+      "last_counter_sample_before_command_end_s": 1.1495039463043213,
+      "sampled_cgroup_cpu_total_s": 179.885791,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 3.345,
+        "cpu_full": 0.0,
+        "memory_some": 0.539,
+        "memory_full": 0.508,
+        "io_some": 3.664,
+        "io_full": 3.33
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 57.573489633413466,
+        "write_iops_weighted_await_ms": 14.914617714139535,
+        "flush_iops_weighted_await_ms": 0.732978950560975,
+        "mean_util_fill_idle": 16.920153846153845
+      },
+      "native_profile": {
+        "sha256": "b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941",
+        "size_bytes": 1393037,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941/1393037",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    },
+    {
+      "arm": "cpu8-arm3",
+      "cpu": 8,
+      "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "cache_state": "warm worker filecache",
+      "invocation_id": "6bb7290f-2f1a-417d-8ffa-15e113f05c14",
+      "execution_id": "/uploads/4ee4f764-1421-4bfb-a5ce-4449c8dc93c6/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:47:04.359809Z",
+      "command_end": "2026-11-09T10:51:40.932165Z",
+      "command_s": 276.5723559856415,
+      "fetch_s": 0.21105504035949707,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 122.9045,
+        "sampled_cpu_s": 145.2691,
+        "cpu_sample_boundary_error_s": [0.046, 0.141],
+        "guest_psi_stall_pct": {
+          "cpu_some": 4.85,
+          "cpu_full": 0.0,
+          "memory_some": 0.0,
+          "memory_full": 0.0,
+          "io_some": 3.876,
+          "io_full": 3.594
+        },
+        "whole_guest_cpu": {
+          "samples": 123,
+          "mean_busy_cores": 1.9648455284552846,
+          "peak_1s_busy_cores": 7.12,
+          "mean_steal_percent": 0.826910569105691
+        }
+      },
+      "case_s": 135.4256,
+      "scenario_s": 118.9668,
+      "image_import_count": 26,
+      "image_import_serial_sum_s": 66.99547171592712,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 8,
+        "mean_busy_cores": 1.3430840579710146,
+        "peak_1s_busy_cores": 7.12
+      },
+      "whole_guest_memory_sar": {
+        "samples": 276,
+        "min_available_kib": 12395532.0,
+        "max_used_kib": 3363512.0,
+        "max_used_percent": 20.56,
+        "max_committed_percent": 69.63
+      },
+      "observed_cgroup_memory_peak_bytes": 8688148480,
+      "last_counter_sample_before_command_end_s": 0.9321649074554443,
+      "sampled_cgroup_cpu_total_s": 170.544883,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 2.95,
+        "cpu_full": 0.0,
+        "memory_some": 0.355,
+        "memory_full": 0.33,
+        "io_some": 2.851,
+        "io_full": 2.663
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 54.5128416199615,
+        "write_iops_weighted_await_ms": 13.728854332007385,
+        "flush_iops_weighted_await_ms": 0.6444097229287383,
+        "mean_util_fill_idle": 13.337427536231884
+      },
+      "native_profile": {
+        "sha256": "77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e",
+        "size_bytes": 1651025,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e/1651025",
+        "cas_readback_verified": true
+      },
+      "health_note": "prior guest idle softlockup during serial transfer, outside measured action; health rechecked; retain as post-warning sample"
+    },
+    {
+      "arm": "candidate-arm1",
+      "cpu": 4,
+      "source_sha": "9943dc0330fb6c4f3bf49dd4cb5e9d1686ad0a14",
+      "cache_state": "warm worker filecache",
+      "invocation_id": "597854b6-df34-4782-b0cc-4fb0241348ab",
+      "execution_id": "/uploads/6659b826-76c8-4d4c-90f8-140254cd8c10/blobs/34059393c35c045aa03d6f4fb456cec1af0d7d1e44052f6288d116dab344e3d4/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "node": "ovh-ns1001419",
+      "result": "PASSED",
+      "command_start": "2026-11-09T10:08:13.402396Z",
+      "command_end": "2026-11-09T10:11:47.512524Z",
+      "command_s": 214.1101279258728,
+      "fetch_s": 0.9814300537109375,
+      "setup": {
+        "name": "system_test.stack.setup",
+        "wall_s": 76.8066,
+        "sampled_cpu_s": 78.3138,
+        "cpu_sample_boundary_error_s": [-0.298, -0.105],
+        "guest_psi_stall_pct": {
+          "cpu_some": 13.416,
+          "cpu_full": 0.0,
+          "memory_some": 0.0,
+          "memory_full": 0.0,
+          "io_some": 4.211,
+          "io_full": 3.333
+        }
+      },
+      "case_s": 119.4241,
+      "scenario_s": 103.7899,
+      "image_import_count": 20,
+      "image_import_serial_sum_s": 37.94145393371582,
+      "whole_guest_cpu": {
+        "logical_cpu_count": 4,
+        "mean_busy_cores": 0.9875981308411215,
+        "peak_1s_busy_cores": 3.6040000000000005
+      },
+      "whole_guest_memory_sar": {
+        "samples": 168,
+        "min_available_kib": 13607512.0,
+        "max_used_kib": 2211560.0,
+        "max_used_percent": 13.52,
+        "max_committed_percent": 55.36
+      },
+      "observed_cgroup_memory_peak_bytes": 5864161280,
+      "last_counter_sample_before_command_end_s": 1.512523889541626,
+      "sampled_cgroup_cpu_total_s": 97.980639,
+      "last_memory_events": ["low 0", "high 0", "max 0", "oom 0", "oom_kill 0", "oom_group_kill 0"],
+      "guest_psi": {
+        "cpu_some": 7.772,
+        "cpu_full": 0.0,
+        "memory_some": 0.541,
+        "memory_full": 0.467,
+        "io_some": 3.575,
+        "io_full": 3.051
+      },
+      "vdb_io": {
+        "mean_write_mib_s_fill_idle": 58.430527161214954,
+        "write_iops_weighted_await_ms": 9.25504391468005,
+        "flush_iops_weighted_await_ms": 0.6418737468021849,
+        "mean_util_fill_idle": 14.338785046728972
+      },
+      "native_profile": {
+        "sha256": "416eba73d5b431d40358b0387b1ecf7d7e8eef17335f365d839dc0d447e44888",
+        "size_bytes": 802379,
+        "cas_uri": "bytestream://remote.buildbuddy.io/blobs/416eba73d5b431d40358b0387b1ecf7d7e8eef17335f365d839dc0d447e44888/802379",
+        "cas_readback_verified": true
+      },
+      "health_note": null
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "cpu4_s": 278.344722032547,
+      "cpu8_s": 280.70598101615906,
+      "cpu8_minus4_s": 2.3612589836120605
+    },
+    {
+      "pair": 2,
+      "cpu4_s": 250.28311204910278,
+      "cpu8_s": 259.4672338962555,
+      "cpu8_minus4_s": 9.18412184715271
+    },
+    {
+      "pair": 3,
+      "cpu4_s": 251.84418988227844,
+      "cpu8_s": 276.5723559856415,
+      "cpu8_minus4_s": 24.728166103363037
+    }
+  ],
+  "owned_demand": [
+    {
+      "arm": "smoke-launcher-failure",
+      "invocation_id": "70f1c95b-47c5-466f-a133-5465c8522daa",
+      "terminal": "failed before analysis; unsupported startup option; no TestRunner",
+      "physical_execution_count": 0
+    },
+    {
+      "arm": "cpu4-smoke",
+      "invocation_id": "6aa19171-d924-4726-b552-cea0e490f314",
+      "terminal": "PASSED",
+      "execution_id": "/uploads/6d461b19-fd1b-445f-9af2-6d6ccebe0d21/blobs/395cc519a25aea06130da2439416ed81e843d1b1092540e9cc21933e5e14dd12/606",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "physical_execution_count": 1,
+      "target": "//devinfra/buildbuddy/kvm:kvm_vm_test",
+      "other_remote_executions": [
+        {
+          "execution_id": "/uploads/5460f3ad-e316-4cef-ba5d-4c3cf0d0d246/blobs/ae4ea501a5c44f0bdc6670b2d2ac79d99c3aa673817c4ecd5fbe4fe1ba3382b9/494",
+          "mnemonic": "RunNogo",
+          "stage": "COMPLETED",
+          "worker": "25879417-e629-4336-be65-4de81c2de073"
+        },
+        {
+          "execution_id": "/uploads/c615a04e-85e2-462a-b788-dae24a4a6fc8/blobs/0e28560424aafd5b194cb72522d38d287583886a83b7fc5d855c63bf08f7ba23/494",
+          "mnemonic": "RunNogo",
+          "stage": "COMPLETED",
+          "worker": "122c8a92-7593-4826-ac8a-3a587a6257ae"
+        }
+      ]
+    },
+    {
+      "arm": "cpu4-arm1",
+      "invocation_id": "867d788d-2430-4169-9ffa-4c1557fb776c",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "execution_id": "/uploads/b1449f0e-cea6-44ff-8739-431b1a241a28/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "candidate-arm1",
+      "invocation_id": "597854b6-df34-4782-b0cc-4fb0241348ab",
+      "terminal": "PASSED",
+      "source": "9943dc0330fb6c4f3bf49dd4cb5e9d1686ad0a14",
+      "execution_id": "/uploads/6659b826-76c8-4d4c-90f8-140254cd8c10/blobs/34059393c35c045aa03d6f4fb456cec1af0d7d1e44052f6288d116dab344e3d4/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu4-arm2",
+      "invocation_id": "2ea5b83f-df7e-4139-9d5b-9723b5604953",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "execution_id": "/uploads/1a8fa021-1d1c-4dff-bce6-b53d082d36ea/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu4-arm3",
+      "invocation_id": "611e9676-fbf4-4a4b-9d30-8d529d35f4f9",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "execution_id": "/uploads/6d611774-2708-4329-9bcf-29d37568f299/blobs/8a0383f3b239896c5951bc05f34e0cbb3c1cfa25aca55729bfa45493ef975699/609",
+      "worker": "80409546-e130-4c06-992a-6918135992ff",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu8-smoke",
+      "invocation_id": "23a1d221-e968-4704-a57a-72d56b2aa3f5",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "execution_id": "/uploads/697bbdf0-ee7a-4962-9b86-d972e8b5ca06/blobs/de16b6b1f7051f6fb9574798e9d505dbdb2323ac5931bcf4a1965acda4fe54ed/606",
+      "physical_execution_count": 1,
+      "target": "//devinfra/buildbuddy/kvm:kvm_vm_test",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu8-arm1",
+      "invocation_id": "37ba5347-411b-4045-95ff-89798015dc9e",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "execution_id": "/uploads/f287f796-eef9-4a2f-af27-4d9da79547d0/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu8-arm2",
+      "invocation_id": "42bad75a-1d02-4beb-8b24-dd7870d1bc8f",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "execution_id": "/uploads/58c12280-7ee4-4b45-9c04-196f6a378c24/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    },
+    {
+      "arm": "cpu8-arm3",
+      "invocation_id": "6bb7290f-2f1a-417d-8ffa-15e113f05c14",
+      "terminal": "PASSED",
+      "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "health_note": "prior guest idle softlockup during serial transfer, outside measured action; health rechecked; retain as post-warning sample",
+      "execution_id": "/uploads/4ee4f764-1421-4bfb-a5ce-4449c8dc93c6/blobs/1ebf7b1debd6c558eb71f698753de61a5d23447f2adde839e9f1990af65133bf/609",
+      "worker": "09bc0011-6733-45a8-8018-2728030ab534",
+      "physical_execution_count": 1,
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "other_remote_executions": []
+    }
+  ],
+  "cleanup": {
+    "verified_at_utc": "2026-11-09T10:57:53.166378+00:00",
+    "owned_resources_absent": true,
+    "deleted_original_object_uids": {
+      "ConfigMap": "b4f5a431-fd8f-4439-977f-16872de13bb4",
+      "VirtualMachine": "0be3fa27-6205-4455-8ea4-b5adcc62ff19",
+      "CiliumNetworkPolicy": "879da97f-afca-4de0-a750-ece29892b43d"
+    },
+    "guest_instances_and_launchers_absent": true,
+    "owned_action_ledger": {
+      "physical_executions": 9,
+      "passed": 9,
+      "failed_wrapper_before_physical_execution": 1
+    },
+    "drain": {
+      "cpu4_completed": 5,
+      "cpu8_completed": 4,
+      "assigned_cpu_ram_zero": true,
+      "both_group_queues_zero": true,
+      "docker_only_executor_before_stop": true,
+      "nested_k3s_process_mount_checks_idle": true,
+      "executor_graceful_stop_and_unregistration_logged": true,
+      "service_inactive_result_success_before_vm_stop": true,
+      "profilers_stopped_before_vm_stop": true
+    },
+    "scratch": {
+      "host": "ovh-ns1001419",
+      "mount": "/var/lib/kubelet",
+      "device": "/dev/nvme0n1p8",
+      "reported_available_decimal_gb_before_and_after": 133.57,
+      "final_launcher_pod_uid": "d7969a12-ad62-4d28-a920-80ad49256b7e",
+      "final_owned_pod_directory_absent": true
+    },
+    "production": {
+      "VirtualMachine": {
+        "name": "buildbuddy-kvm-worker",
+        "uid_before": "190a0589-2961-4d93-b528-f2857aee4ce2",
+        "uid_after": "190a0589-2961-4d93-b528-f2857aee4ce2",
+        "ready_after": true
+      },
+      "VirtualMachineInstance": {
+        "name": "buildbuddy-kvm-worker",
+        "uid_before": "3e4b2d1a-e401-4f13-95aa-1b26f01b5434",
+        "uid_after": "3e4b2d1a-e401-4f13-95aa-1b26f01b5434",
+        "ready_after": true
+      }
+    },
+    "host_conditions": {
+      "NetworkUnavailable": "False",
+      "MemoryPressure": "False",
+      "DiskPressure": "False",
+      "PIDPressure": "False",
+      "Ready": "True"
+    },
+    "api_readyz_passed": true,
+    "host_etcd_status_errors_empty": true,
+    "host_core_services_running_healthy": true,
+    "receipt_sha256": {
+      "cpu4-drain-receipt.txt": "462f9bd1d6bbf3ef6f60d781f67dcc1a683e8e759e9815e3c3f8010546b2a673",
+      "cpu8-drain-receipt.txt": "40d3011d9c4dd03e63f8dcaa454e6989ea0a3120fa68cc1ace69e1095682f016",
+      "delete-owned-result.txt": "f127e450cefbbcd828c7f5e7ae02ec1d43ac9452322cf5c3554c88408a51f855",
+      "final-owned-query.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "final-host-mounts.txt": "cf3c3a3efae32b9ae1e2bb55384b67a80874679a6f9e1228d3ed903d7de97d40",
+      "final-owned-scratch-path.txt": "8a7ba1b594748f596e2786ec038e9ff5118a90ffcdf5329de8dcbc5a5c779cf4",
+      "final-api-readyz.txt": "bccf5693358eb9b3b9839ce540a40f770fe7e3e9f4268aae3c8fb7aedb44a56a",
+      "final-etcd-status.txt": "4d2c41f0d93ecef95964fee1669378c5e3209b7828fc915c4febbef8baba8464"
+    }
+  },
+  "limits": [
+    "Six CPU runs in two guest lifetimes, ordered 4 then 8; match cold/warm states but no randomized order or dedicated physical host.",
+    "Untrimmed fixed source predates PR #15099; candidate separately measured at 4 CPU only.",
+    "No matched HDD/SSD test: all feasible HIL compute hosts have NVMe scratch; HDD hosts lacked 4 CPU / 16 GiB admission headroom.",
+    "Cgroup counters are observed live lower bounds; final held-FD reads fail after cgroup removal.",
+    "Cold 4 CPU lacks sar memory and first 72 s of host PSI; candidate sar starts partway through action.",
+    "8-CPU guest softlockup at 10:45:42 UTC between the second and third 8-CPU runs during serial archive transfer; handle_softirqs over idle task; host CPU pressure spike; cause unproven; no warning observed during prior measured windows."
+  ]
+}
