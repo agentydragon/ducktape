@@ -80,9 +80,13 @@ func ruleOf(effective policy.EffectiveRule) (*egressrulespb.Rule, error) {
 	return rule, nil
 }
 
-// CredentialOf exposes only presentation metadata, never a credential source or value.
+// CredentialOf exposes only presentation metadata and the account an impersonation credential acts
+// as, never a Secret reference or a value.
 func CredentialOf(credential resources.Credential) (*egressrulespb.Credential, error) {
 	out := &egressrulespb.Credential{Uid: credential.UID, Name: credential.Name, Description: credential.Description, Placeholder: credential.Placeholder(), Targets: make([]*egressrulespb.Target, len(credential.Targets))}
+	if account, ok := credential.Source.(resources.KubernetesServiceAccount); ok {
+		out.KubernetesServiceAccount = &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
+	}
 	for i, target := range credential.Targets {
 		var err error
 		if out.Targets[i], err = targetOf(target.ToAPI()); err != nil {
