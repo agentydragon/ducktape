@@ -711,9 +711,11 @@ ts_library(
         ":system_status_client",
         ":time_ago",
         ":topbar",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -733,7 +735,9 @@ agentplane_vitest_test(
     srcs = ["system_status_client.test.ts"],
     deps = [
         ":system_status_client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -748,12 +752,14 @@ agentplane_vitest_test(
     deps = [
         ":system",
         ":system_status_client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
     ],
 )
 

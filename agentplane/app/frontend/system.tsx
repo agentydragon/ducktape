@@ -1,8 +1,10 @@
 import { Badge, Stack, Table, Text, Title } from "@mantine/core";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "./client";
-import { getSystemStatus, type SystemComponentStatus } from "./system_status_client";
+import { getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
+import { SystemComponentState } from "../app_service_pb";
 import { TimeAgo } from "./time_ago";
 import { TopbarTitle } from "./topbar";
 import "./system.css";
@@ -11,7 +13,7 @@ const REFRESH_SECONDS = 15;
 
 /** Whether each service the app depends on answers a health check, as the app itself sees it. */
 export function SystemStatus(): JSX.Element {
-  const [components, setComponents] = useState<SystemComponentStatus[] | null>(null);
+  const [components, setComponents] = useState<CheckedComponentStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,16 +74,16 @@ export function SystemStatus(): JSX.Element {
                 <Table.Td className="agentplane-system-status-state">
                   <span className="agentplane-system-status-mobile-label">Status: </span>
                   {/* Keep the status readable if its table cell gets narrower than the badge label. */}
-                  <Badge color={component.state === "ok" ? "green" : "red"} miw="max-content">
-                    {component.state}
+                  <Badge color={component.state === SystemComponentState.OK ? "green" : "red"} miw="max-content">
+                    {component.state === SystemComponentState.OK ? "ok" : "down"}
                   </Badge>
                 </Table.Td>
                 <Table.Td
                   className="agentplane-system-status-detail"
-                  data-empty={component.detail === null ? "true" : "false"}
+                  data-empty={component.detail === undefined ? "true" : "false"}
                   style={{ overflowWrap: "anywhere" }}
                 >
-                  {component.detail !== null && (
+                  {component.detail !== undefined && (
                     <>
                       <span className="agentplane-system-status-mobile-label">Detail: </span>
                       {component.detail}
@@ -90,7 +92,7 @@ export function SystemStatus(): JSX.Element {
                 </Table.Td>
                 <Table.Td className="agentplane-system-status-checked">
                   <span className="agentplane-system-status-mobile-label">Checked: </span>
-                  <TimeAgo value={component.checked_at} />
+                  <TimeAgo value={timestampDate(component.checkedAt)} />
                 </Table.Td>
               </Table.Tr>
             ))}
