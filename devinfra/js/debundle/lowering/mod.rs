@@ -40,7 +40,6 @@ mod naturalize;
 pub mod ownership_subset;
 mod placement;
 mod plans;
-mod rebind_fold;
 mod reentry_report;
 pub mod rename_ledger;
 #[cfg(test)]

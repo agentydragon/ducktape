@@ -3150,9 +3150,13 @@ statement). The narrow exception is the explicit
 `coarse_atomic_groups.complete_partial_atomic_groups_for` array: a listed
 authored module may adopt only the currently unclaimed source units of an atom
 for which it is the sole authored owner. Mixed-owner atoms remain unchanged and
-the ordinary gate rejects them. `per_atomic_group` may place an unclaimed whole
+the ordinary gate rejects them. A partial claim of a rebinding atom is not
+completed either: the unclaimed writer or declaration follows `unassigned_mode`,
+and the ordinary gate rejects the resulting cross-destination rebind. The spec
+author co-locates a mutable binding with its writers by claiming both.
+`per_atomic_group` may place an unclaimed whole
 atomic group, including anonymous statements, into a generated plan.
-`coarse_atomic_groups` applies the named-owner completions after rebind-fold
+`coarse_atomic_groups` applies the named-owner completions after explicit
 destinations are known, then begins residual synthesis from the remaining
 wholly-unclaimed atomic groups. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership

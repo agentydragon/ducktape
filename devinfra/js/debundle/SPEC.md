@@ -1067,7 +1067,12 @@ multiple authored owners remain split for the ordinary gate to reject.
 
 An atomic group contains source units that must stay together. Explicit claims
 are retained; selecting a destination policy does not relax the complete
-assignment's realizability checks. The generated-module policies preserve
+assignment's realizability checks. A partial claim is never silently completed:
+when a spec claims a mutable binding but not a function that assigns it (or the
+reverse), the unclaimed endpoint follows the residual policy and the ordinary
+gate rejects the cross-destination rebind. Claim both endpoints in one module
+to co-locate them. A wholly unclaimed atomic group follows the residual policy
+as a unit. The generated-module policies preserve
 every binding and anonymous statement in its source unit. Coarse grouping is a
 deterministic placement heuristic. Its cycle refinement uses the normal
 complete-assignment gate's typed actual mutual-SCC diagnosis and merges only

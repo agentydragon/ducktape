@@ -102,6 +102,8 @@ console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
                 &[
                     Member::new("names"),
                     Member::new("argumentCalls"),
+                    // Increments `argumentCalls`, so it is claimed with it.
+                    Member::new("makeValue"),
                     Member::new("getterCalls"),
                     Member::new("argumentThrew"),
                 ],

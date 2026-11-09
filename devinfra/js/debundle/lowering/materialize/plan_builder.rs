@@ -10,7 +10,6 @@ use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
-use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use analysis::{
@@ -178,7 +177,7 @@ impl ChunkPlanBuilder {
     /// Restrict ownership to selected explicit modules after the full selector
     /// solve, duplicate checks, analysis-assumption collection, and resolved
     /// member-site collection have completed, but before residual routing,
-    /// rebind folds and assignment analysis run.
+    /// and assignment analysis run.
     ///
     /// The selector outcomes, unmatched claims, and no-reentry assertions stay
     /// attached to the builder so filtering cannot hide an invalid full spec.
@@ -1289,9 +1288,8 @@ impl ChunkPlanBuilder {
     }
 
     /// `PerAtomicGroup` mode: every unclaimed atomic factor group gets
-    /// its own synthesized plan at `__auto/atomic_groups/NNNN`. Run after rebind folding
-    /// so the residual sweep and fold decisions have already settled which
-    /// atomic groups are still unclaimed. Bindings
+    /// its own synthesized plan at `__auto/atomic_groups/NNNN`. Run after the
+    /// residual sweep has settled which atomic groups are still unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
@@ -1313,8 +1311,7 @@ impl ChunkPlanBuilder {
     }
 
     /// Complete a partially claimed atomic group only for an explicitly
-    /// opted-in authored owner. This runs after rebind folding and ownership
-    /// subset filtering. Groups with zero or multiple current owners, and
+    /// opted-in authored owner. This runs after ownership subset filtering. Groups with zero or multiple current owners, and
     /// groups whose sole owner is not listed, remain untouched for ordinary
     /// residual routing and the complete-assignment gate.
     pub(super) fn route_partial_atomic_groups_to_named_owners(
@@ -1457,7 +1454,7 @@ impl ChunkPlanBuilder {
 
     /// Snapshot which atoms had exactly one opted-in authored owner before an
     /// ownership subset can remove plans or claims. Completion itself runs
-    /// later, after subset filtering and rebind folds.
+    /// later, after subset filtering.
     pub(super) fn single_authored_owner_atomic_groups(
         &self,
         precomputed: &DependencyGraphAndAtomicGroups,
@@ -1875,64 +1872,6 @@ impl ChunkPlanBuilder {
             }
         }
         Ok(())
-    }
-
-    /// Apply a batch of rebind-fold decisions produced by
-    /// `lowering/rebind_fold.rs`.
-    ///
-    /// Each fold reroutes a single binding from its previous plan
-    /// (if any) to the cycle's explicit destination. The
-    /// `bindings_catalogue` records the new destination, and bindings
-    /// that were previously parked at the residual plan are pruned
-    /// from that plan's binding list so the residual doesn't
-    /// double-claim them.
-    ///
-    /// Folds are produced in atomic-group iteration order; we do not
-    /// reorder them here. The mutations are idempotent in the sense
-    /// that `module_plans[dest].bindings.entry(name).or_insert_with`
-    /// preserves any existing entry under that name.
-    pub(super) fn apply_rebind_folds(&mut self, folds: Vec<RebindFold>) {
-        let residual_plan_index = self.residual_plan_index;
-        for RebindFold {
-            binding,
-            dest,
-            from_residual,
-        } in folds
-        {
-            let name = binding.0.as_ref().to_string();
-            self.bindings_catalogue.insert(
-                binding,
-                BindingKind::Owned {
-                    module: ModuleId(dest),
-                },
-            );
-            self.module_plans[dest]
-                .bindings
-                .entry(name.clone())
-                .or_insert_with(|| name.clone());
-            if from_residual && let Some(residual) = residual_plan_index {
-                self.module_plans[residual].bindings.remove(&name);
-            }
-        }
-    }
-
-    /// Derive the owned-only view required by rebind analysis.
-    /// This is a snapshot, never independently mutated construction state.
-    pub(super) fn owned_binding_destinations(&self) -> HashMap<Id, usize> {
-        self.bindings_catalogue
-            .iter()
-            .filter_map(|(id, kind)| match kind {
-                BindingKind::Owned { module } => Some((id.clone(), module.0)),
-                BindingKind::Imported { .. } => None,
-            })
-            .collect()
-    }
-
-    /// The residual landing-site plan index, if one was created by the residual
-    /// sweep. Needed by rebind folding to know which existing claims count as
-    /// "swept" (and hence still foldable).
-    pub(super) fn residual_plan_index(&self) -> Option<usize> {
-        self.residual_plan_index
     }
 
     pub(super) fn selector_outcome_report(&self) -> Option<SelectorOutcomeReport> {

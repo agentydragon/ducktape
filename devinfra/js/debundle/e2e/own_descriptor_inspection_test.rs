@@ -498,7 +498,18 @@ fn descriptor_map_mutation_invalidates_application_but_keeps_callbacks() {
 #[test]
 fn descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source() {
     let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
-    let fixture = run_fixture(FixtureOpts::new(source, descriptor_modules()));
+    // `record` is assigned by the `descriptors` initializer, so the two are
+    // claimed together.
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "descriptors",
+                &[Member::new("record"), Member::new("descriptors")],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
