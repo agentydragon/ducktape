@@ -70,6 +70,7 @@ _RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
 _RUNNER_TLS_CA = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt"
 _GRPC_PORT = 8080
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
@@ -138,6 +139,7 @@ class RunnerGateway(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         image: str = _IMAGE,
     ) -> None:
@@ -223,7 +225,7 @@ class RunnerGateway(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
+                memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             # A Recreate drops delivery and every runner connection, so the Gateway rolls

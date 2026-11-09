@@ -143,6 +143,7 @@ PUBLIC_INTERNET_POLICY = "public-internet"
 DEFAULT_POLICIES = (BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY)
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
@@ -565,6 +566,7 @@ class Egress(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         tls_passthrough_services: Sequence[ServiceRef] = (),
     ) -> None:
@@ -578,6 +580,7 @@ class Egress(Construct):
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.container_env = container_env or {}
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
 
         Certificate(
@@ -842,7 +845,7 @@ class Egress(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             startup=tls_grpc_probe(

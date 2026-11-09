@@ -54,6 +54,7 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _CODEX_CATALOG_PATH = PurePosixPath("/etc/agentplane-llm-ingress-codex/codex_models.json")
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
@@ -85,6 +86,7 @@ class LlmIngress(Construct):
         litellm_url: str = "http://litellm.litellm.svc.cluster.local:4000",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -92,6 +94,7 @@ class LlmIngress(Construct):
         self.litellm_url = litellm_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
 
@@ -262,7 +265,7 @@ class LlmIngress(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),

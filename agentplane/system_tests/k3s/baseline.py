@@ -16,8 +16,10 @@ import socket
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,7 @@ STOP_TIMEOUT_SECONDS = 60
 POD_CIDR = "10.42.0.0/16"
 CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
 CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
+WORKING_SET_SAMPLE_SECONDS = 10
 
 
 def run(
@@ -370,6 +373,69 @@ class K3s:
                 "get", "nodes,pods,events", "-A", "-o", "yaml", "--request-timeout=5s", check=False, timeout=10
             )
         )
+
+    @contextlib.contextmanager
+    def sample_working_sets(self) -> Iterator[None]:
+        """Record per-Pod and per-container working sets while workloads run.
+
+        The stage snapshots in `report_storage` miss Sandboxes, which exist only during cases. Each
+        sample appends one line to `memory/working-sets.jsonl`; `memory/peaks.json` holds the peak
+        per namespace and container name across Pods, the figure Pod requests and limits are sized from."""
+        output = undeclared_outputs_dir() / "memory"
+        output.mkdir(parents=True, exist_ok=True)
+        peaks: dict[str, int] = {}
+        stop = threading.Event()
+
+        def sample() -> None:
+            with (output / "working-sets.jsonl").open("a") as log:
+                while not stop.wait(WORKING_SET_SAMPLE_SECONDS):
+                    try:
+                        raw = self.kubectl(
+                            "get",
+                            "--raw",
+                            "/api/v1/nodes/env/proxy/stats/summary",
+                            "--request-timeout=5s",
+                            timeout=10,
+                            stdout_only=True,
+                        )
+                    except RuntimeError, subprocess.TimeoutExpired:
+                        logger.warning("kubelet stats summary unavailable", exc_info=True)
+                        continue
+                    summary = json.loads(raw)
+                    pods = {
+                        f"{pod['podRef']['namespace']}/{pod['podRef']['name']}": {
+                            "pod": pod.get("memory", {}).get("workingSetBytes"),
+                            "containers": {
+                                container["name"]: container.get("memory", {}).get("workingSetBytes")
+                                for container in pod.get("containers", [])
+                            },
+                        }
+                        for pod in summary.get("pods", [])
+                    }
+                    for pod_key, pod in pods.items():
+                        namespace = pod_key.split("/")[0]
+                        for name, working_set in pod["containers"].items():
+                            if working_set is not None:
+                                key = f"{namespace}/{name}"
+                                peaks[key] = max(peaks.get(key, 0), working_set)
+                    node = summary["node"].get("memory", {})
+                    log.write(json.dumps({"time": time.time(), "node": node, "pods": pods}) + "\n")
+                    log.flush()
+
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="working-sets") as sampling:
+            sampler = sampling.submit(sample)
+            try:
+                yield
+            finally:
+                stop.set()
+                error = sampler.exception()
+                (output / "peaks.json").write_text(
+                    json.dumps({name: f"{value / 2**20:.0f}Mi" for name, value in sorted(peaks.items())}, indent=2)
+                    + "\n"
+                )
+            # Raised only after a passing body, so a sampler bug cannot mask the test's own failure.
+            if error is not None:
+                raise error
 
     @contextlib.contextmanager
     def profile_containerd(self, kind: str, seconds: int, destination: Path) -> Iterator[None]:
