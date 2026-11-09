@@ -172,6 +172,8 @@ def _pod_template(
                     read_only=True,
                 )
             ],
+            # CLEANUP(added 2026-11-09): Replace this proxy-hop bearer with a workload SVID once
+            # command boxes have an issuer; the proxy's bearer mode goes with the last projection.
             sidecar_token_projections=[
                 k8s.ServiceAccountTokenProjection(
                     audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"

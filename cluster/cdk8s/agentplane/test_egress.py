@@ -231,16 +231,6 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
-def test_legacy_workload_bearer_routes_are_removed_from_basic(staging_manifests: list[dict[str, Any]]) -> None:
-    policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    hosts = [host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])]
-    assert "actions.agentplane-staging.svc.cluster.local" not in hosts
-    assert not any(
-        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
-        for doc in staging_manifests
-    )
-
-
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 

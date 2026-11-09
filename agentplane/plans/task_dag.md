@@ -3033,8 +3033,17 @@ bearer removal are separate work below; neither blocks this mixed-auth rollout. 
 Identity/account changes remain separately gated and are exercised in k3s. Stage edges are technical
 prerequisites; the fan-in to system tests is a sequencing hold, not permission to start them early.
 
+What the first slice leaves provisional, each tracked by the node that removes it: the SVID still
+resolves to the Sandbox's own ServiceAccount and yields the same `Principal` a TokenReview does
+(`SERVICES_IDENTITY_PRINCIPAL`); a Sandbox sidecar forwards its Kubernetes-audience token beside
+the SVID for `kubectl` substitution (`EGRESS_IDENTITY_RULES`); the proxy's `forward` listener,
+the sidecar and the command-box templates keep a bearer hop, each marked `CLEANUP(added 2026-11-09)`
+(`WORKLOAD_AUTH_CUTOVER`); and staging has not run a Sandbox since the listeners changed
+(`SVID_STAGING_CHECK`).
+
 ```mermaid
 flowchart LR
+    SVID_STAGING_CHECK[Ready: one Sandbox through the SVID route on staging]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
@@ -3061,6 +3070,16 @@ the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the
 admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
 tests of untouched kinds still pass.
 
+### `SVID_STAGING_CHECK` — one Sandbox through the SVID route on staging
+
+**Ready; live check for a deployment-specific gap.** Every staging service and the egress proxy run
+the two-mode listeners (images from 2026-11-09), and staging held zero Sandbox CRs at that point, so
+the SVID route has only run in k3s. Launch one Pod Sandbox from the app, confirm the egress decision
+history and one platform service record a SPIFFE-authenticated caller for it, confirm `kubectl`
+still works through the forwarded Kubernetes-audience token, then finish it. Stop there: a failure
+is a bug to fix in the slice, not a reason to widen the check. **Exit:** the observation recorded
+in the PR that closes this node, and the node removed.
+
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
 **Design ready; operator direction, 2026-11-08.** Manage identities and SVID issuance independently
@@ -3084,8 +3103,13 @@ separate ActionClient migration remains deferred in the [task freezer](task_free
 **Exit:** k3s proves
 Sandbox and non-Sandbox egress and platform calls, rotation/revocation and unchanged subject/rule
 isolation; then remove the proxy bearer configuration, workload projections and unused sidecar token
-transport together. Backend bearer/delegation policies and the sampler's delegated path retain
-their own authorization contracts.
+transport together. The sites are the `CLEANUP(added 2026-11-09)` tombstones: the proxy
+`forward.auth` bearer entry in `cluster/cdk8s/agentplane/egress.py`, the command-box hop projection
+in `command_sandbox.py`, the sidecar's `KubernetesBearerProxyAuth` and plaintext transport
+(`egress/sidecar_config.py`, `egress/sidecar/config.go`), and the forward listener's bearer mode
+and hop verifier in `egress/identity/authentication.go`. Backend bearer/delegation policies and the
+sampler's delegated path retain their own authorization contracts; `kubernetes_bearer` stays on
+service listeners for them.
 The staging PR states rollback and verifies callers after image/config convergence.
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
@@ -3108,7 +3132,9 @@ decision keys on the identity; the `kubernetesServiceAccount` source substitutes
 apiserver bearer and adds `Impersonate-User` for the named account, bounded by a Role granting
 `impersonate` on `serviceaccounts` in the accounts namespace; decision history records identity and
 account. The Kubernetes-audience projected token is removed with the kubeconfig
-(`SANDBOX_IDENTITY_SPEC`). **Exit:** the egress harness shows two identities acting as one account,
+(`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken` source, so the source, the
+sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and
+the egress `TODO.md` entry on where that token is substituted go with it. **Exit:** the egress harness shows two identities acting as one account,
 one losing its use rule without the other noticing, and the apiserver audit entry naming both the
 account and the proxy.
 
@@ -3116,7 +3142,11 @@ account and the proxy.
 
 **Blocked on `IDENTITY_KINDS`.** History's execution principal, Dispatcher's Session rows,
 Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
-identity reference plus the workload incarnation as provenance; the central sampler delegates as
+identity reference plus the workload incarnation as provenance. The seam is `workload_auth/auth`'s
+`Principal`: `SVIDResolver` currently returns the same ServiceAccount-shaped value a TokenReview
+does, reading the Sandbox and its controller-owned ServiceAccount uncached per request, so no
+handler can tell the two apart; the SVID path yields the identity reference and incarnation
+directly and stops reading the ServiceAccount; the central sampler delegates as
 the Session's identity and its own account never becomes the agent's; `CreateSession` names an
 identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
 a Session whose identity differs from its environment's current one, so a bypassed identity change

@@ -27,6 +27,9 @@ func (Authenticated) GoString() string { return "authenticated{redacted}" }
 
 // Authenticator is shared by the forward listener and the Rules API. Its policy
 // and live identity sources are bound once at startup.
+//
+// CLEANUP(added 2026-11-09): Drop the forward listener's KubernetesBearer mode and its hop
+// token verifier once no non-Sandbox workload (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer and the proxy's `forward.auth` lists only `spiffe`.
 type Authenticator struct {
 	policy  listener.Config
 	tokens  *Verifier
