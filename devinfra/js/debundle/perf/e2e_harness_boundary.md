@@ -9,7 +9,7 @@ uncertain elapsed benefit; it does not establish a 25-50% CI latency improvement
 
 Measured 5 November 2026 UTC (4 November Pacific). This is a bounded compiler
 invalidation experiment for the harness change, not a new estimate of fleet PR
-feedback latency. [Structured measurements](2026_11_04_e2e_harness_boundary.json)
+feedback latency. [Structured measurements](e2e_harness_boundary.json)
 include source revisions, temporary patch hashes, engine output digests, native
 action totals, and the verified test-roster digest.
 

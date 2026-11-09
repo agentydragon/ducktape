@@ -69,7 +69,7 @@ actions are counted separately.
 | [Combined D2](https://app.buildbuddy.io/invocation/46861d62-a31a-4284-b2e6-eeacb7b69e0b)    |           227.241s |              193.99s |             192.698s |                     106 / 21 |
 | [Control A3](https://app.buildbuddy.io/invocation/996a3b0f-5072-41df-8a0d-d8868549c675)     |           219.914s |              187.21s |             176.561s |                     111 / 27 |
 
-[Structured measurements](2026_11_04_production_rust_boundaries.json) contain every successful arm, the distinct engine output digests, source revisions, temporary patch hashes, CPU/process totals, selected native action intervals and verification invocations. All seven arms passed the same 190 targets. CLI output times are worker output-upload completion offsets from the inner invocation start; they exclude outer runner startup.
+[Structured measurements](production_rust_boundaries.json) contain every successful arm, the distinct engine output digests, source revisions, temporary patch hashes, CPU/process totals, selected native action intervals and verification invocations. All seven arms passed the same 190 targets. CLI output times are worker output-upload completion offsets from the inner invocation start; they exclude outer runner startup.
 
 The two controls bracketing fingerprint B1 took 234.074-263.127s, versus
 210.090s for B1. The native compiler timeline confirms 4.298s of overlap
