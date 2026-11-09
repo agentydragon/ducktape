@@ -32,6 +32,7 @@ py_library(
         "@pypi//httpx",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
         "@pypi//testcontainers",
     ],
 )

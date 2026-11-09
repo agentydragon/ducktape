@@ -8,8 +8,7 @@ import os
 import shlex
 import socket
 import textwrap
-import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -18,6 +17,7 @@ import grpc.aio
 import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -64,43 +64,27 @@ def config(
     return replace(runner_config, harness_environment=environment)
 
 
+async def _wait_for_status(
+    path: Path, accept: Callable[[CodexExecServerContainerStatus], bool]
+) -> CodexExecServerContainerStatus:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(30),
+        wait=wait_fixed(0.1),
+        retry=retry_if_exception_type((OSError, AssertionError)),
+        reraise=True,
+    ):
+        with attempt:
+            status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
+            assert accept(status), f"executor companion stayed at {status=}"
+    return status
+
+
 async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> CodexExecServerContainerStatus:
-    async with asyncio.timeout(30):
-        while True:
-            try:
-                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
-            except OSError:
-                await asyncio.sleep(0.1)
-                continue
-            if status.generation != previous and status.owned is owned:
-                return status
-            await asyncio.sleep(0.1)
+    return await _wait_for_status(path, lambda status: status.generation != previous and status.owned is owned)
 
 
 async def _wait_for_owned(path: Path, generation: str) -> CodexExecServerContainerStatus:
-    async with asyncio.timeout(30):
-        while True:
-            try:
-                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
-            except OSError:
-                await asyncio.sleep(0.1)
-                continue
-            if status.generation == generation and status.owned:
-                return status
-            await asyncio.sleep(0.1)
-
-
-async def _wait_for_replacement(path: Path, previous: str) -> CodexExecServerContainerStatus:
-    async with asyncio.timeout(30):
-        while True:
-            try:
-                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
-            except OSError:
-                await asyncio.sleep(0.1)
-                continue
-            if status.generation != previous and status.owned:
-                return status
-            await asyncio.sleep(0.1)
+    return await _wait_for_status(path, lambda status: status.generation == generation and status.owned)
 
 
 def _host_pid_for_marker(companion: CodexExecServerContainer, marker: str) -> int | None:
@@ -124,11 +108,12 @@ def _host_pid_for_marker(companion: CodexExecServerContainer, marker: str) -> in
 
 
 def _wait_for_host_pid(companion: CodexExecServerContainer, marker: str) -> int:
-    deadline = time.monotonic() + 30
-    while (pid := _host_pid_for_marker(companion, marker)) is None:
-        if time.monotonic() >= deadline:
-            raise TimeoutError(f"process marked {marker!r} did not appear in Docker top")
-        time.sleep(0.1)
+    for attempt in Retrying(
+        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(LookupError), reraise=True
+    ):
+        with attempt:
+            if (pid := _host_pid_for_marker(companion, marker)) is None:
+                raise LookupError(f"process marked {marker!r} did not appear in Docker top")
     return pid
 
 
@@ -151,11 +136,11 @@ def _kill_exec_server(companion: CodexExecServerContainer) -> None:
 
 
 def _wait_for_executor_file(path: Path) -> None:
-    deadline = time.monotonic() + 30
-    while not path.exists():
-        if time.monotonic() >= deadline:
-            raise TimeoutError(f"executor did not create {path}")
-        time.sleep(0.01)
+    for attempt in Retrying(
+        stop=stop_after_delay(30), wait=wait_fixed(0.01), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            assert path.exists(), f"executor did not create {path}"
 
 
 def _claim_executor(path: Path, environment: dict[str, str]) -> tuple[socket.socket, dict[str, object]]:
@@ -224,7 +209,9 @@ async def test_codex_exec_server_container_recovers_without_restarting_app_serve
     await asyncio.to_thread(_kill_exec_server, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
     # Runtime can reclaim the fresh idle generation before this poll observes it.
-    restarted_executor = await _wait_for_replacement(codex_exec_server_container.socket, initial_executor.generation)
+    restarted_executor = await _wait_for_generation(
+        codex_exec_server_container.socket, initial_executor.generation, owned=True
+    )
     await asyncio.to_thread(codex_exec_server_container.check_health)
 
     recovered_app_server = await _codex_process(driver)

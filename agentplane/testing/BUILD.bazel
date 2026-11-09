@@ -42,6 +42,7 @@ py_library(
     deps = [
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -63,6 +64,7 @@ py_library(
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )

@@ -72,6 +72,7 @@ py_test(
         "//devinfra/oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@pypi//testcontainers",
     ],
 )

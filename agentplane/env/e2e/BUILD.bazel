@@ -393,6 +393,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -429,6 +430,7 @@ py_test(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@pypi//testcontainers",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
         "@rules_python//python/runfiles",

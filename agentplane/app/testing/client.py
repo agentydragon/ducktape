@@ -21,6 +21,7 @@ import grpc
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_view_from_proto_json
@@ -55,6 +56,11 @@ def _no_app_answered(response: httpx.Response) -> bool:
         response.status_code == HTTPStatus.FORBIDDEN
         and response.headers.get("content-type", "").startswith("text/plain")
     )
+
+
+def _thread_not_found(error: BaseException) -> bool:
+    """History has not projected the Thread row yet."""
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND
 
 
 class SessionStreamError(Exception):
@@ -319,34 +325,25 @@ class Client:
 
     async def wait_for_thread_feed(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait until History has folded the runner's first feed announcement into the Thread."""
-        deadline = time.monotonic() + timeout_s
-        while True:
-            try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(timeout_s),
+            wait=wait_fixed(0.2),
+            retry=retry_if_exception(lambda error: isinstance(error, AssertionError) or _thread_not_found(error)),
+            reraise=True,
+        ):
+            with attempt:
                 thread = await self.thread(thread_id)
-            except httpx.HTTPStatusError as error:
-                if error.response.status_code != HTTPStatus.NOT_FOUND:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
-            else:
-                if thread.feed_status is not None:
-                    return thread
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"Thread {thread_id} received no runner feed within {timeout_s:g}s")
-            await asyncio.sleep(0.2)
+                assert thread.feed_status is not None, f"Thread {thread_id} has no runner feed yet"
+        return thread
 
     async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait for History's projection after runner admission; only a missing row is retried."""
-        deadline = time.monotonic() + timeout_s
-        while True:
-            try:
-                return await self.thread(thread_id)
-            except httpx.HTTPStatusError as error:
-                if error.response.status_code != HTTPStatus.NOT_FOUND:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
-                await asyncio.sleep(0.2)
+        return await AsyncRetrying(
+            stop=stop_after_delay(timeout_s),
+            wait=wait_fixed(0.2),
+            retry=retry_if_exception(_thread_not_found),
+            reraise=True,
+        )(self.thread, thread_id)
 
     async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
         """Every retained Thread of this Sandbox incarnation, including archived Threads."""

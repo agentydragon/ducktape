@@ -18,6 +18,7 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
@@ -52,14 +53,20 @@ async def wait_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, tu
     raise AssertionError("event stream ended before turn completion")
 
 
+def _store_retries() -> AsyncRetrying:
+    return AsyncRetrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    )
+
+
 def wait_for_host_pid(directory: Path) -> int:
-    deadline = time.monotonic() + 15
     pid_path = directory / "code-mode-host.pid"
-    while time.monotonic() < deadline:
-        if pid_path.exists():
-            return int(pid_path.read_text().strip())
-        time.sleep(0.05)
-    raise AssertionError("isolated code-mode host did not become ready")
+    for attempt in Retrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            assert pid_path.exists(), "isolated code-mode host did not become ready"
+    return int(pid_path.read_text().strip())
 
 
 @dataclass
@@ -720,21 +727,19 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                 )
 
             host_pid = await asyncio.to_thread(wait_for_host_pid, host_logs)
-            async with asyncio.timeout(15):
-                while not await store.has_live_cell(request.session_id):
-                    await asyncio.to_thread(time.sleep, 0.05)
+            async for attempt in _store_retries():
+                with attempt:
+                    assert await store.has_live_cell(request.session_id), "the faulted cell never became live"
             os.killpg(host_pid, signal.SIGKILL)
 
             assert (await wait_turn(stub, request.session_id, "recover-start")).status == event_pb2.TURN_STATUS_FAILED
-            async with asyncio.timeout(15):
-                while True:
+            async for attempt in _store_retries():
+                with attempt:
                     blocked = await stub.GetSession(
                         sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                     )
-                    if blocked.blocked and await store.released_generation(request.session_id) is not None:
-                        break
-                    await asyncio.to_thread(time.sleep, 0.05)
-            assert blocked.blocked
+                    assert blocked.blocked, f"{blocked=}"
+                    assert await store.released_generation(request.session_id) is not None
 
             recovery = sampler_pb2.RecoverSessionRequest(
                 session_id=request.session_id,

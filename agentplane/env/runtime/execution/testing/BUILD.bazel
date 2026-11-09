@@ -18,6 +18,7 @@ py_library(
         "//third_party/containers:debian_slim",
         "//util/testing:container_logs",
         "@pypi//pytest",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
