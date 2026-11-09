@@ -151,9 +151,15 @@ the #14552 code to port by reference.
 
 **Wave 0: stop the bleeding.**
 
-- L0a. Make `ee4eb4ab` compile and get one full-suite run on the PR, for
-  evidence only. The failure inventory tells Wave 3 which positives the
-  integrated design actually recovers. Not a landing step.
+- L0a. Withdrawn. The reference head does not compile and the next layer of
+  errors is not mechanical: `lowering/` is a half-applied refactor (an undefined
+  `minted` in `prepare_candidate_emission_plan`, an out-of-scope `options`,
+  `cross_chunk_imports` returning `()` where naturalization receipts are
+  expected, a `lowering` → `staged_analysis` dependency that would cycle, a
+  non-`Clone` vendor plan placed in an `Arc`). No test run of the integrated
+  design exists after the 63 / 193 result. Wave 3 is ordered from the last
+  complete hosted inventory instead: the 51 failing targets at `ceaa8713`
+  (run `42382520793`), with the `5db57608` panic sites as the second input.
 - L0b. Split devel's `e2e/staged_analysis_test.rs` and
   `e2e/effect_translation_validation_test.rs` into per-capability targets and
   move receipt helpers to `e2e/support`. Makes every later slice's tests small.
