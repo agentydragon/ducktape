@@ -636,6 +636,9 @@ fn run_prepared_transform(
         .or(spec.materialize_logical_modules.report_out_dir.clone());
     // Captured before materialization consumes the prepared artifact.
     let global_resolution_sources = GlobalResolutionSources::capture(source_program.artifact());
+    if let Some(dir) = gate::tv_audit_dir() {
+        write_tv_audit_sources(dir, source_program.artifact())?;
+    }
     let candidate_draft = if !materialise_chunk_ids.is_empty() {
         let materialize_result = materialize_logical_modules(
             source_program.into_artifact(),
@@ -1112,6 +1115,26 @@ fn push_if_uncovered(roots: &mut Vec<PathBuf>, path: PathBuf) {
 
 fn path_is_within(path: &Path, root: &Path) -> bool {
     path == root || path.starts_with(root)
+}
+
+/// The input sources the `DEBUNDLE_TV_AUDIT` records' source locations index,
+/// keyed by source path (`gate::tv_audit_dir`).
+fn write_tv_audit_sources(dir: &Path, source: &artifact::ChunkBundle) -> Result<()> {
+    let sources: BTreeMap<&str, String> = source
+        .chunks
+        .iter()
+        .flat_map(|chunk| &chunk.js.files)
+        .filter_map(|file| {
+            let text = file
+                .source()
+                .map(str::to_owned)
+                .or_else(|| file.ast().map(|ast| ast.source_text()))?;
+            Some((file.metadata.source_path.as_str(), text))
+        })
+        .collect();
+    fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{}.sources.json", std::process::id()));
+    fs::write(&path, serde_json::to_vec(&sources)?).with_context(|| format!("write {path:?}"))
 }
 
 #[cfg(test)]
