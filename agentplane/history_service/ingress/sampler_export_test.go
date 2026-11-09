@@ -180,7 +180,6 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		t.Fatal(err)
 	}
 	service := &Service{
-		Principals:      principals,
 		History:         history,
 		Timing:          Timing{IdleAck: 10 * time.Second, SilenceLimit: 30 * time.Second},
 		SamplerAccounts: []auth.Account{account},
@@ -189,7 +188,8 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &samplerExportIngressServer{service: service, plans: plans})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })

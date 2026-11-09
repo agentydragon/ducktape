@@ -250,7 +250,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
-		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
+		SandboxUIDs:     ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 		SamplerAccounts: c.Ingress.SamplerAccounts,
 		Timing:          ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
