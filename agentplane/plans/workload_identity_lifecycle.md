@@ -16,8 +16,8 @@ writing a `WorkloadCredential` record. Sandboxes use the same record: it replace
 `Sandbox.status.runnerCredential` as what verifiers read. The component mints the credential ID
 and the URI `spiffe://agentplane/<namespace>/<name>/<credential-id>`, requests the cert-manager
 `Certificate` from one Agentplane workload CA, and writes the status verifiers trust. It never
-reads an owner or a Sandbox. An admission policy lets a requester name only a subject it holds the
-RBAC verb `use` on. Every verifier links the component's resolver, which reads only
+reads an owner or a Sandbox. Three accounts may write records, and each may name any subject in
+its namespace; the real gates stay upstream. Every verifier links the component's resolver, which reads only
 `WorkloadCredential`s. The component is a package hosted in the Policy Controller binary. Every
 alternative shares one first step, [a dedicated workload CA](#the-step-every-alternative-shares-a-dedicated-workload-ca),
 which can be dispatched before the rest is accepted.
@@ -277,76 +277,59 @@ binding, so it gets a fresh ID. Clearing `binding` revokes. The Sandbox Controll
 request in flight sees two subjects, and the next start rotates the credential (question 8). This
 replaces the identity plan's assumption that verifiers read `spec.identity` from the live Sandbox.
 
-### Admission
+### Authorization and admission
 
-On top of the shared CA step, one `ValidatingAdmissionPolicy` ships with the CRD and makes three
-checks:
+**Authorization is coarse (operator, 2026-11-09).** RBAC grants `create`, `update` and `delete` on
+`workloadcredentials` to exactly three accounts: the Sandbox Controller, the Action Service and
+Flux's applier. Each may name any subject in the namespace. So each of those accounts can make a
+workload act as any identity in its namespace. The real gates stay upstream:
 
-- **The subject gate.** The requester must hold the custom RBAC verb `use` on the subject, checked
-  with the CEL `authorizer`. After the cutover it checks `identities` by name in the policy
-  namespace. That is the record's own namespace for Sandboxes and boxes, but not for records in
-  `haku-sandbox`. Until the cutover it makes the same check against `serviceaccounts` in the
-  record's namespace. RBAC accepts an arbitrary verb on a core resource, so no other form is needed.
-- **Status.** Only the Policy Controller's account writes `status`.
-- **Subject changes.** `spec.subject` changes only together with `spec.binding`, so a running
-  incarnation is never re-pointed. A record with no binding cannot be re-pointed in place; it is
-  replaced instead.
+- for a Sandbox, who may set `Sandbox.spec.identity`;
+- for a box, the caller the Action Service authenticated;
+- for a standing workload, git.
 
-Admission cannot require a binding when a record is created, because the ID is issued before the
-Pod exists. Step 5 of the walkthrough enforces it instead.
+Haku cannot author a record. The `haku-state` Kustomization impersonates `haku-state-reconciler`,
+which holds no right on `WorkloadCredential`s. A narrower requester can be added later without
+changing anything here: a `ValidatingAdmissionPolicy` calling the CEL `authorizer` for a custom
+`use` verb on the named identity.
 
-```yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
-metadata: { name: workloadcredential-requester }
-spec:
-  matchConstraints:
-    resourceRules:
-      - apiGroups: [agentplane.allegedly.works]
-        apiVersions: ["*"]
-        resources: [workloadcredentials, workloadcredentials/status]
-        operations: [CREATE, UPDATE]
-  validations:
-    - expression: >-
-        request.subResource == 'status' ||
-        authorizer.group('').resource('serviceaccounts').namespace(object.metadata.namespace)
-          .name(object.spec.subject.serviceAccount).check('use').allowed()
-      # after IDENTITY_CUTOVER: authorizer.group('agentplane.allegedly.works').resource('identities')
-      #   .namespace(<policy namespace>).name(object.spec.subject.identity.name).check('use').allowed()
-    - expression: >-
-        request.subResource != 'status' ||
-        request.userInfo.username == 'system:serviceaccount:agentplane-staging:policy-controller'
-    - expression: >-
-        oldObject == null || object.spec.subject == oldObject.spec.subject ||
-        (has(object.spec.binding) && (!has(oldObject.spec.binding) || object.spec.binding != oldObject.spec.binding))
-```
+**Status** is a subresource. Only the Policy Controller gets `update` and `patch` on
+`workloadcredentials/status`, and requesters get the main resource only.
 
-The grants are Roles in each namespace:
+**Subject changes** are a CRD transition rule on the record's schema: `spec.subject` changes only
+together with `spec.binding`, so a running incarnation is never re-pointed. A record with no
+binding cannot be re-pointed in place; it is replaced instead. A binding cannot be required when a
+record is created, because the ID is issued before the Pod exists. Step 5 of the walkthrough
+enforces it instead.
 
 ```yaml
-kind: Role # agentplane-staging
+# CRD schema, spec
+x-kubernetes-validations:
+  - rule: >-
+      self.subject == oldSelf.subject ||
+      (has(self.binding) && (!has(oldSelf.binding) || self.binding != oldSelf.binding))
+    message: subject changes only with a new binding
+---
+kind: Role # agentplane-staging; Flux's applier gets the same in haku-sandbox
 rules:
-  - { apiGroups: [""], resources: [serviceaccounts], verbs: [use] } # until IDENTITY_CUTOVER
-  - { apiGroups: [agentplane.allegedly.works], resources: [identities], verbs: [use] }
+  - {
+      apiGroups: [agentplane.allegedly.works],
+      resources: [workloadcredentials],
+      verbs: [get, list, watch, create, update, delete],
+    }
 # bound to the Sandbox Controller and the Action Service
 ---
-kind: Role # haku-sandbox; the policy namespace gets the identities twin after the cutover
-rules: [{ apiGroups: [""], resources: [serviceaccounts], resourceNames: [haku-ui], verbs: [use] }]
-# bound to Flux's kustomize-controller
+kind: Role # the Policy Controller, in every namespace it serves
+rules:
+  - { apiGroups: [agentplane.allegedly.works], resources: [workloadcredentials], verbs: [get, list, watch] }
+  - { apiGroups: [agentplane.allegedly.works], resources: [workloadcredentials/status], verbs: [update, patch] }
 ```
 
-- **Sandbox Controller and Action Service.** Each gets `use` on every subject in its namespace. For
-  a Sandbox, the real gate is who may set `Sandbox.spec.identity`. For a box, it is the caller the
-  Action Service authenticated.
-- **Flux.** It gets `use` only on named standing subjects. Its kustomize-controller holds `*` today,
-  which also matches `use`, so the named grant records intent. What actually limits standing
-  records is that only cdk8s-rendered content reaches that controller.
-- **Haku.** The `haku-state` Kustomization impersonates `haku-state-reconciler`, which holds
-  neither `use` nor any right on `WorkloadCredential`s, so Haku cannot author a record.
-
-**Certificates.** The shared step's Certificate policy swaps its Sandbox Controller entry for the
-Policy Controller, which alone may request three-segment workload URIs in the Certificate's own
-namespace. The Sandbox Controller loses Certificate create.
+**Certificates** keep one `ValidatingAdmissionPolicy`, from the shared step. It is needed because
+Certificate create plus a ClusterIssuer is otherwise open to any namespace. Once the component
+exists, only the Policy Controller may request three-segment workload URIs from the workload
+issuer, in the Certificate's own namespace. Flux keeps the one-segment service URIs. The Sandbox
+Controller loses Certificate create.
 
 ### Standing workloads
 
@@ -387,8 +370,9 @@ admission reads the request's accepted binding instead of Sandbox status.
 | 4. Standing records; `haku-state` switches its sidecars                                           | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                                       | Revert the `haku-state` commit; the request is inert |
 | 5. Remove the bearer hop                                                                          | none                      | Nothing projects the `agentplane-egress` hop audience                                                                                      | Revert; no caller depends on it                      |
 
-Steps 1 and 2 have one precondition: zero running Sandboxes. Both admission policies are
-`ValidatingAdmissionPolicy` objects, which envtest evaluates with the cert-manager CRDs installed.
+Steps 1 and 2 have one precondition: zero running Sandboxes. envtest evaluates both the
+Certificate `ValidatingAdmissionPolicy`, with the cert-manager CRDs installed, and the record's CRD
+transition rule.
 Step 1's CA move and trust Bundle have no system test, so they reach staging first. That PR says
 so and checks one Sandbox start and one refused foreign Certificate there.
 
@@ -424,9 +408,9 @@ and 5 may land on either side.
    metadata name the request and credential ID.
 4. **Anki's identity.** Recommendation: its own request now, with subject `haku-ui`. Split the
    identity when its grants diverge.
-5. **Admission mechanism.** Recommendation: `ValidatingAdmissionPolicy` for both the record and
-   the Certificate gates, since the apiserver evaluates it and envtest covers it. Kyverno stays only
-   for the existing launcher-relay admission. approver-policy would need the cluster's default
+5. **Admission mechanism.** Recommendation: a `ValidatingAdmissionPolicy` for the Certificate
+   gate, and CRD validation rules for the record, since the apiserver evaluates both and envtest
+   covers both. Kyverno stays only for the existing launcher-relay admission. approver-policy would need the cluster's default
    approver disabled.
 6. **`Identity.status.workloadCredentials`.** The requests are that list, keyed the other way.
    Recommendation: `IDENTITY_KINDS` omits the field.
