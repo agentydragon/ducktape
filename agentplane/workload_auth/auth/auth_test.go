@@ -36,6 +36,27 @@ func TestMain(m *testing.M) {
 	}, kubeapiserver.WithUserAudiences(testAudience)))
 }
 
+func TestBearerTokenUsesOneRFC6750Value(t *testing.T) {
+	for _, test := range []struct {
+		values []string
+		want   string
+		valid  bool
+	}{
+		{values: []string{"Bearer abc.DEF-1_2~3+4/5="}, want: "abc.DEF-1_2~3+4/5=", valid: true},
+		{values: []string{"bearer   abc"}, want: "abc", valid: true},
+		{values: []string{"Bearer a", "Bearer b"}},
+		{values: []string{"Basic abc"}},
+		{values: []string{"Bearer\tabc"}},
+		{values: []string{"Bearer a b"}},
+		{values: []string{"Bearer a, Bearer b"}},
+	} {
+		got, err := auth.BearerToken(test.values)
+		if (err == nil) != test.valid || got != test.want {
+			t.Errorf("BearerToken(%q) = %q, %v; want %q, valid=%v", test.values, got, err, test.want, test.valid)
+		}
+	}
+}
+
 // workload is a new Pod running as account and a token for testAudience bound to it.
 func workload(t *testing.T, account auth.Account) (*corev1.Pod, string) {
 	t.Helper()

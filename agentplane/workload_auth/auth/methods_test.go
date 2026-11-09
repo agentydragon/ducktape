@@ -13,6 +13,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -506,6 +507,117 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	if direct, ok := accountOnlyAdmission.(auth.DirectAdmission); !ok || direct.Caller.GetUid() != string(callerAccount.UID) || direct.Pod != nil {
 		t.Fatalf("account-token direct admission manufactured Pod proof: %#v", accountOnlyAdmission)
 	}
+}
+
+func TestDelegationUsesTheConfiguredListenerModeAndMethodGrant(t *testing.T) {
+	actor := auth.Account{Namespace: testNamespace, Name: "test-actions"}
+	caller := auth.Account{Namespace: testNamespace, Name: "test-caller"}
+	actorPod, actorToken := workload(t, actor)
+	_, _ = workload(t, caller)
+	actorAccount, err := api.Clientset.CoreV1().ServiceAccounts(actor.Namespace).Get(t.Context(), actor.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerAccount, err := api.Clientset.CoreV1().ServiceAccounts(caller.Namespace).Get(t.Context(), caller.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := &kubeapiserver.CountedReviews{TokenReviews: api.TokenReviews()}
+	baseResolver := newResolver(t, reviews, auth.WithVerdictTTL(0))
+	reader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
+		serviceAccount, err := api.Clientset.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", false, err
+		}
+		return string(serviceAccount.UID), true, nil
+	})
+	methodsFor := func(t *testing.T, config authlistener.Config, svid *auth.SVIDResolver) auth.Methods {
+		t.Helper()
+		resolver, err := baseResolver.WithListenerAuthentication(config, svid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods, err := auth.Methods{
+			healthpb.Health_Check_FullMethodName: auth.ReviewedServiceAccount(resolver),
+			healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccount(resolver),
+		}.WithDelegation([]string{healthpb.Health_Check_FullMethodName}, []auth.Delegator{{
+			Account: actor, CallerNamespaces: []string{testNamespace},
+		}}, reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return methods
+	}
+	delegated := delegationContext(t, actorToken, caller, string(callerAccount.UID))
+
+	t.Run("SPIFFE-only listener refuses delegated bearer before review", func(t *testing.T) {
+		objects, sandbox, _ := svidFixture(t)
+		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace})
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods := methodsFor(t, authlistener.Config{
+			ListenAddress: "test",
+			TLS:           &authlistener.TLS{CertFile: "/test/tls.crt", KeyFile: "/test/tls.key"},
+			Auth:          []authlistener.Authentication{&authlistener.SPIFFEAuth{CAFile: "/test/ca.pem"}},
+		}, svids)
+		client, effective, admissions := serveAdmissionHealth(t, methods)
+		if _, err := client.Check(delegated, &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("delegated bearer on SPIFFE-only listener returned %v", err)
+		}
+		if calls := reviews.Calls.Load(); calls != 0 {
+			t.Fatalf("listener refused after %d TokenReviews; want refusal before review", calls)
+		}
+		select {
+		case got := <-effective:
+			t.Fatalf("refused delegation reached handler with effective caller %+v", got)
+		default:
+		}
+		select {
+		case got := <-admissions:
+			t.Fatalf("refused delegation reached handler with admission %#v", got)
+		default:
+		}
+	})
+
+	t.Run("bearer-enabled method admits only its delegated grant", func(t *testing.T) {
+		methods := methodsFor(t, authlistener.Config{
+			ListenAddress: "test",
+			Auth: []authlistener.Authentication{&authlistener.KubernetesBearerAuth{
+				Audiences: []string{testAudience},
+			}},
+		}, nil)
+		client, effective, admissions := serveAdmissionHealth(t, methods)
+		if _, err := client.Check(delegated, &healthpb.HealthCheckRequest{}); err != nil {
+			t.Fatalf("delegated call on bearer-enabled method: %v", err)
+		}
+		gotCaller := <-effective
+		gotAdmission, ok := (<-admissions).(auth.DelegatedAdmission)
+		if gotCaller.GetAccount().GetNamespace() != caller.Namespace || gotCaller.GetAccount().GetName() != caller.Name ||
+			gotCaller.GetUid() != string(callerAccount.UID) || !ok || gotAdmission.Actor.Account != actor ||
+			gotAdmission.Actor.ServiceAccountUID != string(actorAccount.UID) || gotAdmission.Actor.PodUID != string(actorPod.UID) ||
+			!gotAdmission.Actor.IsPodBound() || gotAdmission.EffectiveCaller.GetUid() != string(callerAccount.UID) {
+			t.Fatalf("delegated admission lost actor/effective caller provenance: effective=%+v admission=%#v", gotCaller, gotAdmission)
+		}
+		if reviews.Calls.Load() != 1 {
+			t.Fatalf("delegated actor review count = %d, want one", reviews.Calls.Load())
+		}
+		watch, err := client.Watch(delegated, &healthpb.HealthCheckRequest{})
+		if err == nil {
+			_, err = watch.Recv()
+		}
+		if status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("delegation on a direct-only method returned %v", err)
+		}
+		if reviews.Calls.Load() != 1 {
+			t.Fatalf("direct-only method reviewed delegated actor; calls=%d", reviews.Calls.Load())
+		}
+		select {
+		case got := <-effective:
+			t.Fatalf("direct-only method reached handler with effective caller %+v", got)
+		default:
+		}
+	})
 }
 
 func TestCallerRefusesACallNoAccountRuleAdmitted(t *testing.T) {
