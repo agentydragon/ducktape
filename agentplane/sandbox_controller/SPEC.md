@@ -213,8 +213,37 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 
 - `spec.identity` names an `Identity` in the Sandbox's namespace. Admission lets it be set, changed
   or cleared only while nothing runs: before the controller's first status report, or at
-  `status.stopStage: Stopped`. The controller does not read it yet; the bullets below are what it
-  does today.
+  `status.stopStage: Stopped`.
+- The controller runs in one of two modes, chosen by its `identities` setting; absent is the
+  ServiceAccount mode. IDENTITY_CUTOVER removes the ServiceAccount mode.
+
+### Identity mode
+
+- A Sandbox acts as the live `Identity` its `spec.identity` names. The controller creates no
+  ServiceAccount and no `PolicyBinding` for it; what it may do comes from the Identity's bindings.
+- Its Pods run as the namespace's `default` ServiceAccount with `automountServiceAccountToken: false`,
+  whatever the template names. The template's own projected tokens, such as its egress sidecar's,
+  are all a Pod gets.
+- Its `WorkloadCredential`'s subject is the Identity by name and UID, read live before each start.
+- A Sandbox naming no Identity, or one that does not exist or is being deleted, starts nothing and
+  has no `WorkloadCredential`: `Running` is False with `IdentityMissing`, and with no workload
+  `status.stopStage` is `Stopped`, so admission lets it be bound. An Identity appearing retries it.
+- A running incarnation keeps the subject its record names: deleting its Identity does not stop it,
+  and the next start is refused with `IdentityMissing`. An incarnation whose record names another
+  identity than `spec.identity` now does, which admission lets through only when a status report
+  lags a start, is replaced (`RunnerCredentialMismatch`); an unbound record naming another identity
+  is revoked first (`IdentityChanged`), so the next start has a fresh credential ID.
+- A suspended Firecracker launcher whose identity changed is held with its checkpoint
+  (`RunnerCredentialMismatch`), never resumed as the new identity; discarding the checkpoint for a
+  cold start is not implemented yet.
+- A Sandbox naming `spec.policySets` starts nothing (`PolicySetsUnsupported`): they bind the
+  ServiceAccount it does not have.
+- A VM template starts nothing (`TemplateInvalid`): the launcher admission still authenticates a
+  launcher by the Sandbox's own ServiceAccount.
+- A deleted Sandbox that must run once more to seal waits for a live Identity.
+
+### ServiceAccount mode
+
 - Every Sandbox gets a ServiceAccount of its name, which its Pods run as, replacing the template's.
 - While `spec.policySets` names PolicySets, the Sandbox has one `PolicyBinding` of its name binding
   that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
@@ -273,6 +302,7 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 (`Requested`, `RecordConflict`, `PredecessorDeleting`, or the Policy Controller's `Ready`
 reason such as `CertificatePending`),
 `VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
+`IdentityMissing`, `IdentityChanged`, `PolicySetsUnsupported`,
 `PodConflict` or `VMConflict`
 (a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
 dispatch on typed status fields.

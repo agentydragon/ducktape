@@ -23,6 +23,9 @@ type config struct {
 	HealthProbeBindAddress string                                   `yaml:"health_probe_bind_address"`
 	RunnerGatewayTarget    string                                   `yaml:"runner_gateway_target"`
 	RunnerGatewayTokenFile string                                   `yaml:"runner_gateway_token_file"`
+	// Absent until the rendering sets it, which waits for this image: absent is the ServiceAccount mode.
+	// CLEANUP(added 2026-11-09): require it once settings.py renders it.
+	Identities bool `yaml:"identities"`
 }
 
 func defaultConfig() config {

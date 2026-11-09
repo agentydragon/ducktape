@@ -42,6 +42,7 @@ const (
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
+	identityIndex = "spec.identity"
 	// Indexes Events by the UID of the object they are about.
 	eventObjectUID = "involvedObject.uid"
 	// How long a failed or unfinished quiesce is left alone before the idempotent Quiesce call is
@@ -64,6 +65,12 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
+	// Whether a Sandbox acts as the Identity its spec names: no ServiceAccount or PolicyBinding of
+	// its own, and its Pods run as the namespace's default account with no token mounted. Otherwise
+	// it acts as its own ServiceAccount.
+	// CLEANUP(added 2026-11-09): IDENTITY_CUTOVER (agentplane/plans/task_dag.md) makes this the only
+	// mode, with the ServiceAccount mode's ensureIdentity and its tests.
+	Identities bool
 	// Seals a Sandbox's Sessions through its runner before it stops or is deleted.
 	Quiescer Quiescer
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
@@ -168,7 +175,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		sandbox.Status.Volumes.State != nil && sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage {
 		return r.updateStatus(ctx, &sandbox, w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving the checkpoint for operator recovery", retryAfter: 5 * time.Second}, nil)
 	}
-	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox))
+	var identityGate *unready
+	if r.Identities {
+		// Nothing may start, so nothing needs a credential.
+		if identityGate, err = r.identityGate(ctx, &sandbox, w); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox) && identityGate == nil)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -177,7 +191,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	gate := credentialGate
-	if identityGate, err := r.ensureIdentity(ctx, &sandbox); err != nil {
+	if r.Identities {
+		if identityGate != nil {
+			gate = identityGate
+		}
+	} else if identityGate, err := r.ensureIdentity(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
 	} else if gate == nil {
 		gate = identityGate
@@ -580,6 +598,10 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	}
 	// Render the same snapshot whose layout and binding passed the precheck.
 	if template.Spec.VM != nil {
+		if r.Identities {
+			// The launcher admission authenticates a launcher by the Sandbox's own ServiceAccount.
+			return w, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s is a VM, which cannot yet run as an Identity", template.Name)}, nil
+		}
 		if !r.KubeVirt {
 			return w, &unready{reason: "KubeVirtMissing", message: "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
 		}
@@ -597,7 +619,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	if !validRunnerCredentialID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next Pod"}, nil
 	}
-	pod, blocked := render(sandbox, template, w.credential)
+	pod, blocked := render(sandbox, template, w.credential, r.Identities)
 	if blocked != nil {
 		return w, blocked, nil
 	}
@@ -618,7 +640,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	// Bind the record at once: the first binding after its fresh ID accepts that ID.
-	_, _, err := r.requestCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
+	_, _, _, err := r.requestIncarnationCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
 	return w, nil, err
 }
 
@@ -631,9 +653,10 @@ func renderedSpec(spec any) string {
 	return string(encoded)
 }
 
-// render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
-// state volume filled in.
-func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
+// render is the template's Pod for this Sandbox, with the state volume filled in. It runs as the
+// Sandbox's ServiceAccount or, acting as an Identity, as the namespace's default account with no
+// token mounted: the template's own projections, such as its egress sidecar's, are all it gets.
+func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued, identities bool) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
 	}
@@ -651,7 +674,11 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
-	spec.ServiceAccountName = sandbox.Name
+	if identities {
+		spec.ServiceAccountName, spec.AutomountServiceAccountToken = "default", new(false)
+	} else {
+		spec.ServiceAccountName = sandbox.Name
+	}
 	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
 		return nil, blocked
 	}
@@ -1011,17 +1038,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	// A template appearing or changing retries the Sandboxes that name it; one already running is
 	// unaffected until its next start.
-	byTemplate := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var sandboxes sandboxapi.SandboxList
-		if err := r.List(ctx, &sandboxes, client.InNamespace(obj.GetNamespace()), client.MatchingFields{templateIndex: obj.GetName()}); err != nil {
-			return nil
-		}
-		var out []reconcile.Request
-		for _, s := range sandboxes.Items {
-			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&s)})
-		}
-		return out
-	})
+	byTemplate := r.sandboxesNaming(templateIndex)
 	sandboxOfLabel := func(_ context.Context, obj client.Object) []reconcile.Request {
 		name, ok := obj.GetLabels()[sandboxapi.SandboxLabel]
 		if !ok {
@@ -1071,7 +1088,34 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}
+	if r.Identities {
+		if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, identityIndex, func(obj client.Object) []string {
+			if identity := obj.(*sandboxapi.Sandbox).Spec.Identity; identity != nil {
+				return []string{identity.Name}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		// An Identity appearing or going retries the Sandboxes that name it.
+		setup = setup.Watches(&policyapi.Identity{}, r.sandboxesNaming(identityIndex))
+	}
 	return setup.Complete(r)
+}
+
+// sandboxesNaming enqueues the Sandboxes whose index field names the object.
+func (r *Reconciler) sandboxesNaming(index string) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var sandboxes sandboxapi.SandboxList
+		if err := r.List(ctx, &sandboxes, client.InNamespace(obj.GetNamespace()), client.MatchingFields{index: obj.GetName()}); err != nil {
+			return nil
+		}
+		var out []reconcile.Request
+		for _, s := range sandboxes.Items {
+			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&s)})
+		}
+		return out
+	})
 }
 
 // leaseTransitions is how many connections the Runner Gateway has accepted for the Sandbox.

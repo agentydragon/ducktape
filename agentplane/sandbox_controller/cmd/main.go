@@ -102,7 +102,7 @@ func run(c config) error {
 		return err
 	}
 	reconciler := &sandboxcontroller.Reconciler{
-		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
+		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt, Identities: c.Identities,
 		Quiescer: quiescer, Leases: mgr.GetClient(), Credentials: credentials, Now: time.Now,
 		FirecrackerStatus: sandboxcontroller.PodProxyFirecrackerStatusReader{Client: clientset},
 		Suspender:         sandboxcontroller.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS},

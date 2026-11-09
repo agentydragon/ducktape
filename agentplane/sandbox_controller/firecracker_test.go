@@ -46,7 +46,7 @@ func firecrackerTemplate() *sandboxapi.SandboxTemplate {
 func TestFirecrackerRenderAndLayout(t *testing.T) {
 	template := firecrackerTemplate()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: sandboxName, Namespace: namespace, UID: "uid-sandbox"}}
-	pod, blocked := render(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
+	pod, blocked := render(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret}, false)
 	if blocked != nil {
 		t.Fatalf("render blocked: %v", blocked)
 	}
