@@ -36,6 +36,10 @@ async def run_harness_pair_in_own_sandboxes(
 ) -> None:
     """`run_harness_pair`, deleting each harness's Sandboxes before the next harness starts."""
 
+    # TODO: Both harnesses could reuse one Sandbox to save a start per case, as the `shared()` pool does;
+    #   prefer moving `open()` cases that need no bespoke Sandbox onto `shared()`. Blockers: inbox/ack
+    #   cursors carry over, mutating cases (a policy granted while running) don't fit, and the second
+    #   harness could pass on state the first left behind.
     async def scoped(harness: session_pb2.Harness, model: str) -> None:
         async with sandbox_scope(cluster, client, tracer) as sandboxes:
             await run(harness, model, sandboxes)
