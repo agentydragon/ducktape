@@ -327,6 +327,13 @@ and 5 may land on either side.
    [§ Changing an environment's identity](identity_and_kubernetes_accounts.md#changing-an-environments-identity)
    comes at no extra cost.
 
+9. **Per-incarnation credential IDs (operator, 2026-11-09: kept conservatively, revisit).** The
+   cluster has no CRL or OCSP. A fresh ID per accepted binding is therefore what makes replacing an
+   incarnation revoke the old key, even a key left in a terminating Pod, a VM disk or a Firecracker
+   snapshot. The alternative is one stable ID per record plus step 7's Pod-binding check. That is
+   simpler, but it covers only callers that forward a Pod-bound token. Revisit if the ID check
+   proves redundant with binding checks on every route, or if reissue latency hurts startup.
+
 When `WORKLOAD_AUTH_CUTOVER` lands, this content moves into `docs/workload_authentication.md` and
 the SPECs of the Policy Controller, Sandbox Controller, egress proxy and Action Service, and this
 file is deleted.
