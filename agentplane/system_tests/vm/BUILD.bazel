@@ -101,6 +101,7 @@ py_library(
     deps = [
         "//agentplane/system_tests/driver:cluster",
         "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
     ],
 )
 
@@ -360,6 +361,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -614,6 +616,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
