@@ -3,10 +3,11 @@ Certificate, the `cluster-internal-ca` ClusterIssuer that issues from it, and th
 trust-manager Bundle that distributes it, with the active Let's Encrypt root, to every
 namespace.
 
-Beside it, the Agentplane workload CA: a second self-signed root behind the `agentplane-workload`
-ClusterIssuer, which every Agentplane SVID comes from. Its own Bundle carries it alone, for
-verifiers of client SVIDs; the cluster Bundle carries it too, so clients verifying an Agentplane
-server certificate keep that Bundle. Who may request from it is Agentplane admission
+Beside it, the Agentplane workload CA: an intermediate under the cluster root behind the
+`agentplane-workload` ClusterIssuer, which every Agentplane SVID comes from. Its leaves chain to the
+cluster root, so clients verifying an Agentplane server certificate keep the cluster Bundle; its
+own Bundle carries the intermediate alone, for verifiers of client SVIDs, so a leaf the cluster root
+signs directly does not authenticate there. Who may request from it is Agentplane admission
 (`cluster/cdk8s/agentplane/workload_certificate_admission.py`).
 """
 
@@ -48,8 +49,6 @@ BUNDLE_KEY = "ca-certificates.crt"
 WORKLOAD_ISSUER = CertificateSpecIssuerRef(name="agentplane-workload", kind="ClusterIssuer")
 WORKLOAD_BUNDLE = "agentplane-workload-ca-bundle"
 _WORKLOAD_CA_SECRET = "agentplane-workload-ca"
-# A self-signed CA's `ca.crt` is the CA itself.
-WORKLOAD_CA_SOURCE = BundleSpecSources(secret=BundleSpecSourcesSecret(name=_WORKLOAD_CA_SECRET, key="ca.crt"))
 
 
 class _LongLivedCa(TypedDict):
@@ -63,12 +62,6 @@ LONG_LIVED_CA: _LongLivedCa = {"duration": "87600h", "renew_before": "8760h"}  #
 
 def add_workload_ca(scope: Construct) -> None:
     """The Agentplane workload CA, its ClusterIssuer, and the Bundle carrying it alone to every namespace."""
-    bootstrap = ClusterIssuer(
-        scope,
-        "workload-bootstrap",
-        metadata=ApiObjectMetadata(name=f"{WORKLOAD_ISSUER.name}-bootstrap"),
-        self_signed=ClusterIssuerSpecSelfSigned(),
-    )
     Certificate(
         scope,
         "workload-ca",
@@ -81,7 +74,7 @@ def add_workload_ca(scope: Construct) -> None:
         # A renewal keeps the key, so leaves issued before it still verify against the Bundles.
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
         usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+        issuer_ref=INTERNAL_ISSUER,
     )
     ClusterIssuer(
         scope,
@@ -93,7 +86,9 @@ def add_workload_ca(scope: Construct) -> None:
         scope,
         "workload-bundle",
         metadata=ApiObjectMetadata(name=WORKLOAD_BUNDLE),
-        sources=[WORKLOAD_CA_SOURCE],
+        # `tls.crt` of a CA the cluster root signs holds that CA alone: cert-manager leaves the
+        # self-signed root out of the chain, and `ca.crt` is the root.
+        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=_WORKLOAD_CA_SECRET, key="tls.crt"))],
         target=BundleSpecTarget(
             config_map=BundleSpecTargetConfigMap(
                 key=BUNDLE_KEY,
@@ -139,7 +134,6 @@ def chart(app: App) -> Chart:
             BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
             # The active issuer's root, from `config`.
             BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
-            WORKLOAD_CA_SOURCE,
         ],
         target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
     )

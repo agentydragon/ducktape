@@ -92,7 +92,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
-from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_CA_SOURCE, add_workload_ca
+from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -352,7 +352,7 @@ def _add_runner_root(chart: Chart) -> None:
         chart,
         "environment-runtime-trust",
         metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
-        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt")), WORKLOAD_CA_SOURCE],
+        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
         target=BundleSpecTarget(
             config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
             namespace_selector=BundleSpecTargetNamespaceSelector(

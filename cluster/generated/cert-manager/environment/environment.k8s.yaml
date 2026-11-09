@@ -259,19 +259,9 @@ spec:
     - secret:
         key: ca.crt
         name: letsencrypt-prod-root-ca
-    - secret:
-        key: ca.crt
-        name: agentplane-workload-ca
   target:
     configMap:
       key: ca-certificates.crt
----
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: agentplane-workload-bootstrap
-spec:
-  selfSigned: {}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -284,7 +274,7 @@ spec:
   isCA: true
   issuerRef:
     kind: ClusterIssuer
-    name: agentplane-workload-bootstrap
+    name: cluster-internal-ca
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Never
@@ -310,7 +300,7 @@ metadata:
 spec:
   sources:
     - secret:
-        key: ca.crt
+        key: tls.crt
         name: agentplane-workload-ca
   target:
     configMap:

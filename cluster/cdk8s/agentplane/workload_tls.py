@@ -1,8 +1,8 @@
 """cert-manager serving leaves and trust-manager roots for workload SVID listeners.
 
 A listener verifies client SVIDs against the Agentplane workload CA alone (`cluster_ca.WORKLOAD_BUNDLE`).
-A client verifies a service's server certificate against the cluster's internal roots, which include
-the workload CA.
+A client verifies a service's server certificate against the cluster's internal roots, which the
+workload CA chains to.
 """
 
 from pathlib import Path

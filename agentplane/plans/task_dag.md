@@ -3091,7 +3091,7 @@ picks an alternative and the open questions' recommendations.
 **Ready once PR #15104 lands (2026-11-09).** That PR moves every Agentplane SVID to the
 `agentplane-workload` ClusterIssuer and points the egress proxy's and the services' client-SVID
 verifiers at `agentplane-workload-ca-bundle`. Three verifiers still accept a client or peer SVID
-through `cluster-internal-ca-bundle`, which now carries both the cluster root and the workload CA:
+through `cluster-internal-ca-bundle`, so a leaf the cluster root signs directly still passes TLS there:
 the runner's control listener verifying the Gateway's client SVID through the projected `ca.crt`,
 the Gateway's `runner_security`, and the egress sidecar. Move them to the workload Bundle; the
 Sandbox Controller projects that Bundle into runners in place of the cluster bundle for these
