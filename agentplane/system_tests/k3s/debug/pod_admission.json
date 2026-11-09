@@ -1,0 +1,376 @@
+{
+  "scope": "Native-artifact admission diagnosis and frozen-source resource trial; current source change scopes the reservation to test_pod only.",
+  "invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+  "invocation_url": "https://app.buildbuddy.io/invocation/bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+  "target": "//agentplane/system_tests/suites:test_pod",
+  "tested_synthetic_merge": "9758d0a54b141afcf38e1ba727b3fdc629b6a1ee",
+  "inspected_head": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+  "source_equivalence": "Only fixture_ca_reuse JSON/Markdown investigation documents differ; relevant executable source unchanged.",
+  "result": {
+    "cases": 20,
+    "failed": 1,
+    "failure": "Messaging Codex sender Sandbox cannot schedule: Insufficient memory;300s ready deadline."
+  },
+  "native_node": {
+    "capacity_memory_ki": 9957952,
+    "allocatable_memory_ki": 9957952,
+    "allocatable_memory_mib": 9724.5625,
+    "allocatable_cpu_millicores": 7000,
+    "capacity_pods": 110,
+    "reservation": "No kubeReserved or systemReserved in retained kubelet config; pods enforced; no memory evictionHard threshold.",
+    "snapshot_agreement": "Before-import and final Node allocatable equal."
+  },
+  "runner_requests": {
+    "runtime_memory_mib": 1024,
+    "executor_memory_mib": 512,
+    "native_init_sidecar_memory_mib": 32,
+    "total_memory_mib": 1568,
+    "cpu_millicores": 760,
+    "note": "RestartPolicy Always init sidecar is concurrent and counted with regular runtime+executor. Shared template includes executor for both harnesses."
+  },
+  "admission_math": {
+    "five_runners_total_memory_mib": 9574.0,
+    "five_runners_spare_memory_mib": 150.5625,
+    "six_runners_total_memory_mib": 11142.0,
+    "six_runners_deficit_memory_mib": 1417.4375,
+    "observed_overlap_runner_demand": 8,
+    "observed_overlap_request_memory_mib": 14278.0,
+    "source_envelope": {
+      "retained_pairs": 2,
+      "retained_runners": 4,
+      "messaging_fresh_runners": 4,
+      "other_fresh_runners": 2,
+      "total_runners": 10,
+      "memory_mib": 17414.0,
+      "cpu_millicores": 8240.0
+    },
+    "auxiliary_cases": "Bearer command case owns one1568MiB runner plus one288MiB command Pod; CA impostor adds one1568MiB runner to a borrowed pair. Neither exceeds the other-case two-runner budget.",
+    "bound_limit": "Intended concurrent ownership under successful cleanup and suspend-before-resume; not a proof against leaking or overlapping failed teardown."
+  },
+  "causal_finding": "Independent case semaphore and retained pair pool do not enforce a common Pod-request budget. Even one idle pair plus four required messaging runners exceeds current five-runner admission capacity. Releasing the impostor admits one sender, and messaging cleanup later admits policy runners, matching request arithmetic.",
+  "evidence_boundary": "Request admission cause established. Candidate8CU capacity exceeds the intended request envelope and all20cases passed. Actual peak RSS safety and fleet impact are not established by this one run.",
+  "native_artifact_uris": {
+    "k3s-retained.log": "bytestream://remote.buildbuddy.io/blobs/ffb5f9edf7a554b9b2666b83db826ca835b0d40062033e299ea21043d58b12f7/1201590",
+    "persistence-suite.json": "bytestream://remote.buildbuddy.io/blobs/14df139ed3a51538a04392669b5f5cdc37cc1f70fabc631ae4430b81fee10c61/1129",
+    "test-spans.jsonl": "bytestream://remote.buildbuddy.io/blobs/1f393334fe9d2bb9717e92ef9e9ba98acc7fb0a880d8d86f801daf62512fde3d/325509",
+    "baseline-resources.yaml": "bytestream://remote.buildbuddy.io/blobs/822756374d818922a73a236ffa4a7793601686a8a26ddaa9d8efbf01c7ef034c/12477",
+    "kubelet-config.json": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434",
+    "final-resources.yaml": "bytestream://remote.buildbuddy.io/blobs/b7d0cdfa8807927503e71eb237bef898076a9703652869c5bb03f8864125b852/1335512",
+    "final-memory-summary.json": "bytestream://remote.buildbuddy.io/blobs/69760a09cd775cfa4dfb3d4ed4857eb385acc002181042c22cd5d3754e36684d/83039"
+  },
+  "steady_fixture_requests": {
+    "memory_mib": 1734.0,
+    "cpu_millicores": 640.0,
+    "post_cleanup_bound_pods": 17,
+    "provenance": "Native final-resources.yaml Pod requests; no runners remain in final snapshot."
+  },
+  "trial": {
+    "invocation": "8cf5c916-cbfe-4593-8e91-48fad41bbfb1",
+    "frozen_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+    "patch_sha256": "25f8581bca2c5bf01a93df1080da15359c7292e30863fc1177bfe05604759083",
+    "input_root": {
+      "hash": "10997eab186ae412b80975d477c8d547d0f01abd7941fd8621dbbcfd793d6096",
+      "sizeBytes": "165"
+    },
+    "identical_control_input_root": true,
+    "property_differences": {
+      "EstimatedComputeUnits": {
+        "old": "4",
+        "new": "8"
+      }
+    },
+    "same_arguments": true,
+    "same_environment": true,
+    "acceptance": "actual Node allocatable >=17414MiB and8240m; all20cases pass with cleanup, no admission/OOM/eviction; not a fullCImean",
+    "same_completed_failed_control_input_root": true,
+    "completed_failed_control_invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+    "state": "PASSED:20tests,0failures,0errors,0skips; persistence cleanup complete.",
+    "recorded_at_utc": "2026-11-09T19:22:10.567415+00:00",
+    "actual_allocatable_memory_mib": 19543.82421875,
+    "actual_allocatable_cpu_millicores": 11000,
+    "memory_margin_above_request_envelope_mib": 2129.82421875,
+    "cpu_margin_above_request_envelope_millicores": 2760,
+    "capacity_snapshot_agreement": "Before-import and final native Node snapshots agree.",
+    "physical_action_seconds": 555.348202,
+    "input_fetch_seconds": 1.024071,
+    "pytest_seconds": 532.183,
+    "setup_seconds": 221.126334,
+    "case_window_seconds": 257.398,
+    "stack_cleanup_seconds": 38.4966,
+    "failed_scheduling_events": 0,
+    "limits": "One resource trial changes allocation and cache/baseline history. This proves admission fit and a passing execution, not optimal sizing, recurring reliability, a causal speedup estimate or complete CI below4min.",
+    "native_artifacts": [
+      {
+        "file": "test.log",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/25ff784f71c5ee9d3133a1d0ed743964e6552d7c8739ea878567cd69a6d9363b/7861",
+        "bytes": 7861,
+        "sha256": "25ff784f71c5ee9d3133a1d0ed743964e6552d7c8739ea878567cd69a6d9363b",
+        "verified": true
+      },
+      {
+        "file": "test.xml",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/dd78dbcd8c5551334c8ff4141d6b80cbe663e247de56ef9a99fed8d48d69f8f4/3602",
+        "bytes": 3602,
+        "sha256": "dd78dbcd8c5551334c8ff4141d6b80cbe663e247de56ef9a99fed8d48d69f8f4",
+        "verified": true
+      },
+      {
+        "file": "k3s-retained.log",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/400ba8c78f7a2b53a18c18ca3ff15867ec743912e18470a91f6d5091bb14faaf/1382484",
+        "bytes": 1382484,
+        "sha256": "400ba8c78f7a2b53a18c18ca3ff15867ec743912e18470a91f6d5091bb14faaf",
+        "verified": true
+      },
+      {
+        "file": "persistence-suite.json",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/6f08094e3d93b9ba05890ff2d2bf5fa9e5a7c2ac8a93bb4e0889fa7fb42ff523/1125",
+        "bytes": 1125,
+        "sha256": "6f08094e3d93b9ba05890ff2d2bf5fa9e5a7c2ac8a93bb4e0889fa7fb42ff523",
+        "verified": true
+      },
+      {
+        "file": "test-spans.jsonl",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/151ac6215b7ff65b5ef501975bfc0e07927df48c6647b66c28fe616f7ddde7b4/303370",
+        "bytes": 303370,
+        "sha256": "151ac6215b7ff65b5ef501975bfc0e07927df48c6647b66c28fe616f7ddde7b4",
+        "verified": true
+      },
+      {
+        "file": "before-resources.yaml",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/e5e527b814fe980b0c2a86b2ba64fab714f19eaa441ef38cfaac3c916169ddd6/36275",
+        "bytes": 36275,
+        "sha256": "e5e527b814fe980b0c2a86b2ba64fab714f19eaa441ef38cfaac3c916169ddd6",
+        "verified": true
+      },
+      {
+        "file": "before-summary.json",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/5066d487262596581387609e9504a3e17f6acabb449bdf614ad8d0cfa31c1162/4737",
+        "bytes": 4737,
+        "sha256": "5066d487262596581387609e9504a3e17f6acabb449bdf614ad8d0cfa31c1162",
+        "verified": true
+      },
+      {
+        "file": "kubelet-config.json",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434",
+        "bytes": 13434,
+        "sha256": "2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab",
+        "verified": true
+      },
+      {
+        "file": "final-resources.yaml",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/9a76f352588ab2b95d662fc3001ea6bed0dd9a0110396212d249a90e7b1156d1/1424190",
+        "bytes": 1424190,
+        "sha256": "9a76f352588ab2b95d662fc3001ea6bed0dd9a0110396212d249a90e7b1156d1",
+        "verified": true
+      },
+      {
+        "file": "final-summary.json",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/82ab790d5623437b4d499d142d48122e69edc8c35639a791482883c29cbcc23f/83069",
+        "bytes": 83069,
+        "sha256": "82ab790d5623437b4d499d142d48122e69edc8c35639a791482883c29cbcc23f",
+        "verified": true
+      },
+      {
+        "file": "action.pb",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/2b9896caf134f705908f0840cbb9b1ae9cd0478bf4bca058f1d5486f9ebdd431/1218",
+        "bytes": 1218,
+        "sha256": "2b9896caf134f705908f0840cbb9b1ae9cd0478bf4bca058f1d5486f9ebdd431",
+        "verified": true
+      },
+      {
+        "file": "command.pb",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/a70ab8163a45a3b361823c6fb9291c02434ae3e16a7450eec6914063bee90dfa/4719",
+        "bytes": 4719,
+        "sha256": "a70ab8163a45a3b361823c6fb9291c02434ae3e16a7450eec6914063bee90dfa",
+        "verified": true
+      }
+    ],
+    "reuse_cleanup": {
+      "pool_pairs_created": 2,
+      "pool_runners_created": 4,
+      "pool_runner_cleanup_successful": 4,
+      "protocol_pod_scheduled_events": 4,
+      "distinct_protocol_pod_uids": 4,
+      "identity_assertion": "All seven shared scenario bindings pass. Every successful borrow checks same Sandbox UID and Pod UID in pod_runners._Slot.verify_identity before yielding; native Events show one Scheduled UID per pooled Pod. No dedicated per-borrow identity receipt is emitted.",
+      "final_bound_service_pods": 17,
+      "final_test_runner_or_command_pods": 0,
+      "persistence_outcome": "cold",
+      "suite_cleanup": "complete",
+      "workspace_loop_devices_released": 0
+    },
+    "admission_memory_markers": {
+      "events_checked": 1532,
+      "failed_scheduling_events": 0,
+      "insufficient_memory_or_oom_or_eviction_event_matches": 0,
+      "test_and_k3s_log_failure_marker_matches": 0,
+      "final_pod_oom_or_evicted_termination_states": 0,
+      "final_node_memory_pressure": "False",
+      "scope_limit": "Retained Events, final Pod states, test.log and K3s log; no full kernel history or peak resident-memory proof. Startup eviction-manager messages exist but report no Pod eviction."
+    },
+    "phase_clocks": {
+      "physical_action": {
+        "start": "2026-11-09T19:10:57.433975Z",
+        "end": "2026-11-09T19:20:12.782177Z",
+        "seconds": 555.348202
+      },
+      "queue_seconds": 0.062074,
+      "input_fetch": {
+        "start": "2026-11-09T19:10:56.409903Z",
+        "end": "2026-11-09T19:10:57.433974Z",
+        "seconds": 1.024071
+      },
+      "output_upload_seconds": 1.6,
+      "pytest": {
+        "start": "2026-11-09T19:11:16.053663+00:00",
+        "end_derived": "2026-11-09T19:20:08.236663+00:00",
+        "seconds": 532.183
+      },
+      "bes_test_summary": {
+        "start": "2026-11-09T19:10:55.044Z",
+        "end": "2026-11-09T19:20:10.392Z",
+        "duration_seconds": 555.348
+      },
+      "setup": {
+        "name": "system_test.stack.setup",
+        "start_time": "2026-11-09T19:11:16.440496Z",
+        "end_time": "2026-11-09T19:14:57.566830Z",
+        "seconds": 221.126334
+      },
+      "case_wall_envelope": {
+        "start": "2026-11-09T19:15:01.653365Z",
+        "end": "2026-11-09T19:19:19.051175Z",
+        "seconds": 257.39781,
+        "note": "Cases overlap under CASE_LIMIT2; this is first case start to last case end, not a sum."
+      },
+      "pool_cleanup_envelope": {
+        "start": "2026-11-09T19:19:19.052820Z",
+        "end": "2026-11-09T19:19:23.995476Z",
+        "seconds": 4.942656
+      },
+      "diagnostics": {
+        "name": "system_test.stack.diagnostics",
+        "start_time": "2026-11-09T19:19:24.027050Z",
+        "end_time": "2026-11-09T19:19:29.714417Z",
+        "seconds": 5.687367
+      },
+      "stack_cleanup": {
+        "name": "system_test.stack.cleanup",
+        "start_time": "2026-11-09T19:19:29.715751Z",
+        "end_time": "2026-11-09T19:20:08.212351Z",
+        "seconds": 38.4966
+      },
+      "top_five_cases": [
+        {
+          "name": "system_test.case",
+          "start_time": "2026-11-09T19:16:31.132073Z",
+          "end_time": "2026-11-09T19:18:12.615341Z",
+          "seconds": 101.483268,
+          "case": "test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway"
+        },
+        {
+          "name": "system_test.case",
+          "start_time": "2026-11-09T19:15:29.256570Z",
+          "end_time": "2026-11-09T19:16:52.017097Z",
+          "seconds": 82.760527,
+          "case": "test_agent_resumes_an_idle_suspended_pod_with_its_execution_account"
+        },
+        {
+          "name": "system_test.case",
+          "start_time": "2026-11-09T19:16:52.017813Z",
+          "end_time": "2026-11-09T19:17:22.921561Z",
+          "seconds": 30.903748,
+          "case": "test_an_agent_messages_another_which_reads_and_acknowledges_it"
+        },
+        {
+          "name": "system_test.case",
+          "start_time": "2026-11-09T19:18:18.017190Z",
+          "end_time": "2026-11-09T19:18:48.362905Z",
+          "seconds": 30.345715,
+          "case": "test_pod_mtls_session_survives_replacement_and_keeps_history"
+        },
+        {
+          "name": "system_test.case",
+          "start_time": "2026-11-09T19:15:01.653365Z",
+          "end_time": "2026-11-09T19:15:29.256067Z",
+          "seconds": 27.602702,
+          "case": "test_fresh_workspace_storage_survives_replacement"
+        }
+      ],
+      "top_five_direct_setup_children": [
+        {
+          "name": "system_test.image.import",
+          "start_time": "2026-11-09T19:13:12.563524Z",
+          "end_time": "2026-11-09T19:14:19.533503Z",
+          "seconds": 66.969979
+        },
+        {
+          "name": "system_test.k3s.start",
+          "start_time": "2026-11-09T19:11:18.719820Z",
+          "end_time": "2026-11-09T19:11:42.360686Z",
+          "seconds": 23.640866
+        },
+        {
+          "name": "system_test.pki.controllers",
+          "start_time": "2026-11-09T19:12:02.861233Z",
+          "end_time": "2026-11-09T19:12:25.201724Z",
+          "seconds": 22.340491
+        },
+        {
+          "name": "system_test.deployment.ready",
+          "start_time": "2026-11-09T19:14:38.665513Z",
+          "end_time": "2026-11-09T19:14:52.362787Z",
+          "seconds": 13.697274
+        },
+        {
+          "name": "system_test.image.import",
+          "start_time": "2026-11-09T19:12:51.563588Z",
+          "end_time": "2026-11-09T19:13:01.472465Z",
+          "seconds": 9.908877
+        }
+      ],
+      "caveat": "XML testcase308.729s for first collected item includes shared fixture setup; use system_test.case spans for individual scenario durations. BES and physical clocks are reported separately."
+    },
+    "slowest_cases": [
+      {
+        "name": "system_test.case",
+        "start_time": "2026-11-09T19:16:31.132073Z",
+        "end_time": "2026-11-09T19:18:12.615341Z",
+        "seconds": 101.483268,
+        "case": "test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway",
+        "status": "UNSET"
+      },
+      {
+        "name": "system_test.case",
+        "start_time": "2026-11-09T19:15:29.256570Z",
+        "end_time": "2026-11-09T19:16:52.017097Z",
+        "seconds": 82.760527,
+        "case": "test_agent_resumes_an_idle_suspended_pod_with_its_execution_account",
+        "status": "UNSET"
+      },
+      {
+        "name": "system_test.case",
+        "start_time": "2026-11-09T19:16:52.017813Z",
+        "end_time": "2026-11-09T19:17:22.921561Z",
+        "seconds": 30.903748,
+        "case": "test_an_agent_messages_another_which_reads_and_acknowledges_it",
+        "status": "UNSET"
+      },
+      {
+        "name": "system_test.case",
+        "start_time": "2026-11-09T19:18:18.017190Z",
+        "end_time": "2026-11-09T19:18:48.362905Z",
+        "seconds": 30.345715,
+        "case": "test_pod_mtls_session_survives_replacement_and_keeps_history",
+        "status": "UNSET"
+      },
+      {
+        "name": "system_test.case",
+        "start_time": "2026-11-09T19:15:01.653365Z",
+        "end_time": "2026-11-09T19:15:29.256067Z",
+        "seconds": 27.602702,
+        "case": "test_fresh_workspace_storage_survives_replacement",
+        "status": "UNSET"
+      }
+    ]
+  }
+}

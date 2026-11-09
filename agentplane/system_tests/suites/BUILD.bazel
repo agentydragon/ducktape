@@ -32,6 +32,8 @@ k3s_suite(
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
+    # Retained pool pairs and fresh cases can request 17,414 MiB and 8.24 CPUs together.
+    exec_properties = {"EstimatedComputeUnits": "8"},
     stack = "pod",
     deps = [
         ":pod_cases",

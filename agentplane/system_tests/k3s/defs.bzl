@@ -187,7 +187,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
     """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -261,7 +261,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         main = main,
         data = data,
         env = env,
-        exec_properties = K3S_EXEC_PROPERTIES | properties,
+        exec_properties = K3S_EXEC_PROPERTIES | properties | exec_properties,
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
