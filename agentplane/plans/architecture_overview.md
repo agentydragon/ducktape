@@ -301,17 +301,15 @@ reconciler if needed between those and live sandboxes", which the history-tag wa
 
 ## Right under every direction
 
-Some foundations have landed; the remaining candidates still need the operator's go.
+Already landed under every direction: History records and checks the writing Sandbox's UID on every
+push, keyed by the global Session ID ([History README](../history_service/README.md#session-writer-and-execution-sandbox)),
+and inbox tags live on the Sandbox as `spec.inboxTags`
+([Notification API](../notification_service/docs/api.md#messages)). The remaining candidates still
+need the operator's go.
 
-- **Record the writing Sandbox's UID in History and check it on every push.** Landed (#11835), with
-  the global Session ID kept as the key. D1 deletes by it, D2 keys grants by it, and D3 and D4 still
-  identify a Sandbox by it. History's record of the Sandbox and the history-tag watch remain
-  (`HISTORY_SANDBOX_RECORD`).
-- **Tags on the Sandbox instead of membership objects.** Inbox tags landed as `spec.inboxTags`,
-  matched by `session_inbox_access` rules
-  ([Notification API](../notification_service/docs/api.md#messages)); an inbox tag lives and dies
-  with its Sandbox and picks no direction. History tags remain (`HISTORY_SANDBOX_RECORD`); both
-  follow the [design](sandbox_tags.md).
+- **History's record of the Sandbox and history tags** (`HISTORY_SANDBOX_RECORD`), per the
+  [design](sandbox_tags.md). D1 deletes by the recorded UID, D2 keys grants by it, and D3 and D4
+  still identify a Sandbox by it.
 - **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
   for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
   start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
@@ -407,12 +405,11 @@ Held until one is chosen:
   UID, and sends Session commands to Dispatcher by Session ID; Dispatcher resolves and fences the
   recorded placement.
 - **Commands and Sessions.** The `session_dispatcher` database, served by the Runner
-  Gateway (`dispatch`, `session`, `wake_attempt`, `sandbox_ownership`). The coordinated resource
-  cutover renames the former `session_opening` relation to `session`; Session records are addressed
-  by Session ID and retain their exact required Sandbox placement. Current cleanup still removes
-  these records when that Sandbox is gone. Remaining native directory and independent
-  Session-lifetime work are in the [Session/environment plan](session_environment_model.md) and
-  the revision-scoped [opening and recovery inventory](session_opening_recovery.md).
+  Gateway (`dispatch`, `session`, `wake_attempt`, `sandbox_ownership`). Session records are
+  addressed by Session ID, retain their exact required Sandbox placement, and survive that
+  Sandbox's deletion marked `required_environment=DELETED`; dispatch rows do not
+  ([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#deletion-admission-fence)). Independent
+  Session-lifetime work is in the [Session/environment plan](session_environment_model.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
   survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
   the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).

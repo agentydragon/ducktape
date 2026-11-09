@@ -3,13 +3,10 @@
 See the [Session/environment model and discussion](session_environment_model.md) for more recent
 decisions, unresolved questions, and implementation readiness.
 
-Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
-The broader object model is a long-term north star; concrete object types, storage and protocols
-remain open. Current component names, source ownership and runnable entrypoints live in the
-[environment layout](../env/README.md); Runtime and Execution contracts live
-in their component specifications.
-Session/Environment dispatch regrouping remains for later;
-its service roles may share a binary or have separate binaries.
+Operator-requested future design. The broader object model is a long-term north star; concrete
+object types, storage and protocols remain open. Current component names, source ownership and
+runnable entrypoints live in the [environment layout](../env/README.md); Runtime and Execution
+contracts live in their component specifications.
 Prefer the LLM agent loop outside the execution environment when capabilities are otherwise equal:
 tool authority can be explicitly mediated, and environment processes have less opportunity to
 interfere with the loop's code and state. Native Claude/Codex harness hosting stays inside an
@@ -22,17 +19,13 @@ Sandboxes; its Session data should survive their deletion. In that mode a Sandbo
 rather than defining the conversation's lifetime. Executor acquisition is lazy, but the current
 Session API still fixes the logical execution target to one Sandbox. Execution calls support
 optional model-controlled incarnation fencing and report verified replacement incarnations.
-Explicit resume uses the shared lifecycle manager's caller, UID, policy and guarded-update checks;
-the remaining `IDLE_SUSPEND_UI_DRIVE` is VM staging UI acceptance. These are current constraints,
-not a required ontology for every future harness.
+These are current constraints, not a required ontology for every future harness.
 
-The in-progress SessionSpec contract makes the split explicit in one `placement` oneof:
-`environment_hosted` carries the exact environment and native harness selection, while
-`central_sampler_v1` carries one exact, fixed executor environment. Central sampler V1 keeps the
-existing Sandbox-backed identity, admission, notification, wake and deletion behavior; it still
-cannot open without an environment or manage optional attachments. Native harness store identity and
-harness-native Session IDs remain future work. The broader environment-independent central model
-below is a target, tracked by the [central Session task](task_dag.md#central-session-environment-independence).
+The implemented `SessionSpec.placement` oneof separates `environment_hosted` (exact environment
+and native harness) from `central_sampler_v1` (one exact, fixed executor environment)
+([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#session-binding)). The broader
+environment-independent central model below is a target, tracked by the
+[central Session task](task_dag.md#central-session-environment-independence).
 
 ## Cases the model must represent
 
@@ -80,40 +73,12 @@ evidence destination remain open; preserve the ability to record harness traces.
 
 ## Role boundaries and routing
 
-Environment Runtime owns native Session and harness management directly; the separate embedded
-Harness Host object and its lifecycle protocol were removed in
-[#13931](https://github.com/agentydragon/ducktape/pull/13931). Execution runs within Runtime and
-also remains independently runnable. The central sampler is a separate control-plane implementation.
-
-| Component                      | Runnable target                  | Responsibility                                                                                                             |
-| ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Environment Runtime            | `agentplane-environment-runtime` | Environment identity, bootstrap, component discovery, health and coordinated drain.                                        |
-| Execution service              | `agentplane-execution-service`   | Typed process/filesystem API, execution sessions, handles, output and cancellation; initially backed by Codex exec-server. |
-| Native harness management      | Runtime                          | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export.               |
-| Central sampler                | `agentplane-central-sampler`     | Independent control-plane LLM agent loop; may call the environment Execution service.                                      |
-| Environment dispatch / gateway | Binary grouping deferred         | Authenticated access to environment endpoints, connection ownership and incarnation fencing.                               |
-| Session dispatcher             | Binary grouping deferred         | Durable Session command admission/delivery and routing to its owning harness, which may be environment-bound.              |
-
-The provisioning role is Environment controller. Keep the current Sandbox Controller name until
-its responsibility broadens to shared environment provisioning. The native `codex app-server`,
-`codex exec-server` and Claude binaries remain distinctly named subprocesses.
-
-The environment-level successor to Runner is Environment Runtime. Session/harness code belongs to
-Environment Runtime; the execution adapter and executor lifecycle belong to Execution service.
-Support an execution-only environment, a local native harness, and a central sampler with zero
-execution environments. A shared app-server serving N Sessions and a separate Execution service
-process within the same environment remain supported. Direct-executing Claude belongs in an
+The implemented component split (Environment Runtime with native harness management, Execution,
+central sampler) is in the [environment layout](../env/README.md). The provisioning role is
+Environment controller; keep the current Sandbox Controller name until its responsibility broadens
+to shared environment provisioning. Support an execution-only environment, a local native harness,
+and a central sampler with zero execution environments. Direct-executing Claude belongs in an
 explicit workload resource domain; sharing one with Codex execution is a deployment choice.
-
-`env/` groups software specific to operating execution environments. Runtime and Execution share
-the implemented management process and live under `env/runtime/`.
-Shared supervision is under `env/runtime/supervision`, while one-shot bookkeeping remains in
-`env/oneoff`. The [source layout](../env/README.md) owns the full map.
-The central sampler lives at `agentplane/central_sampler`, outside `env/`; it may use the Executor
-protocol and client owned by `env/runtime/execution`. Logical responsibilities remain distinct even
-when their calls are in-process.
-Use “execution environment” in APIs/docs to distinguish it from a deployment such as staging.
-Existing experimental implementations retain their status when relocated.
 
 Operations on an existing Session should address it without requiring an environment from the
 caller. Resolve an environment only when placement, authorization, wake or execution needs one;
