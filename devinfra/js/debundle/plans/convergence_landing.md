@@ -118,7 +118,7 @@ means the idea lands but not this code; "drop" means do not port.
 | Adapter boundary           | `LocalContext` grew from 24 to 59 methods; three adapters (`LocalExecutionContext` ~2.7k lines, `ProviderExecutionContext`, strict `ProviderContext`) re-implement `read_binding`, `closure`, `assign_capture`, `array_spread` with divergent policy.                                                              | Redo: narrow traits (`BindingContext`, `CallContext`, `HeapContext`, `NativeContext`, `ControlContext`); spread/closure/capture semantics move into the kernel.           |
 | Giant dual-mode functions  | `execute_call_transfer_inner` (1,458 lines, operands-supplied and self-evaluating modes), `execute_owner` (1,206 lines), `LocalContinuation::step` (1,520 lines).                                                                                                                                                  | Redo: split by mode and by phase; functions under ~300 lines.                                                                                                             |
 | Joins                      | Seven join implementations (`transfer_alternatives`, `conservative_world_join`, `EffectCoverageFragment::join_alternatives`, `execution_index`, own-property receipts, attributes, callback fallback), copy-pasted helpers; strict join refusal **panics**.                                                        | Redo: one `World::join` with strict fast path and conservative fallback; refusal yields a `Havoc` outcome, never a panic.                                                 |
-| Coverage notions           | `Outcome` carries an optimistic `complete: true` beside the pessimistic coverage ledger; forgetting `lose_precision` certifies.                                                                                                                                                                                    | Redo: delete `complete`; the ledger is the only coverage authority (AR1).                                                                                                 |
+| Coverage notions           | `Outcome` carries an optimistic `complete: true` beside the pessimistic coverage ledger; forgetting `lose_precision` certifies.                                                                                                                                                                                    | Redo with the flip (L4d): delete `complete`; the ledger is the only coverage authority (AR1).                                                                             |
 | Heap models                | New may-state `ObjectSurfaceStore` plus the old literal heap (`mark_unknown_enumerability`); `DefineProperties` commit invalidates different attributes in application and strict provider.                                                                                                                        | Keep `object_surface` + `descriptor_transfer` + `native_operation`; delete the literal-heap flags; one commit.                                                            |
 | World identity             | Two copy-on-write layers (`Rc<ExecutionState>`, `Arc<SemanticWorldData>`), `RefCell` fields inside cloned state, `Deref` from world to store, pointer-equality arenas.                                                                                                                                             | Redo in `world/`: one owner per field, no `Deref` across layers.                                                                                                          |
 | Provider execution         | Three provider mechanisms (`provider_activation`, strict `private_heap`, summary replay in `provider_transfer`/`provider_graph`) plus the flat lane.                                                                                                                                                               | Keep summary replay as substitution; one provider executor (kernel + provider adapter).                                                                                   |
@@ -173,9 +173,10 @@ no module-cell identities yet; the saved identities land with Wave 3 slice 6).
 Cleanups landed alongside: #15055,
 #15056, #15058, #15060, #15061, #15062, #15063, #15066, #15071, #15074.
 
-**Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
-`World` and its join, the one driver, the completion ledger as sole coverage
-authority) are specified in <kernel_design.md>, which the slices implement.
+**Wave 2: the kernel.** Large by nature. Its landed contracts (five context
+traits, returned observations, one `World`) are in <../docs/design.md> § The
+synchronous execution kernel; forks, `alternatives/` and the provider adapter
+remain in <kernel_design.md>.
 `World` is the per-prefix execution state the interpreter already carries
 (today one 44-field struct plus the strict provider's private copy), not a
 new analysis; precision stays bounded by the existing finite-height widening
@@ -190,7 +191,7 @@ persistent regression means the structure, not a budget knob, is wrong.
 driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   deleted. Tana cost gate: +3.3 % wall, +0.4 % RSS. Kept with tombstones gated
   on L2b: the cell-owning `BindingContext` methods, `settled_dependencies`,
-  closure creation, the effect sink; gated on L2c: `AllocationContext` and the
+  closure creation, the effect sink; gated on L2c, now on L4e: `AllocationContext` and the
   value bridge; the `invoke_with_cells` flat lane with its four gates
   (`requires_keyed_collection_new` needs an application keyed-collection lane).
   Devel's IR had no fork producer, so `Fork`/`ForkPolicy` wait for the first
@@ -205,11 +206,14 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   `capture_policy` and `admit_closure`), closures are
   `AbstractValue::Closure(HeapAddress, CapturedContext)` in both adapters, and
   the prefix prerequisites live in `World.prerequisites`. needs L2a.
-- L2c. Landed: `LocalExecutionContext` and its trait impls in
-  `adapters/application.rs` (#15116); `execute_owner` as `roots/` phases.
-  Left: `execute_call_transfer` split by mode; delete `complete: bool`. needs
-  L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
-  parity.
+- L2c. **Landed** as #15116 (`adapters/application.rs`), #15125
+  (`execute_owner` as `roots/` phases) and the call-transfer PR, which split
+  `execute_call_transfer` by mode: the operands-supplied mode is in
+  `roots/call_operands.rs`, and the self-evaluating mode and the evaluator are
+  in `legacy/`. The `AllocationContext`/`LocalValueContext` tombstones now
+  wait for L4e, which deletes their last non-kernel implementor. Deleting
+  `complete: bool` moved to L4d (below): it is legacy-gate authority, and
+  swapping its readers is the authority flip.
 - L2d. **Landed as #15073** (2026-11-09): the six `#[path]` children of
   `execution_index.rs` are sibling modules; `ExecutionIndex` fields the
   interpreter reads are `pub(super)`; devel had no provider program registry.
@@ -271,7 +275,28 @@ parity tests green.
   coverage, which no Wave 3 slice holds.
 - L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
   `ensure_candidate_emittable_for_write`, plus the README/design/SPEC text that
-  #14552 already drafted. Small. needs L4a–L4c green.
+  #14552 already drafted. needs L4a–L4c green.
+
+  The flip also deletes `Outcome.complete`. Legacy enumeration (`complete`)
+  and kernel receipts (a closed `TransferLedger`) are different facts, and the
+  gate decides which one is authority. Today most legacy-executed owners are
+  `complete` with an open ledger, so swapping the readers before the
+  discrepancy audit (L4c) would refuse them. The readers become:
+
+  | Reader kind                                                                                        | Reads                                                                                                                      |
+  | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+  | may certify, seal or retire (`roots/{assignment,finalize}.rs`, `Outcome` barriers in the executor) | `ledger.has_closed_effects() && precision_losses.is_empty()`; `unknown_call` becomes a `Havoc` cell in the ledger          |
+  | child completeness passed upward (`inherit_completeness` sites)                                    | `child.ledger.closed_effect_dependencies()`; parents already compose the child ledger                                      |
+  | setters (`complete: true` literals, `lose_precision`)                                              | deleted; each site composes `EffectCoverageFragment::default()` where it does not already                                  |
+  | export (`roots/body.rs`, `outcome.effects.complete = outcome.complete`)                            | the one writer of `SynchronousCalls.complete`, computed as `ledger.has_closed_effects()`, behind an engine-hash codec bump |
+
+  Two preconditions:
+  - The terminal-call stop in the application adapter clears `complete`
+    without recording a precision loss. It needs a typed loss first.
+  - The test that a refused body leaves the root ledger open
+    (`refused_body_after_a_covered_call_leaves_the_root_binding_effects_open`)
+    must stay green.
+
 - L4e. Delete the legacy gate, `legacy/`, dead `#[serde(default)]` options; move
   `CallableSummary` to a DTO; graduate contracts into `SPEC.md` and
   `docs/design.md`; delete this plan and the burned-down parts of the others.

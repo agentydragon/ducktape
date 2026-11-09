@@ -1,7 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
-use super::allocation_transfer::AllocationContext;
 use super::array_transfer::ArrayContext;
 use super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
@@ -10,15 +9,14 @@ use super::effect_coverage::{
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
+    native_call_identity_key, native_own_data_read_slots,
 };
 use super::kernel::closure::{CapturePolicy, lexical_captures};
 use super::kernel::construct;
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
-    CallableSelection, EvaluatedCallee, LocalExecutionAttempt, LocalFrame, RemainderDisposition,
-    SelectedValue,
+    CallableSelection, LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
 };
 use super::local_operations::{LocalBinding, LocalBody};
 use super::native::operation::{
@@ -38,7 +36,7 @@ use super::runtime_heap::{
     NativeIterableYields,
 };
 use super::runtime_inference::{
-    CallOperands, CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
+    CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
 use super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
@@ -137,7 +135,7 @@ enum NativeCallIdentity {
     FailedGuard(&'static [IntrinsicSlot]),
 }
 
-fn from_flow(values: FlowValues) -> Values {
+pub(super) fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
 
@@ -745,8 +743,8 @@ pub(super) struct NativeCallResolution {
     dependencies: ProofDependencies,
 }
 
-struct NewEvaluation {
-    values: Values,
+pub(super) struct NewEvaluation {
+    pub(super) values: Values,
     operation_coverage: Option<EffectCoverageFragment>,
 }
 
@@ -803,7 +801,7 @@ pub(super) struct ExecutionInputs<'source> {
     /// read: their bindings, and whether the default export is among them.
     reentry_bindings: BTreeSet<Id>,
     reentry_default: bool,
-    call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
+    pub(super) call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
     pub(super) captured_local_bindings: FxHashSet<Id>,
     pub(super) var_bindings: BTreeSet<Id>,
@@ -1088,9 +1086,9 @@ pub(super) struct ExecutionState {
     /// The root union preserves the conservative heap order independently of
     /// the per-invocation non-assumed premise subset.
     pub(super) statement_invoked_callables: BTreeSet<u32>,
-    array_iteration_depth: usize,
+    pub(super) array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
-    array_iteration_unsupported: bool,
+    pub(super) array_iteration_unsupported: bool,
     invocation_depth: usize,
     pub(super) invocation_count: usize,
     callback_fallback: CallbackFallbackSummary,
@@ -1192,7 +1190,7 @@ impl Observations {
         &self.dependencies
     }
 
-    fn record_inference_use(&mut self, use_: crate::analysis_provenance::InferenceUse) {
+    pub(super) fn record_inference_use(&mut self, use_: crate::analysis_provenance::InferenceUse) {
         self.inference_uses.insert(use_);
     }
 
@@ -1286,8 +1284,8 @@ pub(super) struct Executor<'source, 'rule> {
     pub(super) state: ExecutionStateSlot,
     pub(super) observations: Observations,
     pub(super) queries: RuntimeQueries<'source, 'rule>,
-    allocation_judgment: super::allocation_transfer::AllocationJudgment,
-    source_covered: bool,
+    pub(super) allocation_judgment: super::allocation_transfer::AllocationJudgment,
+    pub(super) source_covered: bool,
     pub(super) evaluation_effects: EvaluationEffects,
     native_initializer_candidate: Option<NativeConstructorCandidate>,
     native_initializer_transfer: Option<NativeConstructorTransfer>,
@@ -1326,74 +1324,6 @@ pub(super) struct CheckedLocalConstructorFactory {
 #[derive(Clone, Copy)]
 pub(super) struct ValidatedMetadataDecoration {
     pub(super) target_owner: SourceUnitOrdinal,
-}
-
-struct ApplicationAllocationContext<'a, 'source, 'rule> {
-    executor: &'a mut Executor<'source, 'rule>,
-    environment: &'a Context,
-    captures: &'a Context,
-}
-
-impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
-        if tainted {
-            self.executor
-                .state
-                .world_mut()
-                .surface
-                .tainted_objects
-                .insert(allocation);
-        }
-    }
-    fn array_spread(&mut self, span: Span, operand: &Values) -> Option<NativeIterableReceipt> {
-        // The flattened call pass records this protocol's effects at its
-        // `CallKind::ArraySpread` record; here only the yields are consumed.
-        self.executor
-            .native_iterable(NativeIterableUse::ArraySpread(span), operand)
-    }
-    fn source_covered(&self) -> bool {
-        self.executor.source_covered
-    }
-
-    fn binding(&mut self, binding: &Id) -> Option<super::allocation_transfer::AllocationValue> {
-        let values = self.executor.evaluate_binding(binding, self.environment);
-        let judgment = if self.executor.source_covered
-            && self.executor.initialized_local_binding(binding)
-        {
-            super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(Box::default())
-        } else {
-            super::allocation_transfer::AllocationJudgment::Opaque
-        };
-        Some(super::allocation_transfer::AllocationValue { values, judgment })
-    }
-
-    fn child(
-        &mut self,
-        expression: &ValueExpr,
-    ) -> Option<super::allocation_transfer::AllocationValue> {
-        Some(
-            self.executor
-                .evaluate_allocation_child(expression, self.environment, self.captures),
-        )
-    }
-
-    fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> super::value_model::LiteralPropertyKind {
-        self.executor
-            .inputs
-            .index
-            .literal_property_kind(allocation, position)
-    }
-    fn literal_layout(&self, allocation: u32) -> super::allocation_transfer::LiteralLayout {
-        self.executor.inputs.index.allocation_layout(allocation)
-    }
-
-    fn heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
-        self.executor.literal_heap()
-    }
 }
 
 /// The lowered body of a checked constructor that the kernel's construct rule
@@ -1581,6 +1511,22 @@ impl ArrayContext for Executor<'_, '_> {
     }
 }
 
+/// The evaluated callee targets and arguments one call transfer consumes.
+pub(super) struct EvaluatedCallOperands {
+    pub(super) targets: Values,
+    pub(super) args: Vec<Values>,
+    /// The evaluated receiver of a member callee.
+    pub(super) prepared_receiver: Option<Values>,
+}
+
+/// The kernel's selections for operands it evaluated itself.
+pub(super) struct SuppliedCallSelections {
+    pub(super) selected_pure_initializer_call: bool,
+    pub(super) selected_member_dependencies: Option<Box<ProofDependencies>>,
+    pub(super) selected_value: Option<CallableSelection>,
+    pub(super) argument_selections: Vec<Option<CallableSelection>>,
+}
+
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
@@ -1766,7 +1712,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The abstract callback-factory value also represents namespace members
     /// and aliases. Only a checked direct imported binding identifies the
     /// summary without changing value or cache semantics.
-    fn record_callback_factory_use(
+    pub(super) fn record_callback_factory_use(
         &mut self,
         imported_local: &Id,
         kind: CallbackFactoryUseKind,
@@ -1802,7 +1748,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn closed_enum_member_read(&mut self, value: &ValueExpr) -> bool {
+    pub(super) fn closed_enum_member_read(&mut self, value: &ValueExpr) -> bool {
         let ValueExpr::Member(receiver, Some(property), _, _) = value else {
             return false;
         };
@@ -1813,7 +1759,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// settled `PlainData` binding holding the key as own data. The read
     /// keeps its ordinary eager dependency, but cannot retrieve a getter or a
     /// callable value.
-    fn closed_enum_member_parts(&mut self, receiver: &ValueExpr, property: &str) -> Option<Values> {
+    pub(super) fn closed_enum_member_parts(
+        &mut self,
+        receiver: &ValueExpr,
+        property: &str,
+    ) -> Option<Values> {
         let ValueExpr::Binding(binding) = receiver else {
             return None;
         };
@@ -1831,7 +1781,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(values)
     }
 
-    fn record_returned_record_use(
+    pub(super) fn record_returned_record_use(
         &mut self,
         callee: &ValueExpr,
         kind: crate::reports::schema::ReturnedRecordUseKind,
@@ -1986,7 +1936,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.record_proof_dependencies(guard, &self.inputs.index.native_integrity_dependencies());
     }
 
-    fn record_proof_dependencies(
+    pub(super) fn record_proof_dependencies(
         &mut self,
         guard: NativeIntegrityGuard,
         dependencies: &crate::analysis_inputs::ProofDependencies,
@@ -2046,7 +1996,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Descriptor application targets need the ordinary prototype premise;
     /// private constructors keep their separate property-specific checks.
-    fn ordinary_object_prototype_intact(&mut self) -> bool {
+    pub(super) fn ordinary_object_prototype_intact(&mut self) -> bool {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(
                 NativeIntegrityGuard::OrdinaryObjectPrototype,
@@ -2084,11 +2034,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.own_property_projection(values, OwnPropertyRequest::Ordinary)
     }
 
-    fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
+    pub(super) fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
         self.descriptor_heap().invalidate(site);
     }
 
-    fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
+    pub(super) fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
         self.state
             .world
             .descriptors
@@ -2096,7 +2046,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .map_or_else(Values::new, |map| map.retained_values.clone())
     }
 
-    fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
+    pub(super) fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
         let mut getters = Values::new();
         for value in receivers {
             let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = value else {
@@ -2202,7 +2152,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ))
     }
 
-    fn native_member_lookup_is_data(&mut self, callee: &ValueExpr, site: Option<u32>) -> bool {
+    pub(super) fn native_member_lookup_is_data(
+        &mut self,
+        callee: &ValueExpr,
+        site: Option<u32>,
+    ) -> bool {
         if !self.inputs.index.dynamic_scope_owners.is_empty() {
             return false;
         }
@@ -2289,7 +2243,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// An admitted row certifies the operation after its inputs have
     /// evaluated. It does not infer purity or exception freedom.
-    fn resolve_native_call(
+    pub(super) fn resolve_native_call(
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
@@ -2857,7 +2811,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Commit the admitted row's heap mutations to this prefix, then project
     /// its normal return value. The mutations happen whether or not the
     /// caller uses the value.
-    fn execute_native_resolution(
+    pub(super) fn execute_native_resolution(
         &mut self,
         resolution: NativeCallResolution,
         args: &[Values],
@@ -3061,7 +3015,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// value, and their ordinary member-read fallback must remain conservative.
     /// A11 also excludes an inherited user getter unless a visible mutation
     /// has invalidated the ordinary Object.prototype assumption.
-    fn absent_plain_data_property(&mut self, object: u32, property: &str) -> bool {
+    pub(super) fn absent_plain_data_property(&mut self, object: u32, property: &str) -> bool {
         if (self
             .state
             .world
@@ -3120,7 +3074,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The payload heap retains accessor callbacks as capabilities, not as
     /// the result of reading their property. Only a data-tagged lookup may
     /// project that payload into an expression value.
-    fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
+    pub(super) fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
         if self
             .state
             .world
@@ -3173,7 +3127,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// Capabilities retained by the selected member, not its Get result.
     /// Called with receivers already evaluated at the current read prefix.
-    fn selected_member_capabilities(&self, receivers: &Values, property: Option<&str>) -> Values {
+    pub(super) fn selected_member_capabilities(
+        &self,
+        receivers: &Values,
+        property: Option<&str>,
+    ) -> Values {
         let mut selected = Values::new();
         for receiver in receivers {
             match receiver {
@@ -3226,7 +3184,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         selected
     }
 
-    fn known_local_instance_member(&self, key: u32, property: Option<&str>) -> bool {
+    pub(super) fn known_local_instance_member(&self, key: u32, property: Option<&str>) -> bool {
         !self.state.world.classes.tainted.contains(&key)
             && property.is_some_and(|property| {
                 self.inputs
@@ -3249,7 +3207,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
-    fn ordinary_data_properties(
+    pub(super) fn ordinary_data_properties(
         &self,
         values: &Values,
     ) -> Option<BTreeMap<Option<String>, Values>> {
@@ -3408,11 +3366,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().dense_array(object, slots);
     }
 
-    fn literal_heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
+    pub(super) fn literal_heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
         self.state.world_mut().literal_heap()
     }
 
-    fn array_iteration_plan(
+    pub(super) fn array_iteration_plan(
         &mut self,
         span: CallSite,
         env: &Context,
@@ -3486,7 +3444,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The value an admitted iteration call evaluates to. A fresh array
     /// result is its allocation, whose slots the transfer retains; the
     /// accumulator is what the transfer last stored.
-    fn array_iteration_result(&mut self, proof: &ArrayIteration, dense: &DenseArray) -> Values {
+    pub(super) fn array_iteration_result(
+        &mut self,
+        proof: &ArrayIteration,
+        dense: &DenseArray,
+    ) -> Values {
         let result = proof.result.unwrap();
         match proof.row.result {
             IterationResult::Undefined => Values::from([AbstractValue::UNDEFINED]),
@@ -3910,7 +3872,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.inputs.index.map_entry_arrays.contains(span))
     }
 
-    fn proven_from_entries_callbacks(
+    pub(super) fn proven_from_entries_callbacks(
         &mut self,
         call_site: CallSite,
         env: &Context,
@@ -5301,7 +5263,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn note_unknown_call(&mut self, call: &Call) {
+    pub(super) fn note_unknown_call(&mut self, call: &Call) {
         self.note_unknown_execution(call.owner);
         if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
             self.mark_reachability_incomplete();
@@ -5509,7 +5471,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// An unknown descriptor or prototype can make a read invoke any accessor
     /// previously installed by reachable code. Its returned value is Top, but
     /// its synchronous binding effects still occur at this read's prefix.
-    fn promote_possible_getter(&mut self, call: &Call, receivers: &Values, outcome: &mut Outcome) {
+    pub(super) fn promote_possible_getter(
+        &mut self,
+        call: &Call,
+        receivers: &Values,
+        outcome: &mut Outcome,
+    ) {
         let no_prior_skipped_execution = !self.state.world.native.uncertain_execution;
         if self.state.array_iteration_depth > 0 {
             self.state.array_iteration_unsupported = true;
@@ -5775,7 +5742,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn callback_values(&self, values: &Values) -> Values {
+    pub(super) fn callback_values(&self, values: &Values) -> Values {
         let pending: Vec<_> = values.iter().cloned().collect();
         self.walk_callback_values(pending, None).0
     }
@@ -5904,7 +5871,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// A direct call or construction of an imported callable carrying a
     /// derived foreign call summary (SPEC.md § Derived foreign call summaries).
-    fn foreign_call_summary(
+    pub(super) fn foreign_call_summary(
         &self,
         kind: CallKind,
         callee: &ValueExpr,
@@ -5947,7 +5914,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         retained
     }
 
-    fn foreign_call_result(
+    pub(super) fn foreign_call_result(
         &mut self,
         summary: &crate::analysis_inputs::ForeignCallSummary,
         args: &[Values],
@@ -6011,7 +5978,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
     }
 
-    fn retained_factory_callbacks(
+    pub(super) fn retained_factory_callbacks(
         &self,
         site: CallSite,
         expressions: &[ValueExpr],
@@ -6095,7 +6062,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// expressions reach this path, so the abstract reads do not execute or
     /// skip JavaScript argument evaluation; the real call transfer evaluates
     /// all receiver and argument expressions in source order afterward.
-    fn no_reentry_member_lookup_admitted(
+    pub(super) fn no_reentry_member_lookup_admitted(
         &mut self,
         site: CallSite,
         env: &Context,
@@ -6697,7 +6664,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state.callback_sets.intern(values)
     }
 
-    fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
+    pub(super) fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
         AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
     }
 
@@ -6803,7 +6770,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn audited_retained_result(
+    pub(super) fn audited_retained_result(
         &mut self,
         kind: RetainedResultKind,
         values: Values,
@@ -6811,7 +6778,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         AbstractValue::AuditedRetainedResult(kind, self.intern_callback_set(values))
     }
 
-    fn audited_result_is_clean(&self, captured: &Captured<Values>) -> bool {
+    pub(super) fn audited_result_is_clean(&self, captured: &Captured<Values>) -> bool {
         if self
             .state
             .world
@@ -6894,7 +6861,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
-    fn unsettle(&mut self, values: &Values) {
+    pub(super) fn unsettle(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = FxHashSet::default();
         // This pass does not change prefix values. Distinct closure contexts
@@ -6955,7 +6922,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn taint_objects(&mut self, values: &Values) {
+    pub(super) fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
         while let Some(value) = pending.pop() {
@@ -7383,7 +7350,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         objects
     }
 
-    fn expose_class_capabilities(&mut self, values: &Values) {
+    pub(super) fn expose_class_capabilities(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
         while let Some(value) = pending.pop() {
@@ -7618,7 +7585,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         HavocReach::Bounded
     }
 
-    fn default_class_has_instance(&self, values: &Values) -> bool {
+    pub(super) fn default_class_has_instance(&self, values: &Values) -> bool {
         let [AbstractValue::Value(Value::Alloc(Kind::Class, key))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
@@ -7648,7 +7615,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 })
     }
 
-    fn ordinary_prototype_chain(&mut self, values: &Values) -> bool {
+    pub(super) fn ordinary_prototype_chain(&mut self, values: &Values) -> bool {
         !values.is_empty()
             && values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Prim(_)) => true,
@@ -7676,13 +7643,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// [`Self::promote_raw_callbacks`] for values handed to opaque code, which
     /// may or may not invoke them: the promoted closure is assumed.
-    fn promote_escaped_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
+    pub(super) fn promote_escaped_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
         self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
             this.promote_raw_callbacks(values, outcome)
         });
     }
 
-    fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
+    pub(super) fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
             values: values.clone(),
@@ -7781,7 +7748,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
+    pub(super) fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
         let result = self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
             this.request_callback_operation(CallbackOperation::PromoteDeferred {
@@ -8044,7 +8011,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
+    pub(super) fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let captured = lexical_captures(
             self.inputs.index,
             &self.state.world.active_cells,
@@ -8125,7 +8092,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.invoke_possible_callbacks_at(args, no_sync_arguments, None, outcome);
     }
 
-    fn invoke_possible_callbacks_at(
+    pub(super) fn invoke_possible_callbacks_at(
         &mut self,
         args: &[Values],
         no_sync_arguments: bool,
@@ -8782,7 +8749,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The summary's native constructions hold in every analyzed chunk's
     /// census, this one included.
-    fn source_record_factory(&self, callee: &ValueExpr, args: &[ValueExpr]) -> bool {
+    pub(super) fn source_record_factory(&self, callee: &ValueExpr, args: &[ValueExpr]) -> bool {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
             if self.inputs.index.returned_record_summaries.contains_key(id))
@@ -8791,7 +8758,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A single-execution imported call may carry a fresh ordinary descriptor
     /// graph. The author certifies the provider's native slots and return-only
     /// retention; the source index proves the exact input and key collisions.
-    fn descriptor_copy_projection(
+    pub(super) fn descriptor_copy_projection(
         &mut self,
         callee: &ValueExpr,
         args: &[Values],
@@ -8825,7 +8792,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(proof)
     }
 
-    fn install_descriptor_copy_result(
+    pub(super) fn install_descriptor_copy_result(
         &mut self,
         proof: OwnPropertyProof,
         args: &[Values],
@@ -8896,7 +8863,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Instantiates a provider's checked wrapper timing proof for this exact
     /// caller-owned ordinary object. The raw source getter remains deferred in
     /// the returned capability; only the wrapper's eager phase is certified.
-    fn source_namespace_wrapper(
+    pub(super) fn source_namespace_wrapper(
         &mut self,
         callee: &ValueExpr,
         args: &[Values],
@@ -8933,7 +8900,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(*source_object)
     }
 
-    fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
+    pub(super) fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
         // An opaque foreign capability can read or rebind importer cells,
         // through a direct ESM capture or a retained callback. Precision is
         // gained at construction only; later use preserves both obligations.
@@ -8997,7 +8964,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.evaluate_allocation_child(expr, env, captures).values
     }
 
-    fn evaluate_allocation_child(
+    pub(super) fn evaluate_allocation_child(
         &mut self,
         expr: &ValueExpr,
         env: &Context,
@@ -9028,7 +8995,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The flattened call pass and later initializer projection see the same
     /// prefix only when this owner has no intervening operation. Compound
     /// initializers still need ordered result transport through the runtime.
-    fn root_own_data_read(&self, expression: &ValueExpr) -> Option<OwnDataRead> {
+    pub(super) fn root_own_data_read(&self, expression: &ValueExpr) -> Option<OwnDataRead> {
         let ValueExpr::Member(receiver, Some(property), key, site) = expression else {
             return None;
         };
@@ -9315,7 +9282,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn evaluate_new(
+    pub(super) fn evaluate_new(
         &mut self,
         callee: &ValueExpr,
         args: &[ValueExpr],
@@ -9478,532 +9445,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         NewEvaluation {
             values,
             operation_coverage,
-        }
-    }
-
-    pub(super) fn evaluate_transfer(
-        &mut self,
-        expr: &ValueExpr,
-        env: &Context,
-        captures: &Context,
-    ) -> Values {
-        if let Some(value) = super::allocation_transfer::transfer(
-            &mut ApplicationAllocationContext {
-                executor: self,
-                environment: env,
-                captures,
-            },
-            expr,
-        ) {
-            self.allocation_judgment.compose(&value.judgment);
-            return value.values;
-        }
-        self.mark_allocation_opaque();
-        match expr {
-            ValueExpr::Binding(_) => unreachable!("the shared transfer resolves bindings"),
-            ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
-                HeapAddress {
-                    scope: self.state.world.scope,
-                    callable: *key,
-                },
-                self.closure_captures(*key, captures),
-            )]),
-            ValueExpr::Alloc(kind, site) => {
-                Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
-            }
-            ValueExpr::ObjectLiteral(key, properties) => {
-                if self.inputs.index.exact_object_spread_copies.contains(key)
-                    && let [(None, source)] = properties.as_ref()
-                {
-                    let source = self.evaluate(source, env, captures);
-                    if let Some(properties) = self.ordinary_data_properties(&source) {
-                        let previously_evaluated = self
-                            .state
-                            .world
-                            .surface
-                            .ordinary_spread_copies
-                            .contains(key);
-                        let current = self
-                            .state
-                            .world_mut()
-                            .surface
-                            .prefix_object_properties
-                            .entry(*key)
-                            .or_default();
-                        let mut changed = false;
-                        if previously_evaluated {
-                            for (property, values) in current.iter_mut() {
-                                if !properties.contains_key(property) {
-                                    changed |= values.insert(AbstractValue::UNDEFINED);
-                                }
-                            }
-                        }
-                        for (property, values) in properties {
-                            let new_property = !current.contains_key(&property);
-                            let slot = current.entry(property).or_default();
-                            let before = slot.len();
-                            if previously_evaluated && new_property {
-                                slot.insert(AbstractValue::UNDEFINED);
-                            }
-                            slot.extend(values);
-                            changed |= slot.len() != before;
-                        }
-                        if changed {
-                            self.state.world_mut().revision.bump_prefix();
-                        }
-                        self.state
-                            .world_mut()
-                            .surface
-                            .ordinary_spread_copies
-                            .insert(*key);
-                        return Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Object,
-                            *key,
-                        ))]);
-                    }
-                    self.state.world_mut().surface.tainted_objects.insert(*key);
-                    if self.state.array_iteration_depth > 0 {
-                        self.state.array_iteration_unsupported = true;
-                    }
-                }
-                let definitions = properties
-                    .iter()
-                    .enumerate()
-                    .map(|(position, (name, value))| {
-                        super::value_model::PropertyDefinition::new(
-                            self.inputs.index.literal_property_kind(*key, position),
-                            name.clone(),
-                            value,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                super::allocation_transfer::record(
-                    &mut ApplicationAllocationContext {
-                        executor: self,
-                        environment: env,
-                        captures,
-                    },
-                    *key,
-                    definitions,
-                    super::allocation_transfer::AllocationJudgment::Opaque,
-                    |context, expression| context.child(expression),
-                )
-                .expect("application child transfers always produce values")
-                .values
-            }
-
-            ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
-                unreachable!("the shared transfer evaluates primitive values")
-            }
-            // CLEANUP(added 2026-11-09): a read the kernel's own-data transfer
-            // resolves never reaches this arm. Its remaining callers are the
-            // unproved-read fallback in `ControlContext::unproved` (gate: the
-            // Wave 3 descriptor and native read slices give those reads a
-            // kernel path) and this self-evaluating legacy evaluator (gate:
-            // L2c moves it to `legacy/`). Delete the arm with the last one.
-            ValueExpr::Member(object, property, is_static_identifier, site) => {
-                if let Some(premise) = self
-                    .inputs
-                    .index
-                    .primitive_class_key_read_premise(site.source_span())
-                {
-                    self.record_proof_dependencies(
-                        NativeIntegrityGuard::NativeCallIdentity,
-                        &premise.dependencies,
-                    );
-                    self.observations
-                        .record_inference_use(premise.inference_use);
-                    return Values::from([AbstractValue::PRIMITIVE]);
-                }
-                if let Some(read) = self.root_own_data_read(expr) {
-                    return read.values;
-                }
-                if let Some(values) = property
-                    .as_deref()
-                    .and_then(|property| self.closed_enum_member_parts(object, property))
-                {
-                    return values;
-                }
-                if let ValueExpr::Binding(id) = object.as_ref()
-                    && is_static_identifier.is_static()
-                    && property.as_ref().is_some_and(|property| {
-                        self.inputs
-                            .index
-                            .callback_factory_members
-                            .get(id)
-                            .is_some_and(|members| members.contains(property))
-                    })
-                {
-                    return Values::from([AbstractValue::CallbackFactory]);
-                }
-                if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.inputs.flow.is_declared(id))
-                    && property.as_deref() == Some("assign")
-                    && !self.inputs.shadowed.contains("Object")
-                {
-                    return Values::from([AbstractValue::ObjectAssign]);
-                }
-                let objects = self.evaluate(object, env, captures);
-                let mut values = Values::new();
-                for object in objects {
-                    match object {
-                        AbstractValue::OwnDescriptorMap(site) => {
-                            self.invalidate_own_descriptor_map(site);
-                            let callbacks = self.descriptor_map_callbacks(site);
-                            values.insert(self.deferred_callbacks(callbacks));
-                            values.insert(AbstractValue::Value(Value::Top));
-                        }
-                        AbstractValue::ForeignDeferredRecord => {
-                            values.insert(AbstractValue::ForeignDeferredRecord);
-                        }
-                        AbstractValue::ArrayIntrinsic => {
-                            values.insert(AbstractValue::ArrayIntrinsic);
-                        }
-                        AbstractValue::GlobalObject => {
-                            if let (Some(property), Some(owner)) =
-                                (property, self.inputs.index.member_owners.get(site))
-                            {
-                                self.evaluation_effects.record(
-                                    *owner,
-                                    site.source_span(),
-                                    GlobalAccessKind::Read,
-                                    property,
-                                );
-                            }
-                            // A global slot can hold an escaped callback, but
-                            // this lookup does not establish that identity.
-                            // Keep it opaque so call dispatch promotes the
-                            // escaped pool under its possible-call assumption.
-                            values.insert(AbstractValue::Value(Value::Top));
-                        }
-                        AbstractValue::Value(Value::Unavailable) => {
-                            values.insert(AbstractValue::Value(Value::Unavailable));
-                        }
-                        AbstractValue::DeferredCallbacks(captured)
-                        | AbstractValue::AuditedRetainedResult(_, captured) => {
-                            values.insert(AbstractValue::DeferredCallbacks(captured));
-                        }
-                        AbstractValue::Value(Value::Alloc(Kind::Class, key))
-                        | AbstractValue::ClassMembers(key) => {
-                            values.insert(AbstractValue::ClassMembers(key));
-                        }
-                        AbstractValue::Instance(key, captured, _) => {
-                            if matches!(property.as_deref(), Some("constructor" | "__proto__")) {
-                                self.state.world_mut().classes.tainted.insert(key);
-                            }
-                            values.insert(AbstractValue::Instance(
-                                key,
-                                captured,
-                                InstanceOrigin::Projected,
-                            ));
-                        }
-                        AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
-                            if !self.state.world.object_properties_are_settled(object_id) {
-                                values.insert(AbstractValue::Value(Value::Top));
-                                continue;
-                            }
-                            if !self.payload_lookup_is_data(object_id, property.as_deref()) {
-                                values.insert(AbstractValue::Value(Value::Top));
-                                continue;
-                            }
-                            if self.state.world.arrays.dense.contains_key(&object_id)
-                                && (property.is_none()
-                                    || matches!(
-                                        property.as_deref(),
-                                        Some("constructor" | "__proto__")
-                                    ))
-                            {
-                                values.insert(AbstractValue::ArrayIntrinsic);
-                            }
-
-                            if let Some(properties) = self
-                                .state
-                                .world
-                                .surface
-                                .prefix_object_properties
-                                .get(&object_id)
-                            {
-                                if let Some(property) = property {
-                                    let found = properties.get(&Some(property.clone())).cloned();
-                                    let dynamic = properties.get(&None).cloned();
-                                    match found {
-                                        Some(found) => values.extend(found.iter().cloned()),
-                                        None if self
-                                            .absent_plain_data_property(object_id, property) =>
-                                        {
-                                            values.insert(AbstractValue::UNDEFINED);
-                                        }
-                                        None => {
-                                            values.insert(AbstractValue::Value(Value::Top));
-                                        }
-                                    }
-                                    if let Some(dynamic) = dynamic {
-                                        values.extend(dynamic.iter().cloned());
-                                    }
-                                } else {
-                                    values.extend(
-                                        properties.values().flat_map(|found| found.iter().cloned()),
-                                    );
-                                }
-                            } else if let Some(property) = property {
-                                if let Some(found) =
-                                    self.inputs.flow.values_of_property(object_id, property)
-                                {
-                                    values.extend(from_flow(found.clone()));
-                                } else {
-                                    values.insert(AbstractValue::Value(Value::Top));
-                                }
-                            } else {
-                                values.insert(AbstractValue::Value(Value::Top));
-                            }
-                        }
-                        _ => {
-                            values.insert(AbstractValue::Value(Value::Top));
-                        }
-                    }
-                }
-                values
-            }
-            ValueExpr::Call(callee, args, span) => {
-                if let Some((proof, _, dense, _, _)) =
-                    self.array_iteration_plan(*span, env, captures)
-                {
-                    return self.array_iteration_result(&proof, &dense);
-                }
-                let targets = self.evaluate(callee, env, captures);
-                if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
-                {
-                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                }
-                let inline_callback =
-                    matches!(args.as_ref(), [ValueExpr::Alloc(Kind::Function, _)]);
-                let expressions = args;
-                let mut args: Vec<Values> = args
-                    .iter()
-                    .map(|arg| self.evaluate(arg, env, captures))
-                    .collect();
-                let args_may_throw = args
-                    .iter()
-                    .any(|values| values.contains(&AbstractValue::Value(Value::Unavailable)));
-                if args.iter().any(|values| {
-                    values.len() == 1 && values.contains(&AbstractValue::Value(Value::Unavailable))
-                }) {
-                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                }
-                for values in &mut args {
-                    values.remove(&AbstractValue::Value(Value::Unavailable));
-                }
-                if let Some(summary) = self.foreign_call_summary(CallKind::Call, callee) {
-                    let mut result = self.foreign_call_result(&summary, &args);
-                    if args_may_throw {
-                        result.insert(AbstractValue::Value(Value::Unavailable));
-                    }
-                    return result;
-                }
-                if self.source_record_factory(callee, expressions) {
-                    if let Some(&(owner, call_span)) = self.inputs.call_site_owners.get(span) {
-                        self.record_returned_record_use(
-                            callee,
-                            crate::reports::schema::ReturnedRecordUseKind::ReturnCapability,
-                            owner,
-                            call_span,
-                        );
-                    }
-                    return Values::from([AbstractValue::ForeignDeferredRecord]);
-                }
-                if let Some(source_object) = self.source_namespace_wrapper(callee, &args, *span) {
-                    // A cached hit may return the same facade as an earlier
-                    // call. Keep result identity opaque and retain the source
-                    // and every deferred callback for later property reads or
-                    // publication, without running a getter at this call.
-                    let mut retained = Values::from([AbstractValue::Value(Value::Alloc(
-                        Kind::Object,
-                        source_object,
-                    ))]);
-                    retained.extend(self.callback_values(&retained));
-                    // The provider's cache may still be in its temporal dead
-                    // zone during an ESM cycle. No success-only return fact
-                    // may erase that possible throw.
-                    return Values::from([
-                        self.deferred_callbacks(retained),
-                        AbstractValue::Value(Value::Top),
-                        AbstractValue::Value(Value::Unavailable),
-                    ]);
-                }
-                if let Some(proof) = self.descriptor_copy_projection(callee, &args, *span) {
-                    return self.install_descriptor_copy_result(proof, &args, *span);
-                }
-                if let Some(resolution) =
-                    self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
-                {
-                    return self.execute_native_resolution(
-                        resolution,
-                        &args,
-                        args_may_throw,
-                        *span,
-                    );
-                }
-                if args.len() == 2
-                    && self.ordinary_object_prototype_intact()
-                    && self
-                        .exact_native_call_row(CallKind::Call, callee, *span)
-                        .is_some_and(|(row, _)| row.op == IntrinsicOp::ObjectDefineProperties)
-                {
-                    // This is only a successful-result identity fact. The
-                    // call-timing lane still needs a live descriptor map and
-                    // an empty target, and falls back opaquely otherwise.
-                    let mut result = args[0].clone();
-                    result.insert(AbstractValue::Value(Value::Unavailable));
-                    return result;
-                }
-                if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
-                {
-                    let result =
-                        self.audited_retained_result(RetainedResultKind::Factory, callbacks);
-                    return if args_may_throw {
-                        Values::from([result, AbstractValue::Value(Value::Unavailable)])
-                    } else {
-                        Values::from([result])
-                    };
-                }
-                if let Some(callbacks) = self.proven_from_entries_callbacks(*span, env, captures) {
-                    return Values::from([self.deferred_callbacks(callbacks)]);
-                }
-                let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
-                    && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
-                let mut returns = Values::new();
-                let no_targets = targets.is_empty();
-                let may_throw = args_may_throw
-                    || no_targets
-                    || targets.iter().any(|target| {
-                        matches!(
-                            target,
-                            AbstractValue::Value(Value::Unavailable)
-                                | AbstractValue::Value(Value::Prim(_))
-                        )
-                    });
-                for target in targets {
-                    match target {
-                        AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
-                            if let ValueExpr::Binding(imported_local) = callee.as_ref()
-                                && let Some(&(owner, call_span)) =
-                                    self.inputs.call_site_owners.get(span)
-                            {
-                                self.record_callback_factory_use(
-                                    imported_local,
-                                    CallbackFactoryUseKind::ReturnShape,
-                                    owner,
-                                    call_span,
-                                );
-                            }
-                            let callbacks = self.callback_values(&args[0]);
-                            returns.insert(
-                                self.audited_retained_result(
-                                    RetainedResultKind::Factory,
-                                    callbacks,
-                                ),
-                            );
-                        }
-                        AbstractValue::InlineCallbackFactory if inline_callback => {
-                            let callbacks = self.callback_values(&args[0]);
-                            returns.insert(
-                                self.audited_retained_result(
-                                    RetainedResultKind::Factory,
-                                    callbacks,
-                                ),
-                            );
-                        }
-                        AbstractValue::DeferredCallbacks(captured)
-                        | AbstractValue::AuditedRetainedResult(_, captured) => {
-                            returns.insert(AbstractValue::DeferredCallbacks(captured));
-                            returns.insert(AbstractValue::Value(Value::Top));
-                        }
-                        AbstractValue::Value(Value::Unavailable)
-                        | AbstractValue::Value(Value::Prim(_)) => {}
-                        AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
-                            returns.extend(self.invoke(key, args.clone(), None, false).returns);
-                        }
-                        AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
-                            returns.extend(
-                                self.invoke(key, args.clone(), Some(captured), false)
-                                    .returns,
-                            );
-                        }
-                        AbstractValue::ObjectAssign => {
-                            returns.extend(args.first().cloned().unwrap_or_else(unknown));
-                        }
-                        AbstractValue::Value(Value::Top) => {
-                            returns.insert(AbstractValue::Value(Value::Top));
-                        }
-                        _ => {
-                            returns.insert(AbstractValue::Value(Value::Top));
-                        }
-                    }
-                }
-                if returns.is_empty() && may_throw {
-                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                }
-                if may_throw {
-                    returns.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                returns
-            }
-            ValueExpr::New(callee, args, span) => {
-                self.evaluate_new(callee, args, *span, env, captures).values
-            }
-            ValueExpr::Primitive(operands) => {
-                let mut can_complete = true;
-                let mut may_throw = false;
-                for operand in operands.iter() {
-                    let mut values = self.evaluate(operand, env, captures);
-                    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
-                        may_throw = true;
-                    }
-                    if values.is_empty() {
-                        can_complete = false;
-                        break;
-                    }
-                }
-                let mut results = Values::new();
-                if can_complete {
-                    results.insert(AbstractValue::PRIMITIVE);
-                }
-                if may_throw || !can_complete {
-                    results.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                results
-            }
-            ValueExpr::StrictEquality(..)
-            | ValueExpr::Void(_)
-            | ValueExpr::LogicalNot(_)
-            | ValueExpr::Sequence(_) => {
-                unreachable!("the shared transfer handles noncoercing primitive operations")
-            }
-            ValueExpr::Conditional { test, alternatives } => {
-                // Preserve general branches' conservative reach, including the
-                // test that the old result-only Alternatives lowering erased.
-                let mut tested = self.evaluate(test, env, captures);
-                let may_throw = tested.remove(&AbstractValue::Value(Value::Unavailable));
-                if tested.is_empty() {
-                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                }
-                let mut results: Values = alternatives
-                    .iter()
-                    .flat_map(|alternative| self.evaluate(alternative, env, captures))
-                    .collect();
-                if may_throw {
-                    results.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                results
-            }
-            ValueExpr::Alternatives(options) => options
-                .iter()
-                .flat_map(|option| self.evaluate(option, env, captures))
-                .collect(),
-            ValueExpr::ArrayIteratorPrototype(expression)
-            | ValueExpr::SetIteratorPrototype(expression) => {
-                self.evaluate(expression, env, captures)
-            }
-            ValueExpr::Unknown => unknown(),
         }
     }
 
@@ -10238,7 +9679,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome
     }
 
-    fn invoke(
+    pub(super) fn invoke(
         &mut self,
         key: u32,
         args: Vec<Values>,
@@ -10909,460 +10350,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
-    pub(super) fn execute_call_transfer(
+    /// The `Call`/`New` transfer over already evaluated targets and arguments.
+    /// `supplied` carries the kernel's operand selections; `None` is the
+    /// self-evaluating mode, which requests no value.
+    pub(super) fn transfer_evaluated_call(
         &mut self,
         call: &Call,
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
-        operands: Option<CallOperands>,
+        operands: EvaluatedCallOperands,
+        supplied: Option<SuppliedCallSelections>,
     ) -> CallTransfer {
-        let needs_value = operands.is_some();
-        let selected_pure_initializer_call = operands
-            .as_ref()
-            .is_some_and(|operands| operands.selected_pure_initializer_call);
-        let selected_member_dependencies =
-            operands
-                .as_ref()
-                .and_then(|operands| match &operands.callee {
-                    EvaluatedCallee::Member {
-                        selection_dependencies,
-                        ..
-                    } => selection_dependencies.clone(),
-                    EvaluatedCallee::Direct(_) => None,
-                });
-        let selected_value = operands
-            .as_ref()
-            .and_then(|operands| match &operands.callee {
-                EvaluatedCallee::Direct(value) => value
-                    .selection
-                    .as_ref()
-                    .filter(|selection| selection.matches(&value.values))
-                    .cloned(),
-                EvaluatedCallee::Member { .. } => None,
-            });
-        let argument_selections = operands
-            .as_ref()
-            .map(|operands| operands.argument_selections.clone())
-            .unwrap_or_else(|| vec![None; call.args.len()]);
-        if let Some(operands) = &operands {
-            assert!(call.kind == CallKind::Call && !call.has_spread);
-            assert!(match (&call.callee, &operands.callee) {
-                (ValueExpr::Binding(_), EvaluatedCallee::Direct(_)) => true,
-                (ValueExpr::Alloc(Kind::Function, source), EvaluatedCallee::Direct(selected)) => {
-                    selected.values.len() == 1
-                        && matches!(selected.values.first(),
-                            Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if actual == source)
-                }
-                (
-                    ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
-                    EvaluatedCallee::Member { .. },
-                ) => matches!(receiver.as_ref(), ValueExpr::Binding(_)),
-                _ => false,
-            });
-        }
-        if call.kind == CallKind::OpaqueExecution {
-            let fact = &self.inputs.facts[call.owner.0];
-            let mut reached: Values = env
-                .values()
-                .chain(captures.values())
-                .flatten()
-                .chain(
-                    fact.reads
-                        .eager
-                        .iter()
-                        .chain(&fact.reads.lazy)
-                        .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
-                        .flatten(),
-                )
-                .cloned()
-                .collect();
-            for argument in &call.args {
-                reached.extend(self.evaluate(argument, env, captures));
-            }
-            self.note_unknown_call(call);
-            self.unsettle(&reached);
-            self.promote_escaped_callbacks(&reached, outcome);
-            self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
-            outcome.unknown_call = true;
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::Call && call.has_spread {
-            // The canonical argument values are iterable capabilities, not
-            // the actual positional arguments. No exact local invocation can
-            // use them as though spreading had completed without effects.
-            let mut reached = self.evaluate(&call.callee, env, captures);
-            for argument in &call.args {
-                reached.extend(self.evaluate(argument, env, captures));
-            }
-            self.note_unknown_call(call);
-            self.unsettle(&reached);
-            self.promote_escaped_callbacks(&reached, outcome);
-            self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
-            outcome.unknown_call = true;
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::AccessorCalleeLookup {
-            let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
-                unreachable!("accessor callee lookup always records a member");
-            };
-            let values = self.evaluate(receiver, env, captures);
-            if values.contains(&AbstractValue::Value(Value::Top))
-                && (self.callee_lookup_is_certified(call)
-                    || self
-                        .inputs
-                        .index
-                        .no_reentry_accessor_calls
-                        .get(&CallSite::from(call.span))
-                        .copied()
-                        .is_some_and(|site| {
-                            self.no_reentry_member_lookup_admitted(site, env, captures)
-                        }))
-            {
-                return CallTransfer::EffectsOnly;
-            }
-            if values.iter().any(|value| {
-                matches!(value, AbstractValue::Value(Value::Top))
-                    || matches!(value, AbstractValue::Value(Value::Alloc(Kind::RegExp, _)))
-                    || matches!(value,
-                AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.world.surface.object_accessors_are_settled(*object))
-            }) {
-                self.promote_possible_getter(call, &values, outcome);
-                return CallTransfer::EffectsOnly;
-            }
-            for value in &values {
-                if let AbstractValue::OwnDescriptorMap(site) = value {
-                    self.invalidate_own_descriptor_map(*site);
-                }
-            }
-            let accessor_getters = self.applied_getters(&values, property.as_deref());
-            if accessor_getters.is_empty() {
-                return CallTransfer::EffectsOnly;
-            }
-            let no_reentry_accessor_call = self
-                .inputs
-                .index
-                .no_reentry_accessor_calls
-                .get(&CallSite::from(call.span))
-                .copied();
-            let no_reentry_admitted = no_reentry_accessor_call
-                .is_some_and(|site| self.no_reentry_member_lookup_admitted(site, env, captures));
-            if !no_reentry_admitted {
-                self.promote_raw_callbacks(&accessor_getters, outcome);
-            }
-            self.taint_objects(&values);
-            if self.state.array_iteration_depth > 0 {
-                self.state.array_iteration_unsupported = true;
-            }
-            outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
-            return CallTransfer::EffectsOnly;
-        }
-        if matches!(
-            call.kind,
-            CallKind::InProtocol
-                | CallKind::InstanceOfProtocol
-                | CallKind::DeepDestructuringProtocol
-        ) {
-            let mut operands: Vec<Values> = call
-                .args
-                .iter()
-                .map(|argument| self.evaluate(argument, env, captures))
-                .collect();
-            if call.kind == CallKind::InProtocol
-                && self
-                    .inputs
-                    .index
-                    .non_reentrant_global_membership
-                    .contains(&call.span.into())
-            {
-                // Operand effects were indexed/evaluated normally. The separate
-                // author contract certifies only this exact host protocol's
-                // lack of callback reentry; purity and throw checks stay intact.
-                return CallTransfer::EffectsOnly;
-            }
-            if call.kind == CallKind::InProtocol
-                && self.ordinary_prototype_chain(&operands[0])
-                && operands[0].iter().all(|value| {
-                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, _)))
-                })
-            {
-                return CallTransfer::EffectsOnly;
-            }
-            if call.kind == CallKind::InstanceOfProtocol
-                && self.default_class_has_instance(&operands[0])
-            {
-                // OrdinaryHasInstance consults the LHS prototype chain, never
-                // the constructor's deferred method bodies.
-                if self.ordinary_prototype_chain(&operands[1]) {
-                    return CallTransfer::EffectsOnly;
-                }
-                operands.remove(0);
-            }
-            let values: Values = operands.into_iter().flatten().collect();
-            self.expose_class_capabilities(&values);
-            self.taint_objects(&values);
-            self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
-            self.note_unknown_call(call);
-            outcome.unsupported(
-                match call.kind {
-                    CallKind::InProtocol => ExecutionOperation::MembershipProtocol,
-                    CallKind::InstanceOfProtocol => ExecutionOperation::InstanceOfProtocol,
-                    _ => ExecutionOperation::DestructuringProtocol,
-                },
-                call.owner,
-                call.span,
-            );
-            outcome.unknown_call = true;
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::LocalMemberRead {
-            if let Some(premise) = self
-                .inputs
-                .index
-                .primitive_class_key_read_premise(call.span)
-            {
-                self.record_proof_dependencies(
-                    NativeIntegrityGuard::NativeCallIdentity,
-                    &premise.dependencies,
-                );
-                self.observations
-                    .record_inference_use(premise.inference_use);
-                // Data and primitive do not imply a constant property value.
-                // Keep its external heap observation on the ordinary timeline.
-                outcome.effects.heap_contents.opaque = true;
-                outcome.effects.heap_contents.observes_external_heap = true;
-                return CallTransfer::EffectsOnly;
-            }
-            if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
-                return CallTransfer::EffectsOnly;
-            }
-            if self.closed_enum_member_read(&call.callee) {
-                return CallTransfer::EffectsOnly;
-            }
-            if let Some(read) = self.root_own_data_read(&call.callee) {
-                outcome
-                    .effects
-                    .record_heap_read(read.cell, self.state.assumption.is_none());
-                return CallTransfer::EffectsOnly;
-            }
-            if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
-                .is_some()
-                && self
-                    .inputs
-                    .index
-                    .native_own_data_read_premise(call.span)
-                    .is_none()
-            {
-                let selected = self.evaluate(&call.callee, env, captures);
-                self.promote_escaped_callbacks(&selected, outcome);
-                self.invoke_possible_callbacks_at(&[selected], false, Some(call.span), outcome);
-                self.note_unknown_call(call);
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
-                outcome.unknown_call = true;
-                return CallTransfer::EffectsOnly;
-            }
-            let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
-                unreachable!()
-            };
-            let values = self.evaluate(receiver, env, captures);
-            if values.iter().any(|value| {
-                matches!(value, AbstractValue::Value(Value::Top))
-                    || matches!(value,
-                AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.world.surface.object_accessors_are_settled(*object))
-            }) {
-                self.promote_possible_getter(call, &values, outcome);
-                return CallTransfer::EffectsOnly;
-            }
-            if values.contains(&AbstractValue::ForeignDeferredRecord) {
-                self.promote_foreign_record(outcome);
-                self.note_unknown_call(call);
-                self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
-                return CallTransfer::EffectsOnly;
-            }
-            for value in &values {
-                if let AbstractValue::OwnDescriptorMap(site) = value {
-                    self.invalidate_own_descriptor_map(*site);
-                }
-            }
-            let accessor_getters = self.applied_getters(&values, property.as_deref());
-            if !accessor_getters.is_empty() {
-                self.promote_raw_callbacks(&accessor_getters, outcome);
-            }
-            let unsupported_local = values.iter().any(|value| match value {
-                AbstractValue::Value(Value::Alloc(kind, object))
-                    if kind.supports_ordinary_own_data_read_proof() =>
-                {
-                    if !self.state.world.object_properties_are_settled(*object)
-                        || (!self.inputs.index.plain_data_objects.contains(object)
-                            && !self
-                                .state
-                                .world
-                                .surface
-                                .ordinary_spread_copies
-                                .contains(object)
-                            && !self
-                                .state
-                                .world
-                                .surface
-                                .descriptor_copy_results
-                                .contains(object)
-                            && !self.state.world.arrays.dense.contains_key(object))
-                    {
-                        true
-                    } else {
-                        let own_key_present = property.as_ref().and_then(|property| {
-                            self.state
-                                .world
-                                .surface
-                                .prefix_object_properties
-                                .get(object)
-                                .map(|properties| properties.contains_key(&Some(property.clone())))
-                        });
-                        match (property.as_ref(), own_key_present) {
-                            (Some(_), Some(true)) => false,
-                            (Some(property), Some(false)) => {
-                                !self.absent_plain_data_property(*object, property)
-                            }
-                            _ => true,
-                        }
-                    }
-                }
-                // Non-ordinary allocation kinds retain identity or containment
-                // only. Their own and inherited property semantics still
-                // need an explicit native/descriptor proof (for example,
-                // RegExp.prototype.source is an accessor).
-                AbstractValue::Value(Value::Alloc(kind, _))
-                    if !kind.supports_ordinary_own_data_read_proof() =>
-                {
-                    true
-                }
-                AbstractValue::Instance(key, _, _) => {
-                    !self.known_local_instance_member(*key, property.as_deref())
-                }
-                AbstractValue::DeferredCallbacks(_)
-                | AbstractValue::AuditedRetainedResult(_, _) => true,
-                _ => false,
-            }) || !accessor_getters.is_empty();
-            if unsupported_local {
-                if values.iter().any(|value| {
-                    matches!(value,
-                    AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if self.state.world.surface.descriptor_copy_results.contains(object))
-                }) {
-                    self.promote_escaped_callbacks(&values, outcome);
-                }
-                // This receiver is still settled: preserve the known member's
-                // capabilities for effects before taint discards its value.
-                // Unsettled receivers took the possible-getter path above.
-                let selected = self.selected_member_capabilities(&values, property.as_deref());
-                self.taint_objects(&values);
-                self.promote_escaped_callbacks(&selected, outcome);
-                if self.state.array_iteration_depth > 0 {
-                    self.state.array_iteration_unsupported = true;
-                }
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
-            }
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::ObjectSpread {
-            let values = self.evaluate(&call.args[0], env, captures);
-            if self.ordinary_data_properties(&values).is_some() {
-                return CallTransfer::EffectsOnly;
-            }
-            if self.state.array_iteration_depth > 0 {
-                self.state.array_iteration_unsupported = true;
-            }
-            outcome.unsupported(ExecutionOperation::ObjectSpread, call.owner, call.span);
-            outcome.unknown_call = true;
-            self.note_unknown_call(call);
-            self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::ArraySpread {
-            let values = self.evaluate(&call.args[0], env, captures);
-            if let Some(receipt) =
-                self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
-            {
-                outcome.effects.record_heap_contents(
-                    &receipt.external_heap_contents(),
-                    self.state.assumption.is_none(),
-                );
-                outcome.effect_coverage.compose(&receipt.coverage);
-                return CallTransfer::EffectsOnly;
-            }
-            outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
-            outcome.unknown_call = true;
-            self.note_unknown_call(call);
-            // Consuming a custom iterator can execute deferred generator bodies.
-            self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::ImplicitCoercion {
-            let values = call
-                .args
-                .first()
-                .map(|argument| self.evaluate(argument, env, captures))
-                .unwrap_or_else(unknown);
-            if values.iter().all(|value| {
-                matches!(
-                    value,
-                    AbstractValue::Value(Value::Prim(_)) | AbstractValue::Value(Value::Unavailable)
-                )
-            }) {
-                return CallTransfer::EffectsOnly;
-            }
-            let mut possible_values = values;
-            possible_values.remove(&AbstractValue::Value(Value::Unavailable));
-            if possible_values.is_empty() {
-                return CallTransfer::EffectsOnly;
-            }
-            // ToPrimitive may call an own [Symbol.toPrimitive], valueOf, or
-            // toString method. Treat that protocol step like an opaque
-            // synchronous call and expose callbacks carried by the operand;
-            // this covers both the exotic and ordinary conversion paths
-            // without assuming which method succeeds first.
-            outcome.unsupported(ExecutionOperation::ImplicitCoercion, call.owner, call.span);
-            outcome.unknown_call = true;
-            self.note_unknown_call(call);
-            // A conversion property may be an accessor that returns a
-            // conversion function. Promote the operand's retained callback
-            // closure as well as invoking its directly visible callbacks so
-            // effects in such returned functions remain visible.
-            self.promote_deferred_callbacks(&possible_values, outcome);
-            self.invoke_possible_callbacks_at(&[possible_values], false, Some(call.span), outcome);
-            return CallTransfer::EffectsOnly;
-        }
-        let (targets, mut args, prepared_receiver) = match operands {
-            Some(operands) => {
-                assert_eq!(operands.arguments.len(), call.args.len());
-                match operands.callee {
-                    EvaluatedCallee::Direct(targets) => (targets.values, operands.arguments, None),
-                    EvaluatedCallee::Member {
-                        receiver, targets, ..
-                    } => (targets, operands.arguments, Some(receiver)),
-                }
-            }
-            None => {
-                let targets = self.evaluate(&call.callee, env, captures);
-                if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
-                {
-                    return CallTransfer::EffectsOnly;
-                }
-                let args = call
-                    .args
-                    .iter()
-                    .map(|arg| self.evaluate(arg, env, captures))
-                    .collect();
-                (targets, args, None)
-            }
-        };
+        let needs_value = supplied.is_some();
+        let SuppliedCallSelections {
+            selected_pure_initializer_call,
+            selected_member_dependencies,
+            selected_value,
+            argument_selections,
+        } = supplied.unwrap_or_else(|| SuppliedCallSelections {
+            selected_pure_initializer_call: false,
+            selected_member_dependencies: None,
+            selected_value: None,
+            argument_selections: vec![None; call.args.len()],
+        });
+        let EvaluatedCallOperands {
+            targets,
+            mut args,
+            prepared_receiver,
+        } = operands;
         let operands_may_throw = targets.contains(&AbstractValue::Value(Value::Unavailable))
             || args
                 .iter()

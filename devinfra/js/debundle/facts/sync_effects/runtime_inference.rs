@@ -613,13 +613,18 @@ impl RuntimeRules<'_, '_> {
                 mut outcome,
                 operands,
             } => {
-                let transfer = executor.execute_call_transfer(
-                    &call,
-                    &environment,
-                    &captures,
-                    &mut outcome,
-                    operands.map(|operands| *operands),
-                );
+                let transfer = match operands {
+                    Some(operands) => executor.execute_supplied_call(
+                        &call,
+                        &environment,
+                        &captures,
+                        &mut outcome,
+                        *operands,
+                    ),
+                    None => {
+                        executor.execute_call_transfer(&call, &environment, &captures, &mut outcome)
+                    }
+                };
                 RuntimeValue::Call { outcome, transfer }
             }
             RuntimeOperation::Model(operation) => {

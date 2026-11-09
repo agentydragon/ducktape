@@ -62,10 +62,9 @@ pub(super) enum LiteralLayout {
 }
 
 // CLEANUP(added 2026-11-09): remove this trait and the kernel's
-// `LocalValueContext` bridge once L2c moves the self-evaluating legacy
-// evaluator (`Executor::evaluate_transfer`, its last non-kernel implementor
-// through `ApplicationAllocationContext`) into `legacy/`; the kernel then
-// passes its frame to these transfers directly.
+// `LocalValueContext` bridge when L4e deletes `legacy/evaluator.rs`, whose
+// `ApplicationAllocationContext` is the last non-kernel implementor; the
+// kernel then passes its frame to these transfers directly.
 pub(super) trait AllocationContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;

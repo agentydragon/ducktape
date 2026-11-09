@@ -3928,6 +3928,57 @@ against a budget of 10% per step. The settled-prefix invariant ("the state
 after statement _n_ is never rewritten") stays. The condition for revisiting
 this remains separate from the prepared/completed publication boundary.
 
+### The synchronous execution kernel
+
+`facts/sync_effects/` is laid out by role:
+
+| Module      | Owns                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `kernel/`   | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ. |
+| `world/`    | `World`, the per-prefix execution state, and `World::join`.                                                                                                              |
+| `adapters/` | The application adapter. The strict provider (`strict_provider.rs`) is the other adapter.                                                                                |
+| `roots/`    | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                             |
+| `legacy/`   | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                      |
+
+**Adapters implement only five narrow traits** (`kernel/context.rs`):
+`BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
+`ControlContext`. Everything an adapter would otherwise re-implement lives in
+the kernel, so the application and provider modes cannot drift on it. A
+policy difference is a trait method: which bindings get cells, capture
+snapshots, closure admission, the native rows, and the disposition of an
+unproved operation (summarize or refuse).
+
+**Stores are mutated, observations are returned.** Heap, lexical cells,
+object surface and descriptors are mutated in place through `&mut World`; a
+missed store write shows up as a wrong value. Effects, completion, touched
+heap cells, exact throws and operation-support receipts are only ever
+returned in the kernel's `TransferLedger` and composed by the adopting
+scope. `EffectCoverageFragment`, `TransferLedger` and `Completion` are
+`#[must_use]`, so a dropped observation is a compile error rather than a
+silent purity claim. The application scope records the returned cells and
+throws as the owner's effects and publications; the isolated provider scope
+keeps them private. Run-level admission facts (native checks, proof
+dependencies, record-factory premises) are different: later transfers read
+them back as their prerequisites, so they are one threaded `Observations`
+value. `Executor` hands it to a child with the request and takes it back from
+the child's `#[must_use]` result.
+
+**One `World` for both adapters**, distinguished by `WorldScope`. It sits
+behind an `Arc` with copy-on-write (`make_mut`), uses `imbl` maps and shares
+one lexical-cell id allocator, so a fork clones a handle rather than the
+contents. Callers name the owner (`world.surface`, `world.module`); there is
+no `Deref` to a store.
+
+**Legacy enumeration and kernel receipts are different facts.** An
+`Outcome.complete` legacy execution has enumerated every effect it can
+reach. A closed `EffectCoverageFragment` has a receipt for every operation.
+The legacy gate is the authority, so every reader that certifies, seals or
+retires requires `complete`. A receipt can narrow that authority further: an
+ordered root's binding-effect receipt, or its completed initialization.
+It never replaces `complete`. `complete` can be false without a recorded
+precision loss: the terminal-call stop in the application adapter clears it
+and records none.
+
 ## Vendor chunk swapping
 
 The `vendor` spec map classifies chunks as vendor code at one of four

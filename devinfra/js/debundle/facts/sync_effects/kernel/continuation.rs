@@ -1110,7 +1110,8 @@ impl LocalContinuation {
 /// The kernel's view of `allocation_transfer` for a frame: binding reads go to
 /// the adapter and effects into the ledger. An adapter refusal met while
 /// transferring is kept so the caller reports the right remainder.
-// CLEANUP(added 2026-11-09): dissolve with `AllocationContext` in L2c.
+// CLEANUP(added 2026-11-09): dissolve with `AllocationContext` when L4e
+//   deletes `legacy/evaluator.rs` and its `ApplicationAllocationContext`.
 struct LocalValueContext<'a, C> {
     context: &'a mut C,
     frame: &'a mut LocalFrame,

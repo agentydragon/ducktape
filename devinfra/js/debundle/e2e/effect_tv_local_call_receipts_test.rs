@@ -1016,3 +1016,40 @@ fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
         );
     }
 }
+
+#[test]
+fn refused_body_after_a_covered_call_leaves_the_root_binding_effects_open() {
+    // Both roots start with a call that has an exact receipt. When the second
+    // callee's body is refused, the root keeps no operation authority: a
+    // refused body leaves the ledger open instead of sealing the covered
+    // prefix.
+    for (second, authority) in [
+        ("return seed.value;", "operation_receipt"),
+        (
+            "return seed.value.toString();",
+            "ordered_root_initializer_uncovered",
+        ),
+    ] {
+        let source = format!(
+            "const seed = ({{value: 41}});\nfunction readSeed() {{ return seed; }}\nfunction readSecond() {{ {second} }}\nvar result = (readSeed(), readSecond());\nconsole.log(String(result));\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("readSecond"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], authority,
+            "{second}: {execution:#}"
+        );
+    }
+}
