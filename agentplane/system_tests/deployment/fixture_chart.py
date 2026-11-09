@@ -111,9 +111,6 @@ POD_TEMPLATE = "environment-tools"
 # imports into containerd under this reference. The runner binary itself still comes from the runner
 # disk image, as in staging.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
-RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-DISPATCHER_PORT = 8080
-EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)

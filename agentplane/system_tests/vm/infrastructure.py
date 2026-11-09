@@ -194,8 +194,3 @@ def wait_until_ready(kubectl: Kubectl, *, require_cluster_policies: bool = True)
     )  # fmt: skip
     if require_cluster_policies:
         kubectl("wait", "--for=condition=Ready", "clusterpolicy", "--all", f"--timeout={READY_SECONDS}s")
-
-
-@tracer.start_as_current_span("system_test.virtualization.infrastructure_ready")
-def wait_for_infrastructure(kubectl: Kubectl) -> None:
-    wait_until_ready(kubectl, require_cluster_policies=False)
