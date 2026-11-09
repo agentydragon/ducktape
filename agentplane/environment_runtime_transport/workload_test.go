@@ -72,7 +72,25 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 		t.Fatal("initial Workload API handshake did not present the initial SVID")
 	}
 
-	workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER)
+	rotationDone := make(chan struct{})
+	go func() {
+		defer close(rotationDone)
+		for range 64 {
+			select {
+			case workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER):
+			case <-t.Context().Done():
+				return
+			}
+		}
+	}()
+	// Handshakes read bundles while the source replaces them. This target runs
+	// with the race detector to cover the upstream X509Source rotation boundary.
+	for range 32 {
+		if _, _, err := handshake(t, clientCredentials, serverCredentials); err != nil {
+			t.Fatalf("concurrent Workload API rotation: %v", err)
+		}
+	}
+	<-rotationDone
 	waitForWorkloadHandshake(t, clientCredentials, serverCredentials, readCertificateDER(t, rotated.CertFile))
 
 	workloadServer.updates <- workloadX509SVID(t, changedIdentity, otherURI, rootDER)
