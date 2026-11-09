@@ -67,7 +67,16 @@ function validateDecision(value: Decision): void {
       throw new Error(`The Action Service returned an unknown verdict (${value.verdict}).`);
   }
   required(value.decidedAt, "Decision.decided_at");
-  if (value.policyEvidence !== undefined) validatePolicyEvidence(value.policyEvidence);
+  switch (value.decider.case) {
+    case "operator":
+      required(value.decider.value.operator, "OperatorDecision.operator");
+      break;
+    case "policy":
+      if (value.decider.value.evidence !== undefined) validatePolicyEvidence(value.decider.value.evidence);
+      break;
+    default:
+      throw new Error("The Action Service omitted Decision.decider.");
+  }
 }
 
 function validateExecution(value: Execution): void {

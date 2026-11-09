@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -81,7 +82,9 @@ func (d *delivery) submit(t *testing.T, key string, allowed bool) store.ActionRe
 	t.Helper()
 	admission := store.Admission{RequestID: uuid.New()}
 	if allowed {
-		admission.Vote = &store.ProviderVote{Provider: "test-policy", Verdict: store.VerdictAllow, ReasonCode: "test-allow"}
+		admission.Vote = &store.ProviderVote{
+			Verdict: store.VerdictAllow, Policy: store.PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE},
+		}
 	}
 	request, err := d.store.Submit(t.Context(), testCaller, store.ActionRequestInput{
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},

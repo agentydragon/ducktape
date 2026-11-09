@@ -56,6 +56,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -165,25 +167,39 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 }
 
 // sandboxExecutors builds the Executor of each sandbox group, and gives the group the Actions it offers: they are
-// declared, not discovered, so a direct tool the roster lacks is a typo found now. The offered templates are read once,
-// here, so that a missing or unsafe one stops the service rather than failing each create.
+// declared, not discovered, so a direct tool the roster lacks is a typo found now. Each group requests its boxes'
+// WorkloadCredentials. The offered templates are read once, here, so that a missing or unsafe one stops the service
+// rather than failing each create.
 func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	var exec sandbox.Exec
-	var client kubernetes.Interface
+	var kubeClient kubernetes.Interface
+	var records client.Client
+	var credentials requester.Requester
 	for key, group := range groups.Groups() {
 		binding, isSandbox := group.Executor.(catalog.PodBinding)
 		if !isSandbox {
 			continue
 		}
-		if client == nil {
+		if kubeClient == nil {
 			var err error
-			if client, err = kubernetes.NewForConfig(kube); err != nil {
+			if kubeClient, err = kubernetes.NewForConfig(kube); err != nil {
 				return nil, err
 			}
-			exec = sandbox.KubernetesExec(kube, client)
+			exec = sandbox.KubernetesExec(kube, kubeClient)
+			scheme := runtime.NewScheme()
+			if err := workloadapi.AddToScheme(scheme); err != nil {
+				return nil, err
+			}
+			// Uncached: a box's credential is read back as the API server holds it.
+			if records, err = client.New(kube, client.Options{Scheme: scheme}); err != nil {
+				return nil, err
+			}
+			if credentials, err = requester.New(records, records); err != nil {
+				return nil, err
+			}
 		}
-		inventory := sandbox.NewInventory(binding, client, exec)
+		inventory := sandbox.NewInventory(binding, kubeClient, exec, credentials, records)
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}

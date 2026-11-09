@@ -65,7 +65,7 @@ export function ActionPolicySection({
 
 function PolicyRow({ effective, position }: { effective: EffectivePolicy; position: number }): JSX.Element {
   const kind = effective.policy?.kind;
-  const actions = kind?.value?.actions ?? {};
+  const actions = kind?.value?.actions ?? [];
   const schema = kind?.case === "argumentSchema" ? kind.value.argumentSchema : undefined;
   const kindName = kind?.case?.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`) ?? "unknown";
   return (
@@ -83,9 +83,7 @@ function PolicyRow({ effective, position }: { effective: EffectivePolicy; positi
       </Table.Td>
       <Table.Td>
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          {Object.entries(actions)
-            .map(([group, names]) => `${group}: ${names.values.join(", ")}`)
-            .join(" · ")}
+          {actions.map(({ group, names }) => `${group}: ${names.join(", ")}`).join(" · ")}
         </Text>
         {schema !== undefined && (
           <Box hiddenFrom="sm" mt="xs">

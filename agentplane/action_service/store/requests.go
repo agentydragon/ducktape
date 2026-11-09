@@ -158,11 +158,11 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 	for rows.Next() {
 		var requestID uuid.UUID
 		var decision Decision
-		var verdict string
-		var issuer, subject *string
+		var verdict, provider string
+		var issuer, subject, decisionNote, reasonCode, reasonDescription *string
 		var evidence []byte
-		if err := rows.Scan(&requestID, &decision.ID, &verdict, &decision.Provider, &issuer, &subject,
-			&decision.DecisionNote, &decision.ReasonCode, &decision.ReasonDescription, &evidence,
+		if err := rows.Scan(&requestID, &decision.ID, &verdict, &provider, &issuer, &subject,
+			&decisionNote, &reasonCode, &reasonDescription, &evidence,
 			&decision.IdempotencyKey, &decision.DecidedAt); err != nil {
 			return nil, err
 		}
@@ -170,14 +170,28 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 		if !decision.Verdict.valid() {
 			return nil, fmt.Errorf("decision %s has unknown verdict %q", decision.ID, verdict)
 		}
-		if issuer != nil && subject != nil {
-			decision.Operator = &OperatorPrincipal{Issuer: *issuer, Subject: *subject}
-		}
-		if evidence != nil {
-			decision.PolicyEvidence, err = decodeStoredPolicyEvidenceProto(evidence)
-			if err != nil {
-				return nil, fmt.Errorf("decision %s policy_evidence: %w", decision.ID, err)
+		switch provider {
+		case operatorProvider:
+			if issuer == nil || subject == nil {
+				return nil, fmt.Errorf("operator decision %s names no operator", decision.ID)
 			}
+			decision.Decider = OperatorDecision{
+				Operator: OperatorPrincipal{Issuer: *issuer, Subject: *subject}, DecisionNote: decisionNote,
+			}
+		case policyProvider:
+			if reasonCode == nil {
+				return nil, fmt.Errorf("policy decision %s has no reason code", decision.ID)
+			}
+			policy := PolicyDecision{ReasonCode: reasonCodeFromStored(*reasonCode), ReasonDescription: reasonDescription}
+			if evidence != nil {
+				policy.Evidence, err = decodeStoredPolicyEvidenceProto(evidence)
+				if err != nil {
+					return nil, fmt.Errorf("decision %s policy_evidence: %w", decision.ID, err)
+				}
+			}
+			decision.Decider = policy
+		default:
+			return nil, fmt.Errorf("decision %s has unknown provider %q", decision.ID, provider)
 		}
 		decision.DecidedAt = decision.DecidedAt.UTC()
 		decisions[requestID] = &decision
@@ -325,12 +339,9 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 		}
 		if vote := admission.Vote; vote != nil {
 			if _, err := recordDecision(ctx, tx, &row, at, decisionRecord{
-				Verdict:           vote.Verdict,
-				Provider:          vote.Provider,
-				IdempotencyKey:    "auto:" + row.ID.String(),
-				ReasonCode:        &vote.ReasonCode,
-				ReasonDescription: vote.ReasonDescription,
-				PolicyEvidence:    vote.Evidence,
+				Verdict:        vote.Verdict,
+				IdempotencyKey: "auto:" + row.ID.String(),
+				Decider:        vote.Policy,
 			}); err != nil {
 				return err
 			}

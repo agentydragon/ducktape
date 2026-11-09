@@ -372,29 +372,33 @@ func (f *folder) admit(cursor uint64, command *commandpb.Command) error {
 	if _, admitted := f.commands.get(commandID); admitted || prior != nil {
 		return fmt.Errorf("duplicate command admission: %s", commandID)
 	}
-	operation := oneofName(command, "operation")
-	if operation == "" {
-		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
-	}
 	summary := CommandSummary{
 		ProjectionEpoch: f.state.Position.ProjectionEpoch,
 		CommandID:       commandID,
 		AdmissionCursor: cursor,
-		Operation:       operation,
 		Outcome:         historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING,
 	}
-	switch operation {
-	case "change_model":
-		summary.RequestedValue = proto.String(command.GetChangeModel().GetModel())
-	case "change_reasoning_effort":
-		summary.RequestedValue = proto.String(command.GetChangeReasoningEffort().GetEffort())
-	case "submit_input":
+	switch operation := command.GetOperation().(type) {
+	case *commandpb.Command_SubmitInput:
+		summary.Operation = commandpb.Operation_OPERATION_SUBMIT_INPUT
 		owner := PayloadOwner{summary.ProjectionEpoch, cursor, commandID, cursor}
-		input, err := f.write(owner, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, command.GetSubmitInput().GetText(), false)
+		input, err := f.write(owner, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, operation.SubmitInput.GetText(), false)
 		if err != nil {
 			return err
 		}
 		summary.Input = &input
+	case *commandpb.Command_ChangeModel:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_MODEL
+		summary.RequestedValue = proto.String(operation.ChangeModel.GetModel())
+	case *commandpb.Command_ChangeReasoningEffort:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT
+		summary.RequestedValue = proto.String(operation.ChangeReasoningEffort.GetEffort())
+	case *commandpb.Command_InterruptTurn:
+		summary.Operation = commandpb.Operation_OPERATION_INTERRUPT_TURN
+	case *commandpb.Command_Compact:
+		summary.Operation = commandpb.Operation_OPERATION_COMPACT
+	default:
+		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
 	}
 	f.commands.set(commandID, summary)
 	return nil

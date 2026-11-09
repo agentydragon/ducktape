@@ -207,7 +207,7 @@ async def test_credentials_turn_cancels_model_wait_when_collection_fails() -> No
     command_id = "test-command"
     diagnostic = "test runner launch failed"
     dispatcher.submit_input.return_value = session_dispatcher_pb2.Dispatch(
-        command_id=command_id, operation=session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+        command_id=command_id, operation=command_pb2.OPERATION_SUBMIT_INPUT
     )
     request_started = asyncio.Event()
     request_cancelled = asyncio.Event()

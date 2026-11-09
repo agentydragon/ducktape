@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
@@ -130,7 +131,7 @@ type CommandSummary struct {
 	ProjectionEpoch string
 	CommandID       string
 	AdmissionCursor uint64
-	Operation       string
+	Operation       commandpb.Operation
 	Outcome         historypb.ThreadCommandOutcome
 	OutcomeCursor   *uint64
 	OutcomeReason   *string

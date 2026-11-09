@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -269,7 +270,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if dispatch == nil || dispatch.GetCommandId() != args.CommandID || dispatch.GetSessionId() != args.SessionID {
 			return nil, refuse("input_not_found", "no input command belongs to the supplied Session")
 		}
-		if dispatch.GetOperation() != dispatcherpb.Operation_OPERATION_SUBMIT_INPUT {
+		if dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
 			return nil, refuse("not_input", "command_id does not identify submitted input")
 		}
 		cancelled, err := e.dispatcher.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: args.CommandID})

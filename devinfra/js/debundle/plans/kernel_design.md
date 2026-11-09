@@ -12,46 +12,30 @@ Evidence references (`path:line`) point into `facts/sync_effects/` at the
 #14552 head `839549c0f4` (tag `debundle-reference-14552`), the reference
 implementation being ported.
 
-## Forks and the driver
+## Forks and joins: what is left
 
-```rust
-pub enum ForkPolicy { Refuse, Explore }
-// ControlContext::fork_policy(&self) -> ForkPolicy
-```
+Conditional and logical operators fork the body and `alternatives/` joins
+the family when every leaf has completed; the contract is in
+<../docs/design.md> § The synchronous execution kernel. Left:
 
-`kernel::driver::drive` gains `LocalSuspension::Fork(children)`. Under
-`Refuse` the continuation refuses branching. Under `Explore` the driver
-returns `Family::fork(children).bind(|child| drive(ctx, body, child))`. A
-`Family` carries one `World` snapshot per leaf and is joined by
-`alternatives/` at the resume point.
-
-- Scalar consumers refuse forks: the retained-closure proof query and
-  allocation-only expression evaluation.
-- The application and provider adapters explore them.
-- "Any refused leaf refuses the family" is the caller's
-  `Family::all_completed()` check, not a driver variant.
-
-The first fork producer is the conditional/logical IR slice
-(<convergence_landing.md> § IR growth).
-
-## Join: `alternatives/`
-
-`World::join` (`world/join.rs`) has landed with its strict fast path, its
-per-owner `Join` and its `Joined`/`JoinRefusal`, but nothing calls it yet. Its
-first caller is `alternatives/`, which comes with the first fork producer.
-
-- The caller maps `refused` to the remainder fallback
-  (`RequiresRemainderFallback`), never to an up-front fork refusal. Branches
-  run so that their divergence is known.
-- Of the reference head's joins, `transfer_alternatives::join_execution_states`
-  (`:1168`) folds into one `ExecutionState::join` in `alternatives/`, together
-  with its `join_native_retained_reference_maps` and `join_callback_fallback`.
-- Three joins stay because they join other lattices:
-  - `EffectCoverageFragment::join_alternatives` (`effect_coverage.rs:1913`;
-    covered iff every path covers);
-  - `transfer_alternatives::join_outcomes` (`:807`, the `Outcome` join with
-    `join_own_property_store_receipts`);
-  - the receiver-flow join in `execution_index.rs:4765`.
+- **Path-relative call receipts.** `EffectCoverageFragment::join_alternatives`
+  keeps the lexical receipt only when every leaf selected the same call
+  edges, so a body with a call on one arm only has no receipt. The reference
+  head carries branch-only calls in a may-obligation ledger
+  (`effect_coverage.rs:1913`, `call_observations`); the root seal has to
+  accept a may-edge before that can land.
+- **Root admission.** A root initializer whose only reason for the ordered
+  lane is a conditional or logical operator still takes the flat lane
+  (`roots/operands.rs`, the `ordered_initializer` families). Admitting it
+  needs a typed loss for an unproved member read at the root instead of the
+  remainder summary, or legacy-accepted roots regress.
+- **Field reads under a fork.** An own-data read leaves the initialization
+  domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
+  a record field forks but its owner is not initialization-covered.
+- **Other fork producers**: optional calls and member access, `if` regions.
+  They reuse `LocalSuspension::Fork` and the same join.
+- **The receiver-flow join** in `execution_index.rs` stays a separate
+  lattice.
 
 `World` owners that have no devel reader yet land with their first reader:
 
@@ -66,8 +50,6 @@ first caller is `alternatives/`, which comes with the first fork producer.
   `has_unscoped_lexical_bindings`. This waits for `if`/`try` region lowering.
 - **Catch bindings**: `instantiate_catch_binding` and `leave_catch_binding` are
   kernel rules. This waits for `catch` lowering.
-- **Forks**: a `Step` fork is refused by scalar consumers and explored by the
-  two adapters, per `fork_policy` (§ Forks and the driver).
 
 ## Provider execution
 

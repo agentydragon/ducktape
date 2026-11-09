@@ -180,6 +180,7 @@ proto_library(
     srcs = ["session_dispatcher.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_proto",
         "//agentplane/proto:environment_lifecycle_proto",
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:identity_proto",
@@ -196,6 +197,7 @@ ts_proto_library(
     proto = ":session_dispatcher_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:identity_pb",
@@ -249,6 +251,7 @@ go_proto_library(
     proto = ":session_dispatcher_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",

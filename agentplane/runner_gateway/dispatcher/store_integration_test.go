@@ -1155,7 +1155,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
 	}
 	first, err := service.InterruptTurn(ctx, request)
-	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != dispatcherpb.Operation_OPERATION_INTERRUPT_TURN {
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN {
 		t.Fatalf("queued interrupt: %v %v", first, err)
 	}
 	retry, err := service.InterruptTurn(ctx, request)

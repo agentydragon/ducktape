@@ -9,7 +9,8 @@ export function make(input) { return { input }; }\n\
 export function wrap(input) { return make(input); }\n\
 export class Box { constructor(value) { this.value = value; } }\n\
 let count = 0;\n\
-export function next() { return ++count; }\n";
+export function next() { return ++count; }\n\
+export function peek() { return count; }\n";
 
 /// `second` moves to a logical module and the rest stays in the entry, whose
 /// static imports run first: `second` is evaluated before every earlier
@@ -59,8 +60,11 @@ fn summarized_imported_calls_relocate_past_each_other() {
     }
 }
 
+/// `next` writes a provider module cell, so it has no summary: both gates
+/// refuse, and the emitted order hands out the counter values the other way
+/// round.
 #[test]
-fn reordered_calls_of_a_stateful_provider_are_refused_and_diverge() {
+fn reordered_writers_of_a_provider_cell_are_refused_and_diverge() {
     let peers = [("static/peer", PEER)];
     let source = "import { next } from './peer.js';\nconst first = next();\nconst second = next();\nconsole.log(first, second);\n";
     let colocated = run_fixture(
@@ -70,8 +74,6 @@ fn reordered_calls_of_a_stateful_provider_are_refused_and_diverge() {
     );
     assert_preserved_entry_output(&colocated, "1 2\n");
 
-    // `next` writes a provider cell, so it has no summary: both gates refuse,
-    // and the emitted order hands out the counter values the other way round.
     let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
     assert_node_output(&reordered.entry_path(), "2 1\n", "");
     let assessment = reordered.candidate_relocation_assessment();
@@ -80,6 +82,26 @@ fn reordered_calls_of_a_stateful_provider_are_refused_and_diverge() {
         "{assessment:#}"
     );
     assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
+}
+
+/// A reader of the cell moved before its writer: neither provider body has a
+/// summary, so the effect verdict gives no receipt and stays incomplete, and
+/// the emitted program reads the counter before the increment (the source
+/// prints `1 1`). The legacy gate accepts this split today
+/// (`debug/2026_11_09_l4c_discrepancy_audit.md` § Unsafe legacy acceptance),
+/// so the run is not rejected until the effect verdict decides.
+#[test]
+fn provider_cell_reader_moved_before_its_writer_has_no_effect_receipt() {
+    let peers = [("static/peer", PEER)];
+    let source = "import { next, peek } from './peer.js';\nconst first = next();\nconst second = peek();\nconsole.log(first, second);\n";
+    let reordered = run_fixture(second_first(source, &peers));
+    assert_entry_output(&reordered, "1 0\n");
+    let assessment = candidate_relocation_assessment(&reordered);
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
     assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
 }
 

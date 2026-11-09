@@ -101,6 +101,17 @@ async def _readiness_snapshot(cluster: Cluster, name: str) -> dict:
         }
         for pod in pods
     ]
+    for pod, pod_snapshot in zip(pods, snapshot["pods"], strict=True):
+        for status in pod.get("status", {}).get("containerStatuses", []):
+            if "terminated" not in status.get("lastState", {}):
+                continue
+            try:
+                logs = await cluster.kubectl(
+                    "logs", pod["metadata"]["name"], "-c", status["name"], "--previous", "--tail=100"
+                )
+            except Exception as error:
+                logs = f"read_error: {error}"
+            pod_snapshot.setdefault("previous_logs", {})[status["name"]] = logs
     events = json.loads(await cluster.kubectl("get", "events", "-o", "json"))["items"]
     snapshot["events"] = [
         {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}

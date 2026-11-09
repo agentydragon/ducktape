@@ -5,13 +5,14 @@ import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { type CommandIssue } from "./command_delivery";
-import type { LocalCommands, LocalCommand } from "./local_commands";
+import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
 import { useThreadSync } from "./thread_sync";
 import {
   ThreadCommandOutcome,
   type ThreadCommand,
   type ThreadEntity,
 } from "../../../history_service/history_service_pb";
+import { Operation } from "../../../proto/command_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
@@ -20,10 +21,11 @@ function isCommandEntity(entity: ThreadEntity): entity is CommandEntity {
   return entity.entity.case === "command";
 }
 
-function subject(operation: string): CommandSubject {
-  if (operation === "submit_input" || operation === "submitInput") return "input";
-  if (operation === "change_model" || operation === "changeModel") return "model";
-  if (operation === "change_reasoning_effort" || operation === "changeReasoningEffort") return "effort";
+/** A projected command's `Operation`, or a local command's operation case. */
+function subject(operation: Operation | PendingCommand["operation"]["case"]): CommandSubject {
+  if (operation === Operation.SUBMIT_INPUT || operation === "submitInput") return "input";
+  if (operation === Operation.CHANGE_MODEL || operation === "changeModel") return "model";
+  if (operation === Operation.CHANGE_REASONING_EFFORT || operation === "changeReasoningEffort") return "effort";
   return "other";
 }
 
@@ -144,7 +146,7 @@ export function PendingInputMessages({
     .filter(
       (row): row is CommandEntity =>
         isCommandEntity(row) &&
-        row.entity.value.operation === "submit_input" &&
+        row.entity.value.operation === Operation.SUBMIT_INPUT &&
         row.entity.value.outcome !== ThreadCommandOutcome.PENDING &&
         row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED &&
         !localCommandIds.has(row.entityId) &&
@@ -282,7 +284,7 @@ function LocalControlRows({
                 </Text>
                 <CommandOutcome
                   stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
-                  subject={subject(operation.case ?? "")}
+                  subject={subject(operation.case)}
                   reason={
                     admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
                   }
@@ -330,7 +332,7 @@ export function ProjectedControlCommand({
   threadId: string;
   row: ThreadEntity;
 }): JSX.Element | null {
-  if (!isCommandEntity(row) || row.entity.value.operation === "submit_input") return null;
+  if (!isCommandEntity(row) || row.entity.value.operation === Operation.SUBMIT_INPUT) return null;
   const command = row.entity.value;
   return (
     <ControlCommandFrame id={row.entityId}>
@@ -338,15 +340,15 @@ export function ProjectedControlCommand({
         <EvidenceToggle entity={row} />
         <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
           <Text size="sm" className="agentplane-command-card-description">
-            {command.operation === "change_model"
+            {command.operation === Operation.CHANGE_MODEL
               ? command.requestedValue
                 ? `Change model to ${command.requestedValue}`
                 : "Model change"
-              : command.operation === "change_reasoning_effort"
+              : command.operation === Operation.CHANGE_REASONING_EFFORT
                 ? command.requestedValue
                   ? `Set reasoning effort to ${command.requestedValue}`
                   : "Reasoning effort change"
-                : command.operation === "interrupt_turn"
+                : command.operation === Operation.INTERRUPT_TURN
                   ? "Interrupt turn"
                   : "Thread action"}
           </Text>

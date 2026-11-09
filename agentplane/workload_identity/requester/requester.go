@@ -65,16 +65,18 @@ type VMI struct {
 func (Pod) isBinding() {}
 func (VMI) isBinding() {}
 
-// Owner is the object a WorkloadCredential belongs to: the record takes its namespace and name and
-// carries Reference as its controller owner reference, so it goes when the owner does.
+// Owner is the object a WorkloadCredential belongs to: the record is Namespace/Name and carries
+// Reference as its controller owner reference, so it goes when the owner does. A record usually
+// takes its owner's name (OwnedBy); an owner of several workloads names each record after its
+// workload, as the Action Service names a box's after the box.
 type Owner struct {
-	Namespace string
-	Reference metav1.OwnerReference
+	Namespace, Name string
+	Reference       metav1.OwnerReference
 }
 
-// OwnedBy names owner, of kind gvk, as a record's controller.
+// OwnedBy names owner, of kind gvk, as the controller of the record of its own name.
 func OwnedBy(owner metav1.Object, gvk schema.GroupVersionKind) Owner {
-	return Owner{Namespace: owner.GetNamespace(), Reference: *metav1.NewControllerRef(owner, gvk)}
+	return Owner{Namespace: owner.GetNamespace(), Name: owner.GetName(), Reference: *metav1.NewControllerRef(owner, gvk)}
 }
 
 // Request is what an owner asks for.
@@ -121,7 +123,7 @@ func (r *requester) Ensure(ctx context.Context, request Request) (Credential, er
 		return nil, err
 	}
 	owner := request.Owner
-	key := types.NamespacedName{Namespace: owner.Namespace, Name: owner.Reference.Name}
+	key := types.NamespacedName{Namespace: owner.Namespace, Name: owner.Name}
 	var record workloadapi.WorkloadCredential
 	err = r.reader.Get(ctx, key, &record)
 	if apierrors.IsNotFound(err) {
@@ -170,7 +172,7 @@ func (r *requester) Ensure(ctx context.Context, request Request) (Credential, er
 }
 
 func (r *requester) Revoke(ctx context.Context, owner Owner) error {
-	key := types.NamespacedName{Namespace: owner.Namespace, Name: owner.Reference.Name}
+	key := types.NamespacedName{Namespace: owner.Namespace, Name: owner.Name}
 	var record workloadapi.WorkloadCredential
 	if err := r.reader.Get(ctx, key, &record); apierrors.IsNotFound(err) {
 		return nil
@@ -206,9 +208,9 @@ func credentialOf(record *workloadapi.WorkloadCredential) Credential {
 }
 
 func specFor(request Request) (workloadapi.WorkloadCredentialSpec, error) {
-	if request.Owner.Namespace == "" || request.Owner.Reference.Name == "" || request.Owner.Reference.UID == "" ||
+	if request.Owner.Namespace == "" || request.Owner.Name == "" || request.Owner.Reference.Name == "" || request.Owner.Reference.UID == "" ||
 		request.Owner.Reference.Controller == nil || !*request.Owner.Reference.Controller {
-		return workloadapi.WorkloadCredentialSpec{}, errors.New("a WorkloadCredential request needs a controller owner with a namespace, name and UID")
+		return workloadapi.WorkloadCredentialSpec{}, errors.New("a WorkloadCredential request needs a record name and a controller owner with a namespace, name and UID")
 	}
 	var spec workloadapi.WorkloadCredentialSpec
 	switch subject := request.Subject.(type) {

@@ -540,6 +540,13 @@ spec:
   name: central_sampler
   owner: central_sampler
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: electric
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -661,6 +668,7 @@ spec:
         runAsUser: 65534
         seccompProfile:
           type: RuntimeDefault
+      serviceAccountName: electric
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
@@ -724,80 +732,6 @@ spec:
         - ports:
             - port: "3000"
               protocol: TCP
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: llm-ingress
-  namespace: agentplane-staging
-automountServiceAccountToken: true
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-llm-ingress-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-llm-ingress-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-llm-ingress-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: llm-ingress
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: llm-ingress-sandbox-reader
-  namespace: agentplane-staging
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - workloadcredentials
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: llm-ingress-sandbox-reader
-  namespace: agentplane-staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: llm-ingress-sandbox-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: llm-ingress
-    namespace: agentplane-staging
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -1212,6 +1146,13 @@ data:
     }
 immutable: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-ingress
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1223,7 +1164,7 @@ metadata:
   name: llm-ingress
   namespace: agentplane-staging
 spec:
-  minReadySeconds: 0
+  minReadySeconds: 5
   progressDeadlineSeconds: 600
   replicas: 2
   revisionHistoryLimit: 10
@@ -1250,6 +1191,11 @@ spec:
               value: agentplane-egress
             - name: AGENTPLANE_LLM_INGRESS_LITELLM_URL
               value: http://litellm.litellm.svc.cluster.local:4000
+            - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-key-agentplane-staging
             - name: OTEL_SERVICE_NAME
               value: llm-ingress
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -1262,11 +1208,6 @@ spec:
               value: http://alloy.monitoring.svc.cluster.local:4317
             - name: OTEL_TRACES_SAMPLER
               value: parentbased_always_on
-            - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: api-key
-                  name: litellm-key-agentplane-staging
             - name: AGENTPLANE_LLM_INGRESS_CONFIG_FILE
               value: /etc/agentplane-llm-ingress/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset
@@ -1368,6 +1309,102 @@ spec:
             name: llm-ingress-settings
           name: configmap-llm-ingress-settings
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: llm-ingress
+  name: llm-ingress
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: rpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llm-ingress
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llm-ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-llm-ingress-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: llm-ingress
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-ingress-sandbox-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-ingress-sandbox-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-ingress-sandbox-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: llm-ingress
+    namespace: agentplane-staging
+---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -1437,22 +1474,6 @@ data:
           audiences:
             - agentplane-egress
 immutable: false
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: llm-ingress
-  namespace: agentplane-staging
-spec:
-  externalIPs: []
-  ports:
-    - name: rpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
-  type: ClusterIP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -7716,6 +7737,15 @@ rules:
       - serviceaccounts
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+      - create
+      - update
+      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:

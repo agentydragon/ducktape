@@ -409,10 +409,10 @@ async def agent_mcp_bff_decision(
         assert decided.version == pending.version + 1
         assert decided.HasField("decision")
         assert decided.decision.verdict == verdict
-        assert decided.decision.provider == "human_operator"
-        if not decided.decision.HasField("operator") or (
-            decided.decision.operator.issuer != operator_credentials.issuer.get_secret_value()
-            or decided.decision.operator.subject != operator_credentials.subject.get_secret_value()
+        operator = decided.decision.operator.operator
+        if decided.decision.WhichOneof("decider") != "operator" or (
+            operator.issuer != operator_credentials.issuer.get_secret_value()
+            or operator.subject != operator_credentials.subject.get_secret_value()
         ):
             pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
         assert decided.decision.idempotency_key == decision.idempotency_key
@@ -549,9 +549,9 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     receipt = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{approved.id}"))
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("decision")
-    assert receipt.decision.provider == "action_policy_set"
-    assert receipt.decision.HasField("policy_evidence")
-    evidence = receipt.decision.policy_evidence
+    assert receipt.decision.WhichOneof("decider") == "policy"
+    assert receipt.decision.policy.HasField("evidence")
+    evidence = receipt.decision.policy.evidence
     # Our Sandbox kind brings a PolicyBinding of its own, so the evidence may name more than ours.
     assert binding_name in {binding.name for binding in evidence.bindings}
     assert set_name in {policy_set.name for policy_set in evidence.policy_sets}
@@ -609,8 +609,8 @@ async def _launcher_approved(
     """The request succeeded on the launcher grant of `sandbox`, with no operator asked."""
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, receipt
     decided = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{receipt.id}"))
-    assert decided.decision.provider == "action_policy_set"
-    assert decided.decision.policy_evidence.matched.policy_set == f"{sandbox}.launcher"
+    assert decided.decision.WhichOneof("decider") == "policy"
+    assert decided.decision.policy.evidence.matched.policy_set == f"{sandbox}.launcher"
 
 
 async def launcher_drives_only_the_sandbox_it_launched(
@@ -773,8 +773,8 @@ async def launcher_drives_only_the_sandbox_it_launched(
         )
         refused = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{other_session.id}"))
         assert refused.state == action_service_pb2.ACTION_STATE_FAILED, refused
-        assert refused.decision.provider == "action_policy_set"
-        assert refused.decision.policy_evidence.matched.policy_set == f"{name}.launcher"
+        assert refused.decision.WhichOneof("decider") == "policy"
+        assert refused.decision.policy.evidence.matched.policy_set == f"{name}.launcher"
 
         await suspend_and_delete(cluster, client, name, view.target.uid)
         deleted = True

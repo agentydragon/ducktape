@@ -3932,13 +3932,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module      | Owns                                                                                                                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/`   | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.           |
-| `world/`    | `World`, the per-prefix execution state, and `World::join`.                                                                                                                        |
-| `adapters/` | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary. |
-| `roots/`    | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                                       |
-| `legacy/`   | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                |
+| Module          | Owns                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.           |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                        |
+| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                              |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary. |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                                       |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -3975,8 +3976,46 @@ isolated provider scope. The scope gives its closures their own addresses and
 proves no literal writability, and the adapter keeps the ledger's heap cells
 private. An importer holds only the summary, so a call of a summarized import
 is a substitution: the application adapter covers the callee read and the call
-under the summary's premises and runs nothing. A provider body without a
-summary stays an unknown call in the importer.
+under the summary's premises and runs nothing. A summary whose body reads a
+private provider cell is substituted without that receipt, because the summary
+says nothing about the cell's writers. A provider body without a summary stays
+an unknown call in the importer.
+
+**An undecided test forks the body; the family is joined when it
+completes.** A conditional or a short-circuiting logical operator whose
+operand's abstract value does not decide the test yields
+`LocalSuspension::Fork`: one continuation per feasible path, each holding the
+whole remaining body, with primitive kinds refined per path. A decided test
+(an object is truthy and not nullish) runs one arm and never forks.
+`ControlContext::fork_policy` decides what the consumer does:
+
+- `Refuse`: the retained-closure proof query has one result and no join, so
+  the body is refused at the fork.
+- `Explore`: the application adapter and the provider's allocation-only and
+  class-constructor queries run every leaf to the end of the body, each in
+  its own path state (`ControlContext::Branch`), and the body's caller joins
+  the family. A leaf budget per activation bounds the path count; past it the
+  body is refused where it would fork.
+
+Path state is what a later operation on the same path reads back as a fact:
+the `World`, the callback-fallback memos and their accumulated outcome, the
+allocation judgment and the activation's running `Outcome`. Identity
+allocators (capture interners, invocation memos), control state that every
+leaf restores, and run-wide may-accumulators where a superset only weakens a
+later proof (native point effects, executed owners, `Observations`) stay live
+across leaves. Sibling leaves never share an identity: each later leaf starts
+past the lexical-cell ids and world revisions its earlier siblings minted, so
+`World::join` can match cells by id and no memo keyed on a revision crosses
+leaves.
+
+The join keeps a definite fact only if every leaf holds it and a possibility
+if any leaf has it: `complete`, each coverage domain, a selected return and
+the once-per-statement fallback memos intersect; effects, returns, losses
+and heap cells union. A lexical receipt survives only when every leaf
+selected the same call edges. A `World::join` refusal (divergent active cells
+or scopes) never panics and never prevents the leaves from running: the
+application summarizes the remainder once against the pointwise join, and a
+provider query, which has no summary, is refused.
 
 **Legacy enumeration and kernel receipts are different facts.** An
 `Outcome.complete` legacy execution has enumerated every effect it can

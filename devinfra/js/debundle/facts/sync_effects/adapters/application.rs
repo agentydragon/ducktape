@@ -1,6 +1,7 @@
 //! The application adapter: the five kernel context traits over the
 //! application `Executor`, for ordered root initializers and callable bodies.
 
+use super::super::alternatives::execution_state::ExecutionPath;
 use super::super::array_transfer::{self, ArrayPushSelection};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
 use super::super::execution_index::{
@@ -10,7 +11,7 @@ use super::super::interpreter::{Executor, Outcome, unknown};
 use super::super::kernel::cells::missing_activation_binding;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
-    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
 // Module-qualified: the builtin table's `Invocation` also has a
@@ -255,6 +256,19 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalExecutionContext<'_, '_, '_> {
+    /// The foreign call summary whose substitution is also the call's effect
+    /// receipt. A body that reads a private provider cell gets none: the
+    /// summary proves nothing about that cell's writers.
+    fn substituted_summary(
+        &self,
+        kind: CallKind,
+        callee: &ValueExpr,
+    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+        self.executor
+            .foreign_call_summary(kind, callee)
+            .filter(|summary| summary.provider_cell_reads.is_empty())
+    }
+
     /// The kernel evaluated `new`'s callee and arguments in order. A checked
     /// local class runs its lowered body through the kernel's construct rule;
     /// a refused construction keeps the flat lane's typed loss; any other
@@ -476,9 +490,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         // A published foreign call summary has proved the provider binding
         // available to this importer, so reading it as a callee is a normal
         // declarative read under the summary's premises.
-        let summary = self
-            .executor
-            .foreign_call_summary(CallKind::Call, &ValueExpr::Binding(binding.clone()));
+        let summary =
+            self.substituted_summary(CallKind::Call, &ValueExpr::Binding(binding.clone()));
         if let Some(summary) = summary
             && !result
                 .allocation
@@ -623,6 +636,9 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .declared_pure_initializers
                         .contains(identity.binding.0.as_ref())
                 });
+        let substituted_summary = (!call.has_spread)
+            .then(|| self.substituted_summary(call.kind, &call.callee))
+            .flatten();
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -699,6 +715,16 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         },
                     );
                     effects.normal_completion_from_pure_initializer();
+                    effects
+                } else if let Some(summary) = &substituted_summary {
+                    // The call transfer replaced the provider body by this
+                    // summary and ran nothing.
+                    let mut effects =
+                        EffectCoverageFragment::provider_summary(&summary.dependencies);
+                    if !normal_value {
+                        // An unavailable operand throws before the body runs.
+                        effects.uncertain_completion();
+                    }
                     effects
                 } else {
                     outcome.effect_coverage
@@ -1033,6 +1059,20 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl ControlContext for LocalExecutionContext<'_, '_, '_> {
+    type Branch = ExecutionPath;
+    fn fork_policy(&self) -> ForkPolicy {
+        ForkPolicy::Explore
+    }
+    fn branch(&self) -> ExecutionPath {
+        self.executor
+            .state
+            .path(&self.executor.allocation_judgment, self.outcome)
+    }
+    fn enter(&mut self, path: ExecutionPath) {
+        let (allocation_judgment, outcome) = self.executor.state.enter(path);
+        self.executor.allocation_judgment = allocation_judgment;
+        *self.outcome = outcome;
+    }
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition {
         match what {
             Unproved::FieldRead {

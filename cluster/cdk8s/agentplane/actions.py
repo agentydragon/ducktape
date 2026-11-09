@@ -474,7 +474,7 @@ class Actions(Construct):
             )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
-        # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot
+        # their callers and owned by their WorkloadCredentials, and runs commands in them. This is namespace-wide and cannot
         # say "only the boxes this Action made": that boundary is the executor's own label check
         # (agentplane/action_service/sandbox/inventory.go), which is why it is an application rule
         # tested as one rather than something RBAC states.
@@ -485,8 +485,13 @@ class Actions(Construct):
                 # Both verbs: a WebSocket exec is an HTTP GET upgrade, and the API server
                 # authorizes it as `create` too.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
-                # The caller's account, for the owner reference that collects its boxes with it.
+                # The caller's account: the box records' subject, and its controller their owner.
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+                # Each box's credential, which the Policy Controller issues; no Certificate rights.
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "workloadcredentials")],
+                    verbs=["get", "create", "update", "delete"],
+                ),
             ]
         )
         if self.env.actions.orchestration_v1 is not None:

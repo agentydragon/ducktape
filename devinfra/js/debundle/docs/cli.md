@@ -1567,21 +1567,20 @@ A preflight error leaves the last completed gate result intact. `debundle run`
 (and `run --dry-run`) writes the same files under `reports/tree/<chunk>/`,
 which is the same sibling-of-`dependency_graph.json.gz` layout.
 
-A `commuting_statements` entry the graph build rejects (contradicted by a
-source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
-fails `run` with its diagnostic on stderr. `spec validate` reports it as a
-typed entry beside the selector outcomes: `commuting_statements_diagnostics[]`
-(`kind` ∈ `contradicted` with `conflicts[]`, `unused` with `reason`; each with
-`spec_location`, `a`, `b` and their bindings), read from the chunk's
-`commuting_statements_diagnostics.json`; any such entry fails
-`validation.success`. The ndjson stream emits each as a
-`commuting_statements_diagnostic` section. For an unused entry, each endpoint
-can include `a_logical_members` or `b_logical_members`: the authored module
-members whose resolved declaration is that endpoint, including when a
-`source_match` selected it. The field is omitted when no authored member maps
-to the endpoint. `a_source_location` and `b_source_location` contain the input path,
-line and column when available. The text diagnostic prints the same module/member
-names and source position so a stale premise can be reviewed against the input.
+A `commuting_statements` entry contradicted by a source fact
+([SPEC](../SPEC.md#commuting-statements)) fails `run` with its diagnostic on
+stderr; an entry inerting no edge is a `warning:` line instead and the run
+continues unchanged. Whenever a report directory is written (`run`, `run
+--dry-run`, `spec validate`), either lands in the chunk's
+`commuting_statements_diagnostics.json`. `spec validate` reports them beside
+the selector outcomes as `commuting_statements_diagnostics[]` (`kind` ∈
+`contradicted` with `conflicts[]` and the endpoint source units; `unused` with
+`reason`); only `contradicted` fails `validation.success`. The ndjson stream
+emits each as a `commuting_statements_diagnostic` section. An `unused` entry
+names its `spec_location` and, for each endpoint `a`/`b`, the authored
+`selector`, the `logical_members` whose resolved declaration is that endpoint
+(omitted when none) and its `source_location`. The text line prints the same
+module/member names, or a `source_match` preview, and source position.
 
 ## Gate queries
 

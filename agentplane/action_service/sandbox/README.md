@@ -12,12 +12,13 @@ Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 
 ## The contract
 
-**A box runs under its caller's ServiceAccount.** The account is the Pod's Kubernetes owner and
-execution subject. The command/build templates have an egress sidecar with Pod-bound projected
-tokens. It verifies the proxy's server SVID and authenticates with its own bearer; policy remains
-the caller's `PolicyBinding`s. Workload containers receive only the local proxy address and public
-trust bundle. They mount neither a token nor an SVID. Sandbox workloads use their SVID path;
-non-Sandbox credential issuance moves to the shared lifecycle at the later cutover.
+**A box runs under its caller's ServiceAccount.** The account is the Pod's execution subject and
+the subject of the box's own `WorkloadCredential`, which the service requests per box, named after
+its Pod and bound to it ([the record contract](../../docs/workload_authentication.md#workloadcredentials)).
+The issued Secret is mounted into the egress sidecar alone, which still authenticates the proxy hop
+with a Pod-bound bearer until the templates select the SVID; policy remains the caller's
+`PolicyBinding`s. Workload containers receive only the local proxy address and public trust bundle.
+They mount neither a token nor an SVID.
 
 The guard the rule rests on: the ServiceAccount comes from `ExecutionRequest.caller`, which the
 authenticated admission path sets. It is never a tool argument. A surface accepting one would mean
@@ -37,7 +38,8 @@ intended consequences.
 
 **The workload must never read a ServiceAccount credential.** Every template sets
 `automountServiceAccountToken: false`. The inventory refuses projected tokens mounted in workload
-containers. The projected proxy and Kubernetes tokens are mounted only in the sidecar.
+containers, and templates naming the SVID's volume or mount path. The projected tokens and the SVID
+are mounted only in the sidecar.
 
 ## Separation from the integration app
 
@@ -45,9 +47,11 @@ containers. The projected proxy and Kubernetes tokens are mounted only in the si
 Sandboxes that carry runners (<../../runner_gateway/environments/internal/management/access.go>). A box carrying it would join the
 fleet view, which then looks for a runner the box does not have.
 
-**Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs
-as. An agent in a Session Sandbox calls this surface as that Sandbox's own account, so the boxes it
-creates are garbage-collected with the Sandbox; a static account's boxes last until `dispose`.
+**Owned through its credential.** Each box's Pod is owned by its `WorkloadCredential`, and the
+record by its caller's Session Sandbox, the controller of the account an agent in it calls this
+surface as, so the boxes it creates are garbage-collected with the Sandbox. A static account's records
+are owned by the account, and its boxes last until `dispose`. The record precedes its Pod because
+the Pod names the record's Secret when it is created, so the Pod cannot own the record.
 
 **Its own template set**: a caller names a template, but only one the group's reviewed
 configuration offers, at the same operator cadence as `action_groups`, with the description an agent

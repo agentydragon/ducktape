@@ -122,17 +122,26 @@ func decisionView(decision *store.Decision) (*action_servicepb.Decision, error) 
 		return nil, err
 	}
 	view := &action_servicepb.Decision{
-		Id: decision.ID.String(), Verdict: verdict, Provider: decision.Provider, DecisionNote: decision.DecisionNote,
-		ReasonCode: decision.ReasonCode, ReasonDescription: decision.ReasonDescription,
+		Id: decision.ID.String(), Verdict: verdict,
 		IdempotencyKey: decision.IdempotencyKey, DecidedAt: timestamppb.New(decision.DecidedAt),
 	}
-	if decision.Operator != nil {
-		view.Operator = operator(*decision.Operator)
-	}
-	if decision.PolicyEvidence != nil {
-		if view.PolicyEvidence, err = decision.PolicyEvidence.Proto(); err != nil {
-			return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
+	switch decider := decision.Decider.(type) {
+	case store.OperatorDecision:
+		view.Decider = &action_servicepb.Decision_Operator{Operator: &action_servicepb.OperatorDecision{
+			Operator: operator(decider.Operator), DecisionNote: decider.DecisionNote,
+		}}
+	case store.PolicyDecision:
+		policy := &action_servicepb.PolicyDecision{
+			ReasonCode: decider.ReasonCode, ReasonDescription: decider.ReasonDescription,
 		}
+		if decider.Evidence != nil {
+			if policy.Evidence, err = decider.Evidence.Proto(); err != nil {
+				return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
+			}
+		}
+		view.Decider = &action_servicepb.Decision_Policy{Policy: policy}
+	default:
+		return nil, fmt.Errorf("%w: decision has unknown decider %T", errStoredRequest, decider)
 	}
 	return view, nil
 }

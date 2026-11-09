@@ -5,8 +5,10 @@
 //! result. Adapters implement only the narrow traits in `context`; everything
 //! they would otherwise re-implement (operand order, aggregate literals,
 //! lexical cells, closure creation and binding stores, own-data reads and writes,
-//! base-class construction, completion accounting) lives here.
+//! base-class construction, path selection at conditional and logical
+//! operators, completion accounting) lives here.
 
+pub(super) mod branch;
 pub(super) mod cells;
 pub(super) mod closure;
 pub(super) mod construct;

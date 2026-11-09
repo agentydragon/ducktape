@@ -152,14 +152,10 @@ type ActionRequestInput struct {
 	Description *string
 }
 
-// ProviderVote is the decisive outcome of admission's provider evaluation and the provider that cast it.
+// ProviderVote is the decisive outcome of admission's policy evaluation.
 type ProviderVote struct {
-	Provider          string
-	Verdict           Verdict
-	ReasonCode        string
-	ReasonDescription *string
-	// Evidence is set when the provider decided from policy objects.
-	Evidence *PolicyEvidence
+	Verdict Verdict
+	Policy  PolicyDecision
 }
 
 // Admission is what admission settled about a submission before the store sees it.
@@ -205,18 +201,32 @@ type ActionRequest struct {
 
 // Decision is the one verdict on a request.
 type Decision struct {
-	ID       uuid.UUID
-	Verdict  Verdict
-	Provider string
-	// Operator is the human who decided; nil when a DecisionProvider did.
-	Operator          *OperatorPrincipal
-	DecisionNote      *string
-	ReasonCode        *string
-	ReasonDescription *string
-	PolicyEvidence    *PolicyEvidence
-	IdempotencyKey    string
-	DecidedAt         time.Time
+	ID             uuid.UUID
+	Verdict        Verdict
+	Decider        Decider
+	IdempotencyKey string
+	DecidedAt      time.Time
 }
+
+// Decider is who decided: an OperatorDecision or a PolicyDecision.
+type Decider interface{ isDecider() }
+
+// OperatorDecision is a Decision an operator made.
+type OperatorDecision struct {
+	Operator     OperatorPrincipal
+	DecisionNote *string
+}
+
+// PolicyDecision is a Decision the caller's Action policy objects made at admission.
+type PolicyDecision struct {
+	ReasonCode        action_servicepb.PolicyDecision_ReasonCode
+	ReasonDescription *string
+	// Evidence is nil only on rows recorded without it.
+	Evidence *PolicyEvidence
+}
+
+func (OperatorDecision) isDecider() {}
+func (PolicyDecision) isDecider()   {}
 
 // Execution is the one attempt to run an allowed request.
 type Execution struct {
@@ -442,16 +452,16 @@ func (v ProviderVote) Validate() error {
 	if !v.Verdict.valid() {
 		return invalid("a vote that decides is allow or deny, not %q", v.Verdict)
 	}
-	if err := bounded("reason_code", v.ReasonCode, 1, 64); err != nil {
-		return err
+	if _, known := reasonCodeStored(v.Policy.ReasonCode); !known {
+		return invalid("a vote names a known reason code, not %s", v.Policy.ReasonCode)
 	}
-	if v.ReasonDescription != nil {
-		if err := bounded("reason_description", *v.ReasonDescription, 0, 500); err != nil {
+	if v.Policy.ReasonDescription != nil {
+		if err := bounded("reason_description", *v.Policy.ReasonDescription, 0, 500); err != nil {
 			return err
 		}
 	}
-	if v.Evidence != nil {
-		return v.Evidence.validate()
+	if v.Policy.Evidence != nil {
+		return v.Policy.Evidence.validate()
 	}
 	return nil
 }

@@ -5,11 +5,13 @@
 //! the ledger's heap cells out of any caller's effects.
 
 use super::super::allocation_transfer::{self, AllocationJudgment, AllocationValue};
+use super::super::alternatives::outcome::join_allocation_judgments;
+use super::super::alternatives::{Family, Leaf, PathState, join_worlds};
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
-    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
 use super::super::kernel::continuation::{self, LocalContinuation};
@@ -23,6 +25,7 @@ use super::super::value_model::{
     AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
     OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
 };
+use super::super::world::join::Joined;
 use super::super::world::{World, WorldScope};
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{self, Invocation};
@@ -51,6 +54,9 @@ pub(in crate::facts::sync_effects) struct ProviderContext<'a> {
     /// The query's fresh heap: an isolated scope, so its cells never reach a
     /// caller's effects and no literal writability is proven.
     pub(in crate::facts::sync_effects) world: World,
+    /// The retained-closure proof projects one closure and refuses a fork;
+    /// an allocation-only body explores it.
+    pub(in crate::facts::sync_effects) fork_policy: ForkPolicy,
 }
 
 /// A provider body the adapter ran to normal completion as allocation-only.
@@ -136,6 +142,7 @@ impl<'a> ProviderContext<'a> {
         parameters: impl IntoIterator<Item = Id>,
         local_bindings: BTreeSet<Id>,
         class_mode: bool,
+        fork_policy: ForkPolicy,
     ) -> Self {
         let mut bindings = Context::new();
         let mut argument_values = Values::new();
@@ -159,6 +166,7 @@ impl<'a> ProviderContext<'a> {
             shadowed: shadowed.clone(),
             native_constructions: BTreeSet::new(),
             world: World::new(WorldScope::IsolatedProvider),
+            fork_policy,
         }
     }
 
@@ -172,8 +180,11 @@ impl<'a> ProviderContext<'a> {
     ) -> Option<SealedProviderBody<'a>> {
         let body = index.callables.get(&callable)?;
         let local_body = body.body_facts.ordered_plan();
-        let direct_return = body.body_facts.value_flow().direct_allocation_return();
-        if direct_return.is_none()
+        if body
+            .body_facts
+            .value_flow()
+            .direct_allocation_return()
+            .is_none()
             && !local_body.is_some_and(|body| {
                 body.allocation_only_syntax() || body.closure_allocation_syntax()
             })
@@ -192,6 +203,8 @@ impl<'a> ProviderContext<'a> {
             .iter()
             .map(|param| param.binding.clone())
             .collect::<Option<Vec<_>>>()?;
+        // The retained-closure proof projects one closure and refuses a
+        // fork; an allocation-only body explores it.
         let mut context = Self::sealing(
             index,
             shadowed,
@@ -201,8 +214,19 @@ impl<'a> ProviderContext<'a> {
                 .map(|body| body.bindings.keys().cloned().collect())
                 .unwrap_or_default(),
             false,
+            if closure_mode {
+                ForkPolicy::Refuse
+            } else {
+                ForkPolicy::Explore
+            },
         );
-        let direct_return = direct_return.filter(|_| !closure_mode);
+        // A body with an undecided test has one result per path: only the
+        // ordered plan can fork it, so the one-expression projection is not used.
+        let direct_return = body
+            .body_facts
+            .value_flow()
+            .direct_allocation_return()
+            .filter(|_| !closure_mode && !local_body.is_some_and(LocalBody::branches));
         let mut reads = BTreeSet::new();
         if let Some(expression) = direct_return {
             expression.bindings(&mut reads);
@@ -279,6 +303,7 @@ impl<'a> ProviderContext<'a> {
             parameters.iter().cloned(),
             local_bindings,
             true,
+            ForkPolicy::Explore,
         );
         let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
         frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
@@ -289,16 +314,39 @@ impl<'a> ProviderContext<'a> {
         context.sealed(scope, Vec::new(), result)
     }
 
-    /// The body's returns when the kernel completes it; any refusal refuses
-    /// the run.
+    /// Run a provider body on every feasible path. The query has no summary to
+    /// fall back on, so a refused leaf or a refused join refuses it; otherwise
+    /// its result is what any path may return, allocation-only when every path
+    /// is, and the adapter holds the joined heap.
     fn drive(&mut self, body: &LocalBody, frame: LocalFrame) -> Option<AllocationValue> {
-        let (frame, attempt) = driver::drive(self, body, LocalContinuation::new(frame));
-        let LocalExecutionAttempt::Completed(result) = attempt else {
+        let family = driver::drive(self, body, LocalContinuation::new(frame));
+        if !family.all_completed() {
             return None;
+        }
+        let leaves = match family {
+            Family::One(leaf) => vec![(*leaf, None)],
+            Family::Forked(leaves) => leaves
+                .into_iter()
+                .map(|(leaf, path)| (leaf, Some(path)))
+                .collect(),
         };
+        let mut values = Values::new();
+        let mut judgments = Vec::with_capacity(leaves.len());
+        let mut paths = Vec::with_capacity(leaves.len());
+        for (Leaf { frame, attempt }, path) in leaves {
+            let LocalExecutionAttempt::Completed(result) = attempt else {
+                return None;
+            };
+            values.extend(frame.returns());
+            judgments.push(result.ledger.allocation);
+            paths.extend(path);
+        }
+        if !paths.is_empty() && !self.join(paths) {
+            return None;
+        }
         Some(AllocationValue {
-            values: frame.returns(),
-            judgment: result.ledger.allocation,
+            values,
+            judgment: join_allocation_judgments(&judgments),
         })
     }
 
@@ -522,7 +570,62 @@ impl NativeContext for ProviderContext<'_> {
     }
 }
 
+/// The path state of a provider query: its private heap and what the path
+/// found about its own allocations.
+#[derive(Clone)]
+pub(in crate::facts::sync_effects) struct ProviderPath {
+    world: World,
+    unsupported_closures: BTreeSet<u32>,
+    native_constructions: BTreeSet<NativeIntrinsic>,
+}
+
+impl PathState for ProviderPath {
+    fn world(&self) -> &World {
+        &self.world
+    }
+}
+
+impl ProviderContext<'_> {
+    /// Install the join of a family's leaves. Refusals and consumed native
+    /// identities are may-facts; a world the join refuses refuses the query.
+    #[must_use]
+    pub(in crate::facts::sync_effects) fn join(&mut self, leaves: Vec<ProviderPath>) -> bool {
+        let Joined {
+            world,
+            widened: _,
+            refused,
+        } = join_worlds(leaves.iter().map(|leaf| &leaf.world));
+        self.world = world;
+        for leaf in leaves {
+            self.unsupported_closures.extend(leaf.unsupported_closures);
+            self.native_constructions.extend(leaf.native_constructions);
+        }
+        refused.is_none()
+    }
+}
+
 impl ControlContext for ProviderContext<'_> {
+    type Branch = ProviderPath;
+    fn fork_policy(&self) -> ForkPolicy {
+        self.fork_policy
+    }
+    fn branch(&self) -> ProviderPath {
+        ProviderPath {
+            world: self.world.clone(),
+            unsupported_closures: self.unsupported_closures.clone(),
+            native_constructions: self.native_constructions.clone(),
+        }
+    }
+    fn enter(&mut self, path: ProviderPath) {
+        let ProviderPath {
+            world,
+            unsupported_closures,
+            native_constructions,
+        } = path;
+        self.world = world;
+        self.unsupported_closures = unsupported_closures;
+        self.native_constructions = native_constructions;
+    }
     fn unproved(&mut self, _frame: &mut LocalFrame, _what: Unproved<'_>) -> Disposition {
         // Symbolic inputs and captures prove no descriptor, getter or coercion
         // behavior. Only the shared transfers can certify an operation, and

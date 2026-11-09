@@ -221,18 +221,24 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F1 — Explain redundant commuting premises by authored identity.** An
-  engine improvement removed a native-read heap frontier, and the next run
-  rejected a formerly needed pair as `unused` / `no_sequenced_edge`. The
-  diagnostic named its YAML index, source-unit ordinals and minified bindings;
-  finding the authored module/member pair required a separate spec audit.
-  Include resolved module/member names and source locations, plus a scoped
-  cleanup suggestion. Keep removal explicit and reviewed.
-- **F2 — Make readable-output recovery actionable.** The unused premise
-  above made an `emit_on_rejection` run fail without its readable tree. Emit
-  a complete stale-premise report and a reviewable cleanup plan. Decide
-  explicitly whether diagnostic-only emission is valid for this failure;
-  preserve stale-input rejection and never silently ignore author contracts.
+- **F5 — One report of annotations the engine could have inferred.** Today
+  each annotation kind answers "was this needed?" differently:
+  `purity: pure` hints get a `modules.json.redundant_purity_hints` probe,
+  `admission_overrides` get a redundancy notice, an unused
+  `commuting_statements` entry is a warning by authored identity, and the other
+  premises (`host_behavior` keys, `native_operation_inputs`,
+  `native_call_identity_inputs`, `initializer_call_effect_inputs`,
+  `trusted_dataflow_summaries`, `deferred_global_publications`,
+  `program_premises`, `chunk_export_purity`) record uses only, which SPEC.md
+  says is not an unused-contract verdict. Give every author annotation the
+  same check: rerun the decision it feeds with the annotation withheld, and
+  report it as inferable when the verdict and emitted order are unchanged.
+  Report by authored identity (module, member, YAML path, source location)
+  with a removal suggestion, as a warning in `run` and `spec validate` output
+  and one machine-readable list; removal stays an explicit, reviewed spec
+  edit. An unused or inferable annotation is a warning, never a failure; a
+  contradicted premise still fails. Bound the cost: probe per annotation
+  against cached analysis, not a full rerun each.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was

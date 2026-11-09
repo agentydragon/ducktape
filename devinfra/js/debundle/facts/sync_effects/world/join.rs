@@ -16,7 +16,6 @@ use crate::facts::sync_effects::value_model::{AbstractValue, DenseArray, Lexical
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-// Staged for the conditional/logical IR slice (first fork producer).
 /// The result of joining a family of alternative worlds.
 #[must_use]
 #[derive(Debug, Clone, PartialEq)]
@@ -337,8 +336,9 @@ impl Join for Revision {
 }
 
 impl Join for LexicalCells {
-    /// Cell ids are run-unique, so the same id names the same binding on every
-    /// path. A cell missing on some path may hold anything there.
+    /// The same id names the same binding on every path: sibling leaves mint
+    /// disjoint ids (`alternatives::explore`). A cell missing on some path
+    /// may hold anything there.
     fn join(alternatives: &[&Self], widened: &mut bool) -> Self {
         let mut by_id = BTreeMap::<LexicalCellId, Vec<&LexicalCell>>::new();
         for cells in alternatives {

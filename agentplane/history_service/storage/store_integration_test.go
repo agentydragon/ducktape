@@ -413,7 +413,7 @@ func TestObservationPagesSeekTheRetainedPrefix(t *testing.T) {
 		t.Fatalf("empty history: %v", page)
 	}
 	appendEntries(t, store, sessionID, entry(1), entry(2), nativeEntry(3, "retained\x00native"), entry(4), entry(5))
-	started, native := "harness_started", "native"
+	started, native := historypb.EventKind_EVENT_KIND_HARNESS_STARTED, historypb.EventKind_EVENT_KIND_NATIVE
 	for _, test := range []struct {
 		name          string
 		before, after *uint64
@@ -570,7 +570,7 @@ func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 	if got := cursors(readPage(t, store, sessionID, 0, 128)); !reflect.DeepEqual(got, []uint64{1, 2, 4}) {
 		t.Fatalf("replay stored cursors %v", got)
 	}
-	started := "harness_started"
+	started := historypb.EventKind_EVENT_KIND_HARNESS_STARTED
 	for _, test := range []struct {
 		name  string
 		after *uint64
@@ -640,7 +640,7 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	if got := settledRanges(readPage(t, store, sessionID, 0, 2)); got != nil {
 		t.Fatalf("a page before the gap reports settlement %v", got)
 	}
-	native, started, completed := "native", "item_started", "item_completed"
+	native, started, completed := historypb.EventKind_EVENT_KIND_NATIVE, historypb.EventKind_EVENT_KIND_ITEM_STARTED, historypb.EventKind_EVENT_KIND_ITEM_COMPLETED
 	if got, want := observationPage(t, store, sessionID, nil, pointer(0), 30), (ObservationPage{
 		8, []Observation{{1, native}, {2, started}, {7, native}, {8, completed}}, []CursorRange{{3, 6}},
 	}); !reflect.DeepEqual(got, want) {

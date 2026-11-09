@@ -102,11 +102,12 @@ function DecisionSummary({
     ? "Decided"
     : decision.verdict === Verdict.DENY
       ? "Denied"
-      : decision.operator === undefined
-        ? "Auto-approved"
-        : "Approved";
-  if (decision.operator === undefined) {
-    const policySet = decision.policyEvidence?.matched?.policySet;
+      : decision.decider.case === "operator"
+        ? "Approved"
+        : "Auto-approved";
+  if (decision.decider.case !== "operator") {
+    const policySet =
+      decision.decider.case === "policy" ? decision.decider.value.evidence?.matched?.policySet : undefined;
     return (
       <>
         {verb}
@@ -138,6 +139,7 @@ export function ActionHistoryCard({
 }): JSX.Element {
   const location = useLocation();
   const decision = request.decision;
+  const decisionNote = decision?.decider.case === "operator" ? decision.decider.value.decisionNote : undefined;
   const action = actionIdentity(request);
   const args = actionArguments(request);
   const [raw, setRaw] = useState(false);
@@ -161,9 +163,9 @@ export function ActionHistoryCard({
     decision === undefined
       ? undefined
       : decision.verdict === Verdict.ALLOW
-        ? decision.operator === undefined
-          ? "Auto-allowed"
-          : "Allowed"
+        ? decision.decider.case === "operator"
+          ? "Allowed"
+          : "Auto-allowed"
         : "Denied";
   const outcomeLabel = toolError
     ? "Tool error"
@@ -227,9 +229,9 @@ export function ActionHistoryCard({
         combinedCall={combinedCall}
         detailsOnly={compact}
       />
-      {decision?.decisionNote && (
-        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(decision.decisionNote)} label="Decision note">
-          <Text size="sm">{decision.decisionNote}</Text>
+      {decisionNote && (
+        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(decisionNote)} label="Decision note">
+          <Text size="sm">{decisionNote}</Text>
         </ClampedBlock>
       )}
       {(hasResult || hasExecutionError || !decisionState) && (

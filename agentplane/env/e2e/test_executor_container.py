@@ -17,7 +17,7 @@ import grpc.aio
 import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
-from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, Retrying, retry, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -107,13 +107,10 @@ def _host_pid_for_marker(companion: CodexExecServerContainer, marker: str) -> in
     return pid
 
 
+@retry(stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(LookupError), reraise=True)
 def _wait_for_host_pid(companion: CodexExecServerContainer, marker: str) -> int:
-    for attempt in Retrying(
-        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(LookupError), reraise=True
-    ):
-        with attempt:
-            if (pid := _host_pid_for_marker(companion, marker)) is None:
-                raise LookupError(f"process marked {marker!r} did not appear in Docker top")
+    if (pid := _host_pid_for_marker(companion, marker)) is None:
+        raise LookupError(f"process marked {marker!r} did not appear in Docker top")
     return pid
 
 

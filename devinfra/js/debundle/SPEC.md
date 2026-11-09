@@ -3137,9 +3137,15 @@ themselves, so inerting an edge to a fallback effect never releases an
 observed write/read order. An entry whose endpoints share no
 `sequenced` edge, or only `strict_chain` edges between two summarized effects
 on disjoint cells (which `dataflow_aware_s_chain` already leaves unordered), is
-unused and fails validation. Both failures fail `spec validate` and `run` with
-a diagnostic naming the entry, both source units and, for a contradiction,
-each conflicting effect. This is explicit author input, not an inferred fact:
+unused. A contradiction fails `spec validate` and `run` with a diagnostic naming
+the entry, both source units and each conflicting effect. An unused entry is a
+warning, never a failure: an engine improvement that makes a premise unnecessary
+must not reject a spec that passed. The graph, gate verdict and emitted output
+are exactly those of the spec without the entry; the warning names the entry's
+spec location and each endpoint's authored selector, the logical-module members
+resolving to it and its input source location, and suggests removing the entry
+in a reviewed spec edit. It does not stop `--emit-on-rejection` from writing its
+tree; a contradiction does, since no graph exists to lower. This is explicit author input, not an inferred fact:
 A1–A11 and every other contract still apply, and it grants no purity,
 no-reentry or receiver guarantee.
 
@@ -3319,7 +3325,8 @@ an unused implicit receiver. A root whose every call is a direct call of an
 imported binding with a published summary uses the ordered plan too: each call
 is replaced by its summary, and under the summary's premises the effect verdict
 treats the call as touching no global property, heap, host or importer lexical
-cell. The summary is not a receipt for the root's lexical binding effects.
+cell. A summary whose body reads a private provider cell carries no such
+receipt. The summary is not a receipt for the root's lexical binding effects.
 Construction of an imported class keeps its established dispatch, since the
 class binding can be in its TDZ. Other native and imported whole-owner proof
 families retain their established dispatch until their value transfers accept

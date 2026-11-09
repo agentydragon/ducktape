@@ -11,6 +11,24 @@ use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+/// The chunk's typed `commuting_statements_diagnostics.json`: warnings for
+/// unused entries, or the contradiction that failed the chunk. Absent report
+/// means no diagnostic.
+pub fn commuting_statements_diagnostics(
+    report_root: &Path,
+    chunk_id: &str,
+) -> Vec<analysis::CommutingStatementsDiagnostic> {
+    let path = report_root
+        .join(chunk_id)
+        .join("commuting_statements_diagnostics.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
+}
+
 /// Typed graph accessors for fixtures that otherwise only need the CLI harness.
 pub trait FixtureGraphExt {
     fn dependency_graph(&self) -> DependencyGraphReport;

@@ -44,6 +44,40 @@ func stateStored(state action_servicepb.ActionState) (string, bool) {
 	return "", false
 }
 
+// The `action_decision.provider` values: who decided, which also fixes which of the decider columns are set.
+const (
+	operatorProvider = "human_operator"
+	policyProvider   = "action_policy_set"
+)
+
+// The stored `action_decision.reason_code` values of a policy Decision.
+var storedReasonCodes = [...]struct {
+	code action_servicepb.PolicyDecision_ReasonCode
+	text string
+}{
+	{action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, "policy_set_auto_approve"},
+}
+
+// reasonCodeFromStored reads a stored reason code. A code this release does not name was recorded by a newer one, so it
+// reads as REASON_CODE_UNKNOWN rather than failing the whole request.
+func reasonCodeFromStored(text string) action_servicepb.PolicyDecision_ReasonCode {
+	for _, known := range storedReasonCodes {
+		if text == known.text {
+			return known.code
+		}
+	}
+	return action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN
+}
+
+func reasonCodeStored(code action_servicepb.PolicyDecision_ReasonCode) (string, bool) {
+	for _, known := range storedReasonCodes {
+		if code == known.code {
+			return known.text, true
+		}
+	}
+	return "", false
+}
+
 // errInvalidActor marks a well-formed protobuf actor whose identity is incomplete.
 var errInvalidActor = errors.New("invalid Action actor")
 

@@ -6,24 +6,17 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from cdk8s import ApiObjectMetadata, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
     EnvValue,
-    ImagePullPolicy,
     MemoryResources,
-    PodSecurityContextProps,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Secret,
-    Service,
-    ServiceAccount,
     Volume,
 )
 from constructs import Construct
@@ -32,10 +25,11 @@ from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import central_sampler, telemetry, workload_tls
+from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.agentplane import central_sampler, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import tls_grpc_probe
@@ -73,8 +67,8 @@ def proxied_url(namespace: str) -> str:
 
 
 class LlmIngress(Construct):
-    """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
-    and Service for the LLM ingress. Fleet Cilium policy is added separately.
+    """The LLM ingress's service workload, cluster TokenReview RBAC and settings ConfigMap.
+    Fleet Cilium policy is added separately.
     """
 
     def __init__(
@@ -91,20 +85,68 @@ class LlmIngress(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
-        self.litellm_url = litellm_url
-        self.placement = placement
-        self.registry_secret_name = registry_secret_name
-        self.memory_request = memory_request
-        self.memory_limit = memory_limit
         self.service = service(env.namespace)
-
-        # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
-        # calls TokenReview as itself, so it needs its own mounted token.
-        service_account = ServiceAccount(
+        catalog = codex_catalog(env.llm_ingress.codex_routes)
+        catalog_map = (
+            None
+            if catalog is None
+            else ConfigMap(
+                self,
+                "codex-models",
+                metadata=ApiObjectMetadata(name=f"{_NAME}-codex-models", namespace=env.namespace),
+                data={_CODEX_CATALOG_PATH.name: catalog},
+            )
+        )
+        # The ingress calls TokenReview as itself, so it keeps the helper's mounted token.
+        workload = add_service_workload(
             self,
-            "serviceaccount",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
-            automount_token=True,
+            env,
+            serves=[self.service],
+            container="ingress",
+            image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
+            annotations={
+                "configmap.reloader.stakater.com/reload": ",".join(
+                    config_map
+                    for config_map in (f"{_NAME}-settings", None if catalog_map is None else catalog_map.name)
+                    if config_map is not None
+                ),
+                "secret.reloader.stakater.com/reload": env.llm_ingress.litellm_key_secret_name,
+            },
+            env_variables={
+                **{
+                    env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
+                    for field, value in {"token_audience": WORKLOAD_TOKEN_AUDIENCE, "litellm_url": litellm_url}.items()
+                },
+                # The only real model credential in this service; runners never mount it.
+                env_name(Settings, "litellm_key"): SecretRef(
+                    namespace=env.namespace, name=env.llm_ingress.litellm_key_secret_name
+                )
+                .key("api-key")
+                .env_value(self, "litellm-key-secret"),
+            },
+            readiness=tls_grpc_probe(
+                port=self.service.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=LLM_INGRESS_URI,
+                initial_delay_seconds=3,
+                period_seconds=10,
+            ),
+            liveness=tls_grpc_probe(
+                port=self.service.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=LLM_INGRESS_URI,
+                initial_delay_seconds=20,
+                period_seconds=30,
+            ),
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(50)),
+                memory=MemoryResources(request=memory_request, limit=memory_limit),
+            ),
+            termination_grace=Duration.seconds(30),
+            tolerate_control_plane=True,
+            placement=placement,
+            telemetry_enabled=True,
+            registry_secret_name=registry_secret_name,
         )
         # Backend callers retain their Pod-bound TokenReview credentials. The
         # proxy tunnels Sandbox TLS and asserts no caller identity.
@@ -112,11 +154,11 @@ class LlmIngress(Construct):
             self,
             "token-reviewer",
             name=f"{env.namespace}-llm-ingress-token-reviewer",
-            service_account_name=_NAME,
+            service_account_name=workload.account.name,
             namespace=env.namespace,
         )
         reader_role_name = f"{_NAME}-sandbox-reader"
-        Role(
+        reader_role = Role(
             self,
             "sandbox-reader-role",
             metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
@@ -135,23 +177,14 @@ class LlmIngress(Construct):
             self,
             "sandbox-reader-rolebinding",
             metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
-            role=Role.from_role_name(self, "sandbox-reader-role-ref", reader_role_name),
-        ).add_subjects(
-            ServiceAccount.from_service_account_name(
-                self, "llm-ingress-account-ref", _NAME, namespace_name=env.namespace
+            role=reader_role,
+        ).add_subjects(workload.account)
+        if catalog_map is not None:
+            workload.container.mount(
+                str(_CODEX_CATALOG_PATH.parent),
+                Volume.from_config_map(self, "codex-models-volume", catalog_map),
+                read_only=True,
             )
-        )
-        catalog = codex_catalog(env.llm_ingress.codex_routes)
-        catalog_map = (
-            None
-            if catalog is None
-            else ConfigMap(
-                self,
-                "codex-models",
-                metadata=ApiObjectMetadata(name=f"{_NAME}-codex-models", namespace=env.namespace),
-                data={_CODEX_CATALOG_PATH.name: catalog},
-            )
-        )
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         content = {
             "allowed_service_account_namespaces": [env.namespace],
@@ -165,9 +198,8 @@ class LlmIngress(Construct):
             "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
             **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
         }
-        deployment = self._add_deployment(service_account, catalog_map)
         serving_tls = workload_tls.serving_certificate(
-            self, env, container=deployment.containers[0], name=_NAME, uri=LLM_INGRESS_URI
+            self, env, container=workload.container, name=_NAME, uri=LLM_INGRESS_URI
         )
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
@@ -187,110 +219,11 @@ class LlmIngress(Construct):
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
-        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
-        self._add_service(deployment)
+        settings.mount_into(workload.container, env=Settings.config_file_env)
 
     def add_platform_resources(self) -> None:
         """Add fleet Cilium network admission."""
         self._add_network_policy()
-
-    def _add_deployment(self, service_account: ServiceAccount, catalog_map: ConfigMap | None) -> Deployment:
-        deployment = Deployment(
-            self,
-            "deployment",
-            metadata=ApiObjectMetadata(
-                name=_NAME,
-                namespace=self.env.namespace,
-                labels=_LABELS,
-                annotations={
-                    "configmap.reloader.stakater.com/reload": ",".join(
-                        config_map
-                        for config_map in (f"{_NAME}-settings", None if catalog_map is None else catalog_map.name)
-                        if config_map is not None
-                    ),
-                    "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
-                },
-            ),
-            pod_metadata=ApiObjectMetadata(labels={**_LABELS, **telemetry.EMITTER_SERVICE_CLASS_LABELS}),
-            replicas=self.env.replicas.count,
-            strategy=self.env.replicas.strategy,
-            service_account=service_account,
-            # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
-            # own automount_token -- opt in for the same reason as the ServiceAccount.
-            automount_service_account_token=True,
-            docker_registry_auth=(
-                Secret.from_secret_name(self, "forgejo-images-creds-ref", self.registry_secret_name)
-                if self.registry_secret_name is not None
-                else None
-            ),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-        )
-        deployment.add_container(
-            name="ingress",
-            image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={
-                **{
-                    env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
-                    for field, value in {
-                        "token_audience": WORKLOAD_TOKEN_AUDIENCE,
-                        "litellm_url": self.litellm_url,
-                    }.items()
-                },
-                **{
-                    name: EnvValue.from_value(value)
-                    for name, value in telemetry.service_environment(self.env.namespace, _NAME).items()
-                },
-                # The only real model credential in this service; runners never mount it.
-                env_name(Settings, "litellm_key"): SecretRef(
-                    namespace=self.env.namespace, name=self.env.llm_ingress.litellm_key_secret_name
-                )
-                .key("api-key")
-                .env_value(self, "litellm-key-secret"),
-            },
-            ports=[self.service.port.container_port()],
-            readiness=tls_grpc_probe(
-                port=self.service.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=LLM_INGRESS_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=self.service.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=LLM_INGRESS_URI,
-                initial_delay_seconds=20,
-                period_seconds=30,
-            ),
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
-            ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
-        )
-
-        if catalog_map is not None:
-            deployment.containers[0].mount(
-                str(_CODEX_CATALOG_PATH.parent),
-                Volume.from_config_map(self, "codex-models-volume", catalog_map),
-                read_only=True,
-            )
-
-        if self.placement is not None:
-            pod_policy.place(deployment, self.placement, tolerate_control_plane=True)
-        pod_policy.harden(deployment)
-        return deployment
-
-    def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
-            selector=deployment,
-            ports=[self.service.port.service_port()],
-        )
 
     def _add_network_policy(self) -> None:
         # Existing proxy and sampler callers share the verified TLS listener.

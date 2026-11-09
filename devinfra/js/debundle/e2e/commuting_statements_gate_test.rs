@@ -10,13 +10,17 @@
 //!   effects; one a conservative path merely assumed (the fallback summary,
 //!   a callback opaque code may invoke, an escaped closure, whole-body
 //!   promotion) is inertable;
-//! - a pair with no `sequenced` edge between its endpoints is rejected as
-//!   unused.
+//! - a pair with no `sequenced` edge between its endpoints is unused: a
+//!   warning naming the entry by authored identity, never a failure, and the
+//!   run emits exactly what it emits without the entry.
 
 use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::{DependencyGraphReport, SequencedCause};
+use analysis::graph::UnusedPremiseReason;
+use analysis::{CommutingStatementsDiagnostic, DependencyGraphReport, SequencedCause};
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, commuting_statements_diagnostics, source_unit_for_binding,
+};
 use debundle_e2e_support::*;
 
 /// `globalThis.record` is a callable the analysis cannot see into, so every
@@ -64,11 +68,10 @@ fn premise(input_index: usize) -> CommutingStatementsRef {
     }
 }
 
-/// `spec validate` reports the rejected premise as one typed
-/// `commuting_statements_diagnostics` entry of `kind` naming the entry and
-/// fails validation; `run` rejects the spec with a diagnostic carrying every
-/// token.
-fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: &[&str]) {
+/// `spec validate` reports the contradicted premise as one typed
+/// `commuting_statements_diagnostics` entry naming the entry and fails
+/// validation; `run` rejects the spec with a diagnostic carrying every token.
+fn expect_contradicted<'a>(build: impl Fn() -> FixtureOpts<'a>, tokens: &[&str]) {
     let fixture = write_validate_fixture_spec(build());
     let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     let report: serde_json::Value = serde_json::from_str(&validate.stdout)
@@ -81,7 +84,7 @@ fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: 
     else {
         panic!("{report:#}");
     };
-    assert_eq!(diagnostic["kind"], kind, "{report:#}");
+    assert_eq!(diagnostic["kind"], "contradicted", "{report:#}");
     assert!(
         diagnostic["spec_location"]
             .as_str()
@@ -89,6 +92,72 @@ fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: 
         "{report:#}"
     );
     expect_rejection_containing_all(build(), tokens);
+}
+
+/// One authored endpoint expected on an unused-premise warning.
+#[derive(Clone, Copy)]
+struct ExpectedEndpoint {
+    module: &'static str,
+    name: &'static str,
+}
+
+/// The single unused-premise warning in `diagnostics`, checked against the
+/// authored identity of `entry` and its endpoints.
+fn assert_unused_warning(
+    diagnostics: &[CommutingStatementsDiagnostic],
+    entry: &str,
+    reason: UnusedPremiseReason,
+    endpoints: [ExpectedEndpoint; 2],
+) {
+    let [CommutingStatementsDiagnostic::Unused(unused)] = diagnostics else {
+        panic!("expected one unused warning: {diagnostics:#?}");
+    };
+    assert!(unused.spec_location.ends_with(entry), "{unused:#?}");
+    assert_eq!(unused.reason, reason, "{unused:#?}");
+    for (endpoint, expected) in [&unused.a, &unused.b].into_iter().zip(endpoints) {
+        let [member] = endpoint.logical_members.as_slice() else {
+            panic!("expected one authored member: {unused:#?}");
+        };
+        assert_eq!(
+            (member.module.as_str(), member.name.as_str()),
+            (expected.module, expected.name),
+            "{unused:#?}"
+        );
+        assert!(endpoint.source_location.is_some(), "{unused:#?}");
+    }
+}
+
+/// An unused entry is a warning: with `unused` as the only entry, `run`
+/// succeeds and emits exactly the tree it emits without it (both under Node
+/// parity), the chunk report carries the typed warning, and `spec validate`
+/// succeeds while listing it.
+fn expect_unused_is_a_warning(
+    build: impl Fn(Vec<CommutingStatementsContract>) -> FixtureOpts<'static>,
+    unused: CommutingStatementsContract,
+    expected_output: &str,
+    expected: (&str, UnusedPremiseReason, [ExpectedEndpoint; 2]),
+) {
+    let (entry, reason, endpoints) = expected;
+    let baseline = run_fixture(build(vec![]));
+    let with_entry = run_fixture(build(vec![unused.clone()]));
+    assert_preserved_entry_output(&with_entry, expected_output);
+    assert_same_tree(&baseline.out_root, &with_entry.out_root);
+    assert_unused_warning(
+        &commuting_statements_diagnostics(&with_entry.report_root, &with_entry.chunk_id),
+        entry,
+        reason,
+        endpoints,
+    );
+
+    let fixture = write_validate_fixture_spec(build(vec![unused]));
+    let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&validate.stdout)
+        .unwrap_or_else(|error| panic!("{error}: spec validate stdout={}", validate.stdout));
+    assert_eq!(report["validation"]["success"], true, "{report:#}");
+    let diagnostics: Vec<CommutingStatementsDiagnostic> =
+        serde_json::from_value(report["commuting_statements_diagnostics"].clone())
+            .unwrap_or_else(|error| panic!("{error}: {report:#}"));
+    assert_unused_warning(&diagnostics, entry, reason, endpoints);
 }
 
 /// The inert edges a premise bought, as recorded in `dependency_graph.json.gz`.
@@ -273,33 +342,90 @@ fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
 
 /// Two summarized effects on disjoint cells under the strict S-chain are
 /// ordered only by adjacency: the analysis can already decide the pair, so
-/// the premise certifies nothing and is rejected as unused (the remedy is
+/// the premise certifies nothing and is reported as unused (the remedy is
 /// `dataflow_aware_s_chain`, under which no edge joins them).
+const SLOTS_SOURCE: &str = "const alpha = (globalThis.alpha = \"a\", \"A\");\nconst beta = (globalThis.beta = \"b\", \"B\");\nconst gamma = (globalThis.gamma = \"c\", \"C\");\nconsole.log(alpha, beta, gamma, globalThis.alpha, globalThis.beta, globalThis.gamma);\nexport { alpha, beta, gamma };\n";
+
+fn slots_split(
+    outer: &[&'static str],
+    inner: &[&'static str],
+    pairs: Vec<CommutingStatementsContract>,
+) -> FixtureOpts<'static> {
+    let members =
+        |names: &[&'static str]| names.iter().copied().map(Member::new).collect::<Vec<_>>();
+    FixtureOpts::new(
+        SLOTS_SOURCE,
+        vec![
+            logical_module("slots/outer", &members(outer)),
+            logical_module("slots/inner", &members(inner)),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", pairs)
+}
+
+fn beta_alpha_slots_pair() -> CommutingStatementsContract {
+    commuting_pair(
+        member_source_unit("slots/inner", "beta"),
+        member_source_unit("slots/outer", "alpha"),
+    )
+}
+
 #[test]
-fn summarized_disjoint_endpoints_under_strict_chain_are_unused() {
-    const SOURCE: &str = "const alpha = (globalThis.alpha = \"a\", \"A\");\nconst beta = (globalThis.beta = \"b\", \"B\");\nconst gamma = (globalThis.gamma = \"c\", \"C\");\nconsole.log(alpha, beta, gamma, globalThis.alpha, globalThis.beta, globalThis.gamma);\nexport { alpha, beta, gamma };\n";
-    let split = |pairs| {
-        FixtureOpts::new(
-            SOURCE,
-            vec![
-                logical_module("slots/outer", &[Member::new("alpha"), Member::new("gamma")]),
-                logical_module("slots/inner", &[Member::new("beta")]),
+fn summarized_disjoint_endpoints_under_strict_chain_are_an_unused_warning() {
+    expect_unused_is_a_warning(
+        |pairs| slots_split(&["alpha"], &["beta", "gamma"], pairs),
+        beta_alpha_slots_pair(),
+        "A B C a b c\n",
+        (
+            ENTRY,
+            UnusedPremiseReason::SummarizedEndpoints,
+            [
+                ExpectedEndpoint {
+                    module: "slots/inner",
+                    name: "beta",
+                },
+                ExpectedEndpoint {
+                    module: "slots/outer",
+                    name: "alpha",
+                },
             ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline())
-        .with_commuting_statements("static/app", pairs)
-    };
-    // Positive anchor: the strict chain does order the pair into a cycle.
-    expect_cycle_rejection(split(vec![]), &["slots/outer", "slots/inner"]);
-    expect_rejected(
-        || {
-            split(vec![commuting_pair(
-                member_source_unit("slots/inner", "beta"),
-                member_source_unit("slots/outer", "gamma"),
-            )])
-        },
-        "unused",
-        &[ENTRY, "inerts no sequenced edge", "dataflow_aware_s_chain"],
+        ),
+    );
+}
+
+/// The gate rejects the split for a cycle the unused entry does not touch;
+/// `--emit-on-rejection` still writes its readable tree and the warning
+/// beside the cycle evidence.
+#[test]
+fn unused_entry_does_not_fail_an_emit_on_rejection_run() {
+    // Positive anchor: the strict chain orders the pair into a cycle.
+    expect_cycle_rejection(
+        slots_split(&["alpha", "gamma"], &["beta"], vec![]),
+        &["slots/outer", "slots/inner"],
+    );
+    let rejected = run_emit_on_rejection_fixture(slots_split(
+        &["alpha", "gamma"],
+        &["beta"],
+        vec![beta_alpha_slots_pair()],
+    ));
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert!(rejected.entry_path().is_file());
+    assert!(!rejected.cycles().is_empty());
+    assert_unused_warning(
+        &commuting_statements_diagnostics(&rejected.report_root, &rejected.chunk_id),
+        ENTRY,
+        UnusedPremiseReason::SummarizedEndpoints,
+        [
+            ExpectedEndpoint {
+                module: "slots/inner",
+                name: "beta",
+            },
+            ExpectedEndpoint {
+                module: "slots/outer",
+                name: "alpha",
+            },
+        ],
     );
 }
 
@@ -422,7 +548,7 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
 #[test]
 fn known_global_property_conflict_rejects_the_pair() {
     const SOURCE: &str = "globalThis.flag = \"first\";\nconst snapshot = globalThis.flag;\nconsole.log(snapshot);\nexport { snapshot };\n";
-    expect_rejected(
+    expect_contradicted(
         || {
             FixtureOpts::new(
                 SOURCE,
@@ -440,7 +566,6 @@ fn known_global_property_conflict_rejects_the_pair() {
                 )],
             )
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "`snapshot`", "global property `flag`"],
     );
 }
@@ -450,7 +575,7 @@ fn known_global_property_conflict_rejects_the_pair() {
 #[test]
 fn callee_heap_contents_conflict_rejects_the_pair() {
     const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst first = (append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
-    expect_rejected(
+    expect_contradicted(
         || {
             FixtureOpts::new(
                 SOURCE,
@@ -473,7 +598,6 @@ fn callee_heap_contents_conflict_rejects_the_pair() {
                 )],
             )
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "array contents"],
     );
 }
@@ -483,7 +607,7 @@ fn callee_heap_contents_conflict_rejects_the_pair() {
 #[test]
 fn nested_callee_heap_contents_conflict_rejects_the_pair() {
     const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nfunction nested() { append(); }\nconst first = (nested(), nested(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
-    expect_rejected(
+    expect_contradicted(
         || {
             FixtureOpts::new(
                 SOURCE,
@@ -507,7 +631,6 @@ fn nested_callee_heap_contents_conflict_rejects_the_pair() {
                 )],
             )
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "array contents"],
     );
 }
@@ -552,7 +675,7 @@ fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
     const ASSUMED_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
     const DIRECT_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (append(), serialize([append]), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
     for source in [ASSUMED_FIRST, DIRECT_FIRST] {
-        expect_rejected(
+        expect_contradicted(
             || {
                 FixtureOpts::new(
                     source,
@@ -576,7 +699,6 @@ fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
                     )],
                 )
             },
-            "contradicted",
             &[ENTRY, CONTRADICTION, "array contents"],
         );
     }
@@ -587,7 +709,7 @@ fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
 #[test]
 fn known_binding_write_after_read_rejects_the_pair() {
     const SOURCE: &str = "let count = 0;\nconst snap = count;\ncount = 1;\nconsole.log(snap, count);\nexport { count, snap };\n";
-    expect_rejected(
+    expect_contradicted(
         || {
             FixtureOpts::new(
                 SOURCE,
@@ -606,7 +728,6 @@ fn known_binding_write_after_read_rejects_the_pair() {
                 )],
             )
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "`snap`", "timeline of `count`"],
     );
 }
@@ -630,14 +751,13 @@ fn shared_var_split(pair: CommutingStatementsContract) -> FixtureOpts<'static> {
 /// initializer.
 #[test]
 fn shared_var_access_order_is_not_inertable() {
-    expect_rejected(
+    expect_contradicted(
         || {
             shared_var_split(commuting_pair(
                 member_source_unit("all", "snap"),
                 declared_source_unit("var shared = 1;", "shared"),
             ))
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "`snap`", "`shared`"],
     );
 }
@@ -648,31 +768,60 @@ fn shared_var_access_order_is_not_inertable() {
 /// to the first, making the pair a same-source-unit error).
 #[test]
 fn co_declaration_sites_of_a_repeated_var_reject_the_pair() {
-    expect_rejected(
+    expect_contradicted(
         || {
             shared_var_split(commuting_pair(
                 declared_source_unit("var shared = 1;", "shared"),
                 declared_source_unit("var shared = 2;", "shared"),
             ))
         },
-        "contradicted",
         &[ENTRY, CONTRADICTION, "shared `var` `shared`"],
     );
 }
 
 /// `alpha` and `gamma` are not adjacent in the strict S-chain, so no edge
-/// joins them: the premise buys nothing and fails validation.
+/// joins them: the premise buys nothing. All three live in one module, so the
+/// run passes without any entry.
 #[test]
-fn pair_without_a_sequenced_edge_is_unused() {
-    expect_rejected(
-        || {
-            opaque_split(vec![commuting_pair(
-                member_source_unit("probes/outer", "alpha"),
-                member_source_unit("probes/outer", "gamma"),
-            )])
-        },
-        "unused",
-        &[ENTRY, "inerts no sequenced edge", "`alpha`", "`gamma`"],
+fn pair_without_a_sequenced_edge_is_an_unused_warning() {
+    let one_module = |pairs| {
+        FixtureOpts::new(
+            OPAQUE_SOURCE,
+            vec![logical_module_with_anon(
+                "probes/outer",
+                &[
+                    Member::new("trace"),
+                    Member::new("alpha"),
+                    Member::new("beta"),
+                    Member::new("gamma"),
+                ],
+                &[RECORD_INSTALL],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_commuting_statements("static/app", pairs)
+    };
+    expect_unused_is_a_warning(
+        one_module,
+        commuting_pair(
+            member_source_unit("probes/outer", "alpha"),
+            member_source_unit("probes/outer", "gamma"),
+        ),
+        OPAQUE_OUTPUT,
+        (
+            ENTRY,
+            UnusedPremiseReason::NoSequencedEdge,
+            [
+                ExpectedEndpoint {
+                    module: "probes/outer",
+                    name: "alpha",
+                },
+                ExpectedEndpoint {
+                    module: "probes/outer",
+                    name: "gamma",
+                },
+            ],
+        ),
     );
 }
 
@@ -791,9 +940,8 @@ fn timeline_between_two_fallback_effects_is_inertable() {
 #[test]
 fn timeline_between_two_observed_effects_rejects_the_pair() {
     let source = state_source("bump()", "peek()");
-    expect_rejected(
+    expect_contradicted(
         || state_split(&source, vec![first_second_pair()]),
-        "contradicted",
         &[
             ENTRY,
             CONTRADICTION,
@@ -904,9 +1052,8 @@ fn assert_assumed_pair_accepted(
 /// The same shape with `first` writing and `second` reading `state` through
 /// direct calls the statement definitely makes: a derived conflict.
 fn assert_observed_pair_rejected(source: &str, helpers: &[&'static str]) {
-    expect_rejected(
+    expect_contradicted(
         || probe_split(source, helpers, vec![first_second_pair()]),
-        "contradicted",
         &[
             ENTRY,
             CONTRADICTION,

@@ -1,6 +1,8 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
+use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
+use super::alternatives::{Family, Leaf, join_frames};
 use super::array_transfer::ArrayContext;
 use super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
@@ -13,6 +15,7 @@ use super::execution_index::{
 };
 use super::kernel::closure::{CapturePolicy, lexical_captures};
 use super::kernel::construct;
+use super::kernel::context::ControlContext;
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
@@ -479,14 +482,15 @@ pub(super) struct PrivateCallbackFactoryResult {
 /// chunk. Cache their synchronous read closure once; initialization timing is
 /// checked against the current prefix when the summary is applied.
 #[derive(Clone, Default)]
-struct CallbackFallbackSummary {
-    expanded: BTreeSet<SourceUnitOrdinal>,
-    deferred: BTreeMap<Id, SourceUnitOrdinal>,
-    incomplete_expanded: bool,
-    reads: BTreeSet<Id>,
-    rebinds: BTreeSet<Id>,
-    read_additions: Vec<Id>,
-    rebind_additions: Vec<Id>,
+pub(super) struct CallbackFallbackSummary {
+    pub(super) expanded: BTreeSet<SourceUnitOrdinal>,
+    pub(super) deferred: BTreeMap<Id, SourceUnitOrdinal>,
+    pub(super) incomplete_expanded: bool,
+    pub(super) reads: BTreeSet<Id>,
+    pub(super) rebinds: BTreeSet<Id>,
+    /// `reads` in insertion order; the fallback applies a suffix of it.
+    pub(super) read_additions: Vec<Id>,
+    pub(super) rebind_additions: Vec<Id>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1235,6 +1239,94 @@ impl Observations {
         effects.inference_uses = std::mem::take(&mut self.inference_uses)
             .into_iter()
             .collect();
+    }
+}
+
+impl ExecutionState {
+    /// A copy of the path state. The destructuring classifies every field,
+    /// so a new one fails to compile until it is placed.
+    pub(super) fn path(
+        &self,
+        allocation_judgment: &super::allocation_transfer::AllocationJudgment,
+        outcome: &Outcome,
+    ) -> ExecutionPath {
+        let ExecutionState {
+            world,
+            callback_fallback,
+            fallback_callback_sizes,
+            fallback_outcome,
+            fallback_local_owners,
+            fallback_local_deferred,
+            // Identity allocators: ids stay unique across leaves. Invocation
+            // memos key on the world revisions, which sibling leaves never
+            // share (`alternatives::Identities`).
+            capture_contexts: _,
+            callback_sets: _,
+            invocation_memos: _,
+            // Control state: the same at the end of every leaf's body as at
+            // the fork, because each leaf runs the same remaining body.
+            active_class_member_promotions: _,
+            prior_reachability_roots: _,
+            current_top_owner: _,
+            checking_record_factory_contract: _,
+            array_iteration_depth: _,
+            invocation_depth: _,
+            active: _,
+            assumption: _,
+            // Run-wide may-accumulators. A native write, an activated native
+            // body or a protected object recorded by one leaf only makes a
+            // sibling's native-intact and iteration proofs weaker; executed
+            // owners and invoked callables only add fallback roots; the
+            // remaining ones are reports. `class_member_effects` caches a
+            // function of the source alone.
+            native_point_effects: _,
+            activated_native_effects: _,
+            author_host_contract_uses: _,
+            class_member_effects: _,
+            proof_uses: _,
+            returned_record_proof_uses: _,
+            prior_effect_owners: _,
+            statement_executed_owners: _,
+            statement_invoked_callables: _,
+            array_iteration_protected_objects: _,
+            array_iteration_unsupported: _,
+            invocation_count: _,
+        } = self;
+        ExecutionPath {
+            world: world.clone(),
+            callback_fallback: callback_fallback.clone(),
+            fallback_callback_sizes: *fallback_callback_sizes,
+            fallback_outcome: fallback_outcome.clone(),
+            fallback_local_owners: fallback_local_owners.clone(),
+            fallback_local_deferred: fallback_local_deferred.clone(),
+            allocation_judgment: allocation_judgment.clone(),
+            outcome: outcome.clone(),
+        }
+    }
+
+    /// Replace the live path state; the caller installs the judgment and
+    /// outcome it gets back.
+    pub(super) fn enter(
+        &mut self,
+        path: ExecutionPath,
+    ) -> (super::allocation_transfer::AllocationJudgment, Outcome) {
+        let ExecutionPath {
+            world,
+            callback_fallback,
+            fallback_callback_sizes,
+            fallback_outcome,
+            fallback_local_owners,
+            fallback_local_deferred,
+            allocation_judgment,
+            outcome,
+        } = path;
+        self.world = world;
+        self.callback_fallback = callback_fallback;
+        self.fallback_callback_sizes = fallback_callback_sizes;
+        self.fallback_outcome = fallback_outcome;
+        self.fallback_local_owners = fallback_local_owners;
+        self.fallback_local_deferred = fallback_local_deferred;
+        (allocation_judgment, outcome)
     }
 }
 
@@ -9171,22 +9263,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )
     }
 
-    /// Every call of the root is a direct call of an imported binding that
-    /// carries a published foreign call summary. The ordered lane substitutes
-    /// each summary, so it runs no provider or application code.
-    pub(super) fn ordered_root_calls_are_provider_summaries(&self, calls: &[Call]) -> bool {
-        let mut calls = calls
-            .iter()
-            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-            .peekable();
-        calls.peek().is_some()
-            && calls.all(|call| {
-                call.kind == CallKind::Call
-                    && !call.has_spread
-                    && self.foreign_call_summary(call.kind, &call.callee).is_some()
-            })
-    }
-
     /// Native and imported calls whose proofs still project source operands
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
@@ -9604,7 +9680,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.executed_owners.insert(owner);
         // The source-covered application consumer supplies access effects and
         // conservative fallback. The shared kernel controls operation order.
-        let (frame, attempt) = driver::drive(
+        let family = driver::drive(
             &mut LocalExecutionContext {
                 executor: self,
                 outcome: &mut outcome,
@@ -9615,6 +9691,99 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             body,
             LocalContinuation::new(frame),
         );
+        match family {
+            Family::One(leaf) => {
+                self.adopt_local_leaf(body, *leaf, &mut outcome, owner, scope);
+            }
+            Family::Forked(leaves) => {
+                // Each leaf is adopted in the path state it completed in;
+                // the body's caller resumes from their join.
+                let mut frames = Vec::with_capacity(leaves.len());
+                let mut paths = Vec::with_capacity(leaves.len());
+                for (leaf, path) in leaves {
+                    let mut context = LocalExecutionContext {
+                        executor: self,
+                        outcome: &mut outcome,
+                        owner,
+                        scope,
+                        body,
+                    };
+                    context.enter(path);
+                    let frame = self.adopt_local_leaf(body, leaf, &mut outcome, owner, scope);
+                    paths.push(self.state.path(&self.allocation_judgment, &outcome));
+                    frames.push(frame);
+                }
+                let JoinedPath { path, refused } = ExecutionPath::join(paths);
+                let mut context = LocalExecutionContext {
+                    executor: self,
+                    outcome: &mut outcome,
+                    owner,
+                    scope,
+                    body,
+                };
+                context.enter(path);
+                if refused.is_some() {
+                    // The leaves left worlds no single caller can resume.
+                    // Everything any leaf could reach is summarized once
+                    // against the pointwise join.
+                    let span = self.local_body_span(body, scope);
+                    LocalExecutionContext {
+                        executor: self,
+                        outcome: &mut outcome,
+                        owner,
+                        scope,
+                        body,
+                    }
+                    .fallback(
+                        &join_frames(frames),
+                        Values::new(),
+                        ExecutionPrecisionLossReason::UnsupportedOperation {
+                            operation: ExecutionOperation::OpaqueExecution,
+                            ordered_field_read_refusal: None,
+                            ordered_call_admission_refusal: None,
+                        },
+                        span,
+                    );
+                    outcome.effect_coverage = EffectCoverageFragment::default();
+                    outcome.return_selection = None;
+                }
+            }
+        }
+        outcome
+    }
+
+    fn local_body_span(&self, body: &LocalBody, scope: LocalExecutionScope) -> Span {
+        match scope {
+            LocalExecutionScope::Callable(key) => self
+                .inputs
+                .index
+                .callable_spans
+                .get(&key)
+                .copied()
+                .unwrap_or(DUMMY_SP),
+            LocalExecutionScope::RootInitializer => body.initializer_span().unwrap_or(DUMMY_SP),
+            LocalExecutionScope::Constructor(class) => self
+                .inputs
+                .index
+                .class_spans
+                .get(&class)
+                .copied()
+                .unwrap_or(DUMMY_SP),
+        }
+    }
+
+    /// Record one completed path of a body in the live path state: the cells
+    /// it touched, the values it threw, the summary of a refused remainder
+    /// and its results. Returns the leaf's frame.
+    fn adopt_local_leaf(
+        &mut self,
+        body: &LocalBody,
+        leaf: Leaf,
+        outcome: &mut Outcome,
+        owner: SourceUnitOrdinal,
+        scope: LocalExecutionScope,
+    ) -> LocalFrame {
+        let Leaf { frame, attempt } = leaf;
         // The kernel returns the cells it touched and the values it threw;
         // this scope records them as the owner's effects and publications.
         let non_assumed = self.state.assumption.is_none();
@@ -9639,28 +9808,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             LocalExecutionAttempt::Refused(RemainderDisposition::NeedsSummary) => {
                 // The kernel stopped at an operation it cannot represent and no
                 // adapter path summarized the remainder on the way out.
-                let span = match scope {
-                    LocalExecutionScope::Callable(key) => self
-                        .inputs
-                        .index
-                        .callable_spans
-                        .get(&key)
-                        .copied()
-                        .unwrap_or(DUMMY_SP),
-                    LocalExecutionScope::RootInitializer => {
-                        body.initializer_span().unwrap_or(DUMMY_SP)
-                    }
-                    LocalExecutionScope::Constructor(class) => self
-                        .inputs
-                        .index
-                        .class_spans
-                        .get(&class)
-                        .copied()
-                        .unwrap_or(DUMMY_SP),
-                };
+                let span = self.local_body_span(body, scope);
                 LocalExecutionContext {
                     executor: self,
-                    outcome: &mut outcome,
+                    outcome,
                     owner,
                     scope,
                     body,
@@ -9692,7 +9843,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.return_selection = frame
             .return_selection()
             .filter(|selection| selection.matches(&outcome.returns));
-        outcome
+        frame
     }
 
     pub(super) fn invoke(
@@ -10425,14 +10576,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.retain_foreign_arguments(&summary, &args);
             self.record_foreign_call_use(&summary);
-            if needs_value {
-                let mut coverage = EffectCoverageFragment::provider_summary(&summary.dependencies);
-                if operands_may_throw {
-                    // An unavailable operand throws before the body runs.
-                    coverage.uncertain_completion();
-                }
-                outcome.effect_coverage = coverage;
-            }
             return CallTransfer::requested(needs_value, || {
                 let mut values = self.foreign_call_result(&summary, &args);
                 if operands_may_throw {

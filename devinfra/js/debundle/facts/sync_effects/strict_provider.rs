@@ -180,6 +180,10 @@ pub(super) fn derive(
         returns,
         retained_arguments,
         retained_provider_captures,
+        provider_cell_reads: captures
+            .iter()
+            .map(|binding| binding.0.to_string())
+            .collect(),
         native_constructions: context.native_constructions,
         dependencies,
         record,
@@ -249,6 +253,7 @@ pub(super) fn derive_class(
         returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
         retained_arguments,
         retained_provider_captures: BTreeSet::new(),
+        provider_cell_reads: BTreeSet::new(),
         native_constructions: context.native_constructions,
         dependencies,
         record: None,
