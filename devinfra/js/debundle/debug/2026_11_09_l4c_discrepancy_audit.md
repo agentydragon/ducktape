@@ -119,8 +119,9 @@ acceptances of the _assembled_ candidate, not of the authored split.
 (`realizability/effect_translation_validation.rs`, the
 `has_uncovered_havoc || has_premise_covered` arm), whereas the translation
 validation gate's definition accepts a swapped pair "covered by a
-`commuting_statements` premise". L4d must choose whether a premise discharges
-a havoc pair, or must state that it never does, before the flip.
+`commuting_statements` premise". Decided 2026-11-09: the premise is an axiom
+and discharges the pair; L4d makes this arm an acceptance
+(<../plans/convergence_landing.md> § Wave 4, L4d).
 
 ### Uncovered havoc, by missing rule (350 e2e)
 
@@ -279,4 +280,3 @@ python3 $S/canon_examples.py <gaffer-root> <product>.out ...   # bounded example
   bounded examples.
 - Repeat this pass after each of S3, S4, S5 and the conditional IR slice
   lands; the audit records are a single `--test_env` away.
-- Decide the premise-covered havoc policy (L4d).
