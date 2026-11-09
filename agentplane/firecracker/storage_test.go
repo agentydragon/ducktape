@@ -137,17 +137,28 @@ func testStorage(t *testing.T) *Storage {
 	return storage
 }
 
+// capture writes fresh RAM and VM state files beside the generations, as the supervisor's
+// snapshot does; Checkpoint consumes them.
+func capture(t *testing.T, storage *Storage, memory, vmstate string) (string, string) {
+	t.Helper()
+	directory, err := os.MkdirTemp(storage.Work, ".capture-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memoryPath, vmstatePath := filepath.Join(directory, "memory"), filepath.Join(directory, "vmstate")
+	if err := os.WriteFile(memoryPath, []byte(memory), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vmstatePath, []byte(vmstate), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return memoryPath, vmstatePath
+}
+
 func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	ctx := context.Background()
 	storage := testStorage(t)
-	memory := filepath.Join(t.TempDir(), "memory")
-	vmstate := filepath.Join(t.TempDir(), "vmstate")
-	if err := os.WriteFile(memory, []byte("RAM at suspended boundary"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(vmstate, []byte("VMM at suspended boundary"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	memory, vmstate := capture(t, storage, "RAM at suspended boundary", "VMM at suspended boundary")
 	if err := storage.MarkActive(); err != nil {
 		t.Fatal(err)
 	}
@@ -212,6 +223,7 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	if err := storage.ClearActive(); err != nil {
 		t.Fatal(err)
 	}
+	memory, vmstate = capture(t, storage, "RAM at suspended boundary", "VMM at suspended boundary")
 	second, err := storage.Checkpoint(ctx, memory, vmstate, "boot-test")
 	if err != nil {
 		t.Fatal(err)
@@ -235,6 +247,31 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	}
 }
 
+func TestCheckpointMovesCapturedFilesIntoGeneration(t *testing.T) {
+	storage := testStorage(t)
+	memory, vmstate := capture(t, storage, "ram", "vmstate")
+	before, err := os.Stat(memory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := os.Stat(filepath.Join(storage.Work, manifest.Generation, "memory"))
+	if err != nil || !os.SameFile(before, moved) {
+		t.Fatalf("captured RAM was copied instead of moved: %v", err)
+	}
+	for _, path := range []string{memory, vmstate} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("capture file remains after checkpoint: %s, %v", path, err)
+		}
+	}
+	if manifest.Files["memory"].Size != int64(len("ram")) {
+		t.Fatalf("memory record = %+v", manifest.Files["memory"])
+	}
+}
+
 func TestCheckpointRestoresOptionalInitrdAfterLauncherRestart(t *testing.T) {
 	ctx := context.Background()
 	storage := testStorage(t)
@@ -248,11 +285,8 @@ func TestCheckpointRestoresOptionalInitrdAfterLauncherRestart(t *testing.T) {
 	if err := copyAndSync(ctx, source, storage.Paths["initrd"]); err != nil {
 		t.Fatal(err)
 	}
-	memory := filepath.Join(t.TempDir(), "memory")
-	if err := os.WriteFile(memory, []byte("snapshot"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	manifest, err := storage.Checkpoint(ctx, memory, memory, "boot-test")
+	memory, vmstate := capture(t, storage, "snapshot", "snapshot")
+	manifest, err := storage.Checkpoint(ctx, memory, vmstate, "boot-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,18 +315,12 @@ func TestCheckpointRestoresOptionalInitrdAfterLauncherRestart(t *testing.T) {
 
 func TestPartialCheckpointCannotReplaceCommittedManifest(t *testing.T) {
 	storage := testStorage(t)
-	memory := filepath.Join(t.TempDir(), "memory")
-	vmstate := filepath.Join(t.TempDir(), "missing-vmstate")
-	if err := os.WriteFile(memory, []byte("ram"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(vmstate, []byte("state"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	memory, vmstate := capture(t, storage, "ram", "state")
 	first, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	memory, vmstate = capture(t, storage, "ram", "state")
 	if err := os.Remove(vmstate); err != nil {
 		t.Fatal(err)
 	}
@@ -347,14 +375,7 @@ func TestRestoreValidatesEveryGenerationFileBeforeWriting(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			storage := testStorage(t)
-			memory := filepath.Join(t.TempDir(), "memory")
-			vmstate := filepath.Join(t.TempDir(), "vmstate")
-			if err := os.WriteFile(memory, []byte("ram"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(vmstate, []byte("vmstate"), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			memory, vmstate := capture(t, storage, "ram", "vmstate")
 			manifest, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test")
 			if err != nil {
 				t.Fatal(err)
@@ -377,10 +398,7 @@ func TestRestoreValidatesEveryGenerationFileBeforeWriting(t *testing.T) {
 
 func TestReadManifestBindsIdentityBinaryAndBootID(t *testing.T) {
 	storage := testStorage(t)
-	memory := filepath.Join(t.TempDir(), "memory")
-	vmstate := filepath.Join(t.TempDir(), "vmstate")
-	_ = os.WriteFile(memory, []byte("ram"), 0o600)
-	_ = os.WriteFile(vmstate, []byte("vmstate"), 0o600)
+	memory, vmstate := capture(t, storage, "ram", "vmstate")
 	if _, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test"); err != nil {
 		t.Fatal(err)
 	}
