@@ -1,0 +1,325 @@
+{
+  "framework": "Mantine9.6.1",
+  "react": "19.3.0",
+  "shared_module_lines": 18,
+  "result": "PASSED",
+  "transport": "Real HTTP server on RBE;real CDN requests, no stylesheet/module stubs",
+  "test_target": "//x/ci_reports_preview:visual_test",
+  "invocation_id": "edd20659-3178-47f3-99ba-e65c403990ed",
+  "invocation_url": "https://app.buildbuddy.io/invocation/edd20659-3178-47f3-99ba-e65c403990ed",
+  "test_cases": 32,
+  "viewports": [
+    {
+      "width": 1280,
+      "height": 900
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "themes": ["light", "dark"],
+  "checks": [
+    "Actual CDN CSS response, integrity and computedMantineCSSvariable",
+    "MantineTypography mounted with automaticOS/browser theme",
+    "Live color-preference changes without reload",
+    "Home manifest metadata populated",
+    "All internal anchors",
+    "All four elapsed-span timeline choices",
+    "Inventory search,empty result,backend filter and sort",
+    "Expanded-details page overflow",
+    "All HTML byte hashes checked inside RBE"
+  ],
+  "files": {
+    "reliability/index.html": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+    "bazel-audit/index.html": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+    "agentplane-protocol-shapes/index.html": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+    "report.css": "182c584b6e94cec724bbb45437fdec08662b5e2b2f71ca7f5e46abd0676fd79a",
+    "report.js": "6a7d2c84cecfa6d9d6f4a48368f41f3d9ec021ca58a8941cea1a9c0f3a7c7634"
+  },
+  "manual_review": "All desktop/mobile/light/dark captures for these three reports reviewed as part of the passing32-case site preview.",
+  "earlier_attempts": {
+    "c7f0e306-e0bb-4f0b-8c1d-339c9d9e2879": "28 passed;home module path fixed.",
+    "e2c4ef77-81c4-4fbe-8fe5-16888cd2ff02": "32 passed;before final per-action-root explanation and contrast adjustment.",
+    "d07f7493-4cc5-4123-850f-a7c578f41b6f": "Four final latency cases passed.",
+    "001c252d-5b65-42e1-abd3-6b6f3477023f": "28 non-home cases passed;four home cases exposed file-protocol manifest-fetch mismatch. Final HTTP run above tests deployed transport semantics."
+  },
+  "reviewed_at_utc": "2026-11-09T08:28:43.833238+00:00",
+  "report_hash_receipts": [
+    {
+      "report": "agentplane-protocol-shapes",
+      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "reliability",
+      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "agentplane-protocol-shapes",
+      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "reliability",
+      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "agentplane-protocol-shapes",
+      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "reliability",
+      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "bazel-audit",
+      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "bazel-audit",
+      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "agentplane-protocol-shapes",
+      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "bazel-audit",
+      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "bazel-audit",
+      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "reliability",
+      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    }
+  ],
+  "screenshot_sha256": [
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "45618f77c512a9979b047c65657369cab88356de5293b7b61b13253bf8535eeb"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "4433b4978e4a072c71dcd51aa4c41373837dcd181d4a226f4039bf6fcf36dce7"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
+      "checkpoint": "open-title",
+      "sha256": "7857219a23345af6198b2ad6a65cc49a097cbb7ff868d7958a33fd238fa48deb"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "sha256": "7b6b60068d35ab6cffdce29e0c665da58d9b44e7cbfbc5625e914e524c590486"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-bazel-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "570762f2945fb68527bf2b0fce45ab20d7062b15ddf813360370a0710fc0743a"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "ee18d7c51c69e5959379ee2a3201cab9a7cad781da7cff9e54cb35a7387f6173"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "population",
+      "sha256": "3e9528d45fbd201d4e5e7e13f6561d9025b34102d161d2e8110a2df868617a43"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-bazel-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "3fa2997668fddf2cf860ba2dff6fb5c9165b823931b9b302ad43da722de39a95"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "actions",
+      "sha256": "7a8e85e26ca012648f97704ac16528f2ac2877887e0b89aa03be964b84248553"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "7c29b1f836d217df3c55aac534e94e2cb1ce5fd10b5008a313ec0e5c71bcdd04"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-bazel-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "29e180726d8209c691010125b5468b32fa564cbb1c94842bf6626de30dec82e1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "415a25b3a0eb15ec77322baf7655aa04cfd2c55fb004c3de700b03720b74ff1d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
+      "checkpoint": "open-title",
+      "sha256": "fa7b2173563bfe11ede3f72d42f1f24d8c4218024e06534fa732a6f3b2f2ec3e"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "population",
+      "sha256": "f8de7fe236810b18f9067d6866f54a90bfd35f2d774caeb6d466c338d7d7eaf9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "sha256": "9ac096ba6e9537d9be300977dbca50b15380c2bddd8522704a1992ff2f089893"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "sha256": "0fa4ca662e0e67fa37926b04d699e5c7e1105cf82d5cb08d871ade8f5ca3e2a0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "f0cf3efbaa046ee33c402598a72bad2ed463f8718b75af197a6bab50cb86f865"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "actions",
+      "sha256": "56fc4fcfc6d8dd04e976fc814cfc3fbeaf3bd8fc3825debef104a8a1392a04db"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "actions",
+      "sha256": "5d1670d993aa13dbf13ee50a502822c818d5d2c45487ac909fb4919b5995ba11"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-bazel-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "0adb6ecc34c5e4f819847cd68dcd0a55af6538944115b20a84d9376502fdb246"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "sha256": "16f4c05934cf9fb26809bb2d73cbbe76500a768319ee624a460d2d07885576ed"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
+      "checkpoint": "open-title",
+      "sha256": "86a1b6d09b2265a2a076353baa047b52236cc90c759b4f7804f728c84fda944b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "838751bedcf1df9e1444d6ce0ffef3d2181a2bb20cd91961c311fea22fb14ed5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "actions",
+      "sha256": "f0a48706d779937b3359dcf537bf8f89861bcb4f6fae46906895f89db1e29ada"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "population",
+      "sha256": "91147212158ff4f8df326c1c092758ecc832e079ebecf8779d7572e0444368e8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "population",
+      "sha256": "c698cb69e198d67850c3742f5ca1c5109a1da0dc72b08cd26882d88b926d7c04"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "first-screen",
+      "sha256": "8505784cadcd819a20dbadc6af4b2ee1f95fde93fd9e488439cc153e26c7d2ac"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
+      "checkpoint": "open-title",
+      "sha256": "850d05f0f43de2ce445c73c445a2979d42fa85e7289a57a5a645998cf4e0ccef"
+    }
+  ],
+  "scope": "Shared assets and three presentation-only reports in this lower layer. The dependent report refresh adds the home page and other four reports."
+}
