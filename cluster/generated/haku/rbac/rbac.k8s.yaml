@@ -17,6 +17,15 @@ metadata:
   namespace: haku-sandbox
 automountServiceAccountToken: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The principal haku-jupyter's notebooks reach the public internet as, through the egress proxy (agentplane/actions_staging_policies.py).
+  name: haku-jupyter
+  namespace: haku-sandbox
+automountServiceAccountToken: false
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

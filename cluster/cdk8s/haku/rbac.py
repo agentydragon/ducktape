@@ -65,6 +65,23 @@ def chart(app: App) -> Chart:
         ),
         automount_service_account_token=False,
     )
+    # haku-jupyter's egress principal (ui_egress.py), ours for the same reason as haku-ui's. No CALLER_LABEL:
+    # it submits no Actions. No Kubernetes permissions; only its egress sidecar mounts the standing SVID.
+    k8s.KubeServiceAccount(
+        chart,
+        "haku-jupyter-service-account",
+        metadata=k8s.ObjectMeta(
+            name=ui_egress.JUPYTER_SERVICE_ACCOUNT,
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "The principal haku-jupyter's notebooks reach the public internet as, through the egress proxy "
+                    "(agentplane/actions_staging_policies.py)."
+                )
+            },
+        ),
+        automount_service_account_token=False,
+    )
     # Haku's only write-capable RBAC. Deliberately an explicit resource allowlist with NO
     # httproutes/gateways/networkpolicies -- Haku must never open a public door or loosen its own
     # fences. Invariants + full enforcement inventory: haku/docs/security.md.
