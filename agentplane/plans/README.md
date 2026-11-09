@@ -42,8 +42,11 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
-  the expand phase (identity and grant kinds, managed ServiceAccounts, impersonation,
-  WorkloadCredentials) has landed; the cutover and its open questions remain
+  what the identity cutover still changes (Sandboxes naming an Identity, the proxy and services
+  keying on it, identity lifetimes and UI) and its open questions; the kinds, grants, impersonation
+  and the catalog behind its switch have landed
+- [Workload identity lifecycle](workload_identity_lifecycle.md) — moving Action boxes and standing
+  workloads onto `WorkloadCredential`s, then removing the proxy's bearer hop
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements

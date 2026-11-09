@@ -2998,31 +2998,30 @@ old paths.
 ## 14. Identity and Kubernetes accounts cutover
 
 The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
-under the 2026-11-05 decisions, amended 2026-11-08. The first SVID slice preserves Sandbox
-ServiceAccount subjects. Sandbox sidecars use SVIDs; existing non-Sandbox callers retain explicit
-Pod-bound bearer authentication over the same verified TLS listener. Recreate existing Sandbox
-Pods to load the mTLS sidecar configuration. The shared identity/SVID lifecycle and the later
-bearer removal are separate work below; neither blocks this mixed-auth rollout. The later
-Identity/account changes remain separately gated and are exercised in k3s. Stage edges are technical
-prerequisites; the fan-in to system tests is a sequencing hold, not permission to start them early.
+under the 2026-11-05 decisions. The kinds, grants, managed ServiceAccounts, impersonation, the
+shared reader's Identity lookups and the identity catalog have landed, the catalog behind
+`Environment.identity_catalog`, which is off on staging; Sandbox SVIDs authenticate through
+per-incarnation `WorkloadCredential`s ([workload authentication](../docs/workload_authentication.md)).
+Stage edges are technical prerequisites; the fan-in to system tests is a sequencing hold, not
+permission to start them early.
 
-What the first slice leaves provisional, each tracked by the node that removes it: the SVID still
-resolves to the Sandbox's own ServiceAccount and yields the same `Principal` a TokenReview does
-(`SERVICES_IDENTITY_PRINCIPAL`); a Sandbox sidecar forwards its Kubernetes-audience token beside
-the SVID for `kubectl` substitution (`EGRESS_IDENTITY_RULES`); the proxy's `forward` listener,
-the sidecar and the command-box templates keep a bearer hop, each marked `CLEANUP(added 2026-11-09)`
-(`WORKLOAD_AUTH_CUTOVER`).
+What stays provisional, each tracked by the node that removes it: every `WorkloadCredential` names a
+ServiceAccount subject and the resolver refuses an Identity one, so an SVID yields the same
+ServiceAccount `Principal` a TokenReview does (`SERVICES_IDENTITY_PRINCIPAL`, `IDENTITY_CUTOVER`); a
+Sandbox sidecar forwards its Kubernetes-audience token beside the SVID for `kubectl` substitution
+(`EGRESS_IDENTITY_RULES`); the proxy's `forward` listener, the sidecar and the command-box templates
+keep a bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOVER`).
 
 ```mermaid
 flowchart LR
-    POLICY_GRANTS[Remaining: managed accounts' credential and use set]
-    EGRESS_IDENTITY_RULES[Candidate: identity rules at the proxy]
-    SERVICES_IDENTITY_PRINCIPAL[Candidate: services act and record by identity]
-    APP_IDENTITIES_UI[Candidate: identities in the app]
-    WORKLOAD_AUTH_CUTOVER[Candidate: lifecycle steps 3-5]
-    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
+    MANAGED_ACCOUNT_CREDENTIALS[In progress: managed accounts' credential and use set]
+    WORKLOAD_AUTH_CUTOVER[In progress: lifecycle steps 3 and 4, then bearer removal]
+    APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
-    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
+    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
+    SANDBOX_IDENTITY_SPEC -->|identity source| EGRESS_IDENTITY_RULES[Blocked: identity rules at the proxy]
+    SANDBOX_IDENTITY_SPEC -->|identity source| SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
+    MANAGED_ACCOUNT_CREDENTIALS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
@@ -3044,89 +3043,67 @@ also passes against the Firecracker template.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
-**Steps 1 and 2 of the [workload identity lifecycle](workload_identity_lifecycle.md) landed;
-steps 3 to 5 remain.** The operator chose one issuer, `agentplane/workload_identity` hosted in the
-Policy Controller: the workload CA (#15104, #15113, #15129, #15131, #15134) and the
-`WorkloadCredential` kind, issuer and resolver with the Sandbox Controller as requester (#15119,
-#15127, `c377184466`; [contract](../docs/workload_authentication.md#workloadcredentials)). Move every
-remaining active workload/proxy caller to it. Until then, keep the proxy's explicit `kubernetes_bearer` mode and the
-non-Sandbox sidecars' Pod-bound projections; Sandbox templates use SVIDs and do not project the
-hop bearer. Keep the shared TLS listener and service-owned verification, without proxy identity
-assertions or insecure transport fallback. Inventory the actual native service clients; Haku's
-separate ActionClient migration remains deferred in the [task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).
-**Exit:** k3s proves
-Sandbox and non-Sandbox egress and platform calls, rotation/revocation and unchanged subject/rule
-isolation; then remove the proxy bearer configuration, workload projections and unused sidecar token
-transport together. The sites are the `CLEANUP(added 2026-11-09)` tombstones: the proxy
-`forward.auth` bearer entry in `cluster/cdk8s/agentplane/egress.py`, the command-box hop projection
-in `command_sandbox.py`, the sidecar's `KubernetesBearerProxyAuth` and plaintext transport
-(`egress/sidecar_config.py`, `egress/sidecar/config.go`), and the forward listener's bearer mode
-and hop verifier in `egress/identity/authentication.go`. Backend bearer/delegation policies and the
-sampler's delegated path retain their own authorization contracts; `kubernetes_bearer` stays on
-service listeners for them.
-The staging PR states rollback and verifies callers after image/config convergence.
+**In progress (team lead, 2026-11-09): steps 1 and 2 of the
+[workload identity lifecycle](workload_identity_lifecycle.md) landed; step 3, Action boxes, and
+step 4, standing workloads, are in flight as separate changes; step 5, bearer removal, follows.**
+The lifecycle plan holds each step's records, k3s proof and rollback; the issuer and resolver
+contract is in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
+Until step 5, keep the proxy's explicit `kubernetes_bearer` mode and the non-Sandbox sidecars'
+Pod-bound projections; Sandbox templates use SVIDs and do not project the hop bearer. Keep the
+shared TLS listener and service-owned verification, without proxy identity assertions or insecure
+transport fallback. Haku's separate ActionClient migration remains deferred in the
+[task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).
+**Exit:** k3s proves non-Sandbox egress and platform calls, rotation/revocation and unchanged
+subject/rule isolation; then step 5 removes the proxy bearer configuration, workload projections and
+unused sidecar token transport together, at the `CLEANUP(added 2026-11-09)` sites the lifecycle plan
+lists. Backend bearer/delegation policies and the sampler's delegated path keep their own
+authorization contracts, and `kubernetes_bearer` stays on service listeners for them. The staging PR
+states rollback and verifies callers after image/config convergence.
 
-### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
+### `MANAGED_ACCOUNT_CREDENTIALS` — a managed account's credential and use set
 
-**Reconciler landed (#15076); emission remains.** The
-Policy Controller reads `ServiceAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
-Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
-and namespace through the same additive, pruned, never-adopt-on-name machinery. Expiry covers
-bindings, grants and managed accounts through one helper; an expired object is absent to the shared
-reader and the controller before its deletion, and an account-owned object setting its own
-`expiresAt` reports `ConflictingExpiry`. `ManagedServiceAccount` creates the SA in the
-environment's accounts namespace (`<namespace>-k8s-accounts`, rendered by the egress `KubernetesAccounts`) with a
-UID label, reports `KubernetesReady`, and on expiry or deletion removes the SA and every native
-binding on it in one pass. The controller's RBAC gains SA create, delete and reads in the accounts
-namespace only, plus reads, expiry deletes and status patches on the new kinds. The test apiserver
-has no garbage collector, so owned grants and bindings going with their account is left to
-`IDENTITY_SYSTEM_TESTS`. **Remaining:** emitting each managed account's `EgressCredential` and
-one-rule `PolicySet` owned by it. The `kubernetesServiceAccount` credential source is on devel
-(#15075); emission waits on open question 11's admission rule. **Exit:** those two objects
-are emitted, owned by the account.
+**In progress (team lead, 2026-11-09).** The grant, role-set and managed-ServiceAccount reconciler
+landed in #15076 ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)) and
+the `kubernetesServiceAccount` credential source in #15075. What remains: the controller emits each
+`ManagedServiceAccount`'s `EgressCredential` and one-rule `PolicySet`, owned by the account (the two
+objects `cluster/cdk8s/agentplane/kubernetes_accounts.py` renders for a static account), so a
+temporary account's grants, use bindings, credential and set all go with its one clock. That is new
+authority for the controller; the plan's admission question for controller-written policy limits it
+to the one-rule shape naming the account's own ServiceAccount and apiserver host. The test apiserver
+has no garbage collector, so owned objects going with their account is left to
+`IDENTITY_SYSTEM_TESTS`. **Exit:** both objects are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Candidate for what remains; the kinds landed in #15072.** The proxy's decision keys on the identity;
-decision history records the identity; the launch defaults carry the shared account's use set. The Kubernetes-audience projected token is
-removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken`
-source, so the source, the sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second
-TokenReview per tunnel and the egress `TODO.md` entry on where that token is substituted go with
-it. **Exit:** the egress harness shows two identities acting as one account, one losing its use
-rule without the other noticing.
-
-**Reader side landed (policy reader identity PR, 2026-11-09):** `policy/reader` answers an
-`Identity` lookup by name and UID, watching Identities in the policy namespace, so a recreated
-same-named Identity's UID is a different subject. A ServiceAccount lookup never finds an
-identity-subject binding, nor the reverse. Egress, the Action Service and Notification watch
-Identities (Role rules added) but still look up by ServiceAccount, so no decision changed. The
-proxy's identity keying will read the subject the `WorkloadCredential` resolver yields (landed
-with lifecycle step 2); records name ServiceAccount subjects until `IDENTITY_CUTOVER` switches
-requesters to identities ([lifecycle](workload_identity_lifecycle.md#migration-and-rollback)).
-
-**Landed on ServiceAccount subjects (egress impersonation PR, 2026-11-08):** the
-`kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer
-with `Impersonate-User`, refusing caller `Impersonate-*` headers, the accounts-namespace Role
-granting `impersonate` on `serviceaccounts`, and the impersonated account in decision history. The
-k3s Pod suite shows two Sandboxes acting as one account and one losing its rule. The k3s API server keeps no audit log, so the audit entry
-naming both account and proxy is unverified there; the scenario checks a `SelfSubjectReview` and
-the decision history instead.
+**Blocked on a per-caller identity source: `SANDBOX_IDENTITY_SPEC`, plus the `WorkloadCredential`
+resolver reading Identity subjects, which `IDENTITY_CUTOVER`'s change set adds
+(`agentplane/workload_identity/resolver/resolver.go` refuses one today).** Until then every SVID
+resolves to a ServiceAccount, so there is no identity to key on. The proxy's decision keys on the
+identity the resolver yields, and decision history records it. The Kubernetes-audience projected
+token is removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only
+`projectedWorkloadToken` source, so the source, the sidecar's `X-Agentplane-Workload-Token`
+forwarding, the proxy's second TokenReview per tunnel and the egress `TODO.md` entry on where that
+token is substituted go with it. Impersonation on ServiceAccount subjects has landed
+([egress SPEC](../egress/SPEC.md) § Decision), as have `policy/reader`'s Identity lookups, which
+egress, the Action Service and Notification watch but do not query yet. The k3s API server keeps no
+audit log, so the audit entry naming both account and proxy is unverified there. **Exit:** the
+egress harness shows two identities acting as one account, one losing its use rule without the
+other noticing.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**Candidate; the kinds landed in #15072.** History's execution principal, Dispatcher's Session rows,
-Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
-identity reference plus the workload incarnation as provenance. The seam is `workload_auth/auth`'s
-`Principal`: `SVIDResolver` currently returns the same ServiceAccount-shaped value a TokenReview
-does, from the credential's `WorkloadCredential` subject read uncached per request, so no
-handler can tell the two apart; the SVID path yields the identity reference and incarnation
-directly; `CreateSession` names an
-identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
-a Session whose identity differs from its environment's current one, so a bypassed identity change
-strands Sessions rather than re-attributing them. Migrations rewrite rows whose
-Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
-existing service tests pass with identity principals, a retained Session with a deleted Sandbox
-reads as historical.
+**Blocked on the per-caller identity source, as `EGRESS_IDENTITY_RULES`.** History's execution
+principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
+and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
+The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
+ServiceAccount-shaped value a TokenReview does, from the credential's `WorkloadCredential` subject
+read uncached per request, so no handler can tell the two apart; the SVID path yields the identity
+reference and incarnation directly; `CreateSession` names an identity, Dispatcher is the authority
+for that association, and its delivery and wake path refuses a Session whose identity differs from
+its environment's current one, so a bypassed identity change strands Sessions rather than
+re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark the rest
+historical, as History migration 8 did. **Exit:** the existing service tests pass with identity
+principals, a retained Session with a deleted Sandbox reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
@@ -3149,7 +3126,9 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 
 ### `APP_IDENTITIES_UI` — identities in the app
 
-**Candidate; parallel with the service work.** The identities list with
+**In progress (team lead, 2026-11-09: a first slice); parallel with the service work.**
+`PolicyService` already watches Identities and deletes one for it (#15151;
+[Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). The identities list with
 references, grants and last activity and an unreferenced filter; delete refused while referenced;
 the identity page re-anchoring "View grants"; the session form with placement and identity, the
 set selector hidden for an existing identity; the permission-request approval card with new
@@ -3165,35 +3144,36 @@ deleted.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
-**Blocked on `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
-`SERVICES_IDENTITY_PRINCIPAL` and `SANDBOX_IDENTITY_SPEC`; the identity catalog rendering landed
-behind `Environment.identity_catalog` (#15118, #15121).** k3s scenarios for
-the plan's exit checks: an SVID-authenticated egress hop and one platform route; a Sandbox with no
-Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy; two identities act
-as one shared account and one loses it alone; a temporary account expires and its SA, RoleBindings,
-grant, credential, set and use binding are gone with no controller restart; deleting an identity
-removes everything it owned; a Firecracker guest's relay authenticates with the SVID. **Exit:** the
-scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
+**Blocked on `MANAGED_ACCOUNT_CREDENTIALS`, `EGRESS_IDENTITY_RULES`,
+`SERVICES_IDENTITY_PRINCIPAL` and `SANDBOX_IDENTITY_SPEC`.** k3s scenarios on the identity catalog
+rendering for the plan's exit checks: an SVID-authenticated egress hop and one platform route; a
+Sandbox with no Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy;
+two identities act as one shared account and one loses it alone; a temporary account expires and
+its SA, RoleBindings, grant, credential, set and use binding are gone with no controller restart;
+deleting an identity removes everything it owned; a Firecracker guest's relay authenticates with the
+SVID. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 
 **Blocked on `IDENTITY_SYSTEM_TESTS` and `APP_IDENTITIES_UI`.** One PR flips the staging rendering
-(`Environment.identity_catalog`) and settings, removes the ServiceAccount variant of `PolicyBinding.spec.subject` (admission rejects
-a binding with no identity and a Kubernetes rule in a `PolicySet`), deletes the old code paths (SA
-binding subject, Kubernetes rule types in `PolicySet`,
+(`Environment.identity_catalog`) and settings, removes the ServiceAccount variant of
+`PolicyBinding.spec.subject` (admission rejects a binding with no identity and a Kubernetes rule in
+a `PolicySet`), deletes the old code paths (SA binding subject, Kubernetes rule types in `PolicySet`,
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
-the objects of the new kinds. The caller ServiceAccounts and the static Flux RoleBindings naming
-the `claude-ai` ServiceAccount stay until here, since the MCP edge and the Action Service still
-authenticate them. The MCP edge's `connection_identities` setting is set and read here:
-stored Connections move from their bound ServiceAccount to an Identity, consent offers those
-Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with how it then proves
-an Identity to the Action Service ([open question 21](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The
-app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their two prerequisites:
-the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
-ServiceAccount-or-Identity union or is rewritten to an Identity, and that question is decided.
-Running Sandboxes are replaced, not patched, so each loses its running incarnation; Sandbox sidecars
-already use the SVID hop.
+the objects of the new kinds. Every `WorkloadCredential` requester switches its `subject` to an
+Identity, cdk8s renders `haku-ui` as one, and the resolver reads `spec.subject.identity` through the
+shared policy reader, live with its UID, in the policy namespace
+([lifecycle](workload_identity_lifecycle.md#migration-and-rollback)). The caller ServiceAccounts and
+the static Flux RoleBindings naming the `claude-ai` ServiceAccount stay until here, since the MCP edge
+and the Action Service still authenticate them. The MCP edge's `connection_identities` setting is set
+and read here: stored Connections move from their bound ServiceAccount to an Identity, consent offers
+those Identities, and the edge stops minting tokens and proves the Identity to the Action Service by
+delegated authorization, decided by the operator on 2026-11-09 (the plan's MCP edge section). The
+app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their remaining
+prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
+ServiceAccount-or-Identity union or is rewritten to an Identity. Running Sandboxes are replaced, not
+patched, so each loses its running incarnation; Sandbox sidecars already use the SVID hop.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section
