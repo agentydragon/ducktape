@@ -153,6 +153,13 @@ go_deps.module(
     sum = "h1:+jPbCzuYxYrcoOvCecYUFDj+XJQRmzIhJmlbpps21Zk=",
     version = "v0.8.2",
 )
+
+# SPIKE (issue #15098): NilAway nil-flow analyzer for nogo.
+go_deps.module(
+    path = "go.uber.org/nilaway",
+    sum = "h1:WRbdrL7q1+PV8w97QZDQUlCnyM0aKHrpMizqHM+reWc=",
+    version = "v0.0.0-20260918162853-acb8859b9031",
+)
 go_deps.module(
     path = "golang.org/x/tools",
     sum = "h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=",
@@ -578,6 +585,7 @@ use_repo(
     "org_golang_x_tools",
     "org_modernc_sqlite",
     "org_uber_go_mock",
+    "org_uber_go_nilaway",
     "org_uber_go_zap",
 )
 

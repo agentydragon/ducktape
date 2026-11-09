@@ -1,0 +1,8 @@
+{
+  "nilaway_config": {
+    "analyzer_flags": {
+      "include-pkgs": "github.com/agentydragon/ducktape",
+      "pretty-print": "false"
+    }
+  }
+}
