@@ -929,7 +929,7 @@ mod initializer_overlay_tests {
             ),
         ] {
             let module = parse(source);
-            let mut analysis = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None);
+            let mut analysis = analyze_chunk(&module, &AnalysisInputs::default(), None);
             let result_index = analysis
                 .facts
                 .iter()
@@ -1014,7 +1014,7 @@ mod initializer_overlay_tests {
             ("var result = 1;", "missing", "consumption mismatch"),
         ] {
             let module = parse(source);
-            let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None);
+            let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None);
             let configured = BTreeSet::from([binding.to_string()]);
             facts.apply_initializer_binding_effects(&configured);
             let error = facts

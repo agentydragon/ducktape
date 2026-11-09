@@ -43,7 +43,7 @@ pub(super) fn resolve_chunk_commuting_statements(
         body: body.to_vec(),
         shebang: None,
     };
-    let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
+    let structural = analysis::facts::collect_chunk_source_facts(&module, None);
     let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
     let mut seen_pairs = BTreeMap::<(SourceUnitOrdinal, SourceUnitOrdinal), usize>::new();
     let mut chunk_pairs = Vec::with_capacity(contracts.len());
