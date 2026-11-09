@@ -1,5 +1,7 @@
 //! Normal, abrupt, or conservatively mixed completion for one synchronous transfer.
 
+use super::allocation_transfer::AllocationJudgment;
+use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
 use crate::facts::abstract_domain::value::Value;
 
@@ -59,6 +61,25 @@ impl<N, A> Completion<N, A> {
     pub(super) fn has_no_normal_path(&self) -> bool {
         matches!(self, Self::UnknownThrow(_) | Self::Abrupt(_))
             || matches!(self, Self::Alternatives { normal: None, .. })
+    }
+
+    /// Whether a non-normal path is represented beside the normal one.
+    pub(super) fn may_be_abrupt(&self) -> bool {
+        match self {
+            Self::Normal(_) => false,
+            Self::UnknownThrow(_) | Self::Abrupt(_) | Self::OpaqueMayNormal(_) => true,
+            Self::Alternatives {
+                abrupt, non_normal, ..
+            } => !abrupt.is_empty() || *non_normal != NonNormalPossibilities::default(),
+        }
+    }
+
+    pub(super) fn may_normal(&self) -> Option<&N> {
+        match self {
+            Self::Normal(value) | Self::OpaqueMayNormal(value) => Some(value),
+            Self::UnknownThrow(_) | Self::Abrupt(_) => None,
+            Self::Alternatives { normal, .. } => normal.as_ref(),
+        }
     }
 
     /// Expand compact completion states into normal, exact abrupt, and
@@ -166,6 +187,30 @@ impl<N, A> Completion<N, A> {
 impl Default for Completion<(), ()> {
     fn default() -> Self {
         Self::OpaqueMayNormal(())
+    }
+}
+
+/// The completion, effects and allocation judgment of one transfer.
+/// Allocation precision is orthogonal to completion: an abrupt path makes the
+/// judgment opaque, but a covered allocation never proves normal completion.
+#[derive(Clone)]
+pub(super) struct TransferLedger<N, A> {
+    pub(super) completion: Completion<N, A>,
+    pub(super) effects: EffectCoverageFragment,
+    pub(super) allocation: AllocationJudgment,
+}
+
+impl<N, A> TransferLedger<N, A> {
+    pub(super) fn new(
+        completion: Completion<N, A>,
+        effects: EffectCoverageFragment,
+        allocation: AllocationJudgment,
+    ) -> Self {
+        Self {
+            completion,
+            effects,
+            allocation,
+        }
     }
 }
 

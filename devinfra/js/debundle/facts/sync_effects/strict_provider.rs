@@ -1,12 +1,15 @@
 //! The allocation-only provider consumer of the shared value transfers.
 
-use super::super::allocation_transfer::{
-    self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
+use super::super::allocation_transfer::{self, AllocationJudgment, AllocationValue, LiteralHeap};
+use super::super::kernel::context::{
+    BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
+};
+use super::super::kernel::continuation::{self, LocalContinuation};
+use super::super::kernel::driver;
+use super::super::kernel::frame::{
+    LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
 };
 use super::super::local_operations::DeferredCallableCreation;
-use super::super::local_transfer::{
-    self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
-};
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
@@ -15,7 +18,6 @@ use super::super::value_model::{
 use super::super::world::object_surface::ObjectSurfaceStore;
 use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
-use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::integrity::Integrity;
@@ -27,7 +29,6 @@ use swc_ecma_ast::Id;
 
 struct ProviderContext<'a> {
     index: &'a ExecutionIndex,
-    scope: ProviderScopeId,
     bindings: Context,
     argument_values: Values,
     closure_captures: BTreeMap<u32, Values>,
@@ -42,44 +43,6 @@ struct ProviderContext<'a> {
     surface: ObjectSurfaceStore,
     arrays: OrdMap<u32, DenseArray>,
     revision: u64,
-}
-
-impl AllocationContext for ProviderContext<'_> {
-    fn source_covered(&self) -> bool {
-        true
-    }
-    fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
-        allocation_transfer::closed_binding(&self.bindings, binding, self.scope)
-    }
-    fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
-        allocation_transfer::transfer(self, expression)
-    }
-    fn literal_layout(&self, allocation: u32) -> LiteralLayout {
-        self.index.allocation_layout(allocation)
-    }
-    fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> super::super::value_model::LiteralPropertyKind {
-        self.index.literal_property_kind(allocation, position)
-    }
-    fn heap(&mut self) -> LiteralHeap<'_> {
-        LiteralHeap {
-            surface: &mut self.surface,
-            arrays: &mut self.arrays,
-            revision: &mut self.revision,
-            track_writable_prefix: false,
-        }
-    }
-    fn keyed_collection_new(
-        &mut self,
-        callee: &ValueExpr,
-        arguments: &[ValueExpr],
-        site: CallSite,
-    ) -> Option<AllocationValue> {
-        self.construct_empty_collection(callee, arguments, site)
-    }
 }
 
 impl ProviderContext<'_> {
@@ -141,24 +104,32 @@ impl OwnDataContext for ProviderContext<'_> {
     }
 }
 
-impl LocalContext for ProviderContext<'_> {
-    // These cells belong to the isolated fresh heap. The query declines any
-    // borrowed access or publication and separately traverses returned values
-    // for retention, so internal property accesses need no caller effect.
-    fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
-    fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
+impl HeapContext for ProviderContext<'_> {
+    fn index(&self) -> &ExecutionIndex {
+        self.index
+    }
+    fn heap(&mut self) -> LiteralHeap<'_> {
+        LiteralHeap {
+            surface: &mut self.surface,
+            arrays: &mut self.arrays,
+            revision: &mut self.revision,
+            track_writable_prefix: false,
+        }
+    }
     fn closure(
         &mut self,
         frame: &mut LocalFrame,
         creation: DeferredCallableCreation,
-    ) -> Option<LocalValueResult> {
+    ) -> Result<LocalValueResult, RemainderDisposition> {
         let callable = creation.callable();
         assert_eq!(
             self.index.callable_creation(callable),
             Some(creation),
             "canonical callable creation kind/home-object association"
         );
-        let body = self.index.callables.get(&callable)?;
+        let Some(body) = self.index.callables.get(&callable) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
         let parameters: BTreeSet<_> = body
             .params
             .iter()
@@ -188,7 +159,7 @@ impl LocalContext for ProviderContext<'_> {
                 || body.generator
                 || self.index.async_callables.contains(&callable))
         {
-            return None;
+            return Err(RemainderDisposition::NeedsSummary);
         }
         if unavailable_capture
             || ((self.class_mode || creation.home_object().is_none())
@@ -201,9 +172,12 @@ impl LocalContext for ProviderContext<'_> {
             // Method/accessor receivers are dynamic, not the constructor's
             // lexical receiver. Keep class-mode admission conservative.
             if creation.home_object().is_some() {
-                return None;
+                return Err(RemainderDisposition::NeedsSummary);
             }
-            captures.extend(frame.this_values.as_ref()?.iter().cloned());
+            let Some(this_values) = frame.this_values.as_ref() else {
+                return Err(RemainderDisposition::NeedsSummary);
+            };
+            captures.extend(this_values.iter().cloned());
         } else if body.implicit_capture && matches!(creation, DeferredCallableCreation::Arrow(_)) {
             self.unsupported_closures.insert(callable);
         }
@@ -214,7 +188,7 @@ impl LocalContext for ProviderContext<'_> {
             )));
         }
         self.closure_captures.insert(callable, captures);
-        Some(LocalValueResult {
+        Ok(LocalValueResult {
             allocation: AllocationValue {
                 values: Values::from([AbstractValue::Value(Value::Alloc(
                     Kind::Function,
@@ -227,78 +201,53 @@ impl LocalContext for ProviderContext<'_> {
             selection: None,
         })
     }
-    fn assign_capture(
+}
+
+impl BindingContext for ProviderContext<'_> {
+    fn read_binding(
         &mut self,
-        _frame: &mut LocalFrame,
-        _binding: &Id,
-        _values: &Values,
-        _span: Span,
-    ) -> Option<AllocationValue> {
-        None
-    }
-    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
+        binding: &Id,
+        frame: &mut LocalFrame,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
         // The frame starts with scoped arguments and checked private var
         // captures. Other entries come from the covered local operations.
-        Some(LocalValueResult {
+        let Some(values) = frame.environment.get(binding) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        Ok(LocalValueResult {
             allocation: AllocationValue {
-                values: frame.environment.get(binding)?.clone(),
+                values: values.clone(),
                 judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
             },
             effects: Default::default(),
             selection: None,
         })
     }
+    fn assign_capture(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _binding: &Id,
+        _values: &Values,
+        _span: Span,
+    ) -> Result<AllocationValue, RemainderDisposition> {
+        // A captured store publishes outside the query's fresh heap.
+        Err(RemainderDisposition::NeedsSummary)
+    }
+}
+
+impl CallContext for ProviderContext<'_> {
     fn call(
         &mut self,
         _frame: &mut LocalFrame,
-        _callee: &EvaluatedCallee,
-        _arguments: &[local_transfer::SelectedValue],
-        _span: Span,
-    ) -> Option<LocalValueResult> {
+        _request: &LocalCallRequest,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
         // An allocation-only query has no invocation certificate. Forwarding
         // a symbolic callable does not prove its execution or result shape.
-        None
+        Err(RemainderDisposition::NeedsSummary)
     }
-    fn literal_layout(&self, allocation: u32) -> LiteralLayout {
-        self.index.allocation_layout(allocation)
-    }
-    fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> super::super::value_model::LiteralPropertyKind {
-        self.index.literal_property_kind(allocation, position)
-    }
-    fn heap(&mut self) -> LiteralHeap<'_> {
-        AllocationContext::heap(self)
-    }
-    fn unproved_field_read(
-        &mut self,
-        _frame: &mut LocalFrame,
-        _receiver: &Id,
-        _receivers: &Values,
-        _property: &str,
-        _span: Span,
-        _refusal: OrderedFieldReadRefusal,
-    ) -> Option<AllocationValue> {
-        // Symbolic inputs and captures prove no descriptor or getter behavior.
-        // Only the shared fresh own-data transfer can certify a field read.
-        None
-    }
-    fn unproved_field_write(
-        &mut self,
-        _frame: &mut LocalFrame,
-        _receivers: &Values,
-        _values: &Values,
-        _span: Span,
-    ) {
-        // The shared kernel returns None; there is no application state to
-        // publish into, and this query cannot certify the body.
-    }
-    fn publish_throw(&mut self, _values: &Values) {
-        // The shared abrupt result makes the allocation judgment opaque.
-    }
+}
 
+impl NativeContext for ProviderContext<'_> {
     fn keyed_collection_new(
         &mut self,
         _frame: &mut LocalFrame,
@@ -308,6 +257,23 @@ impl LocalContext for ProviderContext<'_> {
     ) -> Option<AllocationValue> {
         self.construct_empty_collection(callee, arguments, site)
     }
+}
+
+impl ControlContext for ProviderContext<'_> {
+    fn unproved(&mut self, _frame: &mut LocalFrame, _what: Unproved<'_>) -> Disposition {
+        // Symbolic inputs and captures prove no descriptor, getter or coercion
+        // behavior. Only the shared transfers can certify an operation, and
+        // there is no application state to summarize into.
+        Disposition::Refused
+    }
+    fn publish_throw(&mut self, _values: &Values) {
+        // The shared abrupt result makes the allocation judgment opaque.
+    }
+    // These cells belong to the isolated fresh heap. The query declines any
+    // borrowed access or publication and separately traverses returned values
+    // for retention, so internal property accesses need no caller effect.
+    fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
+    fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
 }
 
 struct ClosureCaptureProjection {
@@ -517,7 +483,6 @@ pub(super) fn derive(
     }
     let mut context = ProviderContext {
         index,
-        scope,
         bindings,
         argument_values,
         closure_captures: BTreeMap::new(),
@@ -543,17 +508,22 @@ pub(super) fn derive(
         arrays: OrdMap::new(),
         revision: 0,
     };
+    let frame = LocalFrame::new(std::mem::take(&mut context.bindings));
     let result = if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
         && !closure_mode
     {
-        allocation_transfer::transfer(&mut context, expression)?
+        let mut frame = frame;
+        continuation::value_of(&mut context, &mut frame, expression).ok()?
     } else {
-        let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
-        let judgment = local_transfer::execute(&mut context, local_body?, &mut frame)?.allocation;
+        let (frame, attempt) =
+            driver::drive(&mut context, local_body?, LocalContinuation::new(frame));
+        let LocalExecutionAttempt::Completed(result) = attempt else {
+            return None;
+        };
         context.final_environment = Some(frame.environment.clone());
         AllocationValue {
-            values: frame.returns,
-            judgment,
+            values: frame.returns(),
+            judgment: result.ledger.allocation,
         }
     };
     let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
@@ -674,7 +644,6 @@ pub(super) fn derive_class(
     }
     let mut context = ProviderContext {
         index,
-        scope,
         bindings,
         argument_values,
         closure_captures: BTreeMap::new(),
@@ -695,15 +664,18 @@ pub(super) fn derive_class(
         Kind::Object,
         class,
     ))]));
-    let judgment = local_transfer::execute(&mut context, body, &mut frame)?.allocation;
+    let (frame, attempt) = driver::drive(&mut context, body, LocalContinuation::new(frame));
+    let LocalExecutionAttempt::Completed(result) = attempt else {
+        return None;
+    };
     if !frame
-        .returns
+        .returns()
         .iter()
         .all(|value| matches!(value, AbstractValue::Value(Value::Prim(_))))
     {
         return None;
     }
-    let AllocationJudgment::CoveredAllocationOnly(dependencies) = judgment else {
+    let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.ledger.allocation else {
         return None;
     };
     let mut retained_arguments = BTreeSet::new();

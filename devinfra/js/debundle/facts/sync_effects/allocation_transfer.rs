@@ -5,8 +5,7 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
-    ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, DenseArray, LiteralPropertyKind, PropertyDefinition, ValueExpr, Values,
 };
 use super::world::object_surface::ObjectSurfaceStore;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
@@ -59,6 +58,11 @@ pub(super) enum LiteralLayout {
     Unsupported,
 }
 
+// CLEANUP(added 2026-11-09): remove this trait and the kernel's
+// `LocalValueContext` bridge once L2c moves the self-evaluating legacy
+// evaluator (`Executor::evaluate_transfer`, its last non-kernel implementor
+// through `ApplicationAllocationContext`) into `legacy/`; the kernel then
+// passes its frame to these transfers directly.
 pub(super) trait AllocationContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;
@@ -537,28 +541,58 @@ pub(super) fn transfer(
 
 /// Source-ordered composition retains every child's effects and possible
 /// abrupt completion even though only the final completing value survives.
+pub(super) struct SequenceTransfer {
+    values: Values,
+    may_throw: bool,
+    judgment: AllocationJudgment,
+}
+
+impl SequenceTransfer {
+    pub(super) fn new(judgment: AllocationJudgment) -> Self {
+        Self {
+            values: Values::from([AbstractValue::UNDEFINED]),
+            may_throw: false,
+            judgment,
+        }
+    }
+
+    /// Record the next child; false means no later child can run.
+    pub(super) fn child(&mut self, evaluated: AllocationValue) -> bool {
+        self.judgment.compose(&evaluated.judgment);
+        self.values = evaluated.values;
+        self.may_throw |= self
+            .values
+            .remove(&AbstractValue::Value(Value::Unavailable));
+        !self.values.is_empty()
+    }
+
+    pub(super) fn finish(self) -> AllocationValue {
+        let Self {
+            mut values,
+            may_throw,
+            mut judgment,
+        } = self;
+        if may_throw || values.is_empty() {
+            judgment = AllocationJudgment::Opaque;
+            values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        AllocationValue { values, judgment }
+    }
+}
+
 pub(super) fn sequence<'a, C, E: 'a>(
     context: &mut C,
     expressions: impl IntoIterator<Item = &'a E>,
-    mut judgment: AllocationJudgment,
+    judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    let mut values = Values::from([AbstractValue::UNDEFINED]);
-    let mut may_throw = false;
+    let mut transfer = SequenceTransfer::new(judgment);
     for expression in expressions {
-        let evaluated = child(context, expression)?;
-        judgment.compose(&evaluated.judgment);
-        values = evaluated.values;
-        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-        if values.is_empty() {
+        if !transfer.child(child(context, expression)?) {
             break;
         }
     }
-    if may_throw || values.is_empty() {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
-    }
-    Some(AllocationValue { values, judgment })
+    Some(transfer.finish())
 }
 
 /// Noncoercing primitive operations discard operand values, never their access
@@ -592,155 +626,248 @@ fn primitive_operation<'a>(
     Some(AllocationValue { values, judgment })
 }
 
+/// One record literal in progress. Children are recorded in source order;
+/// the heap entry exists only once every child completed normally.
+pub(super) struct RecordTransfer {
+    allocation: u32,
+    names: Vec<Option<String>>,
+    writable_properties: BTreeSet<String>,
+    evaluated: BTreeMap<Option<String>, Values>,
+    judgment: AllocationJudgment,
+    may_throw: bool,
+    can_complete: bool,
+}
+
+impl RecordTransfer {
+    /// Every position's canonical kind is checked before any child runs.
+    pub(super) fn begin<E>(
+        context: &mut impl AllocationContext,
+        allocation: u32,
+        properties: &[PropertyDefinition<E>],
+        judgment: AllocationJudgment,
+    ) -> Option<Self> {
+        context.unmodeled_effect_operation();
+        let mut writable_properties = BTreeSet::new();
+        let mut non_writable_properties = BTreeSet::new();
+        for definition in properties {
+            let property = definition.name().map(str::to_owned);
+            if let Some(property) = property {
+                match definition.kind() {
+                    LiteralPropertyKind::Data | LiteralPropertyKind::Method
+                        if !non_writable_properties.contains(&property) =>
+                    {
+                        writable_properties.insert(property);
+                    }
+                    _ => {
+                        writable_properties.remove(&property);
+                        non_writable_properties.insert(property);
+                    }
+                }
+            }
+        }
+        for (position, definition) in properties.iter().enumerate() {
+            let expected = context.literal_property_kind(allocation, position);
+            if expected != LiteralPropertyKind::Opaque && expected != definition.kind() {
+                return None;
+            }
+        }
+        context.heap().begin_literal(allocation);
+        Some(Self {
+            allocation,
+            names: properties
+                .iter()
+                .map(|definition| definition.name().map(str::to_owned))
+                .collect(),
+            writable_properties,
+            evaluated: BTreeMap::new(),
+            judgment,
+            may_throw: false,
+            can_complete: true,
+        })
+    }
+
+    pub(super) fn can_complete(&self) -> bool {
+        self.can_complete
+    }
+
+    pub(super) fn child(&mut self, position: usize, child: AllocationValue) {
+        self.judgment.compose(&child.judgment);
+        let mut values = child.values;
+        self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        self.can_complete &= !values.is_empty();
+        // This is descriptor payload containment. Its ordinary-data eligibility
+        // remains guarded by the canonical descriptor tag at every read.
+        self.evaluated
+            .entry(self.names.get(position).cloned().flatten())
+            .or_default()
+            .extend(values);
+    }
+
+    pub(super) fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
+        let Self {
+            allocation,
+            writable_properties,
+            evaluated,
+            mut judgment,
+            may_throw,
+            can_complete,
+            ..
+        } = self;
+        if can_complete {
+            let mut heap = context.heap();
+            heap.record(allocation, evaluated);
+            heap.complete_record(allocation, writable_properties);
+        }
+        let mut values = Values::new();
+        if can_complete {
+            values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
+        }
+        if may_throw || !can_complete {
+            judgment = AllocationJudgment::Opaque;
+            values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        AllocationValue { values, judgment }
+    }
+}
+
 /// Shared record evaluation, including the application's opaque-key fallback.
 pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
     properties: impl IntoIterator<Item = PropertyDefinition<&'a E>>,
-    mut judgment: AllocationJudgment,
+    judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    context.unmodeled_effect_operation();
     let properties: Vec<_> = properties.into_iter().collect();
-    let mut writable_properties = BTreeSet::new();
-    let mut non_writable_properties = BTreeSet::new();
-    for definition in &properties {
-        let property = definition.name().map(str::to_owned);
-        if let Some(property) = property {
-            match definition.kind() {
-                LiteralPropertyKind::Data | LiteralPropertyKind::Method
-                    if !non_writable_properties.contains(&property) =>
-                {
-                    writable_properties.insert(property);
-                }
-                _ => {
-                    writable_properties.remove(&property);
-                    non_writable_properties.insert(property);
-                }
-            }
-        }
-    }
-    context.heap().begin_literal(allocation);
-    let mut evaluated = BTreeMap::<Option<String>, Values>::new();
-    let mut may_throw = false;
-    let mut can_complete = true;
+    let mut transfer = RecordTransfer::begin(context, allocation, &properties, judgment)?;
     for (position, definition) in properties.iter().enumerate() {
-        let expected = context.literal_property_kind(allocation, position);
-        if expected != LiteralPropertyKind::Opaque && expected != definition.kind() {
-            return None;
-        }
-        let property = definition.name().map(str::to_owned);
-        if !can_complete {
+        if !transfer.can_complete() {
             break;
         }
         let child = child(context, *definition.value())?;
-        judgment.compose(&child.judgment);
-        let mut values = child.values;
-        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-        can_complete &= !values.is_empty();
-        // This is descriptor payload containment. Its ordinary-data eligibility
-        // remains guarded by the canonical descriptor tag at every read.
-        evaluated.entry(property).or_default().extend(values);
+        transfer.child(position, child);
     }
-    if can_complete {
-        let mut heap = context.heap();
-        heap.record(allocation, evaluated);
-        heap.complete_record(allocation, writable_properties);
+    Some(transfer.finish(context))
+}
+
+/// One no-spread array literal in progress. Holes are absent own properties,
+/// and never acquire a dense-array proof.
+pub(super) struct ArrayTransfer {
+    allocation: u32,
+    properties: BTreeMap<Option<String>, Values>,
+    dense: Vec<Values>,
+    index: usize,
+    has_hole: bool,
+    may_throw: bool,
+    can_complete: bool,
+    judgment: AllocationJudgment,
+}
+
+impl ArrayTransfer {
+    pub(super) fn begin(
+        context: &mut impl AllocationContext,
+        allocation: u32,
+        judgment: AllocationJudgment,
+    ) -> Self {
+        context.unmodeled_effect_operation();
+        context.heap().begin_literal(allocation);
+        Self {
+            allocation,
+            properties: BTreeMap::new(),
+            dense: Vec::new(),
+            index: 0,
+            has_hole: false,
+            may_throw: false,
+            can_complete: true,
+            judgment,
+        }
     }
-    let mut values = Values::new();
-    if can_complete {
-        values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
+
+    pub(super) fn can_complete(&self) -> bool {
+        self.can_complete
     }
-    if may_throw || !can_complete {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
+
+    pub(super) fn hole(&mut self) {
+        self.has_hole = true;
+        self.index += 1;
     }
-    Some(AllocationValue { values, judgment })
+
+    pub(super) fn child(&mut self, evaluated: AllocationValue) {
+        self.judgment.compose(&evaluated.judgment);
+        let mut values = evaluated.values;
+        self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        self.can_complete &= !values.is_empty();
+        self.properties
+            .entry(None)
+            .or_default()
+            .extend(values.iter().cloned());
+        self.properties
+            .insert(Some(self.index.to_string()), values.clone());
+        self.dense.push(values);
+        self.index += 1;
+    }
+
+    pub(super) fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
+        let Self {
+            allocation,
+            mut properties,
+            dense,
+            has_hole,
+            may_throw,
+            can_complete,
+            mut judgment,
+            ..
+        } = self;
+        if can_complete {
+            properties.entry(None).or_default();
+            properties.insert(
+                Some("length".into()),
+                Values::from([AbstractValue::PRIMITIVE]),
+            );
+            let mut heap = context.heap();
+            heap.record(allocation, properties);
+            if !has_hole {
+                // This ordered literal has no spread operands, so dense.len() is
+                // the exact ArrayCreate length for its first uninterrupted run.
+                heap.complete_array(allocation, dense.len());
+                heap.dense_array(allocation, dense);
+            } else {
+                heap.invalidate_writable(allocation);
+                heap.invalidate_dense_array(allocation);
+            }
+            context.array_created(allocation, has_hole);
+        }
+        let mut values = Values::new();
+        if can_complete {
+            values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
+        }
+        if may_throw || !can_complete {
+            judgment = AllocationJudgment::Opaque;
+            values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        AllocationValue { values, judgment }
+    }
 }
 
 /// No-spread array creation shares ordered child transfer with local execution.
-/// Holes are absent own properties, and never acquire a dense-array proof.
 pub(super) fn array<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
     elements: impl IntoIterator<Item = Option<&'a E>>,
-    mut judgment: AllocationJudgment,
+    judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    context.unmodeled_effect_operation();
-    context.heap().begin_literal(allocation);
-    let mut properties = BTreeMap::<Option<String>, Values>::new();
-    let mut dense = Vec::new();
-    let mut has_hole = false;
-    let mut may_throw = false;
-    let mut can_complete = true;
-    for (index, element) in elements.into_iter().enumerate() {
-        if !can_complete {
+    let mut transfer = ArrayTransfer::begin(context, allocation, judgment);
+    for element in elements {
+        if !transfer.can_complete() {
             break;
         }
-        let Some(element) = element else {
-            has_hole = true;
-            continue;
-        };
-        let evaluated = child(context, element)?;
-        judgment.compose(&evaluated.judgment);
-        let mut values = evaluated.values;
-        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-        can_complete &= !values.is_empty();
-        properties
-            .entry(None)
-            .or_default()
-            .extend(values.iter().cloned());
-        properties.insert(Some(index.to_string()), values.clone());
-        dense.push(values);
-    }
-    if can_complete {
-        properties.entry(None).or_default();
-        properties.insert(
-            Some("length".into()),
-            Values::from([AbstractValue::PRIMITIVE]),
-        );
-        let mut heap = context.heap();
-        heap.record(allocation, properties);
-        if !has_hole {
-            // This ordered literal has no spread operands, so dense.len() is
-            // the exact ArrayCreate length for its first uninterrupted run.
-            heap.complete_array(allocation, dense.len());
-            heap.dense_array(allocation, dense);
-        } else {
-            heap.invalidate_writable(allocation);
-            heap.invalidate_dense_array(allocation);
+        match element {
+            None => transfer.hole(),
+            Some(element) => transfer.child(child(context, element)?),
         }
-        context.array_created(allocation, has_hole);
     }
-    let mut values = Values::new();
-    if can_complete {
-        values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
-    }
-    if may_throw || !can_complete {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
-    }
-    Some(AllocationValue { values, judgment })
-}
-
-pub(super) fn closed_binding(
-    environment: &Context,
-    binding: &Id,
-    scope: ProviderScopeId,
-) -> Option<AllocationValue> {
-    let values = environment.get(binding)?;
-    if values.is_empty()
-        || !values.iter().all(
-            |value| matches!(value, AbstractValue::SymbolicInput(input) if input.scope == scope),
-        )
-    {
-        return None;
-    }
-    Some(AllocationValue {
-        values: values.clone(),
-        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-    })
+    Some(transfer.finish(context))
 }
 
 #[cfg(test)]
