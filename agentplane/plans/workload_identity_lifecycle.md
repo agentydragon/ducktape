@@ -83,18 +83,30 @@ Agentplane URI and client auth, requested in any namespace, passes TLS, and the 
 only check left. Every alternative needs verifiers to stop trusting the cluster root, so this step
 does not wait for the decision.
 
-- **Issuer.** A dedicated Agentplane workload CA, not chained to the cluster root, made of three
-  cert-manager objects. A self-signed ClusterIssuer bootstraps a CA `Certificate` (`isCA: true`)
-  in cert-manager's namespace. The `agentplane-workload` ClusterIssuer, of type `ca:`, signs with
-  that Certificate's Secret. A trust-manager `Bundle` publishes the CA certificate. It replaces the namespaced `agentplane-runner-ca` Issuer. A
-  namespaced Issuer would do for Sandboxes alone, but standing workloads in `haku-sandbox` need a
-  cross-namespace issuer. Putting a CA key in `haku-sandbox` would let any Pod Haku authors mount
-  it. Choosing the ClusterIssuer now avoids a second `issuerRef` move. The Sandbox Controller's
-  `runner_certificate_issuer` setting gains the issuer kind, which is a constant `Issuer` today.
-- **Trust.** That `Bundle` carries the workload CA alone. It becomes the client-trust file of every
-  SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
+- **Issuer.** A dedicated Agentplane workload CA, an intermediate under the cluster root, made of
+  three cert-manager objects:
+  - a CA `Certificate` (`isCA: true`, key rotation policy `Never`) in cert-manager's namespace,
+    issued by the existing `cluster-internal-ca` ClusterIssuer;
+  - the `agentplane-workload` ClusterIssuer, of type `ca:`, which signs with that Certificate's
+    Secret;
+  - a trust-manager `Bundle` that publishes the intermediate's certificate. cert-manager writes
+    the intermediate's `tls.crt` without the root.
+
+  It is an intermediate, not a separate root, so clients that verify servers with the cluster
+  bundle keep working: probes, `client_tls`, runners and the Gateway. It replaces the namespaced
+  `agentplane-runner-ca` Issuer. A namespaced Issuer would do for Sandboxes alone, but standing
+  workloads in `haku-sandbox` need a cross-namespace issuer. Putting a CA key in `haku-sandbox`
+  would let any Pod Haku authors mount it. Choosing the ClusterIssuer now avoids a second
+  `issuerRef` move. The Sandbox Controller's `runner_certificate_issuer` setting gains the issuer
+  kind, which is a constant `Issuer` today.
+
+- **Trust.** That `Bundle` carries the intermediate alone. It becomes the client-trust file of
+  every SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
   (`cluster/cdk8s/agentplane/egress.py`), and the services' listeners, which take their CA file from
-  `workload_tls.TRUST_BUNDLE_FILE` today. Clients verifying service SVIDs may keep the cluster bundle.
+  `workload_tls.TRUST_BUNDLE_FILE` today. A leaf signed directly by the cluster root is still
+  refused. Clients verifying service SVIDs keep the cluster bundle. Three client-certificate
+  verifiers still trust the cluster root after step 1: the runner control listener, the Gateway's
+  `runner_security`, and the egress sidecar. They are tracked as `WORKLOAD_CA_CLIENT_TRUST`.
 - **Who may request.** A `ValidatingAdmissionPolicy` pairs each requester with the URIs it may put
   in a Certificate that references the workload issuer. CEL compares `request.userInfo` with
   `spec.issuerRef` and each `spec.uris` entry. Until the component exists, the Sandbox Controller
