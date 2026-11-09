@@ -149,7 +149,9 @@ func establishHTTPExpiryConnection(
 	var clientTLS *tls.Config
 	var err error
 	if bearerOnly {
-		clientTLS, err = (environment_runtime_transport.Config{CAFile: ca.RootFile}).ProxyServerTLSConfig()
+		clientTLS, err = (environment_runtime_transport.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: localURI,
+		}).TLSConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
