@@ -8,7 +8,7 @@ import {
 } from "../../../action_service/web_push_service_pb";
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
-import { displayableError, fetchJson } from "../client";
+import { displayableError, fetchJson, HttpError } from "../client";
 import { type StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 
@@ -17,6 +17,18 @@ const PUSH_PATH = "/upstream/actions/v1/operator/push";
 function keyBytes(value: string): Uint8Array {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
+/** `fetchJson`, with a refused answer naming the request it answers: the page shows several. */
+async function pushJson(path: string, init?: RequestInit): Promise<JsonValue> {
+  try {
+    return await fetchJson(path, init);
+  } catch (error) {
+    if (!(error instanceof HttpError)) throw error;
+    throw new Error(`${init?.method ?? "GET"} ${new URL(path, window.location.href).pathname}: ${error.message}`, {
+      cause: error,
+    });
+  }
 }
 
 export function PushSettings(): JSX.Element {
@@ -67,8 +79,8 @@ export function PushSettings(): JSX.Element {
     setLoading(true);
     try {
       const [config, registered] = await Promise.all([
-        fetchJson(`${PUSH_PATH}/config`).then((value) => fromJson(GetPushConfigResponseSchema, value)),
-        fetchJson(`${PUSH_PATH}/subscriptions`).then((value) => fromJson(ListPushSubscriptionsResponseSchema, value)),
+        pushJson(`${PUSH_PATH}/config`).then((value) => fromJson(GetPushConfigResponseSchema, value)),
+        pushJson(`${PUSH_PATH}/subscriptions`).then((value) => fromJson(ListPushSubscriptionsResponseSchema, value)),
       ]);
       setKey(config.applicationServerKey ?? null);
       setDevices(registered.pushSubscriptions);
@@ -111,7 +123,7 @@ export function PushSettings(): JSX.Element {
       const body = subscription.toJSON();
       if (!body.endpoint || !body.keys?.p256dh || !body.keys.auth)
         throw new Error("Browser returned an incomplete push subscription.");
-      await fetchJson(`${PUSH_PATH}/subscriptions`, {
+      await pushJson(`${PUSH_PATH}/subscriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -136,7 +148,7 @@ export function PushSettings(): JSX.Element {
   async function forget(endpoint: string): Promise<void> {
     setBusy(true);
     try {
-      await fetchJson(`${PUSH_PATH}/subscriptions?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" });
+      await pushJson(`${PUSH_PATH}/subscriptions?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" });
       if (endpoint === current) {
         const registration = await navigator.serviceWorker.getRegistration("/sw.js");
         await (await registration?.pushManager.getSubscription())?.unsubscribe();
