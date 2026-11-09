@@ -234,7 +234,9 @@ record, and the record names the subject.
    record owned by a Sandbox or a Pod also needs `status.acceptedBinding`.
 6. `spec.subject` is the subject. Until `IDENTITY_CUTOVER` it is a ServiceAccount, whose UID the
    resolver reads. After that it is an `Identity` name and UID, which the shared policy reader must
-   find live with that UID.
+   find live with that UID. `spec.subject.identity` names an `Identity` in the policy namespace,
+   not in the record's own namespace, and the resolver reads it there. This matters for
+   `haku-sandbox` records.
 7. The caller may also offer a Pod-bound token: the Kubernetes-audience token a sidecar forwards
    for `projectedWorkloadToken`. Its TokenReview Pod UID must then equal `status.acceptedBinding`.
 
@@ -281,15 +283,18 @@ replaces the identity plan's assumption that verifiers read `spec.identity` from
 
 **Authorization is coarse (operator, 2026-11-09).** RBAC grants `create`, `update` and `delete` on
 `workloadcredentials` to exactly three accounts: the Sandbox Controller, the Action Service and
-Flux's applier. Each may name any subject in the namespace. So each of those accounts can make a
+Flux's applier. Each may name any subject: a ServiceAccount in the record's namespace until the cutover, and
+after it any `Identity` in the policy namespace. So each of those accounts can make a
 workload act as any identity in its namespace. The real gates stay upstream:
 
 - for a Sandbox, who may set `Sandbox.spec.identity`;
 - for a box, the caller the Action Service authenticated;
 - for a standing workload, git.
 
-Haku cannot author a record. The `haku-state` Kustomization impersonates `haku-state-reconciler`,
-which holds no right on `WorkloadCredential`s. A narrower requester can be added later without
+Two facts support the coarse gate. Flux's kustomize-controller already holds `*`, so a narrower
+grant to Flux would record intent but not enforce it. Haku cannot author a record, because the
+`haku-state` Kustomization impersonates `haku-state-reconciler`, which holds no right on
+`WorkloadCredential`s. A narrower requester can be added later without
 changing anything here: a `ValidatingAdmissionPolicy` calling the CEL `authorizer` for a custom
 `use` verb on the named identity.
 
