@@ -7,8 +7,7 @@ use std::collections::BTreeSet;
 
 use roaring::RoaringBitmap;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
-    STMT_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
+    CASE_REST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, anything_hole_name, hole_name_for,
 };
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -331,8 +330,7 @@ fn expr_hole_name(expr: &Expr) -> Option<&str> {
     let Expr::Ident(ident) = expr else {
         return None;
     };
-    let name = ident.sym.as_ref();
-    hole_name_for(name, EXPR_HOLE_KEYWORD).or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
+    source_match_holes::expr_hole_name(ident.sym.as_ref())
 }
 
 fn stmt_hole_name(stmt: &Stmt) -> Option<&str> {
@@ -342,17 +340,14 @@ fn stmt_hole_name(stmt: &Stmt) -> Option<&str> {
     let Expr::Ident(ident) = expr.expr.as_ref() else {
         return None;
     };
-    let name = ident.sym.as_ref();
-    hole_name_for(name, STMT_HOLE_KEYWORD).or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
+    source_match_holes::stmt_hole_name(ident.sym.as_ref())
 }
 
 fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
     let Pat::Ident(ident) = &declarator.name else {
         return None;
     };
-    let name = ident.id.sym.as_ref();
-    labeled_hole_name_for(name, DECLARATORS_HOLE_KEYWORD)
-        .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
+    source_match_holes::declarator_list_hole_name(ident.id.sym.as_ref())
 }
 
 fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
@@ -360,7 +355,7 @@ fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
         return None;
     };
     match prop.as_ref() {
-        Prop::Shorthand(ident) => hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD),
+        Prop::Shorthand(ident) => anything_hole_name(ident.sym.as_ref()),
         _ => None,
     }
 }
@@ -375,7 +370,7 @@ fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
     let PropName::Ident(ident) = &prop.key else {
         return None;
     };
-    hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD)
+    anything_hole_name(ident.sym.as_ref())
 }
 
 fn case_rest_hole_name(case: &SwitchCase) -> Option<&str> {
@@ -385,7 +380,7 @@ fn case_rest_hole_name(case: &SwitchCase) -> Option<&str> {
     let Some(Expr::Ident(ident)) = case.test.as_deref() else {
         return None;
     };
-    labeled_hole_name_for(ident.sym.as_ref(), CASE_REST_HOLE_KEYWORD)
+    hole_name_for(ident.sym.as_ref(), CASE_REST_HOLE_KEYWORD)
 }
 
 fn string_literal_regex_pattern_call(call: &CallExpr) -> bool {
@@ -408,9 +403,7 @@ fn callee_label(callee: &Callee) -> Option<String> {
 
 fn expr_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Ident(ident)
-            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
-        {
+        Expr::Ident(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
             Some(ident.sym.to_string())
         }
         Expr::Member(member) => {
@@ -435,15 +428,11 @@ fn object_key_label(prop: &PropOrSpread) -> Option<String> {
         return None;
     };
     match prop.as_ref() {
-        Prop::Shorthand(ident)
-            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
-        {
+        Prop::Shorthand(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
             Some(ident.sym.to_string())
         }
         Prop::KeyValue(prop) => prop_name_label(&prop.key),
-        Prop::Assign(prop)
-            if hole_name_for(prop.key.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
-        {
+        Prop::Assign(prop) if anything_hole_name(prop.key.sym.as_ref()).is_none() => {
             Some(prop.key.sym.to_string())
         }
         Prop::Getter(prop) => prop_name_label(&prop.key),
@@ -460,7 +449,7 @@ fn object_pat_key_label(prop: &ObjectPatProp) -> Option<String> {
     match prop {
         ObjectPatProp::KeyValue(kv) => prop_name_label(&kv.key),
         ObjectPatProp::Assign(assign)
-            if hole_name_for(assign.key.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+            if anything_hole_name(assign.key.id.sym.as_ref()).is_none() =>
         {
             Some(assign.key.id.sym.to_string())
         }
@@ -484,9 +473,7 @@ fn class_member_label(member: &ClassMember) -> Option<String> {
 
 fn prop_name_label(name: &PropName) -> Option<String> {
     match name {
-        PropName::Ident(ident)
-            if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
-        {
+        PropName::Ident(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
             Some(ident.sym.to_string())
         }
         PropName::Ident(_) => None,
