@@ -55,4 +55,4 @@ runs:
         attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
         # finish-attic-upload pushes whatever was added after this snapshot.
         nix path-info --all | LC_ALL=C sort > "$RUNNER_TEMP/attic-store-paths-before"
-        nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
+        nohup attic watch-store --jobs 1 ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &

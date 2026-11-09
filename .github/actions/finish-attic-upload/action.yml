@@ -25,5 +25,5 @@ runs:
         nix path-info --all | LC_ALL=C sort | LC_ALL=C comm -13 "$before" - > "$RUNNER_TEMP/attic-new-paths"
         echo "$(wc -l < "$RUNNER_TEMP/attic-new-paths") store paths added since setup"
         if [[ -s "$RUNNER_TEMP/attic-new-paths" ]]; then
-          attic push --stdin ducktape:main < "$RUNNER_TEMP/attic-new-paths"
+          attic push --jobs 1 --stdin ducktape:main < "$RUNNER_TEMP/attic-new-paths"
         fi
