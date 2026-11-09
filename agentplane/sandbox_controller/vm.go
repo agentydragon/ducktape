@@ -14,6 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+// KubeVirt maps Filesystem.Name to QEMU's virtiofs tag, which is limited to 36 UTF-8 bytes.
+const maxVirtiofsTagBytes = 36
+
 // vm is the Sandbox's VirtualMachine, or nil; a same-name VM it does not control is not its.
 func (r *Reconciler) vm(ctx context.Context, sandbox *sandboxapi.Sandbox) (*kubevirtv1.VirtualMachine, error) {
 	var vm kubevirtv1.VirtualMachine
@@ -59,6 +62,25 @@ func (r *Reconciler) launcher(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 
 func vmRunning(vm *kubevirtv1.VirtualMachine) bool {
 	return vm != nil && vm.Spec.RunStrategy != nil && *vm.Spec.RunStrategy == kubevirtv1.RunStrategyAlways
+}
+
+func invalidVirtiofsTag(template string, filesystems []kubevirtv1.Filesystem) *unready {
+	for _, filesystem := range filesystems {
+		if filesystem.Virtiofs == nil {
+			continue
+		}
+		// Go string length is the UTF-8 byte length passed through to QEMU.
+		if tagBytes := len(filesystem.Name); tagBytes > maxVirtiofsTagBytes {
+			return &unready{
+				reason: "TemplateInvalid",
+				message: fmt.Sprintf(
+					"SandboxTemplate %s defines virtiofs tag %q with %d UTF-8 bytes; QEMU allows at most %d",
+					template, filesystem.Name, tagBytes, maxVirtiofsTagBytes,
+				),
+			}
+		}
+	}
+	return nil
 }
 
 // haltVM stops the VM and keeps it, with its disks.
@@ -163,6 +185,9 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: volume, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 	})
+	if blocked := invalidVirtiofsTag(template.Name, instance.Domain.Devices.Filesystems); blocked != nil {
+		return nil, blocked
+	}
 	// The VMI and its virt-launcher Pod carry the Sandbox label too.
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
 	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credentialID

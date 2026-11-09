@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -217,6 +218,21 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	for _, filesystem := range filesystems {
 		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
 	}
+	for _, tag := range []string{
+		contract.State.VolumeName,
+		contract.EnvironmentRuntimeTLS.VolumeName,
+		contract.EnvironmentRuntimeTrust.VolumeName,
+		contract.EnvironmentRuntimeWorkloadTrust.VolumeName,
+	} {
+		if got := len([]byte(tag)); got > maxVirtiofsTagBytes {
+			t.Errorf("contract virtiofs tag %q is %d bytes, QEMU allows at most %d", tag, got, maxVirtiofsTagBytes)
+		}
+	}
+	for _, filesystem := range filesystems {
+		if got := len([]byte(filesystem.Name)); got > maxVirtiofsTagBytes {
+			t.Errorf("emitted virtiofs tag %q is %d bytes, QEMU allows at most %d", filesystem.Name, got, maxVirtiofsTagBytes)
+		}
+	}
 	if len(filesystems) != 4 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeWorkloadTrust.VolumeName] {
 		t.Errorf("VM filesystems = %v, want state and runner TLS/trust/workload trust volumes over virtiofs", filesystems)
 	}
@@ -252,6 +268,20 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	}
 	if reason := runningReason(t, c); reason != "Starting" {
 		t.Errorf("Running reason = %s, want Starting", reason)
+	}
+}
+
+func TestRenderVMRejectsVirtiofsTagsOverQEMULimit(t *testing.T) {
+	template := testVMTemplate("test-guest:v1")
+	template.Spec.StateVolume.Name = strings.Repeat("s", maxVirtiofsTagBytes-1) + "é"
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName}}
+
+	vm, blocked := renderVM(sandbox, template, "test-credential")
+	if vm != nil {
+		t.Fatal("rendered a VM with an overlength virtiofs tag")
+	}
+	if blocked == nil || blocked.reason != "TemplateInvalid" || !strings.Contains(blocked.message, "37 UTF-8 bytes") {
+		t.Fatalf("blocked = %v, want TemplateInvalid for a 37-byte QEMU virtiofs tag", blocked)
 	}
 }
 
