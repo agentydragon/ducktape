@@ -214,6 +214,18 @@ persistent regression means the structure, not a budget knob, is wrong.
 - L2d. `execution_index.rs` stops nesting the interpreter; provider program
   registry (`execution_index/provider_program.rs`). needs L2a.
 
+**IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
+reference's (no regions, `if`/`try`/`catch` bindings, array or argument spread,
+optional calls, conditional and logical operators, class definitions, or
+`Function.prototype.call`/`apply`). Several kernel rules in <kernel_design.md>
+(regions, catch cells, `IterateSpread`, forks) have nothing to apply to until
+the construct is lowered. Each construct family lands as its own slice inside
+Wave 3, ordered with the coverage producer that needs it: lowering in
+`local_operations.rs`, the kernel rule, the e2e positive with Node parity, and
+the deletion of whatever recognizer or flat-lane gate the construct retires.
+`Fork`/`ForkPolicy` appear with the first construct that produces a fork (the
+conditional/logical slice), not before.
+
 **Wave 3: coverage producers.** Each one capability, each deleting its
 recognizer, each with a positive relocation, its opposing controls and the
 legacy/effect oracle. Ordering input: the 51 failing test targets at the
