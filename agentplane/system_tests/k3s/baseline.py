@@ -326,6 +326,8 @@ class K3s:
                 and not image.get("repoDigests")
                 and not image.get("pinned")
                 and image["id"] not in in_use
+                # An import exposes its ID before its tag, and CRI RemoveImage by ID deletes every
+                # reference: pruning a just-imported fixture ID once removed its tag mid-publication.
                 and image["id"] not in self._fixture_image_ids
             }
 

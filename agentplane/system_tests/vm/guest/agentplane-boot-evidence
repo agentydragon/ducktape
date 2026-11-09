@@ -38,6 +38,8 @@ run_required /usr/bin/udevadm info --query=property --name=/dev/disk/by-id/virti
 run_required /usr/bin/lsblk --nodeps --output NAME,MAJ:MIN,TYPE,SIZE,MODEL,SERIAL
 receipt AGENTPLANE_BOOT_EVIDENCE_DEVICE_END
 receipt AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_BEGIN
+# Required queries are batched and share the unit's runtime limit: separate two-second timeouts
+# per unit query exited 143 under emulated-guest load and left partial reports.
 run_required /usr/bin/busybox cat /etc/fstab
 properties=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants
 run_required /usr/bin/systemctl --no-pager show \

@@ -912,6 +912,8 @@ http_archive(
 
 # The Debian trixie stable-security cloud kernel of the k3s fixture's VM test guest
 # (agentplane/system_tests/vm/guest), which builds virtio-pci, virtiofs and ext4 in.
+# Stay at or above 6.12.115: 6.12.63 OOPSed at boot in `submit_bio_noacct` (ext4lazyinit), matching
+# the blk-throttle activation race of CVE-2025-40147.
 http_file(
     name = "vm_guest_kernel_deb",
     downloaded_file_path = "linux-image-cloud-amd64.deb",
