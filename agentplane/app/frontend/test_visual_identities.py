@@ -43,10 +43,27 @@ async def test_referenced_identity_cannot_be_deleted(view: VisualPage, app: Agen
     await _open_identity(view, app, "referenced-identity")
     delete = view.page.get_by_role("region", name="Delete identity")
     await expect(delete.get_by_role("button", name="Delete identity")).to_be_disabled()
-    await expect(delete.get_by_role("list", name="Bindings referencing this identity")).to_have_text(
+    await expect(delete.get_by_role("list", name="References to this identity")).to_have_text(
         "PolicyBinding referenced-identity-operator-grant"
     )
     await view.check(context="referenced identity's delete is refused")
+    await view.capture(target=view.page.locator("#app"))
+
+
+async def test_credential_referenced_identity_delete_is_refused(view: VisualPage, app: AgentplaneFixture) -> None:
+    # The page sees no referencing binding; only the Policy Controller sees the WorkloadCredential.
+    await _open_identity(view, app, "credential-referenced-identity")
+    await view.page.get_by_role("button", name="Delete identity").click()
+    await (
+        view.page.get_by_role("dialog", name="Delete credential-referenced-identity?")
+        .get_by_role("button", name="Delete", exact=True)
+        .click()
+    )
+    refusal = view.page.get_by_role("alert").filter(has_text="The Policy Controller refused the delete")
+    await expect(refusal.get_by_role("list", name="References to this identity")).to_have_text(
+        "WorkloadCredential agentplane-visual/standing-agent"
+    )
+    await view.check(context="the Policy Controller's credential refusal is shown")
     await view.capture(target=view.page.locator("#app"))
 
 

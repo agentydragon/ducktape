@@ -62,7 +62,7 @@ function deleteButton(): HTMLButtonElement {
   return found;
 }
 function referencing(): string[] {
-  return [...container.querySelectorAll("[aria-label='Bindings referencing this identity'] li")].map(
+  return [...container.querySelectorAll("[aria-label='References to this identity'] li")].map(
     (item) => item.textContent ?? ""
   );
 }
@@ -102,12 +102,21 @@ it("keeps a git-origin identity read-only", async () => {
   expect(deleteButton().disabled).toBe(true);
 });
 
-it("names the bindings the Policy Controller cites when it refuses a delete the view allowed", async () => {
-  mocks.remove.mockResolvedValue({ case: "referenced", bindings: ["created-meanwhile"] });
+it("names what the Policy Controller cites when it refuses a delete the view allowed", async () => {
+  mocks.remove.mockResolvedValue({
+    case: "referenced",
+    references: [
+      { kind: "PolicyBinding", name: "created-meanwhile" },
+      { kind: "WorkloadCredential", name: "fake-workloads/standing-agent" },
+    ],
+  });
   await render(identity("unreferenced-identity"));
   await act(async () => deleteButton().click());
   const confirm = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
   await act(async () => confirm!.click());
   expect(onDeleted).not.toHaveBeenCalled();
-  expect(referencing()).toEqual(["PolicyBinding created-meanwhile"]);
+  expect(referencing()).toEqual([
+    "PolicyBinding created-meanwhile",
+    "WorkloadCredential fake-workloads/standing-agent",
+  ]);
 });
