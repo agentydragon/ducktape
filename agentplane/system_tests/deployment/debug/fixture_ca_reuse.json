@@ -22,6 +22,49 @@
         "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
       }
     },
-    "repair": "pending"
+    "repair": {
+      "invocation": "84b1a207-dcb2-4adc-8061-8fd3c73628b7",
+      "effective_local_commit": "f087a487f781497c3c4542330960ce3102ff63d2",
+      "remote_base_before_worktree_patch": "7e9edc9270bef882b5f92549ffde6bec7789db29",
+      "result": "PASSED: two coherent issuance/cleanup cycles; root and intermediate Certificate UIDs changed; retained controller Deployment UIDs unchanged",
+      "action_seconds": 90.967,
+      "pytest_seconds": 79.29,
+      "start_utc": "2026-11-09T18:21:03.736Z",
+      "end_utc": "2026-11-09T18:22:34.703Z",
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/86b0df8b26362781300bd6226eca5f382016c3ddeaaa267212e58ad355b1fb47/2984",
+      "public_lifecycle_uri": "bytestream://remote.buildbuddy.io/blobs/2d6293296addb0af484dee5769fac493b627ad96aaa59d14702460007bdd4c90/440",
+      "cycles": [
+        {
+          "cycle": 0,
+          "certificate_uids": {
+            "test-runner-root": "f6650abd-dd9c-4115-bfff-b558ce8d19df",
+            "agentplane-workload-ca": "2a7d30dc-0a22-4016-8591-df397378a9d2"
+          },
+          "chain_valid": true
+        },
+        {
+          "cycle": 1,
+          "certificate_uids": {
+            "test-runner-root": "d40ca4b9-4d8b-4cfd-9145-4adfeee11b4e",
+            "agentplane-workload-ca": "e8ad28c7-4832-4d00-9098-abf5802e7cee"
+          },
+          "chain_valid": true
+        }
+      ],
+      "source_file_sha256": {
+        "agentplane/system_tests/deployment/stack.py": "ce75cb55e5e2657508a010733bada0ef4b2fa2311eff5dc2d0f4c19e3bf4cd06",
+        "agentplane/system_tests/deployment/certificates.py": "d620fff3a05fa25b1b1c64bce0c4309eb7962973092d14a3d8660c29dfc21037",
+        "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
+      },
+      "timing_limit": "Correctness comparison, not a latency treatment: cold-start/cache conditions differed from the control."
+    },
+    "focused_tests": {
+      "invocation": "357bdbd5-0043-4a52-84fc-f6cfa627da11",
+      "result": "PASSED: test_certificates and test_stack"
+    },
+    "named_library_build": {
+      "invocation": "45073596-e20c-4c45-ae23-72d409eb3aa6",
+      "result": "SUCCESS in authoritative invocation; wrapper later failed downloading CAS result"
+    }
   }
 }

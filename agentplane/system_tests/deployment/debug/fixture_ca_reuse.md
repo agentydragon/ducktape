@@ -40,4 +40,18 @@ derived fixture CA objects without application workloads.
 This is separate from the original early-kernel VM console stop. A coherent PKI
 bootstrap does not identify that stall's cause.
 
-Validation results are recorded below after the controlled runs complete.
+The [uncached control](https://app.buildbuddy.io/invocation/b232674e-e454-4d58-b798-50592d74348e)
+passed its first issuance and cleanup, then failed with `InvalidSignature` on the
+second issuance. With the cleanup repair, the [same uncached test](https://app.buildbuddy.io/invocation/84b1a207-dcb2-4adc-8061-8fd3c73628b7)
+passed both cycles: root and intermediate Certificate UIDs changed, chains
+verified, cleanup completed twice, and retained controller Deployment UIDs stayed
+unchanged. The native public lifecycle artifact, source hashes and clocks are in
+[`fixture_ca_reuse.json`](fixture_ca_reuse.json). Control and repair action times
+were 214.999 and 90.967 seconds; differing cold-start/cache conditions prevent a
+latency treatment claim.
+
+Focused cleanup/stack tests and named-library builds passed. Hosted full-suite
+validation is tracked by [PR #15193](https://github.com/agentydragon/ducktape/pull/15193).
+No fresh guest-boot result or cause for the original early-kernel stop is claimed.
+The cleanup helper now participates in the baseline fingerprint, so the first
+attachment also rejects old snapshots certified by the incomplete cleanup.
