@@ -514,6 +514,51 @@ def retry_rmtree_after_permission_error(function: Callable[..., object], path: s
     function(path)
 
 
+def delete_prunable_base(
+    candidate: PrunableBase,
+    *,
+    uid: int | None = None,
+    proc_root: Path = Path("/proc"),
+    mountinfo_path: Path = Path("/proc/self/mountinfo"),
+) -> DeletionResult:
+    """Revalidate `candidate` under its Bazel lock, quarantine it, then remove the quarantine.
+
+    Independent of every other base (each has its own lock file), so callers may run several at
+    once.
+    """
+    uid = os.getuid() if uid is None else uid
+    logger.info("Deleting output base %s", candidate.path)
+    quarantine: Path | None = None
+    try:
+        with _bazel_lock(candidate.path, uid=uid):
+            fresh = inspect_output_base(
+                candidate.path,
+                uid=uid,
+                points=mount_points(mountinfo_path=mountinfo_path),
+                layout=candidate.layout,
+                proc_root=proc_root,
+            )
+            if not isinstance(fresh, PrunableBase):
+                return SkippedBase(candidate.path, _inspection_reason(fresh))
+            if fresh.identity != candidate.identity or fresh.workspace != candidate.workspace:
+                return SkippedBase(candidate.path, "output-base identity or workspace changed")
+
+            quarantine = candidate.path.parent / f"{_QUARANTINE_PREFIX}{candidate.path.name}-{uuid.uuid4().hex}"
+            candidate.path.rename(quarantine)
+            (quarantine / "lock").unlink()
+        assert quarantine is not None
+        shutil.rmtree(quarantine, onexc=retry_rmtree_after_permission_error)
+        return DeletedBase(candidate.path)
+    except MetadataError as error:
+        return SkippedBase(candidate.path, str(error))
+    except RuntimeError as error:
+        if quarantine is None:
+            return SkippedBase(candidate.path, str(error))
+        return FailedBase(candidate.path, quarantine, str(error))
+    except OSError as error:
+        return FailedBase(candidate.path, quarantine, str(error))
+
+
 def delete_prunable_bases(
     candidates: Sequence[PrunableBase],
     *,
@@ -521,43 +566,10 @@ def delete_prunable_bases(
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
 ) -> list[DeletionResult]:
-    uid = os.getuid() if uid is None else uid
-    results: list[DeletionResult] = []
-    for index, candidate in enumerate(candidates, start=1):
-        logger.info("Deleting output base %d/%d %s", index, len(candidates), candidate.path)
-        quarantine: Path | None = None
-        try:
-            with _bazel_lock(candidate.path, uid=uid):
-                fresh = inspect_output_base(
-                    candidate.path,
-                    uid=uid,
-                    points=mount_points(mountinfo_path=mountinfo_path),
-                    layout=candidate.layout,
-                    proc_root=proc_root,
-                )
-                if not isinstance(fresh, PrunableBase):
-                    results.append(SkippedBase(candidate.path, _inspection_reason(fresh)))
-                    continue
-                if fresh.identity != candidate.identity or fresh.workspace != candidate.workspace:
-                    results.append(SkippedBase(candidate.path, "output-base identity or workspace changed"))
-                    continue
-
-                quarantine = candidate.path.parent / f"{_QUARANTINE_PREFIX}{candidate.path.name}-{uuid.uuid4().hex}"
-                candidate.path.rename(quarantine)
-                (quarantine / "lock").unlink()
-            assert quarantine is not None
-            shutil.rmtree(quarantine, onexc=retry_rmtree_after_permission_error)
-            results.append(DeletedBase(candidate.path))
-        except MetadataError as error:
-            results.append(SkippedBase(candidate.path, str(error)))
-        except RuntimeError as error:
-            if quarantine is None:
-                results.append(SkippedBase(candidate.path, str(error)))
-            else:
-                results.append(FailedBase(candidate.path, quarantine, str(error)))
-        except OSError as error:
-            results.append(FailedBase(candidate.path, quarantine, str(error)))
-    return results
+    return [
+        delete_prunable_base(candidate, uid=uid, proc_root=proc_root, mountinfo_path=mountinfo_path)
+        for candidate in candidates
+    ]
 
 
 def describe_reason(inspection: RetainedBase | ReviewBase) -> str:

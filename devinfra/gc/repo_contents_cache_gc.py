@@ -315,7 +315,13 @@ def _gc_lock(contents: Path) -> Iterator[None]:
         os.close(fd)
 
 
-def delete_prunable_entries(
+@dataclass(frozen=True, slots=True)
+class TrashedEntries:
+    results: list[EntryDeletionResult]  # entries skipped or failed while trashing
+    trashed: list[tuple[Path, Path]]  # (entry, its directory in `_trash/`), still to be emptied
+
+
+def trash_prunable_entries(
     candidates: Sequence[PrunableEntry],
     *,
     contents: Path,
@@ -323,8 +329,9 @@ def delete_prunable_entries(
     session_bases: Sequence[Path],
     uid: int | None = None,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-) -> list[EntryDeletionResult]:
-    """Remove each candidate that is still unreferenced, under Bazel's exclusive cache lock.
+) -> TrashedEntries:
+    """Move each candidate that is still unreferenced into `_trash/`, under Bazel's exclusive
+    cache lock; `empty_trash` removes the moved directories after the lock is released.
 
     Revalidation runs under the lock against a fresh listing of the bases (the root's plus
     `session_bases`, which the caller globbed moments before) and a fresh link pass over
@@ -345,7 +352,7 @@ def delete_prunable_entries(
             points = mount_points(mountinfo_path=mountinfo_path)
             for index, candidate in enumerate(candidates, start=1):
                 path = candidate.entry.contents
-                logger.info("Deleting repo-cache entry %d/%d %s", index, len(candidates), path)
+                logger.info("Trashing repo-cache entry %d/%d %s", index, len(candidates), path)
                 fresh = _inspect_entry(path, uid=uid, points=points)
                 if isinstance(fresh, ReviewEntry):
                     results.append(SkippedEntry(path, describe_reason(fresh)))
@@ -366,24 +373,46 @@ def delete_prunable_entries(
                     continue
                 trashed.append((path, trash))
     except RepoCacheBusyError as error:
-        return [SkippedEntry(candidate.entry.contents, str(error)) for candidate in candidates]
-    for path, trash in trashed:
-        try:
-            shutil.rmtree(trash, onexc=retry_rmtree_after_permission_error)
-        except OSError as error:
-            if error.errno == errno.ENOENT:
-                try:
-                    trash.lstat()
-                except FileNotFoundError:
-                    # Bazel may have consumed this entry from `_trash` after we released its lock.
-                    results.append(DeletedEntry(path))
-                    continue
-                except OSError:
-                    pass
-            results.append(FailedEntry(path, trash, str(error)))
-        else:
-            results.append(DeletedEntry(path))
-    return results
+        return TrashedEntries([SkippedEntry(candidate.entry.contents, str(error)) for candidate in candidates], [])
+    return TrashedEntries(results, trashed)
+
+
+def empty_trash(path: Path, trash: Path) -> EntryDeletionResult:
+    """Remove one trashed entry; independent of every other, so callers may run several at once."""
+    logger.info("Emptying repo-cache trash %s", trash)
+    try:
+        shutil.rmtree(trash, onexc=retry_rmtree_after_permission_error)
+    except OSError as error:
+        if error.errno == errno.ENOENT:
+            try:
+                trash.lstat()
+            except FileNotFoundError:
+                # Bazel may have consumed this entry from `_trash` after we released its lock.
+                return DeletedEntry(path)
+            except OSError:
+                pass
+        return FailedEntry(path, trash, str(error))
+    return DeletedEntry(path)
+
+
+def delete_prunable_entries(
+    candidates: Sequence[PrunableEntry],
+    *,
+    contents: Path,
+    output_user_root: Path,
+    session_bases: Sequence[Path],
+    uid: int | None = None,
+    mountinfo_path: Path = Path("/proc/self/mountinfo"),
+) -> list[EntryDeletionResult]:
+    trashed = trash_prunable_entries(
+        candidates,
+        contents=contents,
+        output_user_root=output_user_root,
+        session_bases=session_bases,
+        uid=uid,
+        mountinfo_path=mountinfo_path,
+    )
+    return [*trashed.results, *(empty_trash(path, trash) for path, trash in trashed.trashed)]
 
 
 def describe_reason(inspection: RetainedEntry | ReviewEntry) -> str:

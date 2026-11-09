@@ -1,8 +1,10 @@
+import asyncio
 import json
 import pathlib
 import re
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 
 import httpx
@@ -157,7 +159,7 @@ def test_render_branches_prints_numeric_looking_branch_names_verbatim(
     assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
 
 
-def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
+async def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Plain `workspace-gc --prune`: bases go first, then a re-scan frees the entries only they
@@ -176,7 +178,7 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     pruned_base = make_base(root, tmp_path / "gone")
     link_external(pruned_base, "freed_repo", freed_entry)
 
-    workspace_gc.run_all(
+    await workspace_gc.run_all(
         checkout.path,
         output_user_root=root,
         show_all=False,
@@ -298,8 +300,10 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
         assert holder.stdout is not None
         assert holder.stdout.readline() == "locked\n"
         with pytest.raises(SystemExit) as exit_info:
-            workspace_gc.run_repo_cache(
-                output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose
+            asyncio.run(
+                workspace_gc.run_repo_cache(
+                    output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose, workers=1
+                )
             )
     finally:
         holder.communicate("x", timeout=5)
@@ -313,6 +317,16 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
         assert (entry.name in captured.err) is verbose
     if not verbose:
         assert "SKIPPED 2 repo-cache entries" in captured.err
+
+
+async def test_run_bounded_runs_items_concurrently_and_returns_results_in_item_order() -> None:
+    both_running = threading.Barrier(2, timeout=5)  # only passes if two items are inside at once
+
+    def function(item: int) -> int:
+        both_running.wait()
+        return item * 10
+
+    assert await workspace_gc._run_bounded([3, 1], function, workers=2) == [30, 10]
 
 
 if __name__ == "__main__":
