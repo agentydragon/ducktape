@@ -18,6 +18,7 @@ mod native;
 pub(crate) mod noninvoking_initialization;
 mod own_data_transfer;
 mod property_inference;
+mod roots;
 mod runtime_callbacks;
 mod runtime_heap;
 mod runtime_inference;

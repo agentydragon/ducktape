@@ -205,9 +205,9 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   `capture_policy` and `admit_closure`), closures are
   `AbstractValue::Closure(HeapAddress, CapturedContext)` in both adapters, and
   the prefix prerequisites live in `World.prerequisites`. needs L2a.
-- L2c. PR 1: `LocalExecutionContext` and its trait impls moved to
-  `adapters/application.rs`. Left: `execute_owner` → `roots/` phases;
-  `execute_call_transfer` split by mode; delete `complete: bool`. needs
+- L2c. Landed: `LocalExecutionContext` and its trait impls in
+  `adapters/application.rs` (#15116); `execute_owner` as `roots/` phases.
+  Left: `execute_call_transfer` split by mode; delete `complete: bool`. needs
   L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
   parity.
 - L2d. **Landed as #15073** (2026-11-09): the six `#[path]` children of
