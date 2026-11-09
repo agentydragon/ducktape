@@ -104,7 +104,7 @@ fn operand(row: &Row, index: usize) -> Option<Operand> {
                     | CoerceOp::PreventExtensions
             )
         });
-    let to_string = steps.contains(&CoerceOp::ToString);
+    let to_string = steps.contains(&CoerceOp::ToString) || steps.contains(&CoerceOp::ToPropertyKey);
     let to_number = steps.contains(&CoerceOp::ToNumber);
     match (internal, to_string, to_number, object) {
         (false, false, false, false) => Some(Operand::Any),

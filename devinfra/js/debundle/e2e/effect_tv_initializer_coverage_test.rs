@@ -8,15 +8,15 @@ use debundle_e2e_support::*;
 #[test]
 fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
     for (helper, result_kind, unknown) in [
-        // Array creation is a covered allocation; only the output call
-        // remains uncovered. Record creation has no receipt yet.
+        // Array and record creation are covered allocations; only the
+        // output call remains uncovered.
         ("function make() { return [seed]; }", "object", 1),
         ("function make() { return [, seed]; }", "object", 1),
-        ("function make() { return { value: seed }; }", "object", 2),
+        ("function make() { return { value: seed }; }", "object", 1),
         (
             "function make() { return { read() { return seed; }, get value() { return seed; }, set value(next) {} }; }",
             "object",
-            2,
+            1,
         ),
         ("function make() { return () => seed; }", "function", 1),
         (

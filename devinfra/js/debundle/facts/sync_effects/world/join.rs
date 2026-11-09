@@ -294,9 +294,6 @@ impl Join for Publication {
                 alternatives,
                 |publication| &publication.accepted_deferred_global_writes,
             )),
-            frozen_namespace_calls: intersect_sets(&each_field(alternatives, |publication| {
-                &publication.frozen_namespace_calls
-            })),
             parameter_initialized_objects: intersect_sets(&each_field(
                 alternatives,
                 |publication| &publication.parameter_initialized_objects,

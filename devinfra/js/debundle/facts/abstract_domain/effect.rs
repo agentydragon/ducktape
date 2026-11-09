@@ -25,6 +25,9 @@ pub enum CoerceOp {
     DefineOwnProperty,
     /// `[[PreventExtensions]]`.
     PreventExtensions,
+    /// `ToPropertyKey`: `ToPrimitive` with hint String, then `ToString`
+    /// unless the result is a Symbol. Silent on every primitive.
+    ToPropertyKey,
     /// `ToObject`: a TypeError for `undefined` and `null`.
     ToObject,
     /// `GetIterator` and `IteratorStep` over the operand, then the row's

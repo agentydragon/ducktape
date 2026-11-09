@@ -1799,7 +1799,7 @@ fn symbol_class_key_property(property: &str) -> Option<&'static str> {
         return None;
     }
     builtins::data_property("Symbol", property)
-        .filter(|data| data.value == builtins::PropertyValue::Primitive)
+        .filter(|data| matches!(data.value, builtins::PropertyValue::Primitive(_)))
         .map(|data| data.name)
 }
 
@@ -6011,6 +6011,8 @@ pub(super) struct ExecutionIndex {
     pub(super) other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     pub(super) plain_data_objects: BTreeSet<u32>,
+    /// The top-level owner whose source contains each object literal.
+    pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
     descriptor_copy_factories: BTreeMap<Id, crate::analysis_inputs::DescriptorCopyFactorySummary>,
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
@@ -6229,6 +6231,7 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
+            object_literal_owners: BTreeMap::new(),
             own_descriptor_shapes: BTreeMap::new(),
             descriptor_copy_factories: BTreeMap::new(),
             descriptor_copy_calls: BTreeMap::new(),
@@ -11950,6 +11953,8 @@ impl Visit for ExecutionIndex {
                 _ => false,
             },
         });
+        self.object_literal_owners
+            .insert(object.span.lo.0, self.owner);
         if static_data {
             if null_prototype == 0 {
                 self.plain_data_objects.insert(object.span.lo.0);

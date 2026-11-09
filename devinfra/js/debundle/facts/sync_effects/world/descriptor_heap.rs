@@ -39,6 +39,81 @@ pub(in crate::facts::sync_effects) trait DescriptorContext:
     fn plain_data_object(&self, object: u32) -> bool;
     /// `ToPropertyDescriptor` reads inherited fields of every descriptor record.
     fn descriptor_conversion_is_ordinary(&mut self) -> bool;
+    /// An object literal whose source lies in the executing top-level
+    /// statement: no other statement holds it before this one completes.
+    fn statement_literal(&self, object: u32) -> bool;
+}
+
+/// A checked `Object.defineProperty(target, key, descriptor)` whose key is a
+/// primitive the surface cannot name. Commit stores the data value in the
+/// target's dynamic-key slot, so every own-key projection of the target
+/// refuses from then on, and drops the target's literal writability witness.
+#[derive(Debug, Clone)]
+pub(in crate::facts::sync_effects) struct DynamicKeyDefinition {
+    target: u32,
+    value: Values,
+}
+
+/// The record fields `ToPropertyDescriptor` reads for a data descriptor.
+const DATA_DESCRIPTOR_FIELDS: [&str; 4] = ["value", "writable", "enumerable", "configurable"];
+
+/// Defining one primitive-keyed data property completes normally only on an
+/// object literal of the executing statement whose literal writability is
+/// still witnessed (extensible, every own property configurable), from an
+/// exact settled plain-data descriptor record holding only data-descriptor
+/// fields, with the ordinary `Object.prototype` intact for the inherited
+/// field lookups. The key's `ToPropertyKey` is silent on every primitive.
+pub(in crate::facts::sync_effects) fn dynamic_key_definition(
+    context: &mut impl DescriptorContext,
+    target: &Values,
+    key: &Values,
+    descriptor: &Values,
+) -> Option<DynamicKeyDefinition> {
+    if key.is_empty()
+        || !key.iter().all(AbstractValue::is_primitive)
+        || target.len() != 1
+        || descriptor.len() != 1
+    {
+        return None;
+    }
+    let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = target.first()? else {
+        return None;
+    };
+    let AbstractValue::Value(Value::Alloc(Kind::Object, record)) = descriptor.first()? else {
+        return None;
+    };
+    if !context.descriptor_conversion_is_ordinary() {
+        return None;
+    }
+    let surface = context.object_surface();
+    if !context.statement_literal(*object)
+        || !context.object_properties_are_settled(*object)
+        || !surface.literal_writability_intact(*object)
+        || !context.plain_data_object(*record)
+        || !context.object_properties_are_settled(*record)
+        || surface.has_any_accessors(*record)
+    {
+        return None;
+    }
+    let fields = surface.own_properties(*record)?;
+    if !fields.keys().all(|field| {
+        field
+            .as_deref()
+            .is_some_and(|field| DATA_DESCRIPTOR_FIELDS.contains(&field))
+    }) {
+        return None;
+    }
+    let value = fields
+        .get(&Some("value".to_owned()))
+        .cloned()
+        .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+    if value.is_empty() {
+        return None;
+    }
+    Some(DynamicKeyDefinition {
+        target: *object,
+        value,
+    })
 }
 
 /// A checked `Object.defineProperties(target, map)` whose every definition is
@@ -193,6 +268,21 @@ impl<'a> DescriptorHeap<'a> {
         slots: Vec<Values>,
     ) {
         self.literal().dense_array(allocation, slots);
+    }
+
+    /// Commit a checked primitive-keyed definition: the payload joins the
+    /// target's dynamic-key slot and the literal writability witness is gone.
+    pub(in crate::facts::sync_effects) fn define_dynamic_key(
+        &mut self,
+        definition: &DynamicKeyDefinition,
+    ) {
+        self.literal().invalidate_writable(definition.target);
+        if self
+            .surface
+            .define_dynamic_key_data(definition.target, &definition.value)
+        {
+            *self.revision = self.revision.wrapping_add(1);
+        }
     }
 
     /// A map that reached unmodeled code may be mutated there.

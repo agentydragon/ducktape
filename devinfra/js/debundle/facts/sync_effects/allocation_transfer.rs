@@ -679,7 +679,9 @@ impl RecordTransfer {
         properties: &[PropertyDefinition<E>],
         judgment: AllocationJudgment,
     ) -> Option<Self> {
-        context.unmodeled_effect_operation();
+        // ObjectCreate plus static-key data, method and accessor definitions
+        // run no user code; every child value supplies its own receipt.
+        context.noninvoking_operation();
         let mut writable_properties = BTreeSet::new();
         let mut non_writable_properties = BTreeSet::new();
         for definition in properties {

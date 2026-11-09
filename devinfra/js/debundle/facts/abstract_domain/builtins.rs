@@ -57,6 +57,7 @@ pub enum IntrinsicOp {
     ObjectGetOwnPropertyDescriptors,
     ObjectGetOwnPropertyNames,
     ObjectDefineProperties,
+    ObjectDefineProperty,
     ObjectFreeze,
     RegExp,
     Error,
@@ -99,6 +100,7 @@ impl IntrinsicOp {
             Self::ObjectGetOwnPropertyDescriptors => ("Object", Some("getOwnPropertyDescriptors")),
             Self::ObjectGetOwnPropertyNames => ("Object", Some("getOwnPropertyNames")),
             Self::ObjectDefineProperties => ("Object", Some("defineProperties")),
+            Self::ObjectDefineProperty => ("Object", Some("defineProperty")),
             Self::ObjectFreeze => ("Object", Some("freeze")),
             Self::RegExp => ("RegExp", None),
             Self::Error => ("Error", None),
@@ -484,6 +486,36 @@ pub const ROWS: &[Row] = &[
             IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperties"),
         ],
     },
+    // ObjectDefineProperty converts the key, reads the descriptor record's
+    // fields through ToPropertyDescriptor, then defines one property on the
+    // target. Purity keeps its own syntactic facade rule (`assumed_intact`
+    // is false), so this row is the synchronous interpreter's.
+    Row {
+        op: IntrinsicOp::ObjectDefineProperty,
+        invocation: &[Invocation::Call],
+        cite: "sec-object.defineproperty",
+        arity: 3..=3,
+        coerces: &[
+            (ArgSel::Arg(1), CoerceOp::ToPropertyKey),
+            (ArgSel::Arg(2), CoerceOp::ToObject),
+            (ArgSel::Arg(2), CoerceOp::Get),
+            (ArgSel::Arg(0), CoerceOp::DefineOwnProperty),
+        ],
+        invokes: &[],
+        allocates: None,
+        mutates: &[Mutation::DefineProperty {
+            target: ArgSel::Arg(0),
+            key: ArgSel::Arg(1),
+            descriptor: ArgSel::Arg(2),
+        }],
+        returns: Return::Arg(ArgSel::Arg(0)),
+        throws: Throws::UnlessObjects(&[ArgSel::Arg(0)]),
+        assumed_intact: false,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
+        ],
+    },
     // SetIntegrityLevel(frozen): the stored data values are never invoked. A
     // primitive operand is returned unchanged.
     Row {
@@ -727,7 +759,8 @@ pub fn lookup(global: &str, member: Option<&str>, invocation: Invocation) -> Opt
 /// What reading an intrinsic's own data property yields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyValue {
-    Primitive,
+    /// A primitive constant of these kinds.
+    Primitive(PrimKinds),
     /// A builtin function; calling it is summarized only by its row.
     Function,
 }
@@ -743,11 +776,16 @@ pub struct DataProperty {
     pub cite: &'static str,
 }
 
-const fn primitive(global: &'static str, name: &'static str, cite: &'static str) -> DataProperty {
+const fn primitive(
+    global: &'static str,
+    name: &'static str,
+    kinds: PrimKinds,
+    cite: &'static str,
+) -> DataProperty {
     DataProperty {
         global,
         name,
-        value: PropertyValue::Primitive,
+        value: PropertyValue::Primitive(kinds),
         cite,
     }
 }
@@ -766,35 +804,35 @@ const NUMBER: &str = "sec-properties-of-the-number-constructor";
 const SYMBOL: &str = "sec-properties-of-the-symbol-constructor";
 
 pub const DATA_PROPERTIES: &[DataProperty] = &[
-    primitive("Math", "PI", MATH),
-    primitive("Math", "E", MATH),
-    primitive("Math", "LN2", MATH),
-    primitive("Math", "LN10", MATH),
-    primitive("Math", "LOG2E", MATH),
-    primitive("Math", "LOG10E", MATH),
-    primitive("Math", "SQRT2", MATH),
-    primitive("Math", "SQRT1_2", MATH),
-    primitive("Number", "EPSILON", NUMBER),
-    primitive("Number", "MAX_SAFE_INTEGER", NUMBER),
-    primitive("Number", "MIN_SAFE_INTEGER", NUMBER),
-    primitive("Number", "MAX_VALUE", NUMBER),
-    primitive("Number", "MIN_VALUE", NUMBER),
-    primitive("Number", "POSITIVE_INFINITY", NUMBER),
-    primitive("Number", "NEGATIVE_INFINITY", NUMBER),
-    primitive("Number", "NaN", NUMBER),
-    primitive("Symbol", "iterator", SYMBOL),
-    primitive("Symbol", "asyncIterator", SYMBOL),
-    primitive("Symbol", "dispose", SYMBOL),
-    primitive("Symbol", "asyncDispose", SYMBOL),
-    primitive("Symbol", "toStringTag", SYMBOL),
-    primitive("Symbol", "toPrimitive", SYMBOL),
-    primitive("Symbol", "hasInstance", SYMBOL),
-    primitive("Symbol", "species", SYMBOL),
-    primitive("Symbol", "isConcatSpreadable", SYMBOL),
-    primitive("Symbol", "match", SYMBOL),
-    primitive("Symbol", "replace", SYMBOL),
-    primitive("Symbol", "search", SYMBOL),
-    primitive("Symbol", "split", SYMBOL),
+    primitive("Math", "PI", PrimKinds::NUMBER, MATH),
+    primitive("Math", "E", PrimKinds::NUMBER, MATH),
+    primitive("Math", "LN2", PrimKinds::NUMBER, MATH),
+    primitive("Math", "LN10", PrimKinds::NUMBER, MATH),
+    primitive("Math", "LOG2E", PrimKinds::NUMBER, MATH),
+    primitive("Math", "LOG10E", PrimKinds::NUMBER, MATH),
+    primitive("Math", "SQRT2", PrimKinds::NUMBER, MATH),
+    primitive("Math", "SQRT1_2", PrimKinds::NUMBER, MATH),
+    primitive("Number", "EPSILON", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "MAX_SAFE_INTEGER", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "MIN_SAFE_INTEGER", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "MAX_VALUE", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "MIN_VALUE", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "POSITIVE_INFINITY", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "NEGATIVE_INFINITY", PrimKinds::NUMBER, NUMBER),
+    primitive("Number", "NaN", PrimKinds::NUMBER, NUMBER),
+    primitive("Symbol", "iterator", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "asyncIterator", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "dispose", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "asyncDispose", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "toStringTag", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "toPrimitive", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "hasInstance", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "species", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "isConcatSpreadable", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "match", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "replace", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "search", PrimKinds::SYMBOL, SYMBOL),
+    primitive("Symbol", "split", PrimKinds::SYMBOL, SYMBOL),
     object_function("defineProperty"),
     object_function("defineProperties"),
     object_function("freeze"),

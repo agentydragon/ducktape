@@ -225,7 +225,7 @@ pub struct World {
     pub arrays: DenseArrays,           // dense_arrays, primitive_arrays, unknown_array_contents, accumulated_values, array_intrinsic_mutated
     pub native: NativeRetained,        // prefix_native_retained_references + may_be_unknown, tainted_native_sets, tainted_functions, revoked_audited_results, uncertain_native_execution
     pub classes: ClassState,           // class_superclasses, tainted_classes, escaped_class_capabilities, first_class_members_publications, checked_constructor_inputs, private_constructor_result_owners, active_construction
-    pub publication: Publication,      // global_escaped_callbacks, exported_runtime_values, first_callback_publication_owners, returned_callback_owners, accepted_deferred_global_writes, frozen_namespace_calls, parameter_initialized_objects
+    pub publication: Publication,      // global_escaped_callbacks, exported_runtime_values, first_callback_publication_owners, returned_callback_owners, accepted_deferred_global_writes, parameter_initialized_objects
     pub reachability: ReachabilityState,
     pub prerequisites: ProofDependencies, // settled-prefix conditions; empty for a provider query
     pub fallback: FallbackRetention,   // fallback_retained_values, fallback_retained_cells

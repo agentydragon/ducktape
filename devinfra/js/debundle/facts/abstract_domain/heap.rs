@@ -44,6 +44,13 @@ pub enum Mutation {
     /// `[[DefineOwnProperty]]` on `target` for every own enumerable key of the
     /// `descriptors` record.
     DefineProperties { target: ArgSel, descriptors: ArgSel },
+    /// One `[[DefineOwnProperty]]` on `target` under `ToPropertyKey(key)`
+    /// with `ToPropertyDescriptor(descriptor)`.
+    DefineProperty {
+        target: ArgSel,
+        key: ArgSel,
+        descriptor: ArgSel,
+    },
     /// The fresh allocation receives the argument's own property descriptors:
     /// data values and accessor functions by identity, never invoked.
     FreshOwnDescriptorsOf(ArgSel),

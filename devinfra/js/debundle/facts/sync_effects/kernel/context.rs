@@ -121,6 +121,18 @@ pub(in crate::facts::sync_effects) trait NativeContext {
     ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
         None
     }
+    /// An exact native callee (`Object.freeze`) read from an unshadowed
+    /// global and its intact own data slot. The receiver is never evaluated
+    /// as a value; the intrinsic function has no value lane, so the result
+    /// is opaque, and the call itself is admitted by the row transfer.
+    fn native_callee(
+        &mut self,
+        _receiver: &Id,
+        _property: &str,
+        _call_span: Span,
+    ) -> Option<LocalValueResult> {
+        None
+    }
     /// An exact native binding and own-data slot proof can cover this whole
     /// lookup, including its global receiver. Other contexts evaluate the
     /// receiver and retain the ordinary own-data or accessor path.

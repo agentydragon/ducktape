@@ -126,7 +126,6 @@ pub(super) struct Publication {
     /// closure even when the precise prefix was already summarized.
     pub(super) returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
     pub(super) accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
-    pub(super) frozen_namespace_calls: BTreeSet<CallSite>,
     /// Fresh object literals a parameter-mutation initializer filled with
     /// primitive data properties (`fresh_data_writes`).
     pub(super) parameter_initialized_objects: BTreeSet<u32>,

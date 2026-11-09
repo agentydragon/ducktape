@@ -833,10 +833,6 @@ impl LocalContinuation {
                 allocation,
                 properties,
             } => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
                 if !matches!(
                     context.index().allocation_layout(allocation),
                     LiteralLayout::Record
@@ -1609,8 +1605,17 @@ fn evaluated_callee(
         LocalCallee::Member {
             receiver,
             property,
-            span,
+            span: member_span,
         } => {
+            if let Some(result) = context.native_callee(receiver, property, span) {
+                frame.ledger.effects.compose(&result.effects);
+                return Ok(EvaluatedCallee::Member {
+                    receiver: Values::new(),
+                    targets: completing(result.allocation.values, frame),
+                    selection_dependencies: None,
+                    array_push: None,
+                });
+            }
             let result = value_of(context, frame, &ValueExpr::Binding(receiver.clone()))?;
             frame.ledger.allocation.compose(&result.judgment);
             let receivers = completing(result.values, frame);
@@ -1635,7 +1640,7 @@ fn evaluated_callee(
                     selection: None,
                 }
             } else {
-                read_field(context, frame, receiver, &receivers, property, *span)?
+                read_field(context, frame, receiver, &receivers, property, *member_span)?
             };
             let selection_dependencies = module_prefix
                 .then(|| result.effects.lexical_selection_dependencies())
