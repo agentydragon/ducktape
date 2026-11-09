@@ -77,7 +77,7 @@
 //!
 //! Once a chunk's ledger is sealed, no pass may move declarations
 //! between modules — structural moves (entry-body split, residual
-//! sweep, rebind folds, atomic-group module synthesis) all happen before
+//! sweep, atomic-group module synthesis) all happen before
 //! collection finishes. The materializer satisfies the collection side
 //! (intents are collected from the finalized `ChunkPlan`), and every
 //! ledger executes post-seal only.

@@ -233,42 +233,11 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
 }
 
 #[test]
-fn peeled_method_reassigning_top_level_let_executes_under_node() {
-    // Minimal reproduction of the `Assignment to constant variable`
-    // runtime crash hit when peeling an upstream class.
-    //
-    // Upstream shape (paraphrased):
-    //
-    //   let isSearchBeingRefreshedForNode = (n) => false;
-    //   class SearchManager {
-    //     static setIsSearchBeingRefreshedForNodeHandler(e) {
-    //       isSearchBeingRefreshedForNode = e;           // ← write
-    //     }
-    //   }
-    //
-    // Before peeling the class, the write lives in the same
-    // module as the `let` declaration: legal. After peeling the
-    // class into its own module, the emitted file looks like:
-    //
-    //   import { isSearchBeingRefreshedForNode } from "../entry.js";
-    //   class SearchManager {
-    //     static setIsSearchBeingRefreshedForNodeHandler(e) {
-    //       isSearchBeingRefreshedForNode = e;
-    //     }
-    //   }
-    //
-    // Imported bindings are immutable per ESM — the method
-    // throws `TypeError: Assignment to constant variable` the
-    // first time it's called.
-    //
-    // The realizability gate used to accept this peel because
-    // the write is inside a method body (lazy position), and the
-    // emitted module crashed at runtime. This test pins that a
-    // peel whose emitted module assigns to a binding declared in
-    // another module now executes correctly (the entry below must
-    // print the post-assignment value).
-    let mut opts = FixtureOpts::new(
-        r#"let counter = 0;
+fn method_rebinding_requires_explicit_colocation_and_preserves_runtime() {
+    // A peeled class whose method assigns a top-level `let`. Split from the
+    // `let`, the method would assign through a read-only ESM import; the gate
+    // rejects that split. Claiming the `let` with the class co-locates them.
+    let source = r#"let counter = 0;
 class Counter {
   bump(b) { counter = b; }
   read() { return counter; }
@@ -277,17 +246,48 @@ const c = new Counter();
 c.bump(1);
 console.log(c.read());
 export { counter, Counter, c };
-"#,
-        vec![
-            // Peel the class + its instance into a separate
-            // module. `counter` (the let) stays in residual.
-            logical_module(
+"#;
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
                 "mod_counter_class",
                 &[Member::new("Counter"), Member::new("c")],
-            ),
-        ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    assert_entry_output(&fixture, "1\n");
+    let conflicts = rejected.atomic_group_conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
+    assert!(
+        conflicts[0]["causes"]
+            .as_array()
+            .expect("atomic group causes")
+            .iter()
+            .any(|cause| cause == "lazy_rebind"),
+        "{conflicts:#?}"
+    );
+    assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
+
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "mod_counter_class",
+                &[
+                    Member::new("counter"),
+                    Member::new("Counter"),
+                    Member::new("c"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_counter_class.js",
+        &["let counter = 0;", "counter = b;"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
 }

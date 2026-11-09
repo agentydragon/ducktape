@@ -28,7 +28,6 @@ use crate::naturalize::collect_plan_export_rename_intents;
 use crate::ownership_subset::{OwnershipSubset, SelectedModule};
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
-use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     AtomicGroupOwnerCompletionReport, BindingSourceUnitAssociation, ChunkModulesCounts,
@@ -38,8 +37,8 @@ use crate::{
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups, EntryDestination,
-    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, EntryDestination, ModuleId, ModuleRole,
+    PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
 use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
@@ -505,7 +504,6 @@ pub(super) fn finish_logical_chunk(
         })
         .transpose()?;
     builder.add_residual_sweep(catchall_request, &declarations, target_dir)?;
-    apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(&chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
@@ -862,32 +860,6 @@ fn gate_rejected_banner_lines(rejection: &ChunkGateRejection) -> Vec<String> {
                 .to_string(),
         },
     ))
-}
-
-/// Rebind-fold composer: fold rebind-only atomic groups into their
-/// explicit destination. Bridges the pure
-/// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
-/// post-seed assignment (managed by `ChunkPlanBuilder`) into the
-/// builder's plan-list/catalogue state.
-///
-/// This runs after the seed phases of assignment construction
-/// (explicit requests, destructure pull, residual sweep) and before
-/// residual-group synthesis. The decision step is spec-independent —
-/// it only inspects the chunk-analysis dependency graph + atomic groups, the
-/// builder's binding→plan assignment, and the residual landing-site
-/// index — so it lives in the `analysis` crate; this thin composer
-/// owns the application of those decisions to the builder's
-/// `ModulePlan` list.
-fn apply_rebind_folds_from_chunk_analysis(
-    builder: &mut ChunkPlanBuilder,
-    precomputed: &DependencyGraphAndAtomicGroups,
-) {
-    let folds = compute_rebind_folds(
-        precomputed,
-        &builder.owned_binding_destinations(),
-        builder.residual_plan_index(),
-    );
-    builder.apply_rebind_folds(folds);
 }
 
 /// Project the materializer's real output plans into the analysis view. The
