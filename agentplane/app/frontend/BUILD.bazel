@@ -492,9 +492,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":stream_reader",
-        "//:node_modules/@types/react",
         "//:node_modules/eventsource-parser",
-        "//:node_modules/react",
     ],
 )
 
@@ -563,14 +561,7 @@ ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":format_time",
-        ":live_stream",
-        ":stream_reader",
-        ":stream_status",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
+    deps = [":stream_status"],
 )
 
 ts_library(

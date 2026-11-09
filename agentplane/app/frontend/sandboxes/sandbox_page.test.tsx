@@ -24,7 +24,6 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
-import type * as LiveModule from "../live";
 import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
@@ -74,14 +73,6 @@ const live = vi.hoisted(
       updates_connected: boolean;
     }>
 );
-vi.mock("../live", async (importOriginal) => ({
-  ...(await importOriginal<typeof LiveModule>()),
-  useLive: (url: string | null) =>
-    url?.includes("/other-test")
-      ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
-      : live,
-}));
-
 vi.mock("../policy/watch", () => ({
   usePolicyResources: () => ({ resources: { bindings: [], sets: [] }, error: null }),
 }));
