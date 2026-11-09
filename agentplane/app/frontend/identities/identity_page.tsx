@@ -9,7 +9,7 @@ import { IconArrowLeft } from "../icons";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../topbar";
 import { kubernetesAccounts } from "./accounts";
-import { deleteIdentity, type DeleteOutcome } from "./client";
+import { deleteIdentity, type DeleteOutcome, type Reference } from "./client";
 import { identityOrigin } from "./origin";
 import { identityBindings, type IdentityBindings } from "./references";
 import { AccountsReached, OriginBadge } from "./summary";
@@ -21,19 +21,25 @@ function deleteBlocker(identity: Identity, split: IdentityBindings): JSX.Element
       <Text size="sm">Flux applies this identity from git and would recreate it: remove it in the repository.</Text>
     );
   if (split.referencing.length === 0) return null;
-  return <ReferencingBindings names={split.referencing.map((binding) => binding.identity?.name ?? "")} />;
+  return (
+    <References
+      references={split.referencing.map((binding) => ({ kind: "PolicyBinding", name: binding.identity?.name ?? "" }))}
+    />
+  );
 }
 
-function ReferencingBindings({ names }: { names: string[] }): JSX.Element {
+function References({ references }: { references: Reference[] }): JSX.Element {
   return (
     <Stack gap={4}>
       <Text size="sm">
-        These bindings name this identity without being its own, so they would grant a later identity of the same name.
-        Delete them first:
+        A binding naming this identity without being its own would grant a later identity of the same name; a workload
+        credential naming it acts as it. Delete these first:
       </Text>
-      <List size="sm" aria-label="Bindings referencing this identity">
-        {names.map((name) => (
-          <List.Item key={name}>PolicyBinding {name}</List.Item>
+      <List size="sm" aria-label="References to this identity">
+        {references.map(({ kind, name }) => (
+          <List.Item key={`${kind} ${name}`}>
+            {kind} {name}
+          </List.Item>
         ))}
       </List>
     </Stack>
@@ -90,7 +96,7 @@ function DeleteIdentity({
       </Group>
       {outcome?.case === "referenced" && (
         <Alert color="red" role="alert" title="The Policy Controller refused the delete">
-          <ReferencingBindings names={outcome.bindings} />
+          <References references={outcome.references} />
         </Alert>
       )}
       {outcome?.case === "failed" && (
