@@ -3257,7 +3257,12 @@ references, grants and last activity and an unreferenced filter; delete refused 
 the identity page re-anchoring "View grants"; the session form with placement and identity, the
 set selector hidden for an existing identity; the permission-request approval card with new
 temporary account, widen shared, or deny; the finish dialog defaulting to delete an identity the
-app minted for that session. Mockups: the plan's operator UI section. **Exit:** BFF routes with
+app minted for that session. The Connection consent page (`/#/connection-enrollments/{handle}`) and
+the OAuth clients tab's rebind picker choose an Identity from the edge's `connection_identities`
+instead of a ServiceAccount, a Connection's **View grants** shows that Identity's bindings, and an
+identity's page lists the Connections bound to it beside its Sandboxes and Sessions (operator,
+2026-11-09; today's flow is in `app/README.md`). This Connection part lands with
+`IDENTITY_CUTOVER`'s edge prerequisites. Mockups: the plan's operator UI section. **Exit:** BFF routes with
 tests, visual tests capturing each screen, and a browser test that a referenced identity cannot be
 deleted.
 
@@ -3283,7 +3288,10 @@ kubeconfig mount), deletes the old objects, and states the rollback: revert the 
 the objects of the new kinds. The MCP edge's `connection_identities` setting is set and read here:
 stored Connections move from their bound ServiceAccount to an Identity, consent offers those
 Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with how it then proves
-an Identity to the Action Service ([open question 21](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).
+an Identity to the Action Service ([open question 21](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The
+app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their two prerequisites:
+the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
+ServiceAccount-or-Identity union or is rewritten to an Identity, and that question is decided.
 Running Sandboxes are replaced, not patched. Expected downtime: every
 running Sandbox loses egress and platform routes until its sidecar image carries the SVID hop.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
