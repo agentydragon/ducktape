@@ -43711,7 +43711,7 @@
     "last_observed_stage": "Early PCI/ACPI Linux boot, before systemd/runner",
     "outer_lane": "Default hosted lane; QEMU 10.1 TCG, no /dev/kvm; 2 guest vCPUs / 1.5 GiB RAM",
     "connection_pending_seconds": 300,
-    "causal_boundary": "ConnectionPending is a downstream readiness symptom. QEMU host snapshot at 09:57:08 UTC followed VM destruction at 09:56:56 UTC, so root cause remains unresolved. No TLS failure or fix is established.",
+    "causal_boundary": "ConnectionPending is a downstream readiness symptom. QEMU host snapshot at 09:57:08 UTC followed VM destruction at 09:56:56 UTC, so the original early-kernel root cause remains unresolved. The later fixture PKI failure is independent.",
     "separate_pod_failure": "Same invocation also had an Unschedulable / Insufficient memory Pod admission failure; this is a distinct boundary.",
     "next_attempt": {
       "invocation": "cb469644-f04f-4844-9021-f3a425dce6ef",
@@ -43767,6 +43767,118 @@
       "conclusion": "Independent earlier bootstrap blocker. Does not exercise the repaired virtiofs tag or establish a cause for the original early-kernel stop.",
       "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29/56213",
       "test_log_sha256": "37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29"
+    },
+    "diagnostic_pr_state": {
+      "state": "MERGED",
+      "merged_at_utc": "2026-11-09T11:45:31Z",
+      "head": "5b71975b830b91c7693aac879ea701eb5ac6ef27"
+    },
+    "fixture_pki_followup": {
+      "invocation": "e77e85c9-4306-4e40-8593-6b5e0cb3a54c",
+      "source": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+      "certificate_resources": {
+        "name": "test.outputs/certificates/resources.yaml",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/29c8ecaa341ddecbeeb36d6e6b65f304dc1512a1b57a949ed06757ceb86acf1c/949517"
+      },
+      "chain_validation": {
+        "all_five_service_leaves": "Pass through captured prior root and workload intermediate; fail through newly recreated root",
+        "private_material_published": false
+      },
+      "validation": {
+        "control": {
+          "invocation": "b232674e-e454-4d58-b798-50592d74348e",
+          "result": "FAILED on second cycle with InvalidSignature after successful first-cycle issuance and cleanup",
+          "action_seconds": 214.999,
+          "pytest_seconds": 169.18,
+          "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/da7481ab221862cf312720db81ec7d4955e4df715bb019fec6f543e0e7ea5290/7380",
+          "source_file_sha256": {
+            "agentplane/system_tests/deployment/stack.py": "55fa314ec82ab42e5b3a3819d2e49798abaf707f00dace8b1fbf14ec6be2eaf3",
+            "agentplane/system_tests/deployment/certificates.py": "97370a7fc8e6fc6e2326eb50ff86956688f40a352c48d9f1e294b6b59a0d06b6",
+            "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
+          }
+        },
+        "repair": {
+          "invocation": "84b1a207-dcb2-4adc-8061-8fd3c73628b7",
+          "effective_local_commit": "f087a487f781497c3c4542330960ce3102ff63d2",
+          "remote_base_before_worktree_patch": "7e9edc9270bef882b5f92549ffde6bec7789db29",
+          "result": "PASSED: two coherent issuance/cleanup cycles; root and intermediate Certificate UIDs changed; retained controller Deployment UIDs unchanged",
+          "action_seconds": 90.967,
+          "pytest_seconds": 79.29,
+          "start_utc": "2026-11-09T18:21:03.736Z",
+          "end_utc": "2026-11-09T18:22:34.703Z",
+          "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/86b0df8b26362781300bd6226eca5f382016c3ddeaaa267212e58ad355b1fb47/2984",
+          "public_lifecycle_uri": "bytestream://remote.buildbuddy.io/blobs/2d6293296addb0af484dee5769fac493b627ad96aaa59d14702460007bdd4c90/440",
+          "cycles": [
+            {
+              "cycle": 0,
+              "certificate_uids": {
+                "test-runner-root": "f6650abd-dd9c-4115-bfff-b558ce8d19df",
+                "agentplane-workload-ca": "2a7d30dc-0a22-4016-8591-df397378a9d2"
+              },
+              "chain_valid": true
+            },
+            {
+              "cycle": 1,
+              "certificate_uids": {
+                "test-runner-root": "d40ca4b9-4d8b-4cfd-9145-4adfeee11b4e",
+                "agentplane-workload-ca": "e8ad28c7-4832-4d00-9098-abf5802e7cee"
+              },
+              "chain_valid": true
+            }
+          ],
+          "source_file_sha256": {
+            "agentplane/system_tests/deployment/stack.py": "ce75cb55e5e2657508a010733bada0ef4b2fa2311eff5dc2d0f4c19e3bf4cd06",
+            "agentplane/system_tests/deployment/certificates.py": "d620fff3a05fa25b1b1c64bce0c4309eb7962973092d14a3d8660c29dfc21037",
+            "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
+          },
+          "timing_limit": "Correctness comparison, not a latency treatment: cold-start/cache conditions differed from the control."
+        },
+        "focused_tests": {
+          "invocation": "357bdbd5-0043-4a52-84fc-f6cfa627da11",
+          "result": "PASSED: test_certificates and test_stack"
+        },
+        "named_library_build": {
+          "invocation": "45073596-e20c-4c45-ae23-72d409eb3aa6",
+          "result": "SUCCESS in authoritative invocation; wrapper later failed downloading CAS result"
+        }
+      },
+      "recorded_at_utc": "2026-11-09T18:24:02.673280+00:00",
+      "repair_pr": "https://github.com/agentydragon/ducktape/pull/15193",
+      "tested_candidate_source": "f087a487f781497c3c4542330960ce3102ff63d2",
+      "mechanism": "Root Certificate/Secret were removed by name; fixture workload intermediate in retained cert-manager namespace survived. New root and old intermediate disagreed.",
+      "public_certificates": [
+        {
+          "identity": "prior-root",
+          "request_created_at_utc": "2026-11-09T11:16:21Z",
+          "sha256": "f63e5afb2df4f81160482b91e1c3bfded24dbeddfdd851ae1e7b02ed8c95c003"
+        },
+        {
+          "identity": "workload-intermediate",
+          "request_created_at_utc": "2026-11-09T11:16:21Z",
+          "sha256": "8960ce33134179cf29ccd076bc6696c31b4b4ae93aa0f1944f59c3552b93e80d"
+        },
+        {
+          "identity": "new-root",
+          "request_created_at_utc": "2026-11-09T11:30:42Z",
+          "sha256": "6ba04223b258ee9b8628c8911f7c30771ccd610859fa46669fb0c15f479c8dea0"
+        }
+      ],
+      "repair": "Derive retained-namespace Certificates from rendered fixture; delete Certificates, UID-owned requests and declared Secrets with absence checks. Hash cleanup helper in baseline compatibility fingerprint to reject old clean snapshots.",
+      "focused_tests": {
+        "invocation": "357bdbd5-0043-4a52-84fc-f6cfa627da11",
+        "result": "PASSED: test_certificates and test_stack"
+      },
+      "build": {
+        "invocation": "45073596-e20c-4c45-ae23-72d409eb3aa6",
+        "result": "SUCCESS in authoritative invocation; wrapper later failed CAS output download"
+      },
+      "limits": [
+        "Retained CertificateRequest status exposes public chains, not independently captured Secret/target ConfigMap bytes.",
+        "cd01bf992c changed service trust to the intermediate directly and may mask the old symptom; this does not establish fresh per-action identities.",
+        "Latest inspected 17:41 green VM summary was cached; it is not fresh guest execution proof.",
+        "Two-cycle PKI regression has no application workloads or VM boot. No measured full-CI speedup, staging change or cause for the original early-kernel stop."
+      ],
+      "repair_pr_state": "OPEN; focused and real two-cycle checks passed; hosted full-suite CI pending"
     }
   }
 }

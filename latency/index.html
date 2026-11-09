@@ -92,14 +92,14 @@
               ${" Keep 4 vCPU / 16 GiB; four-minute mean CI remains unproven "}
             <//>
             <${Text} component="p" my="sm">
-              ${" The latest production-pool read at 09:21 UTC had "}
+              ${" The recorded production-pool snapshot at 09:21 UTC had "}
               <strong>
                 ${"one active action and 41 queued reservations"}
               </strong>
               ${". The earlier telemetry window correlates two physical wyrm2 runs with modest CPU use and busy storage. The completed unpinned HIL experiment passed all three matched-state 4/8-CPU pairs: warm action means were 251.1s and 268.0s. Extra CPUs did not shorten the measured critical path. The fixture candidate separately passed in 214s; none of these action times establishes mean complete CI below four minutes. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is fully drained and deleted; production workers and scalers are unchanged. The early-kernel VM stop remains unresolved. Its follow-up exposed a separate overlong virtiofs tag that prevents QEMU startup; the focused fix and generation-time validation merged in PR #15144, while full VM validation was blocked by service certificate-chain rejection before any VM scenario. Historical resource telemetry, host paging snapshots and the original CI cohort retain their own windows. "}
+              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is drained and deleted. The current intervention repairs per-action CA cleanup: the real two-cycle control failed, while PR #15193 passed both cycles with fresh CA identities on retained controllers. Hosted full-suite CI is pending. The virtiofs tag guard and failure-time QEMU capture merged; the original early-kernel VM stop remains unresolved. Historical telemetry and CI cohorts retain their own windows. "}
             <//>
             <${SimpleGrid}
               component=${"div"}
@@ -178,6 +178,7 @@
             >
             <${Anchor} href="#cpu-comparison">Completed CPU comparison<//>
             <${Anchor} href="#vm-readiness-followup">VM readiness<//>
+            <${Anchor} href="#vm-pki-followup">CA lifecycle repair<//>
             <${Anchor} href=${"#feedback"}> ${"Current feedback"} <//>
             <${Anchor} href=${"#system-tests"}> ${"System-test timeline"} <//>
             <${Anchor} href=${"#experiments"}> ${"Experiments"} <//>

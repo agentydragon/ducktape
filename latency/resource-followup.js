@@ -445,7 +445,7 @@ function ResourceContent({ snapshot }) {
       /dev/kvm, 2 guest vCPUs and 1.5 GiB. ConnectionPending at 300 s is a
       downstream symptom. The QEMU host snapshot at 09:57:08 UTC followed
       destruction at 09:56:56 UTC, leaving root cause unresolved. Failure-time
-      passive capture is being added in${" "}
+      passive capture merged at 11:45 UTC in${" "}
       <${Anchor} href="https://github.com/agentydragon/ducktape/pull/15142"
         >PR #15142<//
       >.<//
@@ -465,23 +465,68 @@ function ResourceContent({ snapshot }) {
       >${" "} merged at 11:33 UTC: it shortens the tag, documents the 36-byte
       limit and validates every final virtiofs name before VM creation. It also
       adds the missing workload-trust mount in the full Debian guest. Controller
-      and guest-layout tests passed. The uncached full-suite follow-up failed
-      during service bootstrap with certificate-chain rejection, before any VM
-      scenario. End-to-end guest verification is still unproven. The original
-      early-kernel stop remains unresolved.<//
+      and guest-layout tests passed. Full guest verification was blocked by the
+      independent PKI failure below; the original early-kernel stop remains
+      unresolved.<//
+    >
+    <${Title} order=${3} id="vm-pki-followup"
+      >Fixture CA reuse: root cause reproduced<//
     >
     <${Text}
-      >PR #15129 merged before its real VM test finished; that test later failed
-      with the same tag error, while another test was already red. The separate
-      Pod failure in the original invocation was Unschedulable / Insufficient
-      memory, a distinct admission boundary.<//
+      >The${" "}
+      <${Anchor} href=${invocation("e77e85c9-4306-4e40-8593-6b5e0cb3a54c")}
+        >uncached VM follow-up<//
+      >${" "}failed during service bootstrap with certificate-chain rejection,
+      before any VM scenario. Cleanup recreated only the root CA; the workload
+      intermediate and its Secret survived in the retained cert-manager
+      namespace. Its request was created at 11:16:21 UTC, while the replacement
+      root's request was created at 11:30:42 UTC. All five failed service chains
+      verify through the captured previous root and fail through the new root.
+      Ready Certificates and Synced Bundles did not prove a coherent chain.<//
+    >
+    <${Blockquote}
+      >The${" "}
+      <${Anchor} href=${invocation("b232674e-e454-4d58-b798-50592d74348e")}
+        >real two-cycle control<//
+      >${" "}passed its first issuance and cleanup, then failed with
+      InvalidSignature on its second issuance. It retains the same real
+      K3s/cert-manager/trust-manager controllers and uses the fixture's actual
+      CA hierarchy, without application workloads.<//
+    >
+    <${Blockquote} color="teal"
+      >With the repair, the${" "}
+      <${Anchor} href=${invocation("84b1a207-dcb2-4adc-8061-8fd3c73628b7")}
+        >same uncached regression passed both cycles<//
+      >: root and intermediate Certificate identities changed, both chains
+      verified, and retained controller Deployment identities stayed unchanged.
+      This verifies cleanup across the real controller boundary. Different
+      cold-start/cache conditions prevent a latency comparison.<//
+    >
+    <${Text}
+      ><${Anchor} href="https://github.com/agentydragon/ducktape/pull/15193"
+        >PR #15193<//
+      >${" "}derives retained-namespace Certificates from the rendered fixture,
+      deletes their UID-owned requests and declared Secrets, and verifies
+      absence while preserving unrelated controller credentials. The cleanup
+      helper participates in baseline fingerprinting, rejecting snapshots
+      previously certified by the incomplete cleanup. Focused tests and the real
+      two-cycle regression passed; hosted full-suite CI is pending.<//
+    >
+    <${Text} size="sm" c="dimmed"
+      >Public CertificateRequest chains prove the old mismatch; the retained
+      artifact does not independently expose live Secret or target ConfigMap
+      bytes. Current devel trusts the intermediate directly, which may mask the
+      old service symptom but does not make per-action identity reuse correct.
+      The latest inspected green VM result was cached. Fresh full guest boot
+      remains unproven, and no CI speedup is measured by this repair.<//
     >
     <${Title} order=${3}>Current decisions<//>
     <${Text}
       >Retain 4 vCPU / 16 GiB and one action per guest after the completed CPU
-      trials. Measure matched post-merge complete-CI heads before claiming the
-      fixture trim meets the feedback objective. Keep KEDA scale-in behind
-      tested admission/drain ownership; defer a cache proxy given the historical
+      trials. Validate the CA repair and fresh VM readiness, then measure
+      matched post-merge complete-CI heads before claiming the fixture trim
+      meets the feedback objective. Keep KEDA scale-in behind tested
+      admission/drain ownership; defer a cache proxy given the historical
       1.6-second input-fetch stage.<//
     >
     <${Text}
