@@ -31,7 +31,8 @@ from pathlib import Path
 import humanize
 from tabulate import tabulate
 
-from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
+from devinfra.gc.verdict import Prunable, Retained, Review, verdict_of
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class FileIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableBase:
+class PrunableBase(Prunable):
     path: Path
     workspace: Path
     identity: FileIdentity
@@ -93,7 +94,7 @@ class ReviewBaseReason(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedBase:
+class RetainedBase(Retained):
     path: Path
     workspace: Path | None
     reason: RetainedBaseReason
@@ -102,7 +103,7 @@ class RetainedBase:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewBase:
+class ReviewBase(Review):
     path: Path
     reason: ReviewBaseReason
     last_activity_ns: int | None
@@ -472,7 +473,7 @@ def scan_output_user_root(
         else:
             inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
         inspections.append(inspection)
-        progress.record("bases", _status(inspection))
+        progress.record("bases", verdict_of(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base)
     return inspections
 
@@ -615,14 +616,6 @@ def _prunable_reason(inspection: PrunableBase) -> str:
     return "workspace is under /tmp"
 
 
-def _status(inspection: Inspection) -> ProgressCategory:
-    if isinstance(inspection, PrunableBase):
-        return "PRUNE"
-    if isinstance(inspection, RetainedBase):
-        return "KEEP"
-    return "REVIEW"
-
-
 def _detail(inspection: Inspection) -> str:
     if isinstance(inspection, PrunableBase):
         return f"{inspection.workspace} ({_prunable_reason(inspection)})"
@@ -678,7 +671,7 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
         headers.insert(1, "SIZE")
     rows: list[list[str]] = []
     for item in visible:
-        row = [_status(item), _last_activity(item), _label(item.path), _detail(item)]
+        row = [verdict_of(item), _last_activity(item), _label(item.path), _detail(item)]
         if include_sizes:
             size = sizes[item.path]
             row.insert(1, humanize.naturalsize(size, binary=True) if size is not None else "?")

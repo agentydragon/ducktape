@@ -13,6 +13,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":scan_progress",
+        ":verdict",
         "@pypi//humanize",
         "@pypi//tabulate",
     ],
@@ -38,6 +39,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":verdict",
         "@pypi//pygit2",
     ],
 )
@@ -49,6 +51,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
     ],
@@ -65,6 +68,7 @@ py_library(
         ":output_base_gc",
         ":pull_request",
         ":scan_progress",
+        ":verdict",
         ":worktree_gc",
     ],
 )
@@ -77,13 +81,14 @@ py_library(
         ":branch_gc",
         ":foreign_clone_gc",
         ":git_repo",
+        ":github_prs",
         ":output_base_gc",
         ":pull_request",
         ":repo_contents_cache_gc",
         ":scan_progress",
+        ":verdict",
         ":workspace_scan",
         ":worktree_gc",
-        "@pypi//httpx",
         "@pypi//humanize",
         "@pypi//rich",
         "@pypi//tabulate",
@@ -190,10 +195,8 @@ py_test(
         ":workspace_gc",
         ":workspace_scan",
         "//:conftest",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//respx",
         "@pypi//rich",
     ],
 )
@@ -221,6 +224,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
     ],
@@ -261,6 +265,7 @@ py_library(
     deps = [
         ":output_base_gc",
         ":scan_progress",
+        ":verdict",
         "@pypi//humanize",
         "@pypi//tabulate",
     ],
@@ -276,5 +281,35 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "github_prs",
+    srcs = ["github_prs.py"],
+    deps = [
+        ":git_repo",
+        ":pull_request",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "verdict",
+    srcs = ["verdict.py"],
+    deps = [":scan_progress"],
+)
+
+py_test(
+    name = "test_github_prs",
+    srcs = ["test_github_prs.py"],
+    deps = [
+        ":conftest",
+        ":github_prs",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
     ],
 )

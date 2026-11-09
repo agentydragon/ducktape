@@ -26,12 +26,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
-from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
+from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout
 from devinfra.gc.foreign_clone_gc import ForeignCloneClassification
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
-from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree
+from devinfra.gc.verdict import verdict_of
+from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 
 logger = logging.getLogger(__name__)
 
@@ -78,30 +79,6 @@ def _annotate_base(base: Inspection, prunable_workspaces: set[Path]) -> Inspecti
     if workspace not in prunable_workspaces:
         return base
     return dataclasses.replace(base, workspace_is_prunable_worktree=True)
-
-
-def _worktree_category(classification: Classification) -> ProgressCategory:
-    if isinstance(classification, PrunableWorktree):
-        return "PRUNE"
-    if isinstance(classification, RetainedWorktree):
-        return "KEEP"
-    return "REVIEW"
-
-
-def _branch_category(classification: BranchClassification) -> ProgressCategory:
-    if isinstance(classification, PrunableBranch):
-        return "PRUNE"
-    if isinstance(classification, RetainedBranch):
-        return "KEEP"
-    return "REVIEW"
-
-
-def foreign_clone_category(classification: ForeignCloneClassification) -> ProgressCategory:
-    if isinstance(classification, foreign_clone_gc.PrunableForeignClone):
-        return "PRUNE"
-    if isinstance(classification, foreign_clone_gc.RetainedForeignClone):
-        return "KEEP"
-    return "REVIEW"
 
 
 def parallel_classify[T, R](
@@ -182,7 +159,7 @@ def _classify_branches(
         phase="branches",
         noun="branch",
         progress=progress,
-        category_of=_branch_category,
+        category_of=verdict_of,
         describe=str,
         workers=workers,
     )
@@ -284,7 +261,7 @@ def annotate_bases(
         phase="workspaces",
         noun="base workspace",
         progress=progress,
-        category_of=_worktree_category,
+        category_of=verdict_of,
         describe=lambda wt: str(wt.path),
         workers=workers,
     )
@@ -377,7 +354,7 @@ def scan_workspace(
         phase="worktrees",
         noun="worktree",
         progress=progress,
-        category_of=_worktree_category,
+        category_of=verdict_of,
         describe=lambda wt: str(wt.path),
         workers=workers,
     )
@@ -425,7 +402,7 @@ def scan_workspace(
         phase="foreign_clones",
         noun="foreign clone",
         progress=progress,
-        category_of=foreign_clone_category,
+        category_of=verdict_of,
         describe=str,
         workers=workers,
     )
