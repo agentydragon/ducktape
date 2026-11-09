@@ -219,8 +219,12 @@ type Subject interface{ subject() }
 type ServiceAccount policyapi.ServiceAccountRef
 
 // Identity is one incarnation of an Identity in the policy namespace: its name and UID. It names the
-// bindings whose subject is that name, only while the live Identity of that name has that UID, so
-// an Identity recreated under the same name inherits no grant.
+// bindings whose subject is that name, only while the live Identity of that name has that UID.
+//
+// UID fencing protects stale principals: a credential of a deleted incarnation gains nothing from a
+// same-named successor. It does not end a binding. A binding's lifetime comes from its
+// ownerReference to its Identity, which the app and Dispatcher must set, so garbage collection
+// deletes an agent's bindings with the Identity.
 //
 // No enforcing service looks up an Identity yet. Its callers land next: the WorkloadCredential
 // resolver (agentplane/plans/workload_identity_lifecycle.md, "How a verifier resolves a peer") and

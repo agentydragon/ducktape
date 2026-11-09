@@ -163,6 +163,38 @@ func TestExpiryNotifiesWatchers(t *testing.T) {
 	}
 }
 
+// An identity binding expires the way a ServiceAccount one does: at its deadline, watchers learn of
+// it, and it stops granting with no delete.
+func TestAnExpiredIdentityBindingStopsGrantingWithoutADelete(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	agent := Identity{Name: "test-agent", UID: "test-uid"}
+	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: agent.Name, UID: agent.UID}})
+	expiresAt := metav1.NewTime(time.Now().Add(time.Second))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: agent.Name}},
+			PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt,
+		},
+	})
+	changed := index.Changed()
+	if got := index.Grants(agent); len(got) != 1 {
+		t.Fatalf("before expiry: Grants = %+v", got)
+	}
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change at the binding's expiresAt")
+	}
+	if got := index.Grants(agent); len(got) != 0 {
+		t.Errorf("after expiry: Grants = %+v, want none", got)
+	}
+	if got := index.Bindings(agent); len(got) != 0 {
+		t.Errorf("after expiry: Bindings = %+v, want none", got)
+	}
+}
+
 func TestAnIdentityChangeSignalsReaders(t *testing.T) {
 	index := NewIndex(testRuleType, parseHosts)
 	index.PutPolicySet(testSet("test-own", 1))

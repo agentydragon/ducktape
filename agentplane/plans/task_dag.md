@@ -3193,6 +3193,8 @@ of another identity is placed on or attached to the environment; the Sandbox Con
 PolicyBinding, runs the Pod on the default SA with `automountServiceAccountToken: false`, and
 reports `IdentityMissing` when the identity is gone;
 the sandbox templates stop mounting a kubeconfig; `EnvironmentService` creation takes an identity;
+launch bindings carry an ownerReference to their `Identity`, because the policy reader fences only
+the Identity's UID and the binding's lifetime comes from that owner;
 the agent Kubernetes docs lose the kubeconfig and point at the rules endpoint. **Exit:** controller
 tests for a Sandbox with and without a live identity, the rendered Pod has no token projection but
 the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the accounts namespace.
