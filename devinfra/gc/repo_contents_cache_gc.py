@@ -49,6 +49,7 @@ from devinfra.gc.output_base_gc import (
     nested_mount,
     retry_rmtree_after_permission_error,
 )
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
 from devinfra.gc.verdict import Prunable, Retained, Review, verdict_of
 
@@ -119,27 +120,6 @@ class ReviewEntry(Review):
 
 
 type EntryInspection = PrunableEntry | RetainedEntry | ReviewEntry
-
-
-@dataclass(frozen=True, slots=True)
-class DeletedEntry:
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedEntry:
-    path: Path
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedEntry:
-    path: Path
-    trash: Path | None  # where the directory sits if it was moved but not deleted
-    error: str
-
-
-type EntryDeletionResult = DeletedEntry | SkippedEntry | FailedEntry
 
 
 def entry_path(inspection: EntryInspection) -> Path:
@@ -310,7 +290,7 @@ def _gc_lock(contents: Path) -> Iterator[None]:
 
 @dataclass(frozen=True, slots=True)
 class TrashedEntries:
-    results: list[EntryDeletionResult]  # entries skipped or failed while trashing
+    results: list[RemovalResult[Path]]  # entries skipped or failed while trashing
     trashed: list[tuple[Path, Path]]  # (entry, its directory in `_trash/`), still to be emptied
 
 
@@ -336,7 +316,7 @@ def trash_prunable_entries(
     """
     uid = os.getuid() if uid is None else uid
     contents = contents.resolve(strict=True)
-    results: list[EntryDeletionResult] = []
+    results: list[RemovalResult[Path]] = []
     trashed: list[tuple[Path, Path]] = []
     try:
         with _gc_lock(contents):
@@ -348,13 +328,13 @@ def trash_prunable_entries(
                 logger.info("Trashing repo-cache entry %d/%d %s", index, len(candidates), path)
                 fresh = _inspect_entry(path, uid=uid, points=points)
                 if isinstance(fresh, ReviewEntry):
-                    results.append(SkippedEntry(path, describe_reason(fresh)))
+                    results.append(Skipped(path, describe_reason(fresh)))
                     continue
                 if fresh.identity != candidate.entry.identity:
-                    results.append(SkippedEntry(path, "entry was replaced since the scan"))
+                    results.append(Skipped(path, "entry was replaced since the scan"))
                     continue
                 if path in referrers:
-                    results.append(SkippedEntry(path, f"now referenced by {len(referrers[path])} output base(s)"))
+                    results.append(Skipped(path, f"now referenced by {len(referrers[path])} output base(s)"))
                     continue
                 trash = contents / _TRASH / uuid.uuid4().hex
                 try:
@@ -362,15 +342,15 @@ def trash_prunable_entries(
                     recorded_inputs_of(path).unlink()
                     path.rename(trash)
                 except OSError as error:
-                    results.append(FailedEntry(path, None, str(error)))
+                    results.append(Failed(path, str(error)))
                     continue
                 trashed.append((path, trash))
     except RepoCacheBusyError as error:
-        return TrashedEntries([SkippedEntry(candidate.entry.contents, str(error)) for candidate in candidates], [])
+        return TrashedEntries([Skipped(candidate.entry.contents, str(error)) for candidate in candidates], [])
     return TrashedEntries(results, trashed)
 
 
-def empty_trash(path: Path, trash: Path) -> EntryDeletionResult:
+def empty_trash(path: Path, trash: Path) -> RemovalResult[Path]:
     """Remove one trashed entry; independent of every other, so callers may run several at once."""
     logger.info("Emptying repo-cache trash %s", trash)
     try:
@@ -381,11 +361,11 @@ def empty_trash(path: Path, trash: Path) -> EntryDeletionResult:
                 trash.lstat()
             except FileNotFoundError:
                 # Bazel may have consumed this entry from `_trash` after we released its lock.
-                return DeletedEntry(path)
+                return Removed(path)
             except OSError:
                 pass
-        return FailedEntry(path, trash, str(error))
-    return DeletedEntry(path)
+        return Failed(path, str(error), trash)
+    return Removed(path)
 
 
 def delete_prunable_entries(
@@ -396,7 +376,7 @@ def delete_prunable_entries(
     session_bases: Sequence[Path],
     uid: int | None = None,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-) -> list[EntryDeletionResult]:
+) -> list[RemovalResult[Path]]:
     trashed = trash_prunable_entries(
         candidates,
         contents=contents,

@@ -12,6 +12,7 @@ from devinfra.gc import git_repo, worktree_gc as wg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 
 
 def _classify(repo: GitRepo, path: Path, proc: Path, **kwargs: object) -> wg.Classification:
@@ -233,7 +234,7 @@ def test_remove_worktree_deletes_and_leaves_branch(repo: GitRepo) -> None:
 
     result = wg.remove_worktree(repo.path, wt.path)
 
-    assert result == wg.RemovedWorktree(wt.path)
+    assert result == Removed(wt.path)
     assert not wt.path.exists()
     assert repo.has_branch("feature")  # the work stays reachable through the branch
 
@@ -245,11 +246,11 @@ def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     result = wg.remove_worktree(repo.path, wt.path)
 
     # `git worktree remove` without --force refuses a dirty tree, so nothing is lost.
-    assert isinstance(result, wg.FailedWorktree)
+    assert isinstance(result, Failed)
     assert wt.path.exists()
 
 
-def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> wg.RemovalResult:
+def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
     return wg.remove_if_still_prunable(
         repo.path,
         Worktree(path=wt.path, branch="feature"),
@@ -264,7 +265,7 @@ def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int
 def test_remove_if_still_prunable_removes_an_unchanged_tree(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
 
-    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == wg.RemovedWorktree(wt.path)
+    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == Removed(wt.path)
     assert not wt.path.exists()
 
 
@@ -273,7 +274,7 @@ def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(
 
     result = _remove_if_still_prunable(repo, wt, live_pids=[4242])
 
-    assert isinstance(result, wg.SkippedWorktree)
+    assert isinstance(result, Skipped)
     assert wt.path.exists()
 
 
@@ -283,7 +284,7 @@ def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_s
 
     result = _remove_if_still_prunable(repo, wt, live_pids=[])
 
-    assert isinstance(result, wg.SkippedWorktree)
+    assert isinstance(result, Skipped)
     assert wt.path.exists()
 
 
