@@ -10,7 +10,8 @@ import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
-from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE, CREDENTIALS_NAMESPACE, NAMESPACE
+from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def fixture() -> rendered_fixture.RenderedFixture:
         mcp_fixtures=None,
         objects=[
             {"kind": "Namespace", "metadata": {"name": name}}
-            for name in (NAMESPACE, CREDENTIALS_NAMESPACE, ACCOUNTS_NAMESPACE)
+            for name in (NAMESPACE, CREDENTIALS_NAMESPACE, kubernetes_accounts_namespace(NAMESPACE))
         ],
     )
 

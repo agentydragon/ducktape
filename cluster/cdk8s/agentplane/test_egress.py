@@ -44,7 +44,7 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
-from cluster.cdk8s.agentplane.namespaces import STAGING_KUBERNETES_ACCOUNTS_NAMESPACE
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.catalog import Provider
@@ -658,7 +658,7 @@ def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
         )
     ]
     kind, name, namespace = one(impersonating)
-    assert (kind, namespace) == ("Role", STAGING_KUBERNETES_ACCOUNTS_NAMESPACE)
+    assert (kind, namespace) == ("Role", kubernetes_accounts_namespace(staging.ENV.namespace))
     assert roles[(kind, name, namespace)]["rules"] == [
         {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["impersonate"]}
     ]

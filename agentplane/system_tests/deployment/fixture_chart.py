@@ -45,7 +45,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE, CREDENTIALS_NAMESPACE, NAMESPACE
+from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
@@ -91,6 +91,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -694,7 +695,9 @@ def build_chart(
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
     )
-    KubernetesAccounts(chart, "kubernetes-accounts", namespace=ACCOUNTS_NAMESPACE, proxy_namespace=NAMESPACE)
+    KubernetesAccounts(
+        chart, "kubernetes-accounts", namespace=kubernetes_accounts_namespace(NAMESPACE), proxy_namespace=NAMESPACE
+    )
     if isinstance(models, PublicLiteLLM):
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)

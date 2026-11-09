@@ -1383,6 +1383,7 @@ py_library(
     srcs = ["namespaces.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/scenarios:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/monitoring:__pkg__",
     ],

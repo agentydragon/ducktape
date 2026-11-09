@@ -86,8 +86,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   account the proxy acts as on its own API server. Absent, stale or mismatched context refuses
   with `credential-unavailable`.
 - **A Kubernetes account is acted as by impersonation.** A `kubernetesServiceAccount` credential
-  names a namespace and a ServiceAccount on the API server the proxy's own in-cluster credential
-  reaches; no other API server is modelled. Its only target is `schemeToken` `Bearer` on
+  names a namespace and a ServiceAccount on the API server the proxy's own credential reaches. A
+  named API server is the intended extension for remote clusters, not modelled for lack of a use
+  case and additive when one appears. Its only target is `schemeToken` `Bearer` on
   `Authorization`. A request it decides gets the
   proxy's own bearer for that server in place of the placeholder, re-read from its token file on
   every request, and `Impersonate-User: system:serviceaccount:<namespace>:<name>` beside it, in one

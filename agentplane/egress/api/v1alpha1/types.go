@@ -22,8 +22,10 @@ type ProjectedWorkloadTokenSource struct {
 }
 
 // KubernetesServiceAccountSource names a ServiceAccount the proxy acts as by impersonation on the API
-// server its own in-cluster credential reaches: it presents its own bearer and asks the API server to
-// treat the request as this account's. No token for the account is minted or held.
+// server its own credential reaches: it presents its own bearer and asks the API server to treat the
+// request as this account's. No token for the account is minted or held. A named API server is the
+// intended extension for remote clusters, not modelled for lack of a use case and additive when one
+// appears.
 type KubernetesServiceAccountSource struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63

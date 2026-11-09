@@ -44,8 +44,8 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
-from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE
 from agentplane.testing.scripted_model import Text
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
 GITHUB_CLONE = "github-clone"
@@ -384,19 +384,16 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
     first, second = await asyncio.gather(sandbox("systest-account-first"), sandbox("systest-account-second"))
     suffix = secrets.token_hex(4)
     account, credential = f"shared-{suffix}", f"k8s-account-{suffix}"
-    username = f"system:serviceaccount:{ACCOUNTS_NAMESPACE}:{account}"
+    accounts = kubernetes_accounts_namespace(cluster.namespace)
+    username = f"system:serviceaccount:{accounts}:{account}"
     # The later -n overrides the fixture namespace the driver passes.
     await cluster.kubectl(
         "create",
         "-n",
-        ACCOUNTS_NAMESPACE,
+        accounts,
         "-f",
         "-",
-        body={
-            "apiVersion": "v1",
-            "kind": "ServiceAccount",
-            "metadata": {"name": account, "namespace": ACCOUNTS_NAMESPACE},
-        },
+        body={"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": account, "namespace": accounts}},
     )
     try:
         owners = _owned_by(first, second)
@@ -409,8 +406,8 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
                 "kind": "EgressCredential",
                 "metadata": {"name": credential, "ownerReferences": owners},
                 "spec": {
-                    "description": f"Act as {ACCOUNTS_NAMESPACE}/{account} on the local API server.",
-                    "source": {"kubernetesServiceAccount": {"namespace": ACCOUNTS_NAMESPACE, "name": account}},
+                    "description": f"Act as {accounts}/{account} on the local API server.",
+                    "source": {"kubernetesServiceAccount": {"namespace": accounts, "name": account}},
                     "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
                 },
             },
@@ -452,7 +449,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
             assert acted.outcome == Decision.OUTCOME_ALLOW, f"{acted!r}"
             assert acted.policy == credential, f"{acted!r}"
             assert acted.substituted, f"{acted!r}"
-            assert (acted.impersonated.namespace, acted.impersonated.name) == (ACCOUNTS_NAMESPACE, account), (
+            assert (acted.impersonated.namespace, acted.impersonated.name) == (accounts, account), (
                 f"the decision does not name the impersonated account: {acted!r}"
             )
 
@@ -477,7 +474,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
         assert refused.reason == "placeholder-unresolved", f"{refused!r}"
         assert await _whoami(cluster, second, credential) == username
     finally:
-        await cluster.kubectl("delete", "serviceaccount", account, "-n", ACCOUNTS_NAMESPACE, "--ignore-not-found")
+        await cluster.kubectl("delete", "serviceaccount", account, "-n", accounts, "--ignore-not-found")
 
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

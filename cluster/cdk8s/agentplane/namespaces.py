@@ -1,3 +1,6 @@
 STAGING_NAMESPACE = "agentplane-staging"
-# The Kubernetes accounts the staging egress proxy acts as by impersonation (kubernetes_accounts.py).
-STAGING_KUBERNETES_ACCOUNTS_NAMESPACE = "agentplane-k8s-accounts"
+
+
+def kubernetes_accounts_namespace(namespace: str) -> str:
+    """The namespace of the Kubernetes accounts an Agentplane environment's agents act as."""
+    return f"{namespace}-k8s-accounts"
