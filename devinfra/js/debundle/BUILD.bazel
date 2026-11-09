@@ -696,6 +696,7 @@ rust_library(
         "facts/sync_effects/world.rs",
         "facts/sync_effects/world/cells.rs",
         "facts/sync_effects/world/descriptor_heap.rs",
+        "facts/sync_effects/world/join.rs",
         "facts/sync_effects/world/object_surface.rs",
         "facts/value_flow.rs",
         "facts/value_flow_tests.rs",
