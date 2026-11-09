@@ -534,6 +534,7 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
+        "@crates//:shlex",
     ],
 )
 
