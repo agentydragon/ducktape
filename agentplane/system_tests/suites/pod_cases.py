@@ -14,7 +14,7 @@ from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.agent import TURN_SECONDS
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -74,20 +74,22 @@ type Scenario = Callable[[Resources], Awaitable[None]]
 
 
 async def an_agent_messages_another_which_reads_and_acknowledges_it(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
-        await run_harness_pair(
+    async with resources.open() as (client, _):
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, model: agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
+            lambda harness, model, sandboxes: agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
                 resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
 
 
 async def a_policy_granted_after_the_sandbox_is_running_takes_effect(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
-        await run_harness_pair(
+    async with resources.open() as (client, _):
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, model: egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
+            lambda harness, model, sandboxes: egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
                 resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
@@ -110,10 +112,11 @@ async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> 
 
 
 async def sandbox_cli_reaches_the_dispatcher_with_its_workload_svid(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
-        await run_harness_pair(
+    async with resources.open() as (client, _):
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, model: dispatcher_workload.sandbox_cli_lists_its_svid_created_session(
+            lambda harness, model, sandboxes: dispatcher_workload.sandbox_cli_lists_its_svid_created_session(
                 client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
@@ -131,12 +134,15 @@ async def cert_manager_reissues_a_deleted_tls_secret(resources: Resources) -> No
 
 
 async def pod_mtls_session_survives_replacement_and_keeps_history(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
+    async with resources.open() as (client, _):
         async with asyncio.timeout(600):
-            await run_harness_pair(
+            await run_harness_pair_in_own_sandboxes(
+                resources.cluster,
                 client,
-                lambda harness, model: runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
-                    resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
+                lambda harness, model, sandboxes: (
+                    runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
+                        resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
+                    )
                 ),
             )
 
@@ -264,9 +270,6 @@ SCENARIOS = (
     pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
     pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
-    # The node holds five Sandboxes beside the stack, and the runner pool keeps every pair it creates
-    # until the suite ends. The messaging case's four Sandboxes fit only before the first `shared` case;
-    # two `shared` cases running together leave room for one, so adjacent `shared` cases go last.
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
@@ -284,6 +287,9 @@ SCENARIOS = (
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
     pytest.param(an_unknown_thread_is_not_found),
+    # The node holds five Sandboxes beside the stack, and the runner pool keeps every pair it creates
+    # until the suite ends. Two `shared` cases running together make a second pair, and an open case's
+    # two Sandboxes do not fit beside both, so adjacent `shared` cases go last.
     pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
     pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
     pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),

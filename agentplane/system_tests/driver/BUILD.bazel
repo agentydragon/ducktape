@@ -355,7 +355,9 @@ py_library(
     name = "harness_pair",
     srcs = ["harness_pair.py"],
     deps = [
+        ":cluster",
         ":offered_models",
+        ":sandbox",
         ":tracing",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",

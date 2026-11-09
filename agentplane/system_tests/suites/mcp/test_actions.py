@@ -22,7 +22,7 @@ from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch, Result
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
-from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
 from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -47,18 +47,18 @@ class ActionResources:
     tmp_path_factory: pytest.TempPathFactory
 
     @asynccontextmanager
-    async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
+    async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient]]:
         async with (
             self.scripted.case_scope(),
             scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as (
                 client,
-                sandboxes,
+                _,
             ),
             native_client(
                 self.cluster, self.tmp_path_factory.mktemp(f"mcp-actions-{name}") / "dispatcher-token"
             ) as dispatcher,
         ):
-            yield client, dispatcher, sandboxes
+            yield client, dispatcher
 
 
 @asynccontextmanager
@@ -76,13 +76,11 @@ async def _policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
 
 
 async def _executes_action(resources: ActionResources) -> None:
-    async with (
-        resources.open_case("executes") as (client, dispatcher, sandbox),
-        _policy_objects(resources.cluster) as policies,
-    ):
-        await run_harness_pair(
+    async with resources.open_case("executes") as (client, dispatcher), _policy_objects(resources.cluster) as policies:
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, offered_model: mcp.agent_executes_mcp_action(
+            lambda harness, offered_model, sandbox: mcp.agent_executes_mcp_action(
                 client,
                 dispatcher,
                 sandbox,
@@ -97,12 +95,13 @@ async def _executes_action(resources: ActionResources) -> None:
 
 async def _bff_decision(resources: ActionResources, credentials: OperatorCredentials) -> None:
     async with (
-        resources.open_case("bff") as (client, dispatcher, sandbox),
+        resources.open_case("bff") as (client, dispatcher),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
     ):
-        await run_harness_pair(
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, offered_model: mcp.agent_mcp_bff_decision(
+            lambda harness, offered_model, sandbox: mcp.agent_mcp_bff_decision(
                 operator_bff,
                 credentials,
                 client,
@@ -118,13 +117,14 @@ async def _bff_decision(resources: ActionResources, credentials: OperatorCredent
 
 async def _launcher_ownership(resources: ActionResources, credentials: OperatorCredentials) -> None:
     async with (
-        resources.open_case("launcher") as (client, dispatcher, sandbox),
+        resources.open_case("launcher") as (client, dispatcher),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
         _policy_objects(resources.cluster) as policies,
     ):
-        await run_harness_pair(
+        await run_harness_pair_in_own_sandboxes(
+            resources.cluster,
             client,
-            lambda harness, offered_model: mcp.launcher_drives_only_the_sandbox_it_launched(
+            lambda harness, offered_model, sandbox: mcp.launcher_drives_only_the_sandbox_it_launched(
                 resources.cluster,
                 operator_bff,
                 client,
