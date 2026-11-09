@@ -360,6 +360,7 @@ rust_library(
     edition = "2024",
     deps = [
         "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle:binding_targets",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:output_layout",
         "//devinfra/js/debundle:report_io",

@@ -58,6 +58,7 @@ use crate::rename_ledger::{
 use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, ensure};
+use binding_targets::binding_names;
 use js_ast::is_binding_identifier;
 use js_ast::str_value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -573,30 +574,7 @@ fn function_root_binding_ids(function: &Function) -> BTreeMap<String, Id> {
 }
 
 fn collect_pat_binding_ids(pat: &Pat, out: &mut BTreeMap<String, Id>) {
-    match pat {
-        Pat::Ident(ident) => {
-            out.insert(ident.id.sym.to_string(), ident.id.to_id());
-        }
-        Pat::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
-        Pat::Assign(assign) => collect_pat_binding_ids(&assign.left, out),
-        Pat::Array(array) => {
-            for elem in array.elems.iter().flatten() {
-                collect_pat_binding_ids(elem, out);
-            }
-        }
-        Pat::Object(object) => {
-            for prop in &object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_pat_binding_ids(&kv.value, out),
-                    ObjectPatProp::Assign(assign) => {
-                        out.insert(assign.key.id.sym.to_string(), assign.key.id.to_id());
-                    }
-                    ObjectPatProp::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
-                }
-            }
-        }
-        Pat::Invalid(_) | Pat::Expr(_) => {}
-    }
+    out.extend(binding_names(pat).map(|id| (id.0.to_string(), id)));
 }
 
 impl ScopedHeuristicNaturalizer<'_> {

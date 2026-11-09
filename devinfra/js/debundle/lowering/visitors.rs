@@ -57,6 +57,7 @@
 //! Labels are a separate namespace from bindings; label idents and
 //! their `break`/`continue` references are never renamed.
 
+use binding_targets::binding_names;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_atoms::Atom;
 use swc_common::{DUMMY_SP, SyntaxContext};
@@ -110,36 +111,11 @@ fn rename_sources(renames: &BTreeMap<Id, Atom>) -> BTreeSet<String> {
 
 /// Names a single parameter pattern binds that are rename sources or targets.
 fn collect_shadowed_by_pat(pat: &Pat, names: &RenameNames<'_>, out: &mut BTreeSet<String>) {
-    match pat {
-        Pat::Ident(ident) => {
-            let name = ident.id.sym.as_ref();
-            if names.is_relevant(name) {
-                out.insert(name.to_string());
-            }
-        }
-        Pat::Rest(rest) => collect_shadowed_by_pat(&rest.arg, names, out),
-        Pat::Assign(assign) => collect_shadowed_by_pat(&assign.left, names, out),
-        Pat::Array(array) => {
-            for elem in array.elems.iter().flatten() {
-                collect_shadowed_by_pat(elem, names, out);
-            }
-        }
-        Pat::Object(object) => {
-            for prop in &object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_shadowed_by_pat(&kv.value, names, out),
-                    ObjectPatProp::Assign(assign) => {
-                        let name = assign.key.id.sym.as_ref();
-                        if names.is_relevant(name) {
-                            out.insert(name.to_string());
-                        }
-                    }
-                    ObjectPatProp::Rest(rest) => collect_shadowed_by_pat(&rest.arg, names, out),
-                }
-            }
-        }
-        Pat::Invalid(_) | Pat::Expr(_) => {}
-    }
+    out.extend(
+        binding_names(pat)
+            .filter(|(sym, _)| names.is_relevant(sym))
+            .map(|(sym, _)| sym.to_string()),
+    );
 }
 
 fn shadowed_by_params<'a, I>(params: I, names: &RenameNames<'_>) -> BTreeSet<String>

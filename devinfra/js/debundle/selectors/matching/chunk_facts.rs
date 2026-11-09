@@ -21,6 +21,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use binding_targets::binding_names;
 use js_ast::source_unit_ordinal_for_statement;
 use source_identity::StatementId;
 use swc_ecma_ast::{
@@ -1856,7 +1857,8 @@ fn decl_binds_object(decl: &Decl) -> bool {
         Decl::Var(var) => var
             .decls
             .iter()
-            .any(|declarator| pat_binds_object(&declarator.name)),
+            .flat_map(|declarator| binding_names(&declarator.name))
+            .any(|(sym, _)| sym.as_ref() == "Object"),
         _ => false,
     }
 }
@@ -1875,23 +1877,6 @@ fn stmt_reassigns_object(stmt: &Stmt) -> bool {
         &assign.left,
         AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) if ident.id.sym.as_ref() == "Object"
     )
-}
-
-/// `true` when a binding pattern binds the name `Object` anywhere within it
-/// (`Object`, `{ Object }`, `[Object]`, …). A `var Object` shadows the global.
-fn pat_binds_object(pat: &Pat) -> bool {
-    match pat {
-        Pat::Ident(binding) => binding.id.sym.as_ref() == "Object",
-        Pat::Array(array) => array.elems.iter().flatten().any(pat_binds_object),
-        Pat::Object(object) => object.props.iter().any(|prop| match prop {
-            ObjectPatProp::KeyValue(kv) => pat_binds_object(&kv.value),
-            ObjectPatProp::Assign(assign) => assign.key.id.sym.as_ref() == "Object",
-            ObjectPatProp::Rest(rest) => pat_binds_object(&rest.arg),
-        }),
-        Pat::Rest(rest) => pat_binds_object(&rest.arg),
-        Pat::Assign(assign) => pat_binds_object(&assign.left),
-        _ => false,
-    }
 }
 
 /// Extract every `var X = Object.<property>` intrinsic-alias declarator from one

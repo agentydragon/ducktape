@@ -1849,6 +1849,7 @@ rust_library(
     crate_root = "selectors/matching/chunk_facts.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         ":js_ast",
         ":source_identity",
         "@crates//:strum",

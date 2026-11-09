@@ -18,6 +18,7 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, chunk_runtime_entry, export_policies, normalized_chunk_ids,
     prune_artifact_to_chunk_ids,
 };
+use binding_targets::binding_names;
 use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome, SelectorOutcome, Severity};
@@ -1526,7 +1527,7 @@ fn validate_initializer_target(
         };
         if let Some(var) = var {
             for declarator in &var.decls {
-                if !pattern_binds_name(&declarator.name, binding) {
+                if !binding_names(&declarator.name).any(|(sym, _)| sym.as_ref() == binding) {
                     continue;
                 }
                 match &declarator.name {
@@ -1599,31 +1600,6 @@ fn item_declares_nonvariable_name(item: &ModuleItem, binding: &str) -> bool {
             }
         }
         _ => false,
-    }
-}
-
-fn pattern_binds_name(pattern: &swc_ecma_ast::Pat, binding: &str) -> bool {
-    match pattern {
-        swc_ecma_ast::Pat::Ident(ident) => ident.id.sym.as_ref() == binding,
-        swc_ecma_ast::Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .any(|element| pattern_binds_name(element, binding)),
-        swc_ecma_ast::Pat::Rest(rest) => pattern_binds_name(&rest.arg, binding),
-        swc_ecma_ast::Pat::Object(object) => object.props.iter().any(|property| match property {
-            swc_ecma_ast::ObjectPatProp::KeyValue(property) => {
-                pattern_binds_name(&property.value, binding)
-            }
-            swc_ecma_ast::ObjectPatProp::Assign(property) => {
-                property.key.id.sym.as_ref() == binding
-            }
-            swc_ecma_ast::ObjectPatProp::Rest(property) => {
-                pattern_binds_name(&property.arg, binding)
-            }
-        }),
-        swc_ecma_ast::Pat::Assign(assign) => pattern_binds_name(&assign.left, binding),
-        swc_ecma_ast::Pat::Expr(_) | swc_ecma_ast::Pat::Invalid(_) => false,
     }
 }
 
