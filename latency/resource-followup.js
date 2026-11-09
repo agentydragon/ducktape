@@ -67,6 +67,12 @@ function ResourceContent({ snapshot }) {
     },
   ];
   const pair = snapshot.fixture_pair;
+  const cpu = snapshot.cpu_experiment;
+  const cpuPairs = cpu.pairs.map((pair) => ({
+    state: pair.pair === 1 ? "Cold" : `Warm ${pair.pair - 1}`,
+    "4 CPUs": pair.cpu4_s,
+    "8 CPUs": pair.cpu8_s,
+  }));
   const pairData = [
     ["Command", "command_seconds"],
     ["Setup", "setup_seconds"],
@@ -179,17 +185,20 @@ function ResourceContent({ snapshot }) {
     <${Anchor} href="resource-timeline.png" download="resource-timeline.png"
       >Download the reviewed annotated timeline with physical run bands<//
     >
-    <${Title} order=${3}>RAM and current host paging<//>
+    <${Title} order=${3}>RAM and host paging snapshots<//>
     <${Text}
       >The live guest had 13.04 GiB usable memory and 12.37 GiB disk cache, with
       zero guest swap counters. Its roughly 15.3 GiB QEMU RSS is not an action
       peak. Across 250 warm-control guest samples, MemAvailable stayed above
       11.86 GiB and sar used-memory peaked at 3.19 GiB. The sampled action
       cgroup highwater was 7.65 GiB including reclaimable cache. These measures
-      have different scopes; no smaller-RAM intervention was tested. Adding RAM
-      is not justified by these samples; a safe reduction is also unproven.
-      Initial host zram occupancy was about 35 GiB logical versus 7.4 GiB
-      physical compressed storage—different accounting layers.<//
+      have different scopes. The completed CPU trials below observed action
+      cgroup highwaters up to 8.68 GiB, while minimum guest MemAvailable was
+      10.34 GiB in the full sar-covered runs. Live counters are lower bounds:
+      final reads failed after Docker removed the cgroups. No smaller-RAM
+      intervention was tested; retain 16 GiB. Initial host zram occupancy was
+      about 35 GiB logical versus 7.4 GiB physical compressed storage—different
+      accounting layers.<//
     >
     <${Table.ScrollContainer} minWidth=${500} type="native">
       <${Table} striped verticalSpacing="sm">
@@ -220,10 +229,11 @@ function ResourceContent({ snapshot }) {
     >
     <${Text}
       >Kubernetes selected ovh-ns1001419 from zone hil-ovh; there is no hostname
-      pin. One guest has four vCPUs, 16 GiB RAM, one action slot and 80 GiB NVMe
-      scratch with an explicit 80 GiB storage request. Production routing and
-      workers are unchanged. Both the nested-KVM smoke and full real
-      guest/lifecycle scenario passed.<//
+      pin. This fixture comparison used one four-vCPU guest, 16 GiB RAM, one
+      action slot and 80 GiB NVMe scratch with an explicit 80 GiB storage
+      request. The subsequent CPU comparison is complete and the canary is
+      deleted. Production routing and workers are unchanged. Both the nested-KVM
+      smoke and full real guest/lifecycle scenario passed.<//
     >
     <${Paper} withBorder p="md" radius="md" data-chart="resource-fixture-pair">
       <${Title} order=${4} mb="md"
@@ -300,11 +310,152 @@ function ResourceContent({ snapshot }) {
       trees; post-merge complete-CI impact remains unmeasured. Ordinary PR-head
       CI was canceled, while focused and execution-contract checks passed.<//
     >
+    <${Title} order=${3} id="cpu-comparison"
+      >Completed 4/8-CPU comparison: retain 4 vCPU / 16 GiB<//
+    >
+    <${Text}
+      >All six uncached full Firecracker actions passed at fixed source
+      ${cpu.fixed_tested_source.slice(0, 10)}. Both unpinned guest lifetimes
+      scheduled to ovh-ns1001419 and used the same NVMe backend, RAM, work disk,
+      image pins and one-action limit. Actual action allocation changed from
+      4000 to 8000 mCPU; the eight-CPU process could use CPUs 0–7. Decoded
+      arguments, environment, outputs and input-root digest matched; only
+      EstimatedCPU differed in Action and Command. Command digests therefore
+      differ as expected.<//
+    >
+    <${Paper} withBorder p="md" radius="md" data-chart="resource-cpu-pairs">
+      <${Title} order=${4} mb="md"
+        >Three matched-state pairs: command seconds<//
+      >
+      <${BarChart}
+        h=${260}
+        data=${cpuPairs}
+        dataKey="state"
+        withLegend
+        series=${[
+          { name: "4 CPUs", color: "blue.6" },
+          { name: "8 CPUs", color: "orange.6" },
+        ]}
+        valueFormatter=${(value) => `${fixed(value, 1)} s`}
+        xAxisProps=${{ interval: 0, tickMargin: 8 }}
+        yAxisProps=${{ width: 45 }}
+      />
+    <//>
+    <${Table.ScrollContainer} minWidth=${700} type="native">
+      <${Table} striped verticalSpacing="sm">
+        <${Table.Caption}
+          >Physical action measurements, 9 November 09:56–10:51 UTC. The final
+          8-CPU row is a post-watchdog sample.<//
+        >
+        <${Table.Thead}
+          ><${Table.Tr}
+            >${["Pair / vCPU", "Filecache", "Passed command", "Setup", "Input fetch", "Observed cgroup peak"].map((value) => html`<${Table.Th} key=${value}>${value}<//>`)}<//
+          ><//
+        >
+        <${Table.Tbody}
+          >${[1, 2, 3].flatMap((pair) =>
+            [4, 8].map((count) => {
+              const run = cpu.runs.find(
+                (row) => row.arm === `cpu${count}-arm${pair}`,
+              );
+              return html`<${Table.Tr} key=${run.arm}
+                ><${Table.Td}
+                  >${pair} /
+                  ${count}${run.health_note ? " · post-watchdog" : ""}<//
+                ><${Table.Td}>${pair === 1 ? "Cold" : "Warm"}<//
+                ><${Table.Td}
+                  ><${Anchor} href=${invocation(run.invocation_id)}
+                    >${fixed(run.command_s, 3)} s · PASSED<//
+                  ><//
+                ><${Table.Td}>${fixed(run.setup.wall_s, 3)} s<//
+                ><${Table.Td}>${fixed(run.fetch_s, 3)} s<//
+                ><${Table.Td}
+                  >${fixed(run.observed_cgroup_memory_peak_bytes / 1024 ** 3)}
+                  GiB<//
+                ><//
+              >`;
+            }),
+          )}<//
+        >
+      <//>
+    <//>
+    <${Blockquote}
+      >Warm means were ${fixed(cpu.warm_means_seconds.cpu4, 3)} s at 4 CPUs and
+      ${fixed(cpu.warm_means_seconds.cpu8, 3)} s at 8 CPUs. Extra CPUs were used
+      and reduced guest CPU pressure, but did not shorten setup or the measured
+      critical path. These are three matched-state pairs, ordered 4 then 8 in
+      two guest lifetimes, not randomized or interleaved trials. Shared-host
+      load, SMT/frequency and ordering remain possible explanations for the
+      slower 8-CPU observations; no universal CPU scaling penalty is
+      established. The fixed source predates the merged fixture trim. These
+      target/action timings do not establish mean complete CI below four
+      minutes.<//
+    >
+    <${Text}
+      >At 10:45:42 UTC, between the second and third 8-CPU commands during
+      serial profile extraction, the guest reported a 26-second soft-lockup
+      warning in a timer/softirq trace over an idle task. Host CPU pressure also
+      spiked; subsequent health checks passed. Its cause remains unresolved. The
+      final 276.572-second command is explicitly a post-watchdog sample; no
+      warning was observed in its measured command window.<//
+    >
+    <${Text}
+      >No matched HDD/SSD intervention was available: eligible HIL compute hosts
+      had NVMe scratch, while HDD hosts lacked admission headroom for 4 CPUs /
+      16 GiB. No data was removed or storage expanded to make the comparison
+      fit. Historical wyrm2 versus HIL timings remain confounded.<//
+    >
+    <${Title} order=${4}>Canary cleanup verified<//>
+    <${Text}
+      >At 10:57:53 UTC all nine owned physical TestRunners were reconciled as
+      passed. Exporter counters, container lifecycle and Docker/K3s idle checks
+      matched; assigned resources and queues were zero. Executors logged
+      successful graceful stop and registration cancellation before teardown.
+      Only the three owned objects were deleted; VM instances, launchers and
+      scratch paths were absent. Physical scratch free space returned to 133.57
+      GB. Production VM/VMI identities were unchanged and Ready; host pressure
+      conditions, API and etcd checks were healthy. No canary remains running
+      and no production configuration was changed.<//
+    >
+    <${Text}
+      ><${Anchor} href=${cpu.source_pr}>Source/evidence PR #15124<//>, pinned at
+      <${Anchor} href=${cpu.durable_evidence_markdown}>791540fbaa<//>, contains
+      the full source/input proof, native phase/process profiles and cleanup
+      receipt. Seven sanitized native archives were uploaded to BuildBuddy CAS
+      and downloaded/hash-verified;
+      <${Anchor} href="evidence.md"
+        >artifact hashes and retrieval instructions<//
+      >
+      are retained separately from the historical telemetry. CAS follows its
+      normal retention policy; compact measurements remain committed.<//
+    >
+    <${Title} order=${3} id="vm-readiness-followup"
+      >VM readiness: early boot stop remains unresolved<//
+    >
+    <${Text}
+      >In
+      <${Anchor} href=${invocation("46993f63-7c5b-5685-a009-4664f7c8318f")}
+        >failed child 46993f63<//
+      >
+      at PR #15126 source a099f643, VM2 console and raw serial both stop at
+      Linux guest uptime 5.157459 s during early PCI/ACPI boot, before systemd
+      or the runner. The default lane used QEMU 10.1 TCG without /dev/kvm, 2
+      guest vCPUs and 1.5 GiB. ConnectionPending at 300 s is a downstream
+      symptom. The QEMU host snapshot at 09:57:08 UTC followed destruction at
+      09:56:56 UTC, leaving root cause unresolved. Failure-time passive capture
+      and
+      <${Anchor} href=${invocation("cb469644-f04f-4844-9021-f3a425dce6ef")}
+        >one existing-observer full-suite attempt<//
+      >
+      were underway at this report snapshot; no result or fix is established. A
+      separate same-invocation Pod failure was Unschedulable / Insufficient
+      memory, a distinct admission boundary.<//
+    >
     <${Title} order=${3}>Current decisions<//>
     <${Text}
-      >Finish same-source four/eight-vCPU trials and fixture repetitions as
-      needed; the first warm baseline control passed. Keep one action per guest
-      and retain 16 GiB while evaluating action peaks. Keep KEDA scale-in behind
+      >Retain 4 vCPU / 16 GiB and one action per guest after the completed CPU
+      trials. Measure matched post-merge complete-CI heads before claiming the
+      fixture trim meets the feedback objective. Keep KEDA scale-in behind
       tested admission/drain ownership; defer a cache proxy given the historical
       1.6-second input-fetch stage.<//
     >
@@ -323,8 +474,11 @@ function ResourceContent({ snapshot }) {
       and limitations are in
       <${Anchor} href="evidence.json"
         >evidence.json → resource_telemetry_followup<//
-      >. Process IDs, private addresses, command lines, workspace names, raw
-      logs and worker identities remain outside publication.<//
+      >. The historical telemetry window was not refreshed by the CPU follow-up.
+      Browser validation of these updated assets is pending; the earlier visual
+      receipt applies to the preceding revision. Process IDs, private addresses,
+      command lines, workspace names, raw logs and worker identities remain
+      outside publication.<//
     >
   <//>`;
 }

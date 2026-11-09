@@ -4,7 +4,7 @@
   "window_end_utc": "2026-11-09T07:09:00Z",
   "published_at_utc": "2026-11-09T07:40:22.738978+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "b2baef2104493317bb5f6fe312a57c28f8d6d84d",
+  "previous_report_commit": "e849a33c8282ac5eeda9dbb4b2f5b43d46c67f69",
   "analysis_scope": "72h complete Actions census; latest24h required-gate exact-head proxy and runner occupancy;19 verified green system-suite heads;live KVM capacity;four physical-driver timelines;three bounded mechanism experiments.",
   "window_semantics": "Manifest bounds cover the detailed24h cohort. Census begins2026-11-06T07:09:00Z. Live pool,experiments and publication validation have separately recorded clocks outside the cohort.",
   "source_candidate_pr": "https://github.com/agentydragon/ducktape/pull/15099",
@@ -18,8 +18,8 @@
     "prettier"
   ],
   "publication_scope": "Latency namespace only; current telemetry, experiment dispositions and reviewed visualizations.",
-  "report_html_sha256": "e46e843c1c3deb300b5e465f6df90a46e70dc41a4f32610490f40836b182c7aa",
-  "evidence_sha256": "1388e694eef7158669ba7beede675f73284946c03728bd074a198519eb73acfa",
+  "report_html_sha256": "287cfdcdef617023a8a64e20567be165db71b6f1fdb8eb92574e73edbeda7411",
+  "evidence_sha256": "2181714a3567bea96b1506a78849e9ed478dc6124c74c21b7a839620624a6059",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
   "presentation_validation": "visual-validation.json",
@@ -46,7 +46,24 @@
   "resource_followup_experiments_end_utc": "2026-11-09T10:18:16.722345Z",
   "resource_followup_visual_scope": "Desktop/mobile, initial light/dark and live preference changes; actual pinned CDNs, telemetry controls, line/bar charts and retained span timelines.",
   "prior_presentation_validation": "../presentation-validation.json",
-  "resource_module_sha256": "74fbb839b5fe908a5822a97f1d282f9dfcad684f4453f467d5dea81cf2ef2607",
+  "resource_module_sha256": "238cd9a023e4c8a9901394e91dde4f859ca5433774f5315dd2ad101b409e316f",
   "resource_timeline_png_sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
-  "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00"
+  "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00",
+  "cpu_followup_assembled_at_utc": "2026-11-09T11:03:17.556787+00:00",
+  "cpu_followup_scope": "Completed six physical CPU runs, existing fixture control, source/input proof, native profile artifact index and verified canary cleanup. Historical CI cohort and resource telemetry windows remain unchanged.",
+  "cpu_followup_tested_source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+  "cpu_followup_evidence_commit": "791540fbaa160bde261e469adfdd2fcc84f378ec",
+  "cpu_followup_start_utc": "2026-11-09T09:56:45.812128Z",
+  "cpu_followup_end_utc": "2026-11-09T10:51:40.932165Z",
+  "cpu_followup_cleanup_verified_at_utc": "2026-11-09T10:57:53.166378+00:00",
+  "cpu_followup_visual_validation": {
+    "status": "PENDING",
+    "scope": "Updated assets need desktop/mobile, light/dark, live preference and interaction review on RBE before merge/publication.",
+    "prior_receipt": "visual-validation.json",
+    "prior_receipt_applies_to_this_revision": false
+  },
+  "vm_readiness_followup_recorded_at_utc": "2026-11-09T11:03:17.556787+00:00",
+  "evidence_index": "evidence.md",
+  "evidence_index_sha256": "1eb4c31ce5a51b9f28cff3c51800675bc6a087104aedf3ad20712d5e5338ecab",
+  "prior_resource_visual_report_commit": "e849a33c8282ac5eeda9dbb4b2f5b43d46c67f69"
 }
