@@ -201,7 +201,7 @@ func (n policyNamespace) binding(t *testing.T, name string, subject auth.Account
 	binding := &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: string(n), Name: name},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets,
+			Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets,
 		},
 	}
 	create(t, binding)
@@ -329,7 +329,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	binding := &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: string(namespace), Name: "test-binding", Labels: map[string]string{"test-label": "test-value"}},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: callerAccount.Namespace, Name: callerAccount.Name},
+			Subject:    policyapi.Subject{Namespace: callerAccount.Namespace, Name: callerAccount.Name},
 			PolicySets: []string{"test-set", "test-refused-set", "test-missing-set"},
 		},
 	}

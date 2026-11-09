@@ -86,7 +86,7 @@ func TestBindingIsCreatedWithThePodWithoutWaitingForItsReaders(t *testing.T) {
 		t.Fatalf("PolicyBinding = %v, want one the Sandbox controls", binding)
 	}
 	want := policyapi.PolicyBindingSpec{
-		Subject:    policyapi.ServiceAccountRef{Namespace: namespace, Name: sandboxName},
+		Subject:    policyapi.Subject{Namespace: namespace, Name: sandboxName},
 		PolicySets: []string{"test-set-a", "test-set-b"},
 	}
 	if binding.Spec.Subject != want.Subject || !slices.Equal(binding.Spec.PolicySets, want.PolicySets) || binding.Spec.ExpiresAt != nil {

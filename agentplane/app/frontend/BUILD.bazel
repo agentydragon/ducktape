@@ -965,6 +965,7 @@ ts_library(
         "//agentplane/history_service:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/notification_service:notifications_pb",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:environment_lifecycle_pb",

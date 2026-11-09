@@ -74,21 +74,32 @@ spec:
                 minItems: 1
                 type: array
               subject:
-                description: 'The ServiceAccount this binding grants to. Native bindings
-                  also carry its UID so that
+                description: 'The subject this binding grants to. Native bindings
+                  also carry a ServiceAccount subject''s UID so
 
-                  recreating a same-named account replaces the grant.'
+                  that recreating a same-named account replaces the grant.'
                 properties:
+                  identity:
+                    description: IdentityRef names an Identity in the binding's namespace.
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
                   name:
                     minLength: 1
                     type: string
                   namespace:
                     minLength: 1
                     type: string
-                required:
-                - name
-                - namespace
                 type: object
+                x-kubernetes-validations:
+                - message: Name either a ServiceAccount (namespace and name) or an
+                    identity.
+                  rule: 'has(self.identity) ? !has(self.namespace) && !has(self.name)
+                    : has(self.namespace) && has(self.name)'
             required:
             - policySets
             - subject

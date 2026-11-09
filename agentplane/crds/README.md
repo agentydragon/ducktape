@@ -9,9 +9,9 @@ ActionPolicy unions are enforced with CEL; its JSON Schema payload stays opaque.
 
 After changing those types or markers, run `bb run //agentplane/crds:generate_bin` and commit the
 generated manifests. `//agentplane/crds:test_generate` checks committed outputs and publishes the
-expected manifests as test artifacts when they drift. PolicyBinding's Go schema owns subject
-validation and the condition list's field ownership; source and target union constraints use
-generated CEL rules. `//agentplane/crds:test_{sandbox,policyset,identity}_admission` exercise the schemas through the
+expected manifests as test artifacts when they drift. PolicyBinding's Go schema owns the
+condition list's field ownership; its subject union and the source and target union constraints
+use generated CEL rules. `//agentplane/crds:test_{sandbox,policyset,identity}_admission` exercise the schemas through the
 real API server. CEL rules must fit the API server's cost budget: bound every list a rule iterates
 or sits under with `MaxItems`.
 

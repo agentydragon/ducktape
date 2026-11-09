@@ -141,7 +141,7 @@ func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.Pol
 func (f *fixture) policyBinding(name string, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: f.rules, Name: name},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: sets},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets},
 	}
 }
 

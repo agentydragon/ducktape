@@ -1,4 +1,5 @@
-"""Exercise the identity and Kubernetes account kinds' schemas through Kubernetes admission and CEL."""
+"""Exercise the identity and Kubernetes account kinds' schemas, and the PolicyBinding subject that names an
+identity, through Kubernetes admission and CEL."""
 
 from typing import Any, cast
 
@@ -147,6 +148,26 @@ async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> N
         await kinds.rejects_create("managedserviceaccounts", "ManagedServiceAccount", spec)
 
 
+async def _binding_subjects(kinds: Kinds) -> None:
+    service_account: dict[str, Any] = {"namespace": NAMESPACE, "name": "test-workload"}
+    identity: dict[str, Any] = {"identity": {"name": "test-agent"}}
+    for name, subject in (("test-service-account", service_account), ("test-identity", identity)):
+        created = await kinds.create(
+            "policybindings", "PolicyBinding", name, {"subject": subject, "policySets": ["basic"]}
+        )
+        assert created["spec"]["subject"] == subject
+
+    for subject in (
+        {**service_account, **identity},
+        {"namespace": NAMESPACE, **identity},
+        {},
+        {"namespace": NAMESPACE},
+        {"name": "test-workload"},
+        {"identity": {"name": ""}},
+    ):
+        await kinds.rejects_create("policybindings", "PolicyBinding", {"subject": subject, "policySets": ["basic"]})
+
+
 async def test_identity_and_kubernetes_account_admission() -> None:
     async with kubernetes_apiserver() as server:
         core = k8s_client.CoreV1Api(server.api)
@@ -156,6 +177,7 @@ async def test_identity_and_kubernetes_account_admission() -> None:
         await _role_sets(kinds)
         await _grants(kinds)
         await _managed_service_accounts(kinds, identity)
+        await _binding_subjects(kinds)
 
 
 if __name__ == "__main__":
