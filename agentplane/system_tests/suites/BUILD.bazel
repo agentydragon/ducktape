@@ -23,6 +23,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

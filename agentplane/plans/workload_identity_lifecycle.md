@@ -7,7 +7,7 @@ Controller, is implemented for Sandboxes: the workload CA (#15104, #15113, #1512
 `WorkloadCredential` kind, requester and resolver (#15119), the issuer (#15127) and the Sandbox
 Controller as the first requester (c3771844). The contract, and the constraints that rejected the
 alternatives, are in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
-Firecracker's control listener still trusts the cluster root (`WORKLOAD_CA_CLIENT_TRUST`). This plan covers moving the remaining callers onto it, so the proxy's `kubernetes_bearer` hop and
+This plan covers moving the remaining callers onto it, so the proxy's `kubernetes_bearer` hop and
 the workload bearer projections can be removed.
 
 ## Remaining callers

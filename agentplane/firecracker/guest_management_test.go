@@ -195,7 +195,7 @@ func startGuestManagementFixture(t *testing.T, service *guestManagementService, 
 	}
 	ca := transporttesting.NewCA(t)
 	tls := ca.IssueWithUsage(t, "spiffe://agentplane/agent-ns/sandbox-uid/pod-uid", x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
-	for name, path := range map[string]string{"tls.crt": tls.CertFile, "tls.key": tls.KeyFile, "ca.crt": tls.CAFile} {
+	for name, path := range map[string]string{"tls.crt": tls.CertFile, "tls.key": tls.KeyFile, "workload-ca.crt": tls.CAFile} {
 		value, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

@@ -165,8 +165,7 @@ alone, so a `cluster-internal-ca` leaf naming an Agentplane URI authenticates in
 
 - Listeners verifying client SVIDs: a leaf naming a live Sandbox's URI does not authenticate, so the
   live record lookup is not the only check. A runner's control listener refuses one naming the
-  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding), except
-  Firecracker runners).
+  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding)).
 - Clients verifying server SVIDs: the Gateway dialing runners (`runner_security`), the egress sidecar
   and launcher relay dialing the proxy and services, and backend clients and probes through
   `cluster/cdk8s/agentplane/workload_tls.py`. A leaf at a runner's or service's address naming its URI

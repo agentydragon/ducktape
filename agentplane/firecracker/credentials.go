@@ -8,12 +8,16 @@ import (
 )
 
 type Credentials struct {
-	TLSCert  string
-	TLSKey   string
-	CABundle string
+	TLSCert string
+	TLSKey  string
+	// WorkloadCA is the projected `agentplane-workload-ca-bundle`, the workload CA alone, which the
+	// guest receives as its Workload API bundle for the `agentplane` trust domain. The cluster bundle
+	// projected beside it as `ca.crt` never reaches the guest, so its control listener refuses a
+	// `cluster-internal-ca` leaf naming the Runner Gateway.
+	WorkloadCA string
 }
 
-// ReadCredentials pins all three files to one Kubernetes projected Secret
+// ReadCredentials pins all three files to one Kubernetes projected volume
 // generation, even if kubelet flips ..data while the files are being read.
 func ReadCredentials(directory string) (Credentials, error) {
 	return readCredentialsWith(directory, os.ReadFile)
@@ -38,7 +42,7 @@ func readCredentialsWith(directory string, readFile func(string) ([]byte, error)
 
 		values := [3]string{}
 		complete := true
-		for index, name := range []string{"tls.crt", "tls.key", "ca.crt"} {
+		for index, name := range []string{"tls.crt", "tls.key", "workload-ca.crt"} {
 			data, err := readFile(filepath.Join(root, name))
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) && attempt < 2 {
@@ -50,7 +54,7 @@ func readCredentialsWith(directory string, readFile func(string) ([]byte, error)
 			values[index] = string(data)
 		}
 		if complete {
-			return Credentials{TLSCert: values[0], TLSKey: values[1], CABundle: values[2]}, nil
+			return Credentials{TLSCert: values[0], TLSKey: values[1], WorkloadCA: values[2]}, nil
 		}
 	}
 	return Credentials{}, fmt.Errorf("projected Secret generation remained incomplete in %s", directory)
