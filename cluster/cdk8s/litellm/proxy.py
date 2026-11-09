@@ -181,7 +181,8 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 # and headers together: an endpoint selects OTLP; if it is absent, LiteLLM
                 # keeps its console exporter so the proxy can start without Langfuse.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
-                # Duplicate console-to-Loki trace export: https://github.com/agentydragon/ducktape/issues/11937
+                # Fills the /v1/responses root observation; stores each prompt twice
+                # (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),

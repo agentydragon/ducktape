@@ -100,7 +100,7 @@ native `chatgpt/` provider.** The native provider is usable only via streaming
 Cloudflare 403s even with valid tokens
 ([#27175](https://github.com/BerriAI/litellm/issues/27175)), and its
 `/v1/responses` bridge produces no Langfuse traces
-(`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`); the
+(`cluster/cdk8s/litellm/docs/langfuse_tracing.md`); the
 `anthropic/`-shaped CLIProxyAPI lane avoids all three. Token renewal is handled
 on both lanes without interactive re-login (LiteLLM rotates the OAuth token on a
 PVC under single-writer discipline; CLIProxyAPI refreshes independently). If
