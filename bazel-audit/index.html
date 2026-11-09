@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,413 +44,605 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <main class="container">
-        <header>
-          <p class="muted">
-            <a href="../">Ducktape reports</a> / Build systems
-          </p>
-          <h1>Bazel target and wiring audit</h1>
-          <p>
-            A prioritized review of unused wrappers, ownership boundaries,
-            naming drift and lint-driven dependencies. Current source status is
-            checked separately from dated Bazel query evidence.
-          </p>
-          <p class="muted">
-            Original audit snapshot:
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/e964b0b3fb699a129e0b86a3beb93337f83ac144"
-              ><code>e964b0b3fb699a129e0b86a3beb93337f83ac144</code></a
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Mark,
+        Paper,
+        Stack,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      function Report() {
+        return html`<${Container}
+          component=${"main"}
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <header>
+            <${Text} c="dimmed" component="p" my="sm">
+              <${Anchor} href=${"../"}> ${"Ducktape reports"} <//>
+              ${" / Build systems "}
+            <//>
+            <${Title} order=${1} mt="md" mb="sm">
+              ${"Bazel target and wiring audit"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" A prioritized review of unused wrappers, ownership boundaries, naming drift and lint-driven dependencies. Current source status is checked separately from dated Bazel query evidence. "}
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" Original audit snapshot: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/commit/e964b0b3fb699a129e0b86a3beb93337f83ac144"}
+              >
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"e964b0b3fb699a129e0b86a3beb93337f83ac144"}
+                <//>
+              <//>
+              ${" · latest Bazel query snapshot: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"}
+              >
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"2cbcf945b203"}
+                <//>
+              <//>
+              ${", checked 2 November 2026 · current source review: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"}
+              >
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"79a2524e7fc"}
+                <//>
+              <//>
+              ${", checked 4 November PT / 5 November UTC (no Bazel queries rerun) · "}
+              <${Anchor} href=${"evidence.json"}>
+                ${"machine-readable evidence"}
+              <//>
+            <//>
+          </header>
+          <${Stack} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm"> ${"What to do first"} <//>
+            <${Text} component="p" my="sm">
+              ${" Start with "}
+              <${Anchor} href=${"#A"}> ${"A"} <//>
+              ${" and "}
+              <${Anchor} href=${"#K"}> ${"K"} <//>
+              ${". "}
+              <${Anchor} href=${"#J"}> ${"J"} <//>
+              ${" is partly covered by open PR "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/pull/11497"}
+              >
+                ${"#11497"}
+              <//>
+              ${"; eval-infra and Haku still need follow-up. Keep "}
+              <${Anchor} href=${"#M"}> ${"M"} <//>
+              ${" as a candidate: the wrapper remains, but the latest no-incoming-edge query is from 2 November and was not rerun for this update. "}
+              <${Anchor} href=${"#B"}> ${"B"} <//>
+              ${" was last recorded as deferred on 2 November. "}
+            <//>
+            <${Blockquote} my="md">
+              <strong>
+                ${"Absence of an in-repository label is a lead, not proof of dead code."}
+              </strong>
+              ${" Macro-created edges, direct CLI invocations, non-Bazel consumers, generated labels and downstream workspaces can all matter. No data, migration, schema, test or lint coverage is proposed for deletion merely because a wrapper appears unused. "}
+            <//>
+          <//>
+          <${Stack} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm"> ${"Findings"} <//>
+            <${Group}
+              aria-label=${"Finding shortcuts"}
+              component=${"nav"}
+              gap="sm"
+              my="md"
             >
-            · latest Bazel query snapshot:
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"
-              ><code>2cbcf945b203</code></a
-            >, checked 2 November 2026 · current source review:
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"
-              ><code>79a2524e7fc</code></a
-            >, checked 4 November PT / 5 November UTC (no Bazel queries rerun) ·
-            <a href="evidence.json">machine-readable evidence</a>
-          </p>
-        </header>
-        <section>
-          <h2>What to do first</h2>
-          <p>
-            Start with <a href="#A">A</a> and <a href="#K">K</a>.
-            <a href="#J">J</a> is partly covered by open PR
-            <a href="https://github.com/agentydragon/ducktape/pull/11497"
-              >#11497</a
-            >; eval-infra and Haku still need follow-up. Keep
-            <a href="#M">M</a> as a candidate: the wrapper remains, but the
-            latest no-incoming-edge query is from 2 November and was not rerun
-            for this update. <a href="#B">B</a> was last recorded as deferred on
-            2 November.
-          </p>
-          <blockquote>
-            <strong
-              >Absence of an in-repository label is a lead, not proof of dead
-              code.</strong
+              <${Anchor} href=${"#A"}> ${"A"} <//>
+              <${Anchor} href=${"#B"}> ${"B"} <//>
+              <${Anchor} href=${"#J"}> ${"J"} <//>
+              <${Anchor} href=${"#K"}> ${"K"} <//>
+              <${Anchor} href=${"#M"}> ${"M"} <//>
+            <//>
+            <${Paper}
+              id=${"A"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
             >
-            Macro-created edges, direct CLI invocations, non-Bazel consumers,
-            generated labels and downstream workspaces can all matter. No data,
-            migration, schema, test or lint coverage is proposed for deletion
-            merely because a wrapper appears unused.
-          </blockquote>
-        </section>
-        <section>
-          <h2>Findings</h2>
-          <nav aria-label="Finding shortcuts" class="link-row">
-            <a href="#A">A</a><a href="#B">B</a><a href="#J">J</a
-            ><a href="#K">K</a><a href="#M">M</a>
-          </nav>
-          <article id="A">
-            <div class="muted">
-              <span>A</span><mark>High</mark><span>Ownership</span>
-            </div>
-            <h3>Move Augur’s application model contracts out of x/</h3>
-            <p>
-              <strong>Current source review:</strong> At
-              <a
-                href="https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"
-                ><code>79a2524e7fc</code></a
-              >, the API configuration and API target still import provider
-              model contracts from <code>finance/augur/x/models</code>;
-              calibration still depends on
-              <code>private_equity_risk</code> there.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/api/config.py#L32"
-                >API imports</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/api/BUILD.bazel#L79"
-                >API BUILD dependencies</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/calibration/BUILD.bazel#L103"
-                >calibration dependency</a
-              >.
-            </p>
-            <p>
-              The current
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/agent_rbac.md#L523"
-                >cluster documentation</a
-              >
-              says Augur is parked; a live deployment was not verified.
-            </p>
-            <p>
-              <strong>Refactor:</strong> Decide which model/config modules
-              constitute the supported application contract and graduate that
-              coherent slice to an owned package; move imports, BUILD labels,
-              fixtures and deployment configuration together. Keep genuinely
-              experimental models under x/.
-            </p>
-            <p>
-              <strong>Verify:</strong> Build affected libraries and images and
-              exercise real configured provider startup; a path move must
-              preserve config and stored-data compatibility.
-            </p>
-          </article>
-          <article id="B">
-            <div class="muted">
-              <span>B</span><mark>High</mark><span>Ownership</span>
-            </div>
-            <h3>
-              Decouple Haku’s schema build from an experimental service
-              implementation
-            </h3>
-            <p>
-              <strong>Last owner status recorded 2 November 2026:</strong>
-              Deferred. The current schema exporter still depends on Gmail and
-              Calendar implementations under
-              <code>//x/google_mcp_server</code> and imports them to generate
-              the frontend catalogs.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/console/mcp/BUILD.bazel#L15"
-                >Current BUILD dependency</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/console/mcp/export_tool_schemas.py#L45"
-                >current imports</a
-              >.
-            </p>
-            <p>
-              This is build-time schema generation; it does not mean Haku runs
-              those servers in-process.
-            </p>
-            <p>
-              <strong>Refactor:</strong> Choose a stable owner for the server
-              contracts: graduate the Google service or extract producer-owned
-              schema/model targets consumed by both server and exporter.
-              Preserve generation from authoritative tool definitions; do not
-              replace it with a copied schema roster.
-            </p>
-            <p>
-              <strong>Verify:</strong> Regenerate both catalogs and validate the
-              frontend renderers and producer contract together.
-            </p>
-          </article>
-          <article id="J">
-            <div class="muted">
-              <span>J</span><mark>Medium</mark><span>Lint wiring</span>
-            </div>
-            <h3>
-              Untangle checker-only provider dependencies from runtime libraries
-            </h3>
-            <p>
-              <strong>Related PR:</strong>
-              <a href="https://github.com/agentydragon/ducktape/pull/11497"
-                >#11497</a
-              >
-              remains open at head
-              <a
-                href="https://github.com/agentydragon/ducktape/commit/f0f596e8e20e6a6eaa5d842a63b862608fce17fa"
-                ><code>f0f596e8e20e</code></a
-              >. Its checks completed 4 November UTC:
-              <a
-                href="https://github.com/agentydragon/ducktape/actions/runs/41756403811/job/126333431552"
-                >Bazel CI</a
-              >,
-              <a
-                href="https://github.com/agentydragon/ducktape/actions/runs/41756403834/job/126333431523"
-                >artifact/import</a
-              >,
-              <a
-                href="https://github.com/agentydragon/ducktape/actions/runs/41756403753/job/126333431450"
-                >pre-commit</a
-              >, and
-              <a
-                href="https://github.com/agentydragon/ducktape/actions/runs/126341433550"
-                >visual</a
-              >
-              checks succeeded; release and image-push jobs were skipped. The PR
-              changes Python/mypy rules and Props targets. Eval-infra and Haku
-              remain follow-up.
-            </p>
-            <p>
-              <strong>Current source review:</strong> Five
-              <code>skills/eval_infra</code> libraries and the Haku
-              agent-framework targets still declare the provider packages noted
-              below for mypy imports.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/skills/eval_infra/BUILD.bazel#L40"
-                >Current eval-infra entries</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/runtime/x/agent_framework/BUILD.bazel#L28"
-                >current Haku entries</a
-              >.
-            </p>
-            <p>
-              These remain real checker inputs; some are also used at runtime.
-              Removing them can break type checking or runtime behavior and may
-              alter runtime closures.
-            </p>
-            <p>
-              <strong>Refactor:</strong> Extend the type-only dependency
-              separation in #11497 to the remaining eval-infra and Haku targets
-              where provider packages are checker-only. Keep real runtime
-              dependencies and measure package and image closures.
-            </p>
-            <p>
-              <strong>Verify:</strong> Reproduce the mypy failure without
-              checker-only deps, verify affected targets under default lint, and
-              compare runtime/image closures. Keep any provider package that a
-              target imports at runtime.
-            </p>
-          </article>
-          <article id="K">
-            <div class="muted">
-              <span>K</span><mark>Medium</mark><span>Lint wiring</span>
-            </div>
-            <h3>
-              Make whole-program ESLint inputs auditable across package
-              boundaries
-            </h3>
-            <p>
-              <strong>Current source review:</strong> The frontend BUILD file
-              now manually lists 12 child <code>typed_lint_srcs</code> groups,
-              up from 11 at the 2 November refresh; <code>policy</code> was
-              added. The whole-program ESLint target still combines that roster
-              with a separate declaration and npm input list.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/BUILD.bazel#L27"
-                >Current frontend roster</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/devinfra/js/typed_eslint.bzl#L16"
-                >typed ESLint rule</a
-              >.
-            </p>
-            <p>
-              The lint macro needs source files at their original paths and uses
-              <code>no_copy_to_bin</code>; it is a real lint check, not a
-              disposable target.
-            </p>
-            <p>
-              <strong>Refactor:</strong> Generate or validate the
-              source/declaration closure from one authoritative frontend package
-              registration, including newly added Bazel subpackages. Preserve
-              source paths, generated declarations and the distinct
-              whole-program analysis.
-            </p>
-            <p>
-              <strong>Verify:</strong> Add a focused coverage check that fails
-              for an omitted nested source package and run the typed ESLint
-              target.
-            </p>
-          </article>
-          <article id="M">
-            <div class="muted">
-              <span>M</span><mark>Low</mark><span>Dead target candidate</span>
-            </div>
-            <h3>Review the frozen benchmark filegroup as an entry point</h3>
-            <p>
-              <strong>Current source review:</strong> The public wrapper remains
-              at the 4 November source commit. The latest available
-              no-incoming-edge result is the focused query from 2 November at
-              <a
-                href="https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"
-                ><code>2cbcf945b203</code></a
-              >; it found no incoming rule edge for this label. No Bazel query
-              was rerun for the current source review.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_coding/BUILD.bazel#L4"
-                >Current wrapper</a
-              >
-              ·
-              <a
-                href="https://app.buildbuddy.io/invocation/1c9cab47-c21d-4ca1-963f-27f17177b026"
-                >focused query evidence</a
-              >.
-            </p>
-            <p>
-              The original audit also found that the frozen inputs are named in
-              the run notes and another run’s instructions.
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_coding/README.md#L123"
-                >Rugged coding notes</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/README.md#L72"
-                >OpenVINO run instructions</a
-              >.
-            </p>
-            <p>
-              <strong>Refactor:</strong> Ask whether the group is a deliberately
-              public hand-run Bazel interface. If not, remove only the wrapper;
-              if yes, document its invocation and ownership. Preserve the frozen
-              evidence and hashes.
-            </p>
-            <p>
-              <strong>Verify:</strong> Check downstream callers and benchmark
-              reproducibility before changing the interface.
-            </p>
-          </article>
-        </section>
-        <section>
-          <h2>Method and limits</h2>
-          <ul>
-            <li>
-              The original audit inspected its stated commit; the 2 November
-              status refresh inspected commit
-              <a
-                href="https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"
-                ><code>2cbcf945b203</code></a
-              >. The 4 November PT / 5 November UTC review checked the five
-              surviving findings against
-              <a
-                href="https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"
-                ><code>79a2524e7fc</code></a
-              >
-              and inspected PR #11497; it did not rerun Bazel queries.
-            </li>
-            <li>
-              The dated remote queries listed evaluated
-              <code>filegroup</code> rules across <code>//...</code>. A source
-              inventory also parsed literal top-level BUILD declarations;
-              macros, selects, generated rules, load-time expressions and
-              non-Bazel callers require additional review.
-            </li>
-            <li>
-              The latest repository-wide filegroup/reverse-dependency scan and
-              focused wrapper query were run on 2 November at commit
-              <code>2cbcf945b203</code>. The focused query found no incoming
-              rule edge for the four recorded labels, including M. This result
-              is historical for that evaluated workspace, not a query result for
-              the 4 November tree. See the linked invocation IDs in the evidence
-              below.
-            </li>
-            <li>
-              Do not remove visual harness filegroups just because their labels
-              are absent from BUILD files:
-              <code>agentplane_visual_test</code> references them in its
-              Starlark macro. Whole-program lint source groups are active
-              inputs, and generated output groups or single-file views can be
-              needed for <code>$(rootpath)</code>.
-            </li>
-            <li>
-              These are selected high-signal cases, not an exhaustive proof that
-              all other targets are correct. Priorities express review value and
-              expected blast radius, not measured build-time savings. The
-              original audit did not implement its recommendations; the status
-              notes record subsequent work.
-            </li>
-          </ul>
-          <p>
-            Original audit references:
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/README.md#L5"
-              >repository build conventions</a
+              <${Box} c="dimmed">
+                <${Text} component="span" inherit> ${"A"} <//>
+                <${Mark}> ${"High"} <//>
+                <${Text} component="span" inherit> ${"Ownership"} <//>
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${"Move Augur’s application model contracts out of x/"}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Current source review:"} </strong>
+                ${" At "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"}
+                >
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"79a2524e7fc"}
+                  <//>
+                <//>
+                ${", the API configuration and API target still import provider model contracts from "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"finance/augur/x/models"}
+                <//>
+                ${"; calibration still depends on "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"private_equity_risk"}
+                <//>
+                ${" there. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/api/config.py#L32"}
+                >
+                  ${"API imports"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/api/BUILD.bazel#L79"}
+                >
+                  ${"API BUILD dependencies"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/finance/augur/calibration/BUILD.bazel#L103"}
+                >
+                  ${"calibration dependency"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" The current "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/agent_rbac.md#L523"}
+                >
+                  ${"cluster documentation"}
+                <//>
+                ${" says Augur is parked; a live deployment was not verified. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Refactor:"} </strong>
+                ${" Decide which model/config modules constitute the supported application contract and graduate that coherent slice to an owned package; move imports, BUILD labels, fixtures and deployment configuration together. Keep genuinely experimental models under x/. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Verify:"} </strong>
+                ${" Build affected libraries and images and exercise real configured provider startup; a path move must preserve config and stored-data compatibility. "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"B"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
             >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/STYLE.md#L111"
-              >Bazel and Gazelle style</a
+              <${Box} c="dimmed">
+                <${Text} component="span" inherit> ${"B"} <//>
+                <${Mark}> ${"High"} <//>
+                <${Text} component="span" inherit> ${"Ownership"} <//>
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Decouple Haku’s schema build from an experimental service implementation "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong>
+                  ${"Last owner status recorded 2 November 2026:"}
+                </strong>
+                ${" Deferred. The current schema exporter still depends on Gmail and Calendar implementations under "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"//x/google_mcp_server"}
+                <//>
+                ${" and imports them to generate the frontend catalogs. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/console/mcp/BUILD.bazel#L15"}
+                >
+                  ${"Current BUILD dependency"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/console/mcp/export_tool_schemas.py#L45"}
+                >
+                  ${"current imports"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" This is build-time schema generation; it does not mean Haku runs those servers in-process. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Refactor:"} </strong>
+                ${" Choose a stable owner for the server contracts: graduate the Google service or extract producer-owned schema/model targets consumed by both server and exporter. Preserve generation from authoritative tool definitions; do not replace it with a copied schema roster. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Verify:"} </strong>
+                ${" Regenerate both catalogs and validate the frontend renderers and producer contract together. "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"J"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
             >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/devinfra/ci/bazel_ci.py#L149"
-              >CI target selection</a
+              <${Box} c="dimmed">
+                <${Text} component="span" inherit> ${"J"} <//>
+                <${Mark}> ${"Medium"} <//>
+                <${Text} component="span" inherit> ${"Lint wiring"} <//>
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Untangle checker-only provider dependencies from runtime libraries "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Related PR:"} </strong>
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/pull/11497"}
+                >
+                  ${"#11497"}
+                <//>
+                ${" remains open at head "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/commit/f0f596e8e20e6a6eaa5d842a63b862608fce17fa"}
+                >
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"f0f596e8e20e"}
+                  <//>
+                <//>
+                ${". Its checks completed 4 November UTC: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/actions/runs/41756403811/job/126333431552"}
+                >
+                  ${"Bazel CI"}
+                <//>
+                ${", "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/actions/runs/41756403834/job/126333431523"}
+                >
+                  ${"artifact/import"}
+                <//>
+                ${", "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/actions/runs/41756403753/job/126333431450"}
+                >
+                  ${"pre-commit"}
+                <//>
+                ${", and "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/actions/runs/126341433550"}
+                >
+                  ${"visual"}
+                <//>
+                ${" checks succeeded; release and image-push jobs were skipped. The PR changes Python/mypy rules and Props targets. Eval-infra and Haku remain follow-up. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Current source review:"} </strong>
+                ${" Five "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"skills/eval_infra"}
+                <//>
+                ${" libraries and the Haku agent-framework targets still declare the provider packages noted below for mypy imports. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/skills/eval_infra/BUILD.bazel#L40"}
+                >
+                  ${"Current eval-infra entries"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/haku/runtime/x/agent_framework/BUILD.bazel#L28"}
+                >
+                  ${"current Haku entries"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" These remain real checker inputs; some are also used at runtime. Removing them can break type checking or runtime behavior and may alter runtime closures. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Refactor:"} </strong>
+                ${" Extend the type-only dependency separation in #11497 to the remaining eval-infra and Haku targets where provider packages are checker-only. Keep real runtime dependencies and measure package and image closures. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Verify:"} </strong>
+                ${" Reproduce the mypy failure without checker-only deps, verify affected targets under default lint, and compare runtime/image closures. Keep any provider package that a target imports at runtime. "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"K"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
             >
-            · query evidence:
-            <a
-              href="https://app.buildbuddy.io/invocation/5cded8b9-3661-452b-9449-fbedd6e87118"
-              >original filegroup query</a
-            >,
-            <a
-              href="https://app.buildbuddy.io/invocation/ed6d371f-5335-4a19-abfa-d1f54113fd1b"
-              >original reverse-dependency query</a
-            >,
-            <a
-              href="https://app.buildbuddy.io/invocation/5d39759f-cd41-4012-b4f5-5d877cf28a0e"
-              >2 November filegroup query</a
-            >,
-            <a
-              href="https://app.buildbuddy.io/invocation/e16b8416-6828-4e26-8770-38681b2d8f5d"
-              >2 November reverse-dependency query</a
-            >,
-            <a
-              href="https://app.buildbuddy.io/invocation/1c9cab47-c21d-4ca1-963f-27f17177b026"
-              >2 November focused wrapper query</a
-            >.
-          </p>
-        </section>
-        <footer class="muted">
-          <p>
-            Published as a latest-only snapshot; use branch history for earlier
-            versions.
-          </p>
-        </footer>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+              <${Box} c="dimmed">
+                <${Text} component="span" inherit> ${"K"} <//>
+                <${Mark}> ${"Medium"} <//>
+                <${Text} component="span" inherit> ${"Lint wiring"} <//>
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Make whole-program ESLint inputs auditable across package boundaries "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Current source review:"} </strong>
+                ${" The frontend BUILD file now manually lists 12 child "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"typed_lint_srcs"}
+                <//>
+                ${" groups, up from 11 at the 2 November refresh; "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"policy"}
+                <//>
+                ${" was added. The whole-program ESLint target still combines that roster with a separate declaration and npm input list. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/BUILD.bazel#L27"}
+                >
+                  ${"Current frontend roster"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/devinfra/js/typed_eslint.bzl#L16"}
+                >
+                  ${"typed ESLint rule"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" The lint macro needs source files at their original paths and uses "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"no_copy_to_bin"}
+                <//>
+                ${"; it is a real lint check, not a disposable target. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Refactor:"} </strong>
+                ${" Generate or validate the source/declaration closure from one authoritative frontend package registration, including newly added Bazel subpackages. Preserve source paths, generated declarations and the distinct whole-program analysis. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Verify:"} </strong>
+                ${" Add a focused coverage check that fails for an omitted nested source package and run the typed ESLint target. "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"M"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed">
+                <${Text} component="span" inherit> ${"M"} <//>
+                <${Mark}> ${"Low"} <//>
+                <${Text} component="span" inherit>
+                  ${"Dead target candidate"}
+                <//>
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${"Review the frozen benchmark filegroup as an entry point"}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Current source review:"} </strong>
+                ${" The public wrapper remains at the 4 November source commit. The latest available no-incoming-edge result is the focused query from 2 November at "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"}
+                >
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"2cbcf945b203"}
+                  <//>
+                <//>
+                ${"; it found no incoming rule edge for this label. No Bazel query was rerun for the current source review. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_coding/BUILD.bazel#L4"}
+                >
+                  ${"Current wrapper"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://app.buildbuddy.io/invocation/1c9cab47-c21d-4ca1-963f-27f17177b026"}
+                >
+                  ${"focused query evidence"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" The original audit also found that the frozen inputs are named in the run notes and another run’s instructions. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_coding/README.md#L123"}
+                >
+                  ${"Rugged coding notes"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/README.md#L72"}
+                >
+                  ${"OpenVINO run instructions"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Refactor:"} </strong>
+                ${" Ask whether the group is a deliberately public hand-run Bazel interface. If not, remove only the wrapper; if yes, document its invocation and ownership. Preserve the frozen evidence and hashes. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Verify:"} </strong>
+                ${" Check downstream callers and benchmark reproducibility before changing the interface. "}
+              <//>
+            <//>
+          <//>
+          <${Stack} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm"> ${"Method and limits"} <//>
+            <ul>
+              <li>
+                ${" The original audit inspected its stated commit; the 2 November status refresh inspected commit "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/commit/2cbcf945b203c1260e10c8e32a6b6e26025f254d"}
+                >
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"2cbcf945b203"}
+                  <//>
+                <//>
+                ${". The 4 November PT / 5 November UTC review checked the five surviving findings against "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/commit/79a2524e7fc9878299c9589312c0ba25df2b50ac"}
+                >
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"79a2524e7fc"}
+                  <//>
+                <//>
+                ${" and inspected PR #11497; it did not rerun Bazel queries. "}
+              </li>
+              <li>
+                ${" The dated remote queries listed evaluated "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"filegroup"}
+                <//>
+                ${" rules across "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"//..."}
+                <//>
+                ${". A source inventory also parsed literal top-level BUILD declarations; macros, selects, generated rules, load-time expressions and non-Bazel callers require additional review. "}
+              </li>
+              <li>
+                ${" The latest repository-wide filegroup/reverse-dependency scan and focused wrapper query were run on 2 November at commit "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"2cbcf945b203"}
+                <//>
+                ${". The focused query found no incoming rule edge for the four recorded labels, including M. This result is historical for that evaluated workspace, not a query result for the 4 November tree. See the linked invocation IDs in the evidence below. "}
+              </li>
+              <li>
+                ${" Do not remove visual harness filegroups just because their labels are absent from BUILD files: "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"agentplane_visual_test"}
+                <//>
+                ${" references them in its Starlark macro. Whole-program lint source groups are active inputs, and generated output groups or single-file views can be needed for "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"$(rootpath)"}
+                <//>
+                ${". "}
+              </li>
+              <li>
+                ${" These are selected high-signal cases, not an exhaustive proof that all other targets are correct. Priorities express review value and expected blast radius, not measured build-time savings. The original audit did not implement its recommendations; the status notes record subsequent work. "}
+              </li>
+            </ul>
+            <${Text} component="p" my="sm">
+              ${" Original audit references: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/README.md#L5"}
+              >
+                ${"repository build conventions"}
+              <//>
+              ${" · "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/STYLE.md#L111"}
+              >
+                ${"Bazel and Gazelle style"}
+              <//>
+              ${" · "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/e964b0b3fb699a129e0b86a3beb93337f83ac144/devinfra/ci/bazel_ci.py#L149"}
+              >
+                ${"CI target selection"}
+              <//>
+              ${" · query evidence: "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/5cded8b9-3661-452b-9449-fbedd6e87118"}
+              >
+                ${"original filegroup query"}
+              <//>
+              ${", "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/ed6d371f-5335-4a19-abfa-d1f54113fd1b"}
+              >
+                ${"original reverse-dependency query"}
+              <//>
+              ${", "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/5d39759f-cd41-4012-b4f5-5d877cf28a0e"}
+              >
+                ${"2 November filegroup query"}
+              <//>
+              ${", "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/e16b8416-6828-4e26-8770-38681b2d8f5d"}
+              >
+                ${"2 November reverse-dependency query"}
+              <//>
+              ${", "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/1c9cab47-c21d-4ca1-963f-27f17177b026"}
+              >
+                ${"2 November focused wrapper query"}
+              <//>
+              ${". "}
+            <//>
+          <//>
+          <${Box} c="dimmed" component="footer" mt="xl">
+            <${Text} component="p" my="sm">
+              ${" Published as a latest-only snapshot; use branch history for earlier versions. "}
+            <//>
+          <//>
+        <//> `;
+      }
+      mount(Report);
+    </script>
   </body>
 </html>

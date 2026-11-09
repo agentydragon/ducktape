@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,354 +44,429 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <header>
-        <div class="container">
-          <div class="link-row">
-            <div>
-              <p class="muted">
-                Ducktape · fixture and model audit · refreshed 9 November 2026
-              </p>
-              <h1>Current fixture and adapter decisions</h1>
-              <p class="muted">
-                Review pinned to
-                <a
-                  href="https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"
-                  ><code>devel 69f35d736dc3</code></a
-                >. Seven source-backed opportunities remain; none is an observed
-                behavior failure in this refresh.
-              </p>
-            </div>
-            <nav aria-label="Report evidence" class="link-row">
-              <a href="evidence.json">Evidence JSON</a>
-              <a href="manifest.json">Manifest</a>
-              <a
-                href="https://github.com/agentydragon/ducktape/tree/552b8b2af66bc6cd94c30777f4594988a92bc5ca/fixture-model-audit"
-                >Previous report · 4 Nov</a
-              >
-            </nav>
-          </div>
-        </div>
-      </header>
-      <main class="container">
-        <blockquote>
-          <strong>Read as coverage and maintenance debt.</strong> Source
-          inspection still supports the seven rows below, but this refresh did
-          not reproduce a product failure or run these focused tests on the
-          audited commit. Landed changes are called out where they narrow, but
-          do not close, a finding.
-        </blockquote>
-        <div class="grid">
-          <div>
-            <article>
-              <div>
-                <div class="muted">Current review</div>
-                <div>7 open opportunities</div>
-                <p>
-                  Four concern model boundaries; three concern fixture or schema
-                  duplication.
-                </p>
-              </div>
-            </article>
-          </div>
-          <div>
-            <article>
-              <div>
-                <div class="muted">Landed since publication</div>
-                <div>Partial coverage improved</div>
-                <p>
-                  Haku examples and AppService decoding advanced; the specific
-                  all-fixture and projection gaps remain.
-                </p>
-              </div>
-            </article>
-          </div>
-          <div>
-            <article>
-              <div>
-                <div class="muted">Validation boundary</div>
-                <div>No recurrence claim</div>
-                <p>
-                  PR checks describe their tested heads. They do not prove
-                  current behavior or absence of regressions on this source
-                  snapshot.
-                </p>
-              </div>
-            </article>
-          </div>
-        </div>
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Mark,
+        Paper,
+        SimpleGrid,
+        Stack,
+        Table,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      function Report() {
+        return html`<header>
+  <${Container} component=${"div"} size="74rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
+    <${Group} component=${"div"} gap="sm" my="md">
+      <${Box}>
+        <${Text} c="dimmed" component="p" my="sm">
+          ${" Ducktape · fixture and model audit · refreshed 9 November 2026 "}
+        <//>
+        <${Title} order=${1} mt="md" mb="sm">
+          ${"Current fixture and adapter decisions"}
+        <//>
+        <${Text} c="dimmed" component="p" my="sm">
+          ${" Review pinned to "}
+          <${Anchor} href=${"https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"}>
+            <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+              ${"devel 69f35d736dc3"}
+            <//>
+          <//>
+          ${". Seven source-backed opportunities remain; none is an observed behavior failure in this refresh. "}
+        <//>
+      <//>
+      <${Group} aria-label=${"Report evidence"} component=${"nav"} gap="sm" my="md">
+        <${Anchor} href=${"evidence.json"}>
+          ${"Evidence JSON"}
+        <//>
+        <${Anchor} href=${"manifest.json"}>
+          ${"Manifest"}
+        <//>
+        <${Anchor} href=${"https://github.com/agentydragon/ducktape/tree/552b8b2af66bc6cd94c30777f4594988a92bc5ca/fixture-model-audit"}>
+          ${"Previous report · 4 Nov"}
+        <//>
+      <//>
+    <//>
+  <//>
+</header>
+<${Container} component=${"main"} size="74rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
+  <${Blockquote} my="md">
+    <strong>
+      ${"Read as coverage and maintenance debt."}
+    </strong>
+    ${" Source inspection still supports the seven rows below, but this refresh did not reproduce a product failure or run these focused tests on the audited commit. Landed changes are called out where they narrow, but do not close, a finding. "}
+  <//>
+  <${SimpleGrid} component=${"div"} cols=${{ base: 1, sm: 2, lg: 3 }} spacing="md">
+    <${Box}>
+      <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+        <${Box}>
+          <${Box} c="dimmed">
+            ${"Current review"}
+          <//>
+          <${Box}>
+            ${"7 open opportunities"}
+          <//>
+          <${Text} component="p" my="sm">
+            ${" Four concern model boundaries; three concern fixture or schema duplication. "}
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Box}>
+      <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+        <${Box}>
+          <${Box} c="dimmed">
+            ${"Landed since publication"}
+          <//>
+          <${Box}>
+            ${"Partial coverage improved"}
+          <//>
+          <${Text} component="p" my="sm">
+            ${" Haku examples and AppService decoding advanced; the specific all-fixture and projection gaps remain. "}
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Box}>
+      <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+        <${Box}>
+          <${Box} c="dimmed">
+            ${"Validation boundary"}
+          <//>
+          <${Box}>
+            ${"No recurrence claim"}
+          <//>
+          <${Text} component="p" my="sm">
+            ${" PR checks describe their tested heads. They do not prove current behavior or absence of regressions on this source snapshot. "}
+          <//>
+        <//>
+      <//>
+    <//>
+  <//>
+  <${Stack} aria-labelledby=${"open-title"} component="section" gap="md" my="xl">
+    <${Title} id=${"open-title"} order=${2} mt="md" mb="sm">
+      ${"Still-present opportunities"}
+    <//>
+    <${Table.ScrollContainer} minWidth=${640} type="native" my="md" maw="100%">
+      <${Table} striped highlightOnHover verticalSpacing="sm">
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"col"}>
+              ${"Finding"}
+            <//>
+            <${Table.Th} scope=${"col"}>
+              ${"Current source evidence"}
+            <//>
+            <${Table.Th} scope=${"col"}>
+              ${"Disposition / decision to close"}
+            <//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"Haku screenshot fixtures"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/haku/console/frontend/tool_rendering/index.tsx#L100-L142"}>
+                ${"Registry ties fixture types to Zod outputs"}
+              <//>
+              ${"; the renderer still runtime-parses each fixture, while the screenshot setup does not preflight the full registry. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Partial landed coverage"}
+              <//>
+              <br>
 
-        <section aria-labelledby="open-title">
-          <h2 id="open-title">Still-present opportunities</h2>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Finding</th>
-                  <th scope="col">Current source evidence</th>
-                  <th scope="col">Disposition / decision to close</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <th scope="row">Haku screenshot fixtures</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/haku/console/frontend/tool_rendering/index.tsx#L100-L142"
-                      >Registry ties fixture types to Zod outputs</a
-                    >; the renderer still runtime-parses each fixture, while the
-                    screenshot setup does not preflight the full registry.
-                  </td>
-                  <td>
-                    <mark>Partial landed coverage</mark><br /><a
-                      href="https://github.com/agentydragon/ducktape/pull/14595"
-                      >#14595</a
-                    >
-                    added real Gmail rendering and expanded examples, with
-                    hosted build/test checks green. It does not iterate and
-                    assert specialized rendering for every registered fixture.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Spend card summaries</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/testing/dashboard.py#L195-L255"
-                      >Card totals and percentages are authored beside ledger
-                      transactions</a
-                    >; an existing parity test compares them with transaction
-                    rows.
-                  </td>
-                  <td>
-                    <mark>Duplication, not mismatch</mark><br />Derive the
-                    summary from ledger inputs while retaining independent
-                    expected examples; no mismatch was observed here.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Egress sidecar config vectors</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar_config.py#L138"
-                      >Python Settings</a
-                    >
-                    feeds the real Go process, while
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar/config_test.go"
-                      >Go loader tests</a
-                    >
-                    use separate inline vectors.
-                  </td>
-                  <td>
-                    <mark>Cross-language gap</mark><br />Recent egress PRs
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14520"
-                      >#14520</a
-                    >
-                    and
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14840"
-                      >#14840</a
-                    >
-                    change listener/auth behavior but do not share config
-                    vectors. Open
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/15075"
-                      >#15075</a
-                    >
-                    and
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/15095"
-                      >#15095</a
-                    >
-                    touch adjacent egress paths, not these test inputs.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Python model-catalog client</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/client.py#L99"
-                      >models()</a
-                    >
-                    maps raw ProtoJSON dictionaries into the domain catalog;
-                    generated parsing is already used by adjacent client
-                    methods.
-                  </td>
-                  <td>
-                    <mark>Manual wire decoding</mark><br />Parse with generated
-                    <code>ListModelsResponse</code> before domain validation. No
-                    matching landed change or open fix was found.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Python ThreadView test adapter</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/models.py#L54-L99"
-                      >The helper maps dictionaries and unknown feed status to
-                      None</a
-                    >.
-                  </td>
-                  <td>
-                    <mark>Python adapter remains</mark><br /><a
-                      href="https://github.com/agentydragon/ducktape/pull/14240"
-                      >#14240</a
-                    >
-                    migrated the frontend to generated messages, but did not
-                    change this Python test helper.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">App config UI projections</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/app_config_client.ts#L16-L75"
-                      >The client still declares UI view types</a
-                    >
-                    and maps generated AppService messages into them.
-                  </td>
-                  <td>
-                    <mark>Intentional boundary to decide</mark><br /><a
-                      href="https://github.com/agentydragon/ducktape/pull/14786"
-                      >#14786</a
-                    >
-                    and
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14856"
-                      >#14856</a
-                    >
-                    landed typed decoding, but retain projections. No behavior
-                    failure is claimed; #14856's hosted visual review failed and
-                    its cause was not recovered.
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">GitHub Action argument schema</th>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/actions/schemas/github/search_pull_requests.ts#L28-L53"
-                      >A TypeScript argument type and strict Zod schema repeat
-                      local fields</a
-                    >; a comment identifies the upstream MCP schema as external.
-                  </td>
-                  <td>
-                    <mark>Local maintenance debt</mark><br />Infer the local
-                    type from Zod and retain strict rejection tests. Local
-                    agreement still does not establish upstream compatibility.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+              </br>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14595"}>
+                ${"#14595"}
+              <//>
+              ${" added real Gmail rendering and expanded examples, with hosted build/test checks green. It does not iterate and assert specialized rendering for every registered fixture. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"Spend card summaries"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/testing/dashboard.py#L195-L255"}>
+                ${"Card totals and percentages are authored beside ledger transactions"}
+              <//>
+              ${"; an existing parity test compares them with transaction rows. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Duplication, not mismatch"}
+              <//>
+              <br>
 
-        <section aria-labelledby="landed-title">
-          <h2 id="landed-title">What changed since the previous report</h2>
-          <div class="grid">
-            <div>
-              <article>
-                <div>
-                  <mark>Landed · partial</mark>
-                  <h3>Haku rendering examples</h3>
-                  <p>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14595"
-                      >#14595</a
-                    >
-                    is merged. Bazel CI, build artifacts/imports, pre-commit,
-                    and BuildBuddy Bazel tests succeeded; PR visual review was
-                    neutral.
-                  </p>
-                  <p>
-                    Gmail rendering and representative inputs are covered. There
-                    is still no registry-wide fixture preflight.
-                  </p>
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <mark>Landed · scope reduced</mark>
-                  <h3>AppService config decoding</h3>
-                  <p>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14786"
-                      >#14786</a
-                    >
-                    and
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14856"
-                      >#14856</a
-                    >
-                    moved decoding to generated messages and a library decoder.
-                  </p>
-                  <p>
-                    Bazel, artifact/import, and pre-commit checks passed. #14856
-                    PR visual review failed; the failed-run log lookup returned
-                    404, so its cause remains unknown.
-                  </p>
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <mark>Landed · frontend only</mark>
-                  <h3>Generated ThreadView</h3>
-                  <p>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/14240"
-                      >#14240</a
-                    >
-                    updated the frontend generated-message path and its hosted
-                    checks.
-                  </p>
-                  <p>
-                    The Python test adapter was not part of that change and
-                    remains an independent decision.
-                  </p>
-                </div>
-              </article>
-            </div>
-          </div>
-        </section>
+              </br>
+              ${"Derive the summary from ledger inputs while retaining independent expected examples; no mismatch was observed here. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"Egress sidecar config vectors"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar_config.py#L138"}>
+                ${"Python Settings"}
+              <//>
+              ${" feeds the real Go process, while "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar/config_test.go"}>
+                ${"Go loader tests"}
+              <//>
+              ${" use separate inline vectors. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Cross-language gap"}
+              <//>
+              <br>
 
-        <section aria-labelledby="preserve-title">
-          <h2 id="preserve-title">Keep the independent guards</h2>
-          <blockquote>
-            The Spend parity test, Haku malformed-input cases, Go loader
-            rejection cases, and generated-message validation each protect
-            behavior. Deriving fixture values must not remove independent
-            expected outputs or negative cases. The journal migration test
-            remains historical-data evidence, not a fixture to regenerate.
-          </blockquote>
-        </section>
-        <section aria-labelledby="method-title">
-          <h2 id="method-title">Scope and evidence limits</h2>
-          <p>
-            This refresh rechecked the previous seven opportunities against
-            pinned source
-            <code>69f35d736dc33f90f66f8345ff35806f04ed9399</code> and current
-            GitHub PR state on 9 November UTC. The static source review is
-            selective, not an exhaustive schema inventory. Hosted check results
-            belong to the linked PR heads, not necessarily the audited source
-            SHA. No focused source tests, live deployment, or recurrence study
-            was run for this refresh.
-          </p>
-          <p class="muted">
-            The prior report is preserved at
-            <a
-              href="https://github.com/agentydragon/ducktape/tree/552b8b2af66bc6cd94c30777f4594988a92bc5ca/fixture-model-audit"
-              >gh-pages commit <code>552b8b2</code></a
-            >. Current structured dispositions and check receipts are in
-            <a href="evidence.json">evidence.json</a>; the report manifest
-            records the pinned source and limits.
-          </p>
-        </section>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+              </br>
+              ${"Recent egress PRs "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14520"}>
+                ${"#14520"}
+              <//>
+              ${" and "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14840"}>
+                ${"#14840"}
+              <//>
+              ${" change listener/auth behavior but do not share config vectors. Open "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15075"}>
+                ${"#15075"}
+              <//>
+              ${" and "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15095"}>
+                ${"#15095"}
+              <//>
+              ${" touch adjacent egress paths, not these test inputs. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"Python model-catalog client"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/client.py#L99"}>
+                ${"models()"}
+              <//>
+              ${" maps raw ProtoJSON dictionaries into the domain catalog; generated parsing is already used by adjacent client methods. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Manual wire decoding"}
+              <//>
+              <br>
+
+              </br>
+              ${"Parse with generated "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"ListModelsResponse"}
+              <//>
+              ${" before domain validation. No matching landed change or open fix was found. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"Python ThreadView test adapter"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/models.py#L54-L99"}>
+                ${"The helper maps dictionaries and unknown feed status to None"}
+              <//>
+              ${". "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Python adapter remains"}
+              <//>
+              <br>
+
+              </br>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14240"}>
+                ${"#14240"}
+              <//>
+              ${" migrated the frontend to generated messages, but did not change this Python test helper. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"App config UI projections"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/app_config_client.ts#L16-L75"}>
+                ${"The client still declares UI view types"}
+              <//>
+              ${" and maps generated AppService messages into them. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Intentional boundary to decide"}
+              <//>
+              <br>
+
+              </br>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14786"}>
+                ${"#14786"}
+              <//>
+              ${" and "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14856"}>
+                ${"#14856"}
+              <//>
+              ${" landed typed decoding, but retain projections. No behavior failure is claimed; #14856's hosted visual review failed and its cause was not recovered. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Th} scope=${"row"}>
+              ${"GitHub Action argument schema"}
+            <//>
+            <${Table.Td}>
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/actions/schemas/github/search_pull_requests.ts#L28-L53"}>
+                ${"A TypeScript argument type and strict Zod schema repeat local fields"}
+              <//>
+              ${"; a comment identifies the upstream MCP schema as external. "}
+            <//>
+            <${Table.Td}>
+              <${Mark}>
+                ${"Local maintenance debt"}
+              <//>
+              <br>
+
+              </br>
+              ${"Infer the local type from Zod and retain strict rejection tests. Local agreement still does not establish upstream compatibility. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+  <//>
+  <${Stack} aria-labelledby=${"landed-title"} component="section" gap="md" my="xl">
+    <${Title} id=${"landed-title"} order=${2} mt="md" mb="sm">
+      ${"What changed since the previous report"}
+    <//>
+    <${SimpleGrid} component=${"div"} cols=${{ base: 1, sm: 2, lg: 3 }} spacing="md">
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Mark}>
+              ${"Landed · partial"}
+            <//>
+            <${Title} order=${3} mt="md" mb="sm">
+              ${"Haku rendering examples"}
+            <//>
+            <${Text} component="p" my="sm">
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14595"}>
+                ${"#14595"}
+              <//>
+              ${" is merged. Bazel CI, build artifacts/imports, pre-commit, and BuildBuddy Bazel tests succeeded; PR visual review was neutral. "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Gmail rendering and representative inputs are covered. There is still no registry-wide fixture preflight. "}
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Mark}>
+              ${"Landed · scope reduced"}
+            <//>
+            <${Title} order=${3} mt="md" mb="sm">
+              ${"AppService config decoding"}
+            <//>
+            <${Text} component="p" my="sm">
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14786"}>
+                ${"#14786"}
+              <//>
+              ${" and "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14856"}>
+                ${"#14856"}
+              <//>
+              ${" moved decoding to generated messages and a library decoder. "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Bazel, artifact/import, and pre-commit checks passed. #14856 PR visual review failed; the failed-run log lookup returned 404, so its cause remains unknown. "}
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Mark}>
+              ${"Landed · frontend only"}
+            <//>
+            <${Title} order=${3} mt="md" mb="sm">
+              ${"Generated ThreadView"}
+            <//>
+            <${Text} component="p" my="sm">
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/14240"}>
+                ${"#14240"}
+              <//>
+              ${" updated the frontend generated-message path and its hosted checks. "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" The Python test adapter was not part of that change and remains an independent decision. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+  <//>
+  <${Stack} aria-labelledby=${"preserve-title"} component="section" gap="md" my="xl">
+    <${Title} id=${"preserve-title"} order=${2} mt="md" mb="sm">
+      ${"Keep the independent guards"}
+    <//>
+    <${Blockquote} my="md">
+      ${" The Spend parity test, Haku malformed-input cases, Go loader rejection cases, and generated-message validation each protect behavior. Deriving fixture values must not remove independent expected outputs or negative cases. The journal migration test remains historical-data evidence, not a fixture to regenerate. "}
+    <//>
+  <//>
+  <${Stack} aria-labelledby=${"method-title"} component="section" gap="md" my="xl">
+    <${Title} id=${"method-title"} order=${2} mt="md" mb="sm">
+      ${"Scope and evidence limits"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" This refresh rechecked the previous seven opportunities against pinned source "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"69f35d736dc33f90f66f8345ff35806f04ed9399"}
+      <//>
+      ${" and current GitHub PR state on 9 November UTC. The static source review is selective, not an exhaustive schema inventory. Hosted check results belong to the linked PR heads, not necessarily the audited source SHA. No focused source tests, live deployment, or recurrence study was run for this refresh. "}
+    <//>
+    <${Text} c="dimmed" component="p" my="sm">
+      ${" The prior report is preserved at "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/tree/552b8b2af66bc6cd94c30777f4594988a92bc5ca/fixture-model-audit"}>
+        ${"gh-pages commit "}
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"552b8b2"}
+        <//>
+      <//>
+      ${". Current structured dispositions and check receipts are in "}
+      <${Anchor} href=${"evidence.json"}>
+        ${"evidence.json"}
+      <//>
+      ${"; the report manifest records the pinned source and limits. "}
+    <//>
+  <//>
+<//>
+`;
+      }
+      mount(Report);
+    </script>
   </body>
 </html>

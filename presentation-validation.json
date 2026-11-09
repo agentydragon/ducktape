@@ -1,13 +1,26 @@
 {
-  "framework": "Mantine9.6.1",
+  "framework": "Mantine 9.6.1 components",
+  "chart_framework": "Mantine Charts 9.6.1 / Recharts 3.3.0",
   "react": "19.3.0",
-  "shared_module_lines": 18,
+  "template_library": "htm 3.1.1",
   "result": "PASSED",
-  "transport": "Real HTTP server on RBE;real CDN requests, no stylesheet/module stubs",
   "test_target": "//x/ci_reports_preview:visual_test",
-  "invocation_id": "edd20659-3178-47f3-99ba-e65c403990ed",
-  "invocation_url": "https://app.buildbuddy.io/invocation/edd20659-3178-47f3-99ba-e65c403990ed",
-  "test_cases": 32,
+  "publication_base_commit": "8b113d935dec6d989d1b9ee87d873ca2e60c644a",
+  "runs": [
+    {
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "invocation_url": "https://app.buildbuddy.io/invocation/e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "passed_cases": 32,
+      "scope": "All eight reports"
+    },
+    {
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "invocation_url": "https://app.buildbuddy.io/invocation/eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "passed_cases": 12,
+      "scope": "Final latency, storage and reliability after screenshot corrections"
+    }
+  ],
+  "final_case_coverage": 32,
   "viewports": [
     {
       "width": 1280,
@@ -19,791 +32,1110 @@
     }
   ],
   "themes": ["light", "dark"],
+  "transport": "HTTP server on RBE; actual pinned jsDelivr and esm.sh responses, no CDN mocks",
   "checks": [
-    "Actual CDN CSS response, integrity and computedMantineCSSvariable",
-    "MantineTypography mounted with automaticOS/browser theme",
-    "Live color-preference changes without reload",
-    "Home manifest metadata populated",
-    "All internal anchors",
-    "All four elapsed-span timeline choices",
-    "Inventory search,empty result,backend filter and sort",
-    "Expanded-details page overflow",
-    "All HTML byte hashes checked inside RBE"
+    "Actual Mantine components and CDN loading",
+    "Original long text segments and anchor multiplicities retained",
+    "Nonempty Progress sections and chart bars",
+    "SVG chart labels remain within horizontal wrapper and vertical SVG bounds",
+    "Readable chart ticks and accessible counts",
+    "Inventory search, backend filtering, sort, empty results and counts",
+    "All four span-timeline controls",
+    "Accordion controls and expanded page overflow",
+    "Home metadata loaded",
+    "Live OS/browser preference changes without reload",
+    "Per-case HTML SHA256 matches publication"
   ],
   "files": {
-    "index.html": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
-    "reliability/index.html": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
-    "latency/index.html": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
-    "bazel-audit/index.html": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
-    "fixture-model-audit/index.html": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
-    "agentplane-protocol-shapes/index.html": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
-    "storage/index.html": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
-    "visual-reliability/index.html": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
-    "report.css": "182c584b6e94cec724bbb45437fdec08662b5e2b2f71ca7f5e46abd0676fd79a",
-    "report.js": "6a7d2c84cecfa6d9d6f4a48368f41f3d9ec021ca58a8941cea1a9c0f3a7c7634"
+    "index.html": "c87a0915fb7ac76a6e863b27bc149459149738ffbb297778d417d5b914f9fb27",
+    "reliability/index.html": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
+    "latency/index.html": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
+    "bazel-audit/index.html": "0158bb7083edde9ff70258a785b1e32d99fb49723d6a6a065a2438782a7f0e59",
+    "fixture-model-audit/index.html": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
+    "agentplane-protocol-shapes/index.html": "96e1f29d6e86d0eedaf0dbb983afb4c1aa01cfd34aebebab6bbfc9ec0db6f342",
+    "storage/index.html": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
+    "visual-reliability/index.html": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "reliability/charts.js": "a3ead90210a6d5a85c45a6f0711f4e2fa932f84427ad237c4dd97bb39a4da73c"
   },
-  "manual_review": "All80 screenshots reviewed via7 labeled contact sheets:32 first screens,material report sections,and desktop/mobile captures of all four elapsed-span timelines. Both themes readable;internal table/chart horizontal scrolling is intentional.",
-  "earlier_attempts": {
-    "c7f0e306-e0bb-4f0b-8c1d-339c9d9e2879": "28 passed;home module path fixed.",
-    "e2c4ef77-81c4-4fbe-8fe5-16888cd2ff02": "32 passed;before final per-action-root explanation and contrast adjustment.",
-    "d07f7493-4cc5-4123-850f-a7c578f41b6f": "Four final latency cases passed.",
-    "001c252d-5b65-42e1-abd3-6b6f3477023f": "28 non-home cases passed;four home cases exposed file-protocol manifest-fetch mismatch. Final HTTP run above tests deployed transport semantics."
+  "unchanged_evidence": {
+    "reliability/evidence.json": "731f0079fdde9b9a23b562a32b36bf88e991c03e4b613c21b41a963542ae65d0",
+    "latency/evidence.json": "5191c5c847a2bce1786b49ce047d50848851951ebd1375bb1fb5d3f2d84e0e1e",
+    "bazel-audit/evidence.json": "82e8e1d2fed6a3794f9775175b9a2e917859dc4799f4284e21e8559fc12119ae",
+    "fixture-model-audit/evidence.json": "12e704952cae596eba5a3ba44176bbcd48e384ae6b8053d3c86fb5c3fe080deb",
+    "storage/evidence.json": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
+    "visual-reliability/evidence.json": "1acc9cdd4a3bd4426cc86e97df55cf3648166fdaa79045f87bd42735202cf680"
   },
-  "reviewed_at_utc": "2026-11-09T08:28:43.833238+00:00",
+  "manual_review": "Reviewed all 100 final capture/case combinations using labeled contact sheets, plus full-resolution critical mobile charts and summary cards. Corrected blank rate bars, clipped labels, axis/caption overlap and joined words. 28 captures are from the unchanged five reports in the full matrix; 72 are from the final focused run.",
+  "reviewed_at_utc": "2026-11-09T09:15:37.920318+00:00",
+  "shared_css_scope": "20 lines, only nested wall-time SVG timelines. Formatter-only whitespace changed after the full run; final focused run tests the formatted CSS where these selectors apply.",
   "report_hash_receipts": [
     {
-      "report": "visual-reliability",
-      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-agentplane-protocol-shapes]",
       "report": "agentplane-protocol-shapes",
-      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
-      "cdn_loaded": true,
       "theme": "dark",
       "viewport": {
         "width": 1280,
         "height": 900
       },
-      "live_theme_change": true
-    },
-    {
-      "report": "fixture-model-audit",
-      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+      "sha256": "96e1f29d6e86d0eedaf0dbb983afb4c1aa01cfd34aebebab6bbfc9ec0db6f342",
       "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
     },
     {
-      "report": "fixture-model-audit",
-      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "visual-reliability",
-      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "home",
-      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "storage",
-      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "storage",
-      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "reliability",
-      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "home",
-      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "agentplane-protocol-shapes",
-      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "reliability",
-      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "agentplane-protocol-shapes",
-      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "reliability",
-      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "home",
-      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-bazel-audit]",
       "report": "bazel-audit",
-      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "storage",
-      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
-      "cdn_loaded": true,
       "theme": "dark",
       "viewport": {
         "width": 1280,
         "height": 900
       },
-      "live_theme_change": true
-    },
-    {
-      "report": "latency",
-      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+      "sha256": "0158bb7083edde9ff70258a785b1e32d99fb49723d6a6a065a2438782a7f0e59",
       "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "latency",
-      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "bazel-audit",
-      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "storage",
-      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "agentplane-protocol-shapes",
-      "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "bazel-audit",
-      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "visual-reliability",
-      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "fixture-model-audit",
-      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "latency",
-      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "latency",
-      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "bazel-audit",
-      "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "home",
-      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "fixture-model-audit",
-      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
-      "cdn_loaded": true,
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "visual-reliability",
-      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "live_theme_change": true
-    },
-    {
-      "report": "reliability",
-      "sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
-      "cdn_loaded": true,
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "live_theme_change": true
-    }
-  ],
-  "screenshot_sha256": [
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
-      "checkpoint": "feedback",
-      "sha256": "dcf86793e0c2ba22cb099c336426dff97af289d1ff5ac308eefc4a3073c509f6"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "trace-1",
-      "sha256": "100b4d563776f4881f210e9cb8f627e49916c32c657013595d90f103177bdb7e"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "45618f77c512a9979b047c65657369cab88356de5293b7b61b13253bf8535eeb"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "4433b4978e4a072c71dcd51aa4c41373837dcd181d4a226f4039bf6fcf36dce7"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
-      "checkpoint": "open-title",
-      "sha256": "7857219a23345af6198b2ad6a65cc49a097cbb7ff868d7958a33fd238fa48deb"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-home]",
-      "checkpoint": "first-screen",
-      "sha256": "d10a191810b2832127b5ae7b83f00117060ecd9c8889f7bee1e8d110b5e1878d"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-home]",
-      "checkpoint": "first-screen",
-      "sha256": "40dfbc9e16b82423d9d4f55eb0f7b69e4d79dc9e4bedd50097f4a24a827445f6"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
-      "checkpoint": "inventory",
-      "sha256": "389993fb052768be3f760b8e523c9fad95ae7d37ca4315e831919807c232a7e3"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-agentplane-protocol-shapes]",
-      "checkpoint": "first-screen",
-      "sha256": "7b6b60068d35ab6cffdce29e0c665da58d9b44e7cbfbc5625e914e524c590486"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
-      "checkpoint": "open-title",
-      "sha256": "9bb68970eacceaa7c0de686122b669d760121507f93200ac3548fd761eb97a42"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "first-screen",
-      "sha256": "3b7c2a058128c2f7e0491a5d2fb92e42b088b02524ee9ecc4cc35399eb8864d3"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "system-tests",
-      "sha256": "8debe9490fd70dbcc9c3a548690fc5b203061ad31983c709681184df6b9bf62b"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "6f6b1f31af88ddb3d01fe43183683cac73cc9b609b7881faa0dee3c879fbdbcf"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
-      "checkpoint": "first-screen",
-      "sha256": "9eb1abd54242ac7ab47508389e6975af221457da6ee4e3d5f6b914cc86325f88"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
-      "checkpoint": "inventory",
-      "sha256": "af34c9393f900a0c0247840ac816e5c22c1a5257bb2297ad2186fec398b71b50"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "trace-1",
-      "sha256": "1488acd6dcbdb253c8dcdfa0f2f1c7fff4ad21ed74d40eb10420a62e901253ab"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
-      "checkpoint": "first-screen",
-      "sha256": "6aa4c2def95084eaf8197cb9fe4ed244670fe879b7a7157f3f4de02e0014a711"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-bazel-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "570762f2945fb68527bf2b0fce45ab20d7062b15ddf813360370a0710fc0743a"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
-      "checkpoint": "inventory",
-      "sha256": "01aba9446cb4f2cdefa022e7a7ab06ca8886f2112aa3a88667bb2a669f5e88dc"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-home]",
-      "checkpoint": "first-screen",
-      "sha256": "6d868985a4b12081f5852bbc7eba63f54515817c348e65fa9f9bf8537db51f9f"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
-      "checkpoint": "dedicated-kvm-capacity",
-      "sha256": "db3d4decda9cefb3444b6bb83b34647169af9c3780917bd1b90a1e74f4ff4fb1"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
-      "checkpoint": "decisions",
-      "sha256": "8dbc38313f6f3caae05b6343a2020de87920b44ce3da1adec990d02b218f8e4c"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
-      "checkpoint": "inventory",
-      "sha256": "9a20ed9df14bf5d456ef53197c17b9eee13597f1390e714faefa78795123e931"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "trace-0",
-      "sha256": "ad53c14e9837e30b91661ae4c7ca3b8450fd67ee676bf9277260bf7bfcfd3046"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
-      "checkpoint": "first-screen",
-      "sha256": "03e774befb7ffe9668e1f907bf026b07b2da36ea7f03f7a2387413b0ce8960f3"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
-      "checkpoint": "options",
-      "sha256": "ec95e9a4536f98a695a8fdf6acda10a3898753f1c62b9c74af887b356ad2b8d4"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "trace-2",
-      "sha256": "57d33b05dac322fb2a9b3cfa0d7d95ad8d1129f50f6dd4bfb2a0b8a13f1e1c7d"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
-      "checkpoint": "decisions",
-      "sha256": "5bc15d88d98fc7321afb48f91b9d8103e23392b687f258726d77fc610ca392ff"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "ee18d7c51c69e5959379ee2a3201cab9a7cad781da7cff9e54cb35a7387f6173"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
-      "checkpoint": "dedicated-kvm-capacity",
-      "sha256": "fde87b5602787382520fa5c8b9800618ed8e450c907a56d7a12493bcf7f194a9"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "dedicated-kvm-capacity",
-      "sha256": "717e54573f3bc740e7ed93b9b2a55e596aa9d3987452dfd546bd9fc0c0340aa3"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
-      "checkpoint": "population",
-      "sha256": "3e9528d45fbd201d4e5e7e13f6561d9025b34102d161d2e8110a2df868617a43"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "a78f2c4a1ca10a0b5279bb7aaa80102011f4e8589d6da153a252dc2fff9328f4"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-bazel-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "3fa2997668fddf2cf860ba2dff6fb5c9165b823931b9b302ad43da722de39a95"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
-      "checkpoint": "actions",
-      "sha256": "7a8e85e26ca012648f97704ac16528f2ac2877887e0b89aa03be964b84248553"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "7c29b1f836d217df3c55aac534e94e2cb1ce5fd10b5008a313ec0e5c71bcdd04"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "trace-3",
-      "sha256": "011049467c5af4c1babb44214609ac15bf2fc6c83f5581f9d1acd95fc1840af9"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
-      "checkpoint": "first-screen",
-      "sha256": "7e216cf8e00ac4bc8ad221ccd323dfd520a0d98c21d56a33b075442655d1bcea"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
-      "checkpoint": "feedback",
-      "sha256": "97194a15703c9e448e6309a05f776203c399c948d8b2979a67b8e4e18798e1e0"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
-      "checkpoint": "decisions",
-      "sha256": "194abcdee2ecfd72d685387290d51ce5d829f9f4072a20eb86988fbbd174b4f2"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-bazel-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "29e180726d8209c691010125b5468b32fa564cbb1c94842bf6626de30dec82e1"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "feedback",
-      "sha256": "11545da619e89edf4bb5915eb4a22540fa216485600077776bdcbfbc64a24135"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "415a25b3a0eb15ec77322baf7655aa04cfd2c55fb004c3de700b03720b74ff1d"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
-      "checkpoint": "open-title",
-      "sha256": "fa7b2173563bfe11ede3f72d42f1f24d8c4218024e06534fa732a6f3b2f2ec3e"
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-fixture-model-audit]",
-      "checkpoint": "first-screen",
-      "sha256": "37e65936a12ce4aac3c86319eab9c3d121c73f6addce78456e94a409370b6299"
+      "report": "fixture-model-audit",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
-      "checkpoint": "first-screen",
-      "sha256": "d8301e4ea600b5e25a9355385406a7ce4e8da1341d458986bd773398c87986dc"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
-      "checkpoint": "open-title",
-      "sha256": "8417dbbdc9db4d33979d15b450bf05fd7529962c50f0d8f52c56f65e6196481d"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
-      "checkpoint": "population",
-      "sha256": "f8de7fe236810b18f9067d6866f54a90bfd35f2d774caeb6d466c338d7d7eaf9"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-home]",
+      "report": "home",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "c87a0915fb7ac76a6e863b27bc149459149738ffbb297778d417d5b914f9fb27",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
-      "checkpoint": "first-screen",
-      "sha256": "530782fe22d5236018f689ee6afe4aa890026eab521e2e00cc01552e3b5d33b1"
+      "report": "latency",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
+      "cdn_loaded": true,
+      "chart_slugs": ["latency-mean-phase"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "trace-3",
-      "sha256": "d6b760ac52f0e491aca832e172fe034b063fe0fa752df2c28d094b11cce9a649"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-agentplane-protocol-shapes]",
-      "checkpoint": "first-screen",
-      "sha256": "9ac096ba6e9537d9be300977dbca50b15380c2bddd8522704a1992ff2f089893"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-agentplane-protocol-shapes]",
-      "checkpoint": "first-screen",
-      "sha256": "0fa4ca662e0e67fa37926b04d699e5c7e1105cf82d5cb08d871ade8f5ca3e2a0"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "f0cf3efbaa046ee33c402598a72bad2ed463f8718b75af197a6bab50cb86f865"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
-      "checkpoint": "actions",
-      "sha256": "56fc4fcfc6d8dd04e976fc814cfc3fbeaf3bd8fc3825debef104a8a1392a04db"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
-      "checkpoint": "actions",
-      "sha256": "5d1670d993aa13dbf13ee50a502822c818d5d2c45487ac909fb4919b5995ba11"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "report": "reliability",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
+      "cdn_loaded": true,
+      "chart_slugs": [
+        "reliability-failed-target-rates",
+        "reliability-job-outcomes",
+        "reliability-historical-remote-errors"
+      ],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
-      "checkpoint": "decisions",
-      "sha256": "af620e19c85417f78e6c6f2906fa4991a69ea8df3b390f1f9da8fed5fa7ff97b"
+      "report": "storage",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
+      "cdn_loaded": true,
+      "chart_slugs": ["storage-logical-bucket-gib"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
+      "report": "visual-reliability",
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-agentplane-protocol-shapes]",
+      "report": "agentplane-protocol-shapes",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "96e1f29d6e86d0eedaf0dbb983afb4c1aa01cfd34aebebab6bbfc9ec0db6f342",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-bazel-audit]",
+      "report": "bazel-audit",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "0158bb7083edde9ff70258a785b1e32d99fb49723d6a6a065a2438782a7f0e59",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
+      "report": "fixture-model-audit",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-home]",
+      "report": "home",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "c87a0915fb7ac76a6e863b27bc149459149738ffbb297778d417d5b914f9fb27",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
-      "checkpoint": "system-tests",
-      "sha256": "92c935a499514451e5d86d4a9313b19781a8f58f105527aa8e61425269955bab"
+      "report": "latency",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
+      "cdn_loaded": true,
+      "chart_slugs": ["latency-mean-phase"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "report": "reliability",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
+      "cdn_loaded": true,
+      "chart_slugs": [
+        "reliability-failed-target-rates",
+        "reliability-job-outcomes",
+        "reliability-historical-remote-errors"
+      ],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "report": "storage",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
+      "cdn_loaded": true,
+      "chart_slugs": ["storage-logical-bucket-gib"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
+      "report": "visual-reliability",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-agentplane-protocol-shapes]",
+      "report": "agentplane-protocol-shapes",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "96e1f29d6e86d0eedaf0dbb983afb4c1aa01cfd34aebebab6bbfc9ec0db6f342",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-bazel-audit]",
+      "report": "bazel-audit",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "0158bb7083edde9ff70258a785b1e32d99fb49723d6a6a065a2438782a7f0e59",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "report": "fixture-model-audit",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-home]",
+      "report": "home",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "c87a0915fb7ac76a6e863b27bc149459149738ffbb297778d417d5b914f9fb27",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "report": "latency",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
+      "cdn_loaded": true,
+      "chart_slugs": ["latency-mean-phase"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "report": "reliability",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
+      "cdn_loaded": true,
+      "chart_slugs": [
+        "reliability-failed-target-rates",
+        "reliability-job-outcomes",
+        "reliability-historical-remote-errors"
+      ],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "report": "storage",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
+      "cdn_loaded": true,
+      "chart_slugs": ["storage-logical-bucket-gib"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
+      "report": "visual-reliability",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-agentplane-protocol-shapes]",
+      "report": "agentplane-protocol-shapes",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "96e1f29d6e86d0eedaf0dbb983afb4c1aa01cfd34aebebab6bbfc9ec0db6f342",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-bazel-audit]",
+      "report": "bazel-audit",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "0158bb7083edde9ff70258a785b1e32d99fb49723d6a6a065a2438782a7f0e59",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
+      "report": "fixture-model-audit",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-home]",
+      "report": "home",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "c87a0915fb7ac76a6e863b27bc149459149738ffbb297778d417d5b914f9fb27",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "report": "latency",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
+      "cdn_loaded": true,
+      "chart_slugs": ["latency-mean-phase"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "report": "reliability",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
+      "cdn_loaded": true,
+      "chart_slugs": [
+        "reliability-failed-target-rates",
+        "reliability-job-outcomes",
+        "reliability-historical-remote-errors"
+      ],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "report": "storage",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
+      "cdn_loaded": true,
+      "chart_slugs": ["storage-logical-bucket-gib"],
+      "live_theme_change": true,
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
+      "report": "visual-reliability",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
+      "cdn_loaded": true,
+      "chart_slugs": [],
+      "live_theme_change": true,
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5"
+    }
+  ],
+  "screenshot_receipts": [
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "5c4d8dc6c15a7359050a1f048281d492a1e5c39126786f68cdf64c1b7e1990e4"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-bazel-audit]",
       "checkpoint": "first-screen",
-      "sha256": "0adb6ecc34c5e4f819847cd68dcd0a55af6538944115b20a84d9376502fdb246"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "8c06ab78699043b2cce616c8c8d8ee76cb43a5485563d00f4e2b2e873a88d73d"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
-      "checkpoint": "options",
-      "sha256": "46380de37e3d3886e9f45926569ad6629ea3243d86facab739b57abdf580bc96"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "system-tests",
-      "sha256": "a66b6e121bb36640ec25aef4b836056dbf28f0c2ffbf2e683495fda3f4b3054b"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-agentplane-protocol-shapes]",
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-fixture-model-audit]",
       "checkpoint": "first-screen",
-      "sha256": "16f4c05934cf9fb26809bb2d73cbbe76500a768319ee624a460d2d07885576ed"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "first-screen",
-      "sha256": "9607ab9dcb5b435a5ce8beb28cc30554f935830ffaa4b9740c3ea9174a4b2513"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
-      "checkpoint": "open-title",
-      "sha256": "86a1b6d09b2265a2a076353baa047b52236cc90c759b4f7804f728c84fda944b"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "bd81c151c4deaf1dd8ae8cd9dbf0e597a8f1aa63a01afcd5d76acdb792468f87"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-fixture-model-audit]",
       "checkpoint": "open-title",
-      "sha256": "42d02f9f69a9451410c1a552169356b9c727841459c8c634662eb078046a8fc7"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "e5f461b17955bea03536530af582c8fe1933957beacb16eb073f8b879955edb5"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "trace-2",
-      "sha256": "85047278fe34298cea66aa689f2afbe3c9abc7ea5eec5184114f460e37cf205e"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-home]",
       "checkpoint": "first-screen",
-      "sha256": "4f0c78ea74df65ea8b5a7f8c6ffb88be58941dcadffbd8ee73e081f66d41208b"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "61d4b08874a2e6455ffb8eb79cc8a0fb9b10047b06a6849a088e5f397fb5f8fe"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
-      "checkpoint": "first-screen",
-      "sha256": "838751bedcf1df9e1444d6ce0ffef3d2181a2bb20cd91961c311fea22fb14ed5"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "chart-latency-mean-phase",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "fbf6807b05b8f3472266b3d07706b77299205521847c311cd9b713b5832d2fec"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
-      "checkpoint": "actions",
-      "sha256": "f0a48706d779937b3359dcf537bf8f89861bcb4f6fae46906895f89db1e29ada"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "afe8851c47fc853405f57e588ed1d77278ac51fdafa708169e52f78072eb7bd8"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
       "checkpoint": "feedback",
-      "sha256": "3e73255585c5cf37aea4a47f71aca9e3a96e01c18835717f00c683730bd5c352"
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "b96fcf7043fa763b8b26679c6bba84fc70f944d73bec36538e15483908aa2728"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
-      "checkpoint": "population",
-      "sha256": "91147212158ff4f8df326c1c092758ecc832e079ebecf8779d7572e0444368e8"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "options",
-      "sha256": "b0564636b6d756ba47fda348426e1e0b9e29889b1cebf2d33dfb5a5a4e9a90bb"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
-      "checkpoint": "population",
-      "sha256": "c698cb69e198d67850c3742f5ca1c5109a1da0dc72b08cd26882d88b926d7c04"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "options",
-      "sha256": "6a62705b4d419515aeba4ae53a15e8ae56806a1abca547591fe5b8d0fc93bc85"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
-      "checkpoint": "trace-0",
-      "sha256": "e5f1e6fe0ee18e07dce1b2d0934836237f6b3ed8848ab97beae229c40c3b4156"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
       "checkpoint": "first-screen",
-      "sha256": "8505784cadcd819a20dbadc6af4b2ee1f95fde93fd9e488439cc153e26c7d2ac"
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "d63a96a19d097ad2e52e054510e1a0dbd51c02eeda534d7684f8bd9484881eb4"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
-      "checkpoint": "open-title",
-      "sha256": "fc8b4bb537636138b3c3c8eb0844adba48602f700cdbba49ccab56877ad3ed50"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "options",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "c79d9740f4daa39eda0104d0425558c6564c7ce68b98805b7b7ce33513ed7def"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
       "checkpoint": "system-tests",
-      "sha256": "c2ff1cb08f14cde8d15dc292f63637a3cacece50f425ccc9acfbaf5217ff66aa"
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "01694c632ecf8e339d710dc4a8af3d3550aedf1acc6d5bed65cd38405d9aadaa"
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
-      "checkpoint": "dedicated-kvm-capacity",
-      "sha256": "bec515b28a4f112addf045de4a15f84fc6b23f062aae06fdf48bd264c3f88d0c"
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "actions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "476df8a69ff522625914a9cd65f5b061eb72b56934679afda6c909b391424c6d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "chart-reliability-failed-target-rates",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "65fe430b02d03df81811ecd6a947ccf78b68c9d3fa6d7d2c63dc344f99cb3798"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "chart-reliability-historical-remote-errors",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3fdf57f7c155af1538571064f86c99ff3b9ffb6fbb6191cbc3c7e762d6fe34ae"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "chart-reliability-job-outcomes",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "327d79f8e3e2a9d533be9b78e745f76c0020567a8b9332e257adecb88aeaa5b2"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "2132f45ba4a0d967415ee8e3749497f17522a7d7ac6796440cdc7cbdcd47bebe"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
+      "checkpoint": "population",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "64183b63f1cdb08f6c61d9ca73497f0c193f9dc5bf8ab0d61a22e6d11fb47e69"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "chart-storage-logical-bucket-gib",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "7ddd3819748cf8710b1995c8ffaa913cbaf70ee55e262ba1c227d8686faf4801"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "decisions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "903bec4d7158358036c0aba78153432a13f1ad69b5326699049544ab43617a57"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "5c8e9d88c093fd49231216403a0e3bd826f5054a458638caf264ba49775511e8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "inventory",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "4c36d36633bcd0bfb40386342e04b291133ccc37f2672b0929e9c210abe27665"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "6e9cb79537c5512224ff0c757118b7fd19b772aaa85e3399d3423127317bd607"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
       "checkpoint": "open-title",
-      "sha256": "850d05f0f43de2ce445c73c445a2979d42fa85e7289a57a5a645998cf4e0ccef"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "8df533cff6379bb94aa4ffa7ea19c60304327b76a501cd2212b499d5f2e15ad8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "fa3d962a581771006ff7d1764f943807c9d8a20d8731145b549faa6448d0a100"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-bazel-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "c6e5da2818119ab427d4edf4382a8041873b4d674a2c2a599425c1b964e09f8d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "741df4ae96f4cbb102768db1a042e6d61835241350f06d917bab9711d8ebe015"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "3cbffd04e972950f521570088dfd916b06db233bf1c3ad0020a413722e69deb8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-home]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "6afe19bcb3a4b25c003d3b81d85b6a9afc7cc4d2543b0a014e07774a71dcecc1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "chart-latency-mean-phase",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3cb50b732ae7d7f1e478a4baf29f47d946dcd9819ca008eb05cfe5ea0efb01e7"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "b831d33e89fee0aa4d0a0447ef3911c042b38ea1eb10b1a0fce7dda4ded36693"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "feedback",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "99787a0015086638afcacd66ac7eedd23f9504138f2958c80de68df9313946c2"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "9a07bfed911dd2499e3c0b735351b72bac6ad156dec7e80ba4789ce4e2c30909"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "options",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "f9a60e230cfaae15aae2f63e0cde8c7f177b916e12716d12d4c2994fdf8f2437"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "system-tests",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "ccb6a6dc79fa6667e94dc025e98b6f27151f2128921bcf386bb7121585607d32"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "actions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "57a7d74ad4d3f59f024b4a09a3f40a3db23b28247c52411d666656ba94b93158"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "chart-reliability-failed-target-rates",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "7b3bee152ffeb3c977a3656cdfa9f3a42e2db4c80972521291489d1a54227d9f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "chart-reliability-historical-remote-errors",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "e753d06ea711ec433243d23d4c1e19c1b9ce3cab46d24e7eaa44ac7fde3960ab"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "chart-reliability-job-outcomes",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3e185557efc067f24d4f9619cf3b8ce9b81aa908990e6a618b00412296dbdf8f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3b0e97923e15b6c0dadeded7173c05f88086711cbeb0f547ea6f2c2f070272fc"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
+      "checkpoint": "population",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "5f0453d8634c5264f336fe9628aeeacac7c3354279d8829bee35c650b89a6acd"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "chart-storage-logical-bucket-gib",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "5f341191356af04fca669e1b03a1a45e81a62f2f6814393f4d068aa29d1212f4"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "decisions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "d112d8e136cff2948570c188ef57b7c700c899dfd7a248c778f1933e8306c10d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "a278738a5ad51f7ed2fdf2ee0e86264724ba52ed371d9fcfebaa1477401644ba"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "inventory",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3eebb09fc4da7f00c71424fd1d080eba2e2b30c1ac519c492f57f1ba1713110d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "a1d1edf7b848ad150fbd2f89439e7f0b118485c2cc0d63987cf0a51d0e2e1e67"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-visual-reliability]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "1c1ff678b74e746e836a024833bdbebf6a732cd8b51cd1a698eaa4a5e2db2fc7"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "ce0a29cbf3cc6ccd2a6750abb9c3737e7f60821b52cac62c04608eb986744f6f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-bazel-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "f09df4c2d35977a5dcab95bd9e0b3905755f85f111fe5bac7888a2bd17566d90"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "4bfe3eea2dc469321e8f92ae524fb15c6b3e5ea14be61aba629945d626bd175b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "63e16399f1dcfcc7f45ece0405212d49d614800c0b4b145b6392dfabf35accd8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-home]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "1521ad2b38cb03bca73683c81257f9326a4a3471140988697d8d8bd52e89eab6"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "chart-latency-mean-phase",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "5d0bcc481139ce1fe12eaf8ede73527f9538ca1365913ba49e4838f2ab8f6cda"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "9d3a84c84b9320d2f9c84e50c71adc53057015dba51ae73554519576457f2000"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "feedback",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3efb7418f3b7730ce990d3ae9fbfa4e0e75826f25d47adeb3cf1b221b00af289"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "ace04d150f9a6673c2cd571d15be5bb11f9f4f14db7b790fe4e000cde59643c4"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "options",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "f5a4552facb8a600b8d3305da57b3f718c5c48d94eff41419a6c889b142659e1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "system-tests",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "8aa005e99c344adbf390d77564ec3f7fd61958f11728fc9eb661fa2af2d6fb0d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-0",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "cdf2c314c7ecff695ec4a89fc94dd2cc22acdb410c81e4d1b306dcb92db1d1d1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-1",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "8ba567745df6990d0e2d87f66cb0191bc002cf8988e1d1bb821a043401226996"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-2",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "854a924ec58eb5ec0e0a3184caa1363e75cdd64547178176fec79fe25de121d6"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-3",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "bb3deebb118e8f6b28df01a36388d9f7a2019dc51ed7b8ac5a54bf030f331564"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "actions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "d2d6ee6eeec86e0956dd9560d119c697a8c910cd0ae042fb072a0d9a49d2c2e8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "chart-reliability-failed-target-rates",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "c36a63fc44f916a80ec47c3d51803d2331a103470fd1b264be472b359cdcad0f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "chart-reliability-historical-remote-errors",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "8000132cbdc9d510e02e1530877f534d3defaf846a3ac15e6d12a3353ecade82"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "chart-reliability-job-outcomes",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "1ae665deeeca9ee3b8c05ff4c618508b99fa08b85c47c52d852ac563b47fd41b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "59508c25b49140fb445dd614ec35e9399d667a6ade80babfaf3baafb40eb1627"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
+      "checkpoint": "population",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "3f6abfb21dc1c33eb892edcf4fb873f998d8c45f568413a07361839514aa3b14"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "chart-storage-logical-bucket-gib",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "950a64484f9af42c88f5bcbec6648e43dc922e9572b29b829c78e26921d32fc1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "decisions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "b08b53ae7ba2f675f325849c4209a324663decbf77840c3267be54adfcf93b79"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "dc40317e1a4f88a5a06bfc3fca643119c811c52be21d07f0ecc06de07c2c2b91"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "inventory",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "a27976dc0ab45024d691c6376abc28d6ce1894d09a724f57e1038e62702c087d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "845f273f27959958d17e283c0a987005152f1ef06f271178f530ae41d865a0ae"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-visual-reliability]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "7e69a912ddad0daa6e35542b8b94c58e842672c075489b7d25f2f480b83996e0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-agentplane-protocol-shapes]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "42fd6b3c5add0897f80bdd33813e74940099992cd906816724576e226931186a"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-bazel-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "83f5deb74b388c544956a6ca4d5debc378f86f8e0204a7fe37610d1f546ed3ed"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "4cd1e2de059345d2785da760c2a663e1cf8148bac7a4aaa39537b7ec94670800"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "818d54abcd236020db9e2139fe99708722f9fa250159b21e0d1023002150d9ae"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-home]",
       "checkpoint": "first-screen",
-      "sha256": "6fea9d13a545346b14a19a4fba3b42c9de136f4d4754c8943bfb80bf624fcaf9"
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "cfc97aaf837f3ab7ee85b5eb976d11a08c7b2849e2a46dd2daf41c6d90c0e6de"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "chart-latency-mean-phase",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "05b1a8e7bf2f863d70f65a14b01855ea7aa76b54e119cea8e0a43e2262e341f4"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "c0f776918e4d9ce0c4d0e253f94e00896bb2c8dc3a6cfcf974d61bfbe7b83ab9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "feedback",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "be09790071fb0be8092732f2c21cc878b393e5cbccc5485adcfa96253bcc1cb4"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "8dfdb9e106b623ecf7aaa0e46ac0b07c5e6ad074d8775c87370245a411762e80"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "options",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "23c8fbc2a1cbbcab588c11bb2dfce09f6e4d5b03825a8752bd8fcd9719afb8fe"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "system-tests",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "6fb5a59ede29764b8841d552d91aa7083d98a9d464521b737aaf1d906b559117"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-0",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "99d2b47abb996df10ac36fee802d393c24bf23c6ab16cd642dd110c51b162076"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-1",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "7aea52b8ac05d5bb539bd409d61d4e837b4ca901bd9df3d5465d9f3f9994f036"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-2",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "d20d03d6e160902fdd27b9e3c449f897b8efa07d3fcc57ab0ee8a001a77b1db0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-3",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "c7f05c0cd7b10cec5e9a359f3777ff05884e292321ab47c54b038693deb78d39"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "actions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "9787b55ec6cbfab0f19f102ddbc157014215a3ceac07b2a71237a17ba5c053b0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "chart-reliability-failed-target-rates",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "e4b91e5885b8dd520b1090576e51ec7a212b2d65ba3dfc26c0a1b8ba4126a92e"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "chart-reliability-historical-remote-errors",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "32a83281f748c5f2b6860cf922942d3b655f017a1e60c32f280cffe61dbfa699"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "chart-reliability-job-outcomes",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "2d07a6b31a382120f285668fcd1ca40b0d37bf01b37f0d5e384c3ec00f85b8bc"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "cc0ff2a7e1d4dab5a2d13ced9da3d8a3976e6f1b9ff9e119f3b704945eba1b2a"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
+      "checkpoint": "population",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "ceb8bd42c209ef48e20f7ff6c968e33a8187095a96bb49b2adb5d608bbd3a984"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "chart-storage-logical-bucket-gib",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "b97970f22828d34acb1aaf0b766da35924eb4f6fada2f61373d6ce56d0eb4a19"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "decisions",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "a67375ccd668a74919a731f8e0d9c852bbfd69dcbc986e810d691f575e66ffae"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "first-screen",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "a138a30e8c4ccd79cda79ea9a61e7cd92732c9cd67d64550a6c4bf7695e30cb0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "inventory",
+      "invocation_id": "eff2bb97-da58-40b3-aaba-0768a63ecf27",
+      "sha256": "2da7b712faf3b2c785a2c91910bdab3db5e962c310b450040d9199b9d92ab58e"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
+      "checkpoint": "first-screen",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "61647845f1962bd186e12878ca66da46d6dbbad814f1a04d0d83257b3e6a2d00"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
+      "checkpoint": "open-title",
+      "invocation_id": "e94bb046-475f-4b0f-8407-e336ceda34f5",
+      "sha256": "3e319d0a3c63802e6d86da13df2a1119ed523396920a1229096c6239abf35b0d"
     }
   ]
 }

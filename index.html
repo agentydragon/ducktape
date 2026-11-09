@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,158 +44,208 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <main class="container">
-        <header>
-          <h1>Ducktape reports</h1>
-          <p>
-            Latest-only snapshots served by GitHub Pages at
-            <a href="https://agentydragon.github.io/ducktape/"
-              >agentydragon.github.io/ducktape</a
-            >, published from the
-            <a href="https://github.com/agentydragon/ducktape/tree/gh-pages"
-              ><code>gh-pages</code></a
-            >
-            branch. CI reports include their reviewed measurements as
-            <code>evidence.json</code> and source commit and observation window
-            in <code>manifest.json</code>. Other reports describe their scope
-            and dates on the page. Earlier versions are in the branch's git
-            history.
-          </p>
-        </header>
-        <section class="grid">
-          <article>
-            <h2><a href="latency/">Latency</a></h2>
-            <p>
-              Required-check feedback proxies, test and fixture internals, real
-              execution profiles, controlled experiments, and ranked
-              interventions.
-            </p>
-            <small data-manifest="latency/manifest.json"></small>
-            <p>
-              <a href="latency/evidence.json">evidence</a> ·
-              <a href="latency/manifest.json">manifest</a>
-            </p>
-          </article>
-          <article>
-            <h2><a href="reliability/">Reliability</a></h2>
-            <p>
-              Flakes API samples, non-green merge checks, physical execution
-              provenance, causal failure timelines, and repair validation.
-            </p>
-            <small data-manifest="reliability/manifest.json"></small>
-            <p>
-              <a href="reliability/evidence.json">evidence</a> ·
-              <a href="reliability/manifest.json">manifest</a>
-            </p>
-          </article>
-          <article>
-            <h2><a href="visual-reliability/">Visual reliability</a></h2>
-            <p>
-              Inspected gallery images, viewport identity, browser fixture
-              failures, baseline provenance, and unchanged-source repeats.
-            </p>
-            <small data-manifest="visual-reliability/manifest.json"></small>
-            <p>
-              <a href="visual-reliability/evidence.json">evidence</a> ·
-              <a href="visual-reliability/manifest.json">manifest</a>
-            </p>
-          </article>
-          <article>
-            <h2><a href="bazel-audit/">Bazel build audit</a></h2>
-            <p>
-              Target graph, package ownership, unused wrappers, naming and lint
-              wiring, with prioritized refactoring candidates.
-            </p>
-            <small
-              >Source review: 79a2524e7f · 4 November PST / 5 November
-              UTC</small
-            >
-            <p><a href="bazel-audit/evidence.json">evidence</a></p>
-          </article>
-          <article>
-            <h2><a href="storage/">Cluster storage</a></h2>
-            <p>
-              Current SeaweedFS bucket inventory, S3 consumers, PostgreSQL
-              backup choices, and storage alternatives.
-            </p>
-            <small
-              >Live read: 9 November UTC; resource-reported usage ages
-              vary.</small
-            >
-            <p>
-              <a href="storage/evidence.json">evidence</a> ·
-              <a href="storage/manifest.json">manifest</a>
-            </p>
-          </article>
-          <article>
-            <h2><a href="fixture-model-audit/">Fixture and model audit</a></h2>
-            <p>
-              Open risks in preview fixtures, generated-client adapters, test
-              projections, and shared configuration.
-            </p>
-            <small>Source review: 69f35d736d · 9 November UTC.</small>
-            <p>
-              <a href="fixture-model-audit/evidence.json">evidence</a> ·
-              <a href="fixture-model-audit/manifest.json">manifest</a>
-            </p>
-          </article>
-          <article>
-            <h2>
-              <a href="agentplane-protocol-shapes/"
-                >Agentplane protocol shapes</a
-              >
-            </h2>
-            <p>
-              Open typed-presence, adapter mapping, config parity, policy
-              vocabulary, and telemetry contracts.
-            </p>
-            <small
-              >Source review: 79a2524e7f · 4 November PST / 5 November
-              UTC.</small
-            >
-          </article>
-        </section>
-        <footer>
-          <p>
-            <small
-              >Collection and publication tools live on
-              <a
-                href="https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency"
-                >devel</a
-              >. The site redeploys when <code>gh-pages</code> changes.</small
-            >
-          </p>
-        </footer>
-      </main>
-    </div>
-    <script type="module" src="report.js"></script>
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
     <script type="module">
-      import "./report.js";
-
-      document.querySelectorAll("[data-manifest]").forEach(function (el) {
-        fetch(el.dataset.manifest)
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (m) {
-            el.textContent = m.audited_at_utc
-              ? "Reviewed " +
-                m.audited_at_utc +
-                " · devel " +
-                m.source_devel_commit.slice(0, 10)
-              : "Window " +
-                m.window_start_utc +
-                " → " +
-                m.window_end_utc +
-                " · devel " +
-                m.source_devel_commit.slice(0, 10) +
-                " · published " +
-                m.published_at_utc.slice(0, 16) +
-                "Z";
-          })
-          .catch(function () {});
-      });
+      import {
+        Anchor,
+        Box,
+        Code,
+        Container,
+        Paper,
+        SimpleGrid,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount, ManifestStamp } from "./report.js";
+      function Report() {
+        return html`<${Container}
+          component=${"main"}
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <header>
+            <${Title} order=${1} mt="md" mb="sm"> ${"Ducktape reports"} <//>
+            <${Text} component="p" my="sm">
+              ${" Latest-only snapshots served by GitHub Pages at "}
+              <${Anchor} href=${"https://agentydragon.github.io/ducktape/"}>
+                ${"agentydragon.github.io/ducktape"}
+              <//>
+              ${", published from the "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/tree/gh-pages"}
+              >
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"gh-pages"}
+                <//>
+              <//>
+              ${" branch. CI reports include their reviewed measurements as "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"evidence.json"}
+              <//>
+              ${" and source commit and observation window in "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"manifest.json"}
+              <//>
+              ${". Other reports describe their scope and dates on the page. Earlier versions are in the branch's git history. "}
+            <//>
+          </header>
+          <${SimpleGrid}
+            component=${"section"}
+            cols=${{ base: 1, sm: 2, lg: 3 }}
+            spacing="md"
+          >
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"latency/"}> ${"Latency"} <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Required-check feedback proxies, test and fixture internals, real execution profiles, controlled experiments, and ranked interventions. "}
+              <//>
+              <${ManifestStamp} src=${"latency/manifest.json"} />
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"latency/evidence.json"}> ${"evidence"} <//>
+                ${" · "}
+                <${Anchor} href=${"latency/manifest.json"}> ${"manifest"} <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Flakes API samples, non-green merge checks, physical execution provenance, causal failure timelines, and repair validation. "}
+              <//>
+              <${ManifestStamp} src=${"reliability/manifest.json"} />
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"reliability/evidence.json"}>
+                  ${"evidence"}
+                <//>
+                ${" · "}
+                <${Anchor} href=${"reliability/manifest.json"}>
+                  ${"manifest"}
+                <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"visual-reliability/"}>
+                  ${"Visual reliability"}
+                <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Inspected gallery images, viewport identity, browser fixture failures, baseline provenance, and unchanged-source repeats. "}
+              <//>
+              <${ManifestStamp} src=${"visual-reliability/manifest.json"} />
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"visual-reliability/evidence.json"}>
+                  ${"evidence"}
+                <//>
+                ${" · "}
+                <${Anchor} href=${"visual-reliability/manifest.json"}>
+                  ${"manifest"}
+                <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"bazel-audit/"}> ${"Bazel build audit"} <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Target graph, package ownership, unused wrappers, naming and lint wiring, with prioritized refactoring candidates. "}
+              <//>
+              <${Text} component="span" size="sm" c="dimmed">
+                ${"Source review: 79a2524e7f · 4 November PST / 5 November UTC"}
+              <//>
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"bazel-audit/evidence.json"}>
+                  ${"evidence"}
+                <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"storage/"}> ${"Cluster storage"} <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Current SeaweedFS bucket inventory, S3 consumers, PostgreSQL backup choices, and storage alternatives. "}
+              <//>
+              <${Text} component="span" size="sm" c="dimmed">
+                ${"Live read: 9 November UTC; resource-reported usage ages vary."}
+              <//>
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"storage/evidence.json"}> ${"evidence"} <//>
+                ${" · "}
+                <${Anchor} href=${"storage/manifest.json"}> ${"manifest"} <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"fixture-model-audit/"}>
+                  ${"Fixture and model audit"}
+                <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Open risks in preview fixtures, generated-client adapters, test projections, and shared configuration. "}
+              <//>
+              <${Text} component="span" size="sm" c="dimmed">
+                ${"Source review: 69f35d736d · 9 November UTC."}
+              <//>
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"fixture-model-audit/evidence.json"}>
+                  ${"evidence"}
+                <//>
+                ${" · "}
+                <${Anchor} href=${"fixture-model-audit/manifest.json"}>
+                  ${"manifest"}
+                <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"agentplane-protocol-shapes/"}>
+                  ${"Agentplane protocol shapes"}
+                <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Open typed-presence, adapter mapping, config parity, policy vocabulary, and telemetry contracts. "}
+              <//>
+              <${Text} component="span" size="sm" c="dimmed">
+                ${"Source review: 79a2524e7f · 4 November PST / 5 November UTC."}
+              <//>
+            <//>
+          <//>
+          <${Box} component="footer" mt="xl">
+            <${Text} component="p" my="sm">
+              <${Text} component="span" size="sm" c="dimmed">
+                ${"Collection and publication tools live on "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency"}
+                >
+                  ${"devel"}
+                <//>
+                ${". The site redeploys when "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"gh-pages"}
+                <//>
+                ${" changes."}
+              <//>
+            <//>
+          <//>
+        <//> `;
+      }
+      mount(Report);
     </script>
   </body>
 </html>
