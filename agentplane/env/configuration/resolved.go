@@ -85,12 +85,13 @@ func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, san
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}
-	namespace, sandboxUID, _, err := environmentruntimetransport.ParseEnvironmentRuntimeURI(identity)
+	workload, err := environmentruntimetransport.ParseWorkloadURI(identity)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}
-	if namespace != sandbox.Namespace || sandboxUID != sandbox.UID {
-		return errors.New("Runner control certificate does not name the configured Sandbox namespace and UID")
+	// The Sandbox's WorkloadCredential takes its name; the credential ID tells incarnations apart.
+	if workload.Namespace != sandbox.Namespace || workload.Name != sandbox.Name {
+		return errors.New("Runner control certificate does not name the configured Sandbox namespace and name")
 	}
 	return nil
 }

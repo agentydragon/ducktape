@@ -76,10 +76,7 @@ func TestWorkloadListenerDoesNotFallBackToValidBearerForStaleSVID(t *testing.T) 
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
 	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews)
 
-	workload.Sandbox.Status.RunnerCredential.ID = "ffffffffffffffffffffffffffffffff"
-	if err := workload.Objects.Status().Update(t.Context(), workload.Sandbox); err != nil {
-		t.Fatal(err)
-	}
+	workload.Issue(t, "ffffffffffffffffffffffffffffffff")
 	validBearer := workloadToken(t, "llm-bearer-fallback")
 	request, err := http.NewRequest(http.MethodPost, serverURL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
 	if err != nil {

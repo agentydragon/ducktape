@@ -111,9 +111,7 @@ func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
 					break
 				}
 			}
-			if err := workload.Objects.Delete(t.Context(), workload.Sandbox); err != nil {
-				t.Fatal(err)
-			}
+			workload.Delete(t)
 			_, err = action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 			if status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("deleted Sandbox on existing TLS connection: %v", err)

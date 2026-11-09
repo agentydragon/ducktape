@@ -140,7 +140,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	}
 	f.ca = tlstest.NewCA(t)
 	f.gatewayTLS = f.ca.Issue(t, environment_runtime_transport.GatewayURI)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI(f.namespace, string(f.sandbox.UID), f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel])
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

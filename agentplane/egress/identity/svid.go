@@ -3,45 +3,35 @@ package identity
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
+	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 )
 
-// ResolveSVID rechecks the exact live Sandbox credential and Pod binding for every
-// request. Only the Sandbox supplies the ServiceAccount used as the policy subject.
-func ResolveSVID(ctx context.Context, state *tls.ConnectionState, readers map[string]*sandboxreader.Reader) (auth.Principal, error) {
-	if state == nil {
+// ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only
+// the record supplies the ServiceAccount used as the policy subject, and the Pod its owner accepted,
+// which a forwarded projected token must come from.
+func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.Principal, error) {
+	if state == nil || len(state.PeerCertificates) == 0 {
 		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
 	}
-	peerURI, err := environment_runtime_transport.PeerIdentityFromTLSState(*state, x509.ExtKeyUsageClientAuth)
-	if err != nil {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
-	}
-	namespace, sandboxUID, credentialID, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(peerURI)
-	if err != nil {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID identity URI"}
-	}
-	reader := readers[namespace]
-	if reader == nil {
+	if records == nil {
 		return auth.Principal{}, &Rejection{Reason: decision.Unavailable, Detail: "SVID authentication is not configured"}
 	}
-	view, found, err := reader.FindRunnerCredential(ctx, sandboxUID, credentialID)
+	resolved, err := records.Resolve(ctx, state.PeerCertificates[0])
+	if errors.Is(err, resolver.ErrUnavailable) {
+		return auth.Principal{}, &Rejection{Reason: decision.Unavailable, Detail: "live WorkloadCredential lookup failed"}
+	}
 	if err != nil {
-		return auth.Principal{}, &Rejection{Reason: decision.Unavailable, Detail: "live Sandbox lookup failed"}
+		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current WorkloadCredential"}
 	}
-	if !found || view.Identity == nil || view.Resource == nil {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current Sandbox credential"}
-	}
-	podName, podUID, bound := view.RunnerPod()
-	if !bound || view.Identity.Namespace != namespace || view.Identity.Name != view.Resource.Name || view.Resource.Name == "" {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "Sandbox has no current runner binding"}
+	if resolved.Pod == nil {
+		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "WorkloadCredential has no accepted Pod"}
 	}
 	return auth.Principal{
-		Account: auth.Account{Namespace: view.Identity.Namespace, Name: view.Identity.Name},
-		PodName: podName, PodUID: podUID,
+		Account: auth.Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name},
+		PodName: resolved.Pod.Name, PodUID: string(resolved.Pod.UID),
 	}, nil
 }

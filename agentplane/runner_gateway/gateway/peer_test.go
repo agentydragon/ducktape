@@ -82,7 +82,7 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 			g := &Gateway{
 				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: environment_runtime_transport.Security{Mode: mode}}, objects: objects,
 			}
-			uri, err := environment_runtime_transport.EnvironmentRuntimeURI(sandbox.Namespace, string(sandbox.UID), "current-credential")
+			uri, err := environment_runtime_transport.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
 			if err != nil {
 				t.Fatal(err)
 			}

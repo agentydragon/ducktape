@@ -238,8 +238,8 @@ func validateResponse(response *workload.X509SVIDResponse) (string, error) {
 }
 
 func validateEnvironmentRuntimeID(rawID string) error {
-	if _, _, _, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(rawID); err != nil {
-		return fmt.Errorf("invalid EnvironmentRuntime SPIFFE ID %q: %w", rawID, err)
+	if _, err := environment_runtime_transport.ParseWorkloadURI(rawID); err != nil {
+		return fmt.Errorf("invalid workload SPIFFE ID %q: %w", rawID, err)
 	}
 	return nil
 }

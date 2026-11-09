@@ -15,7 +15,9 @@ from agentplane.sandbox_controller.settings import CertificateIssuer, IssuerKind
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 
-# The issuer the Sandbox Controller requests Runtime certificates from.
+# CLEANUP(added 2026-11-09): remove with the Sandbox Controller's runner_certificate_issuer setting
+#   (agentplane/sandbox_controller/settings.py), which only the controller image before the
+#   WorkloadCredential cutover reads.
 RUNNER_CERTIFICATE_ISSUER = CertificateIssuer(name=WORKLOAD_ISSUER.name, kind=IssuerKind.CLUSTER_ISSUER)
 POLICY = "agentplane-workload-certificates"
 _GROUP = "cert-manager.io"
@@ -28,13 +30,11 @@ def _username(account: ServiceAccountRef) -> str:
 def add_workload_certificate_admission(
     scope: Construct,
     *,
-    sandbox_controllers: Set[ServiceAccountRef],
     workload_credential_issuers: Set[ServiceAccountRef],
     service_requester: str,
     cert_manager: ServiceAccountRef,
 ) -> None:
-    """Each of `sandbox_controllers` may request Runtime SVIDs in its own namespace; each of
-    `workload_credential_issuers` may request a WorkloadCredential's URI in any Certificate's own namespace;
+    """Each of `workload_credential_issuers` may request a WorkloadCredential's URI in any Certificate's own namespace;
     `service_requester`, the username that applies rendered manifests, may request one-segment
     service URIs; only `cert_manager` may create the CertificateRequests. Nobody gets a CA."""
     # The objects reach CEL as plain maps: a missing key is an error, so optional fields are read
@@ -44,13 +44,6 @@ def add_workload_certificate_admission(
         f" && object.spec.?issuerRef.?kind.orValue('Issuer') == '{WORKLOAD_ISSUER.kind}'"
         f" && object.spec.?issuerRef.?group.orValue('') in ['', '{_GROUP}']"
     )
-    # The Policy Controller's entry replaces the Sandbox Controller's once it owns Runtime SVID issuance.
-    runtime_requesters = [
-        f"(request.userInfo.username == '{_username(account)}' && request.namespace == '{account.namespace}'"
-        " && variables.uris.all(u, u.matches("
-        f"'^spiffe://agentplane/environment-runtime/{account.namespace}/[^/]+/[^/]+$')))"
-        for account in sorted(sandbox_controllers, key=lambda account: (account.namespace, account.name))
-    ]
     # A record's URI names the record's namespace, which is the Certificate's: RBAC limits where an
     # issuer may create Certificates.
     record_requesters = [
@@ -105,12 +98,12 @@ def add_workload_certificate_admission(
                 k8s.Validation(
                     expression=(
                         "!variables.certificate || (size(variables.uris) > 0"
-                        f" && ({' || '.join([*runtime_requesters, *record_requesters, service])}))"
+                        f" && ({' || '.join([*record_requesters, service])}))"
                     ),
                     message=(
-                        "Only a Sandbox Controller (Runtime URIs in its namespace), the WorkloadCredential issuer"
-                        " (record URIs in the Certificate's namespace) and the manifest applier (one-segment service"
-                        " URIs) request certificates from the Agentplane workload issuer."
+                        "Only the WorkloadCredential issuer (record URIs in the Certificate's namespace) and the"
+                        " manifest applier (one-segment service URIs) request certificates from the Agentplane"
+                        " workload issuer."
                     ),
                 ),
             ],

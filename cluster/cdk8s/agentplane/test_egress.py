@@ -143,8 +143,12 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     role = _by_name(svid_egress_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
+    # An SVID names a WorkloadCredential, and the record names the subject the proxy reads live; the
+    # proxy reads no runner Pod.
+    assert {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]} in role["rules"]
+    assert {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]} in role["rules"]
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
-    assert set(all_resources).isdisjoint({"pods", "serviceaccounts"})
+    assert "pods" not in all_resources
 
     certificate = _by_name(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
@@ -319,6 +323,7 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert role["rules"] == [
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
         {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
+        {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]},
     ]
 
     basic_policy = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)

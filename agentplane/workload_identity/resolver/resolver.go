@@ -43,13 +43,16 @@ type Peer struct {
 	Owner *metav1.OwnerReference
 	// Binding is the accepted incarnation; nil for a standing workload.
 	Binding *workloadapi.Binding
+	// Pod is the Pod the accepted incarnation runs in, once its owner has named it; nil for a
+	// standing workload.
+	Pod *workloadapi.PodRef
 }
 
-// RequirePod is step 7: a Pod-bound token the caller also offered must come from the accepted Pod.
-// podUID is the Pod UID TokenReview reported for that token.
+// RequirePod is step 7: a Pod-bound token the caller also offered must come from the incarnation's
+// Pod. podUID is the Pod UID TokenReview reported for that token.
 func (p Peer) RequirePod(podUID types.UID) error {
-	if podUID == "" || p.Binding == nil || p.Binding.PodUID != podUID {
-		return fmt.Errorf("%w: the Pod token is not bound to the credential's accepted Pod", ErrRefused)
+	if podUID == "" || p.Pod == nil || p.Pod.UID != podUID {
+		return fmt.Errorf("%w: the Pod token is not bound to the credential's accepted incarnation", ErrRefused)
 	}
 	return nil
 }
@@ -126,6 +129,7 @@ func (r *Resolver) Resolve(ctx context.Context, leaf *x509.Certificate) (Peer, e
 		}
 		binding := *record.Status.AcceptedBinding
 		peer.Binding = &binding
+		peer.Pod = record.Spec.Pod.DeepCopy()
 	}
 	subject := record.Spec.Subject
 	if subject.ServiceAccount == "" {

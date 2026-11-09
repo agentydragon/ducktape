@@ -1,32 +1,101 @@
 # Workload authentication and service routes
 
-Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation.
+Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
+its [`WorkloadCredential`](#workloadcredentials).
 Configured non-Sandbox workloads retain Pod-bound Kubernetes bearer authentication over verified
 TLS. This document describes both active routes and the remaining identity lifecycle boundary.
 
 ## Sandbox SVID route
 
-The Sandbox Controller issues a Runtime certificate with URI SAN
-`spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`. It has server
-and client authentication usages. The Environment Runtime and egress sidecar receive that
+Each Sandbox's Runtime certificate is its `WorkloadCredential`'s, with URI SAN
+`spiffe://agentplane/<namespace>/<sandbox-name>/<credential-id>`. It has server and client
+authentication usages. The Environment Runtime and egress sidecar receive that
 incarnation's certificate and the trust-manager CA bundle. The sidecar matches a configured
 destination by exact origin, opens a CONNECT through the egress proxy, then presents the certificate
 on the destination TLS connection. It strips caller `Authorization`, `Proxy-Authorization`, and
 projected-token headers before sending the request.
 
-The proxy verifies client TLS against the [workload CA](#the-workload-ca) and checks the leaf's
-validity, client-auth usage, and exact URI identity. It resolves the URI's namespace, Sandbox UID, and credential ID
-against the live Sandbox and current runner binding before evaluating egress policy for the
-Sandbox's own ServiceAccount. Pod runners must match the Sandbox's current incarnation name and
-Pod UID; VM runners must match its accepted VMI UID. No caller header supplies or overrides the
-subject. The proxy does not read Pod or ServiceAccount objects.
+The proxy verifies client TLS against the [workload CA](#the-workload-ca) and
+[resolves the peer](#how-a-verifier-resolves-a-peer) through its record before evaluating egress
+policy for the record's subject, the Sandbox's own ServiceAccount. No caller header supplies or
+overrides the subject. The proxy reads no Sandbox or Pod for it.
 
 The destination service independently verifies the client certificate against the workload CA and
-resolves the same live Sandbox binding before it authorizes a request or stamps attribution metadata. Each service keeps
+resolves the same record before it authorizes a request or stamps attribution metadata. Each service keeps
 its own resource authorization. The SVID route does not depend on bearer substitution or a
 per-service projected token audience. Finalization does not revoke a still-accepted credential:
-Runtime may finish its History seal until the credential is cleared or the Sandbox is removed. See the [egress contract](../egress/SPEC.md) and
+the record is owned by the Sandbox, so Runtime may finish its History seal until the binding is
+cleared or the Sandbox, and with it the record, is removed. See the [egress contract](../egress/SPEC.md) and
 [LLM ingress](../llm_ingress/README.md) for their route-specific behavior.
+
+## WorkloadCredentials
+
+A workload's SVID is requested by its owner as a `WorkloadCredential`
+(`agentplane/workload_identity`), named after the owner and controlled by it. The owner writes
+`spec`; only the issuer, hosted in the Policy Controller, writes `status` and creates the
+Certificate. Today the Sandbox Controller is the one owner:
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  name: agent-123 # the Sandbox's name
+  namespace: agentplane-staging
+  ownerReferences: [{ kind: Sandbox, name: agent-123, uid: <sandbox-uid>, controller: true }]
+spec: # the Sandbox Controller's
+  subject: { serviceAccount: agent-123 }
+  binding: { podUID: <pod-uid> } # or { vmiUID: <vmi-uid> }
+  pod: { name: agent-123, uid: <pod-uid> } # the caller's Pod: the bound Pod, or a VMI's virt-launcher
+status: # the Policy Controller's
+  observedGeneration: 2
+  credentialID: 9f2c...
+  uri: spiffe://agentplane/agentplane-staging/agent-123/9f2c...
+  secretName: svid-agent-123-9f2c...
+  acceptedBinding: { podUID: <pod-uid> } # the first binding seen for credentialID
+  conditions: [{ type: Ready, status: "True" }]
+```
+
+The issuer reads the owner reference as data and never reads the owner. Its contract is in the
+[Policy Controller SPEC](../policy_controller/SPEC.md#workload-credentials).
+
+- **The URI** is `spiffe://agentplane/<namespace>/<name>/<credential-id>`. The credential ID is the
+  revocation; namespace and name pick the record with one uncached GET. There is no kind segment.
+- **Credential IDs** live exactly as long as the binding they were accepted for. The first binding
+  after a fresh ID accepts it, since the incarnation was started with it; when `spec.binding` later
+  leaves the accepted binding, cleared or replaced, the issuer mints a fresh ID, and nothing else
+  rotates one. A new Pod or a VMI replacement is a new binding. Deleting a record revokes it at
+  once.
+- **Subjects** change only together with a new binding, and `spec.pod` only with a new binding
+  (CRD transition rules), so a running incarnation is never re-pointed.
+- **Who writes:** the Sandbox Controller may create, update and delete records in its namespace;
+  only the Policy Controller may write `workloadcredentials/status`.
+
+### How a verifier resolves a peer
+
+`agentplane/workload_identity/resolver` makes the same checks for every verifier, on every request,
+including one inherited through a tunnel:
+
+1. The TLS listener verifies the chain against the workload CA bundle and the client-auth usage.
+2. The leaf's URI SAN must parse as `spiffe://agentplane/<namespace>/<name>/<credential-id>`, and
+   the namespace must be one the verifier serves.
+3. One uncached GET of that record; a missing or deleting record is refused.
+4. `status.credentialID` must equal the URI's last segment and `status.uri` the whole URI. A record
+   with a controller owner or a binding also needs `spec.binding` to equal `status.acceptedBinding`,
+   so clearing or replacing the binding revokes before the ID rotates. A stale certificate is
+   refused after a name is reused, because the new record has a new ID.
+5. `spec.subject` is the subject: a ServiceAccount in the record's namespace, read live for its
+   UID. Identity subjects are refused until `IDENTITY_CUTOVER`.
+6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
+   TokenReview Pod UID equals `spec.pod`.
+
+An API server error fails closed. Headers, metadata and request bodies never select the subject.
+Services see the record's subject and `spec.pod` as today's `Principal`: the Sandbox's
+ServiceAccount, with the Pod as the provenance Pod.
+
+TLS proves possession of the key, nothing more. Three things defend it: the Secret mounts only into
+Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation revokes its key
+through a fresh ID, and on routes that carry one, the forwarded Pod token must pass TokenReview. The
+cluster has no CRL or OCSP.
 
 ## The workload CA
 
@@ -36,48 +105,20 @@ intermediate under the cluster root whose key lives in cert-manager's namespace,
 verify against `cluster-internal-ca-bundle` for clients checking a server. Every listener that
 verifies client SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that
 intermediate alone: a `cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate,
-so the live Sandbox lookup is no longer the only check. That includes a runner's control listener,
+so the live record lookup is not the only check. That includes a runner's control listener,
 which refuses a `cluster-internal-ca` leaf naming the Runner Gateway; the Sandbox Controller
 projects the Bundle into runners beside the cluster bundle
-([runner control](runner_control.md#authentication-and-incarnation-binding), except Firecracker runners). Runtime certificates and their
-Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbox-uid` label.
+([runner control](runner_control.md#authentication-and-incarnation-binding), except Firecracker
+runners). A record's Certificate and Secret carry the
+record's UID in the `agentplane.allegedly.works/workload-credential-uid` label, by which the issuer
+deletes superseded generations' Secrets: cert-manager sets no owner on a Secret.
 
 A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the
-issuer keeps it from being a cluster-wide minting service. The Sandbox Controller may request only
-`spiffe://agentplane/environment-runtime/<its namespace>/<Sandbox UID>/<credential ID>` URIs in its
-own namespace, the Policy Controller only `spiffe://agentplane/<namespace>/<name>/<credential ID>`
-URIs naming the Certificate's own namespace, and Flux's applier only one-segment service URIs such as
-`spiffe://agentplane/actions`. No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
+issuer keeps it from being a cluster-wide minting service. The Policy Controller may request only
+record URIs, `spiffe://agentplane/<the Certificate's namespace>/<name>/<32 hex digits>`, and Flux's
+applier only one-segment service URIs such as `spiffe://agentplane/actions`.
+No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
 other Certificate against the issuer is refused. Certificates against other issuers are unaffected.
-
-## Workload credentials
-
-The `WorkloadCredential` kind records the credential a workload's owner requests, and the Policy
-Controller's [issuer](../policy_controller/SPEC.md#workload-credentials) issues it from the workload
-CA. Both are deployed but not yet in use: no manifest sets the issuer's settings, and no verifier
-reads records. The record, requester and resolver are described in
-[`workload_identity`](../workload_identity/README.md).
-
-### How a verifier resolves a peer
-
-The certificate never carries the identity: its URI names a record, and the record names the
-subject. The resolver (`agentplane/workload_identity/resolver`) takes a leaf whose chain the TLS
-listener verified against the workload CA, and on every call:
-
-1. Refuses a leaf outside its validity window or without the client-auth usage.
-2. Parses the URI SAN as `spiffe://agentplane/<namespace>/<name>/<credential-id>`.
-3. Refuses a namespace outside the verifier's allowed namespaces. Namespace and name pick the
-   `WorkloadCredential`.
-4. Makes one uncached GET of that record, and refuses a missing or deleting one.
-5. Requires `status.credentialID` to equal the URI's last segment and `status.uri` the whole URI.
-   A record with a controller owner or a binding also needs `spec.binding` to equal
-   `status.acceptedBinding`, so clearing or replacing the binding revokes before the ID rotates.
-6. Reads `spec.subject`. A ServiceAccount in the record's namespace must be live; its UID is
-   returned. An `Identity` subject is refused until the identity cutover.
-7. When the caller also offered a Pod-bound token, the Pod UID TokenReview reports for it must equal
-   the accepted binding's (`Peer.RequirePod`).
-
-An API server error fails closed. Headers, metadata and request bodies never select the subject.
 
 ## TokenReview and projected credentials
 

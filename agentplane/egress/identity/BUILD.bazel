@@ -12,9 +12,9 @@ go_library(
     deps = [
         "//agentplane/egress/decision",
         "//agentplane/environment_runtime_transport",
-        "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/listener",
+        "//agentplane/workload_identity/resolver",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",

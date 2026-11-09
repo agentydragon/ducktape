@@ -24,7 +24,7 @@ import (
 
 func TestFetchX509SVIDStreamsRotationsAndReconnectStartsWithFullState(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	first := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	second := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	server := New()
@@ -67,7 +67,7 @@ func TestFetchX509SVIDStreamsRotationsAndReconnectStartsWithFullState(t *testing
 
 func TestSetCoalescesPendingSubscriberUpdates(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	first := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	second := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	third := parseFixture(t, ca, issueRuntime(t, ca, identity))
@@ -96,7 +96,7 @@ func TestSetCoalescesPendingSubscriberUpdates(t *testing.T) {
 
 func TestFetchX509BundlesRequiresMetadataAndReturnsLocalBundle(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	response := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	server := New()
 	if err := server.Set(response); err != nil {
@@ -130,7 +130,7 @@ func TestFetchX509BundlesRequiresMetadataAndReturnsLocalBundle(t *testing.T) {
 
 func TestFetchX509SVIDRejectsMissingOrInvalidMetadata(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	server := New()
 	if err := server.Set(parseFixture(t, ca, issueRuntime(t, ca, identity))); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestFetchX509SVIDRejectsMissingOrInvalidMetadata(t *testing.T) {
 func TestParsePEMAndSetRejectMismatchedBundleAndIdentity(t *testing.T) {
 	trustedCA := environmentruntimetransporttesting.NewCA(t)
 	otherCA := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	config := issueRuntime(t, trustedCA, identity)
 	certPEM := readFile(t, config.CertFile)
 	keyPEM := readFile(t, config.KeyFile)
@@ -166,7 +166,7 @@ func TestParsePEMAndSetRejectMismatchedBundleAndIdentity(t *testing.T) {
 	}
 
 	first := parseFixture(t, trustedCA, config)
-	secondIdentity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/other-credential"
+	secondIdentity := "spiffe://agentplane/agent-ns/sandbox-uid/other-credential"
 	mismatchedIdentity := parseFixture(t, trustedCA, issueRuntime(t, trustedCA, secondIdentity))
 	mismatchedIdentity.GetSvids()[0].SpiffeId = first.GetSvids()[0].GetSpiffeId()
 	server := New()
@@ -191,7 +191,7 @@ func TestParsePEMAndSetRejectMismatchedBundleAndIdentity(t *testing.T) {
 
 func TestParsePEMRequiresRuntimeServerAuthUsage(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	config := ca.IssueWithUsage(t, identity, x509.ExtKeyUsageClientAuth)
 	if _, err := ParsePEM(readFile(t, config.CertFile), readFile(t, config.KeyFile), readFile(t, ca.RootFile)); err == nil {
 		t.Fatal("ParsePEM accepted a Runtime certificate without serverAuth EKU")
@@ -200,7 +200,7 @@ func TestParsePEMRequiresRuntimeServerAuthUsage(t *testing.T) {
 
 func TestParsePEMNormalizesPKCS8AndRejectsMismatchedKeys(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	config := issueRuntime(t, ca, identity)
 	want := parseFixture(t, ca, config) // The cert-manager-style fixture uses SEC1 EC PEM.
 	pair, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
@@ -227,7 +227,7 @@ func TestParsePEMNormalizesPKCS8AndRejectsMismatchedKeys(t *testing.T) {
 
 func TestSnapshotIsDetachedAndRejectsOversizedPayload(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
 	response := parseFixture(t, ca, issueRuntime(t, ca, identity))
 	server := New()
 	if err := server.Set(response); err != nil {

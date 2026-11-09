@@ -1,7 +1,7 @@
 """SVID verifiers trust the Agentplane workload CA alone, not the cluster root it chains to.
 
 A Certificate anyone may request from `cluster-internal-ca`, naming a live Sandbox's exact Runtime
-URI with client auth, must not authenticate to the egress proxy's forward listener; one naming the
+URI, its WorkloadCredential's, with client auth, must not authenticate to the egress proxy's forward listener; one naming the
 Runner Gateway must not authenticate to a runner's control listener. The real credential, presented
 the same way, is the positive anchor: it shows the probe reaches the listener and that only the
 issuer differs.
@@ -115,10 +115,9 @@ async def _cluster_ca_client_leaf(cluster: Cluster, uri: str) -> tuple[bytes, by
 async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
-    sandbox = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
-    credential = f"runner-{sandbox['status']['runnerCredential']['id']}"
-    runtime = json.loads(await cluster.kubectl("get", "certificate", credential, "-o", "json"))
-    (uri,) = runtime["spec"]["uris"]
+    # The Sandbox's WorkloadCredential names the Runtime's URI and the Secret holding its key pair.
+    record = json.loads(await cluster.kubectl("get", "workloadcredential", view.target.name, "-o", "json"))
+    credential, uri = record["status"]["secretName"], record["status"]["uri"]
 
     impostor = await _cluster_ca_client_leaf(cluster, uri)
     own = await _secret_pem(cluster, cluster.namespace, credential)

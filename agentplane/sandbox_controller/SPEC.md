@@ -90,30 +90,24 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   either never changes a running Pod or VM, its kind included.
 - Runner control always uses the runner as an mTLS server and the Runner Gateway as its client. The
   controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
-  fresh credential ID used to bind each incarnation to its certificate.
+  credential ID each incarnation was started with.
   The controller's own Gateway calls retain their projected bearer and verify the shared service's
   SVID with `runner_gateway_tls`. Its scalar environment fields are
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__SERVER_URI`; a partial TLS configuration is refused.
-- Before starting a new workload, the controller creates a cert-manager `Certificate` named
-  `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
-  `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has
-  digital-signature, server-authentication and client-authentication usages. Server auth serves
-  Runner control; client auth lets the egress sidecar authenticate to the central proxy's forward
-  listener. The issuer the `runner_certificate_issuer` setting names by name and kind signs it; in
-  deployments that is the `agentplane-workload` ClusterIssuer, the Agentplane workload CA, from
-  which admission lets only this controller request Runtime URIs in its own namespace. cert-manager
-  owns key generation and renewal. The Certificate and, through its `secretTemplate`, its Secret
-  carry the Sandbox's name, its UID (`agentplane.allegedly.works/sandbox-uid`) and the credential
-  ID as labels, so a former incarnation's Secrets are found by label; the controller does not mount
-  a Secret whose labels name another Sandbox UID or credential. Runner TLS files mount from that
-  generation's unique Secret. Two trust-manager bundles are mounted beside them:
-  `cluster-internal-ca-bundle`, the cluster root, and `agentplane-workload-ca-bundle`, the workload
-  CA alone, which a runner's control listener can trust for the Gateway's client SVID. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path
-  in any regular or init container. A renewed key can update only its own generation's Secret.
-  Reconciliation upgrades the usages of a previously issued controller-owned Certificate only when
-  every other identity and key-policy field still matches; SAN, issuer or other drift remains a
-  conflict.
+- Before starting a new workload, the controller requests the Sandbox's `WorkloadCredential`, named
+  after and controlled by the Sandbox, with the Sandbox's own ServiceAccount as subject and no
+  binding, and waits until the Policy Controller has issued it
+  ([workload credentials](../docs/workload_authentication.md#workloadcredentials)). The leaf URI SAN
+  is `spiffe://agentplane/<namespace>/<Sandbox name>/<credential-id>`, with digital-signature,
+  server-authentication and client-authentication usages. Server auth serves Runner control;
+  client auth lets the egress sidecar authenticate to the central proxy's forward listener. The
+  controller creates no Certificate and reads no Secret: it labels the workload with the issued
+  credential ID and mounts the issued Secret by name. Two trust-manager bundles are mounted beside
+  it: `cluster-internal-ca-bundle`, the cluster root, and `agentplane-workload-ca-bundle`, the
+  workload CA alone, which a runner's control listener can trust for the Gateway's client SVID. A
+  Pod template cannot declare or claim the reserved runner TLS volume name or mount path in any
+  regular or init container.
 - A Pod projects the same per-incarnation Secret and both trust bundles, the workload CA as
   `workload-ca.crt` beside the cluster bundle's `ca.crt`, to the Environment Runtime and,
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
@@ -121,14 +115,19 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   `proxy.transport` selects TLS with `auth.mode: spiffe`; a handshake or certificate failure ends the
   request. It sends the Kubernetes-audience token as destination context, reviewed against the live
   Sandbox Pod; that token never authenticates an SVID hop.
-- A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
-  first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
-  the VM still carries the old identity, the controller halts that replacement, rotates to a new
-  credential ID and Secret name, and resumes only after the old VMI is gone and the new certificate
-  is ready. A replacement never inherits a credential issued to its predecessor.
-- `status.runnerCredential` is the Sandbox's binding: the current credential ID and workload kind,
-  the bound Pod UID, and the last accepted VMI UID and credential ID. Only the controller writes it,
-  through the status subresource, so a writer of the Sandbox's spec or metadata cannot rebind it.
+- The controller binds the record to the Pod it created, or to the VM's first VMI carrying the
+  VM's credential label, and publishes the incarnation once the record has accepted that binding
+  for the credential ID the incarnation was started with. It names a VMI's virt-launcher Pod in
+  the record once KubeVirt creates it. A Pod or VMI whose credential the record no longer issues
+  is deleted, or halted, and never accepted. A credential ID lives exactly as long as its accepted
+  binding: when the incarnation goes, the controller clears the binding, the record's ID rotates,
+  and the next start renders the fresh credential. If KubeVirt replaces a VMI while the VM still
+  carries the old credential, the controller halts the replacement and clears the binding, so a
+  replacement never inherits a credential issued to its predecessor. A Sandbox with nothing
+  running and nothing to run has no record, so no earlier incarnation's certificate verifies.
+- `status.runnerCredential` is the incarnation the controller accepted: its kind, the Pod UID and
+  the last accepted VMI UID. Only the controller writes it, through the status subresource, so a
+  writer of the Sandbox's spec or metadata cannot rebind it.
 - An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
   the controller does not halt an active VM just to install credentials.
 - Each Pod and VM carries the spec rendered from the template when it started
@@ -148,12 +147,13 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - The runner TLS Secret is a separate virtiofs config volume under a root-only guest directory.
   The runner reads its certificate and private key there; the guest's unprivileged native-agent
   account cannot traverse that directory. The KubeVirt launcher relay receives a projection of this
-  same Secret only after its admission policy checks the live Sandbox's `status.runnerCredential`
-  against the VM annotation, current VMI UID and credential label, plus the existing Sandbox owner
-  chain. The egress-sidecar alone mounts that projection; the guest Runtime uses the existing
-  virtiofs mount. Kyverno's admission controller gets only namespace-scoped Sandbox `get` for the
-  status lookup; the kubelet projects the Secret without Kyverno reading its value. Missing accepted
-  credential data fails admission; KubeVirt retries after status is bound, without an admitted Pod
+  same Secret only after its admission policy checks the Sandbox's live `WorkloadCredential`: its
+  binding and accepted binding name the current VMI, and its credential ID matches the VM
+  annotation and the VMI's credential label, plus the existing Sandbox owner chain. The
+  egress-sidecar alone mounts that projection; the guest Runtime uses the existing virtiofs mount.
+  Kyverno's admission controller gets only namespace-scoped `get` on Sandboxes and
+  WorkloadCredentials; the kubelet projects the Secret without Kyverno reading its value. A record
+  that has not accepted the VMI fails admission; KubeVirt retries after it has, without an admitted Pod
   waiting forever on a placeholder Secret. Each trust-manager bundle is its own virtiofs filesystem
   of public trust data: `agentplane-environment-runtime-trust` and
   `agentplane-environment-runtime-workload-trust`.
@@ -243,13 +243,13 @@ A foreign same-name Service blocks new workload starts.
   acknowledged each seal, so history holds every Session through its seal before its state goes.
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
   recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
-- The current validated incarnation stays published while it seals, including during certificate
-  renewal, so the Gateway can continue reporting quiesce progress. A replacement must bind its own
-  credential before publication. A restart needed for sealing uses the same certificate readiness
-  gate and credential rotation as an ordinary start; deletion never reuses the previous workload's key.
-- Then the Pod or VM is deleted, then, once it and any VMI are gone, the controller removes old
-  runner Certificate resources and their cert-manager-generated TLS Secrets. The finalizer clears
-  and the PVC goes with the Sandbox only after that cleanup finishes.
+- The current validated incarnation stays published while it seals, including while its credential
+  is reissued, so the Gateway can continue reporting quiesce progress. A replacement must have its
+  own binding accepted before publication. A restart needed for sealing waits for issuance and
+  rotates the credential as an ordinary start does; deletion never reuses the previous workload's key.
+- Then the Pod or VM is deleted, and once it and any VMI are gone the finalizer clears and the PVC
+  goes with the Sandbox. The WorkloadCredential, its Certificates and their Secrets go with the
+  Sandbox too.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
 - The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
@@ -265,9 +265,9 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`,
 `RunnerCredentialMissing`, `RunnerCredentialRequired`,
-`RunnerCredentialPending`, `RunnerCredentialMismatch`, `RunnerCredentialCleanupPending`,
-`RunnerCertificateIssuerMissing`, `CertificatePending`, `CertificateConflict`,
-`CertificateIdentityConflict`, `CertificateSecretPending`, `CertificateSecretConflict`,
+`RunnerCredentialPending`, `RunnerCredentialMismatch`, a pending WorkloadCredential's reason
+(`Requested`, `RecordConflict`, `PredecessorDeleting`, or the Policy Controller's `Ready`
+reason such as `CertificatePending`),
 `VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
 `PodConflict` or `VMConflict`
 (a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
@@ -275,10 +275,9 @@ dispatch on typed status fields.
 
 `status.stopStage` is how far the controller has taken stopping the workload, absent while it runs or
 starts: `Quiescing` while it seals the current incarnation's Sessions before stopping or deleting it,
-`Deleting` while a deleted Sandbox with nothing left to seal has its workload and runner credentials
-removed, and `Stopped` once no plain Pod or VM runs, or a Firecracker launcher has checkpointed RAM
-while keeping its Pod, and the state volume is kept. Credential and certificate pending
-reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
+`Deleting` while a deleted Sandbox with nothing left to seal has its workload removed, and `Stopped` once no plain Pod or VM runs, or a Firecracker launcher has checkpointed RAM
+while keeping its Pod, and the state volume is kept. Credential pending reasons requeue
+while the Policy Controller issues the Sandbox's credential; conflicts
 keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap
 or a Session's setup is still running, so the suspend never interrupts it; a delete does not wait.
 This hold has `status.operatingMode: Suspended` with no stop stage. When the hold ends, the controller

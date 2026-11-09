@@ -78,7 +78,7 @@ func TestSecurityValidateAcceptsExplicitModes(t *testing.T) {
 }
 
 func TestSecurityMTLSMisconfigurationDoesNotFallBackToInsecure(t *testing.T) {
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +119,11 @@ func TestSecurityInsecureUsesPlaintextCredentialsAndSkipsPeerAuthentication(t *t
 
 func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherEnvironmentRuntimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "other-pod-uid")
+	otherEnvironmentRuntimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

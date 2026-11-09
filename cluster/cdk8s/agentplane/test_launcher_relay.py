@@ -1,5 +1,5 @@
 """The launcher relay policy in the real Kyverno CLI. The CLI loads no API reads, so the test supplies
-the VMI, VirtualMachine and ServiceAccount the policy would read; the ownership checks still run."""
+the VMI, VirtualMachine, Sandbox, WorkloadCredential and ServiceAccount the policy would read; the ownership checks still run."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -27,6 +27,7 @@ NAMESPACE = "launcher-relay-test"
 TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
 RELAY_SETTINGS = "relay-test-relay-settings"
 RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
+RUNNER_SECRET = f"svid-sandbox-a-{RUNNER_CREDENTIAL_ID}"
 RUNNER_POD = {
     "metadata": {"labels": {"app": "relay-test-runner"}},
     "spec": {
@@ -76,7 +77,7 @@ def policy() -> dict:
     return rendered
 
 
-def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
+def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace() -> None:
     chart = Chart(App(), "test-tls-reader")
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
@@ -84,7 +85,10 @@ def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
     documents = Cdk8sTesting.synth(chart)
     role = one(doc for doc in documents if doc["kind"] == "Role")
     assert role["metadata"]["namespace"] == NAMESPACE
-    assert role["rules"] == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get"]}]
+    assert role["rules"] == [
+        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get"]},
+        {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]},
+    ]
     binding = one(doc for doc in documents if doc["kind"] == "RoleBinding")
     assert binding["metadata"]["namespace"] == NAMESPACE
     assert binding["roleRef"] == {
@@ -107,8 +111,10 @@ def policy_file(
     vmi_volumes: list[dict] | None,
     vmi_filesystems: list[dict] | None,
     credential_kind: str = "VM",
-    sandbox_credential_id: str = RUNNER_CREDENTIAL_ID,
-    accepted_credential_id: str = RUNNER_CREDENTIAL_ID,
+    record_credential_id: str = RUNNER_CREDENTIAL_ID,
+    record_owner_uid: str = "sb-uid",
+    binding_vmi_uid: str = "vmi-uid",
+    accepted_vmi_uid: str = "vmi-uid",
     last_vmi_uid: str = "vmi-uid",
     vm_credential_id: str = RUNNER_CREDENTIAL_ID,
     vm_vmi_uid: str = "vmi-uid",
@@ -142,13 +148,18 @@ def policy_file(
         },
         "sandboxLive": {
             "metadata": {"uid": sandbox_uid, "name": "sandbox-a"},
+            "status": {"runnerCredential": {"kind": credential_kind, "lastVmiUid": last_vmi_uid}},
+        },
+        "credential": {
+            "metadata": {
+                "name": "sandbox-a",
+                "ownerReferences": [owner(f"{GROUP}/{VERSION}", "Sandbox", record_owner_uid)],
+            },
+            "spec": {"subject": {"serviceAccount": "sandbox-a"}, "binding": {"vmiUID": binding_vmi_uid}},
             "status": {
-                "runnerCredential": {
-                    "id": sandbox_credential_id,
-                    "kind": credential_kind,
-                    "acceptedId": accepted_credential_id,
-                    "lastVmiUid": last_vmi_uid,
-                }
+                "credentialID": record_credential_id,
+                "secretName": f"svid-sandbox-a-{record_credential_id}",
+                "acceptedBinding": {"vmiUID": accepted_vmi_uid},
             },
         },
         "account": {
@@ -195,8 +206,10 @@ def apply(
     vmi_volumes: tuple[dict, ...] | None = (),
     vmi_filesystems: tuple[dict, ...] | None = (),
     credential_kind: str = "VM",
-    sandbox_credential_id: str = RUNNER_CREDENTIAL_ID,
-    accepted_credential_id: str = RUNNER_CREDENTIAL_ID,
+    record_credential_id: str = RUNNER_CREDENTIAL_ID,
+    record_owner_uid: str = "sb-uid",
+    binding_vmi_uid: str = "vmi-uid",
+    accepted_vmi_uid: str = "vmi-uid",
     last_vmi_uid: str = "vmi-uid",
     vm_credential_id: str = RUNNER_CREDENTIAL_ID,
     vm_vmi_uid: str = "vmi-uid",
@@ -215,8 +228,10 @@ def apply(
             vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
             vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
             credential_kind=credential_kind,
-            sandbox_credential_id=sandbox_credential_id,
-            accepted_credential_id=accepted_credential_id,
+            record_credential_id=record_credential_id,
+            record_owner_uid=record_owner_uid,
+            binding_vmi_uid=binding_vmi_uid,
+            accepted_vmi_uid=accepted_vmi_uid,
             last_vmi_uid=last_vmi_uid,
             vm_credential_id=vm_credential_id,
             vm_vmi_uid=vm_vmi_uid,
@@ -276,16 +291,11 @@ def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_i
 ) -> None:
     policy = deepcopy(policy)
     injection = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
-    sandbox_read = one(entry for entry in injection["context"] if entry["name"] == "sandboxLive")
-    del sandbox_read["apiCall"]
-    sandbox_read["variable"] = {
-        "value": {
-            "metadata": {"uid": "sb-uid", "name": "sandbox-a"},
-            "status": {"runnerCredential": {"id": RUNNER_CREDENTIAL_ID, "kind": "VM", "lastVmiUid": "vmi-uid"}},
-        }
-    }
-    # The mutation and validation webhooks read independently. A later valid
-    # status must not admit a Pod mutated with a nonexistent Secret name.
+    credential_read = one(entry for entry in injection["context"] if entry["name"] == "credential")
+    del credential_read["apiCall"]
+    credential_read["variable"] = {"value": {"metadata": {"name": "sandbox-a"}, "spec": {}, "status": {}}}
+    # The mutation and validation webhooks read independently. A later issued
+    # record must not admit a Pod mutated with a nonexistent Secret name.
     result = apply(tmp_path, policy, launcher())
     assert not result.ok, result.stdout
 
@@ -297,7 +307,7 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
     spec = mutated["spec"]
     tls_volume = one(v for v in spec["volumes"] if v["name"] == RUNNER_TLS_VOLUME_NAME)
     assert tls_volume["projected"]["defaultMode"] == 292
-    assert tls_volume["projected"]["sources"][0]["secret"]["name"] == f"runner-{RUNNER_CREDENTIAL_ID}"
+    assert tls_volume["projected"]["sources"][0]["secret"]["name"] == RUNNER_SECRET
     assert tls_volume["projected"]["sources"][1]["configMap"] == {
         "name": "cluster-internal-ca-bundle",
         "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
@@ -522,17 +532,17 @@ def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) 
     "binding",
     [
         pytest.param({"credential_kind": "Pod"}, id="not-a-vm-binding"),
-        pytest.param({"sandbox_credential_id": "fedcba9876543210fedcba9876543210"}, id="status-id-mismatch"),
-        pytest.param({"accepted_credential_id": "fedcba9876543210fedcba9876543210"}, id="not-accepted"),
+        pytest.param({"record_credential_id": "fedcba9876543210fedcba9876543210"}, id="record-id-mismatch"),
+        pytest.param({"record_owner_uid": "replacement-sandbox"}, id="record-of-another-sandbox"),
+        pytest.param({"binding_vmi_uid": "stale-vmi"}, id="record-bound-to-another-vmi"),
+        pytest.param({"accepted_vmi_uid": "stale-vmi"}, id="record-accepted-another-vmi"),
         pytest.param({"last_vmi_uid": "stale-vmi"}, id="status-vmi-mismatch"),
         pytest.param({"vm_vmi_uid": "stale-vmi"}, id="vm-annotation-vmi-mismatch"),
         pytest.param({"vmi_credential_id": "fedcba9876543210fedcba9876543210"}, id="vmi-label-mismatch"),
         pytest.param({"sandbox_uid": "replacement-sandbox"}, id="sandbox-owner-mismatch"),
     ],
 )
-def test_mtls_rejects_launcher_without_current_sandbox_status_binding(
-    tmp_path: Path, policy: dict, binding: dict
-) -> None:
+def test_mtls_rejects_launcher_without_current_credential_binding(tmp_path: Path, policy: dict, binding: dict) -> None:
     assert apply(tmp_path, policy, launcher(), **binding).failed > 0
 
 

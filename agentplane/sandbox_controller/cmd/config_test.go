@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 )
 
 const validSettings = `namespace: agentplane
@@ -50,12 +49,21 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
 		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
-		RunnerCertificateIssuer: sandboxcontroller.CertificateIssuer{
-			Name: "test-workload-issuer", Kind: sandboxcontroller.IssuerKindClusterIssuer,
-		},
 	}
+	c.RunnerCertificateIssuer = nil
 	if c != want {
 		t.Fatalf("unexpected settings: %+v", c)
+	}
+}
+
+// The previous image requires runner_certificate_issuer, so the manifests keep setting it until this
+// image is deployed; this one reads nothing of it.
+func TestTheRetiredIssuerSettingIsOptional(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, strings.Replace(
+		validSettings, "runner_certificate_issuer:\n  name: test-workload-issuer\n  kind: ClusterIssuer\n", "", 1,
+	)))
+	if _, err := loadConfig(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -92,7 +100,6 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 		"namespace":                 "namespace: agentplane\n",
 		"runner_gateway_target":     "runner_gateway_target: \"{sandbox}-control.{namespace}.svc:8080\"\n",
 		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
-		"runner_certificate_issuer": "runner_certificate_issuer:\n  name: test-workload-issuer\n  kind: ClusterIssuer\n",
 	}
 	cases := map[string]string{
 		"unknown key":        validSettings + "unknown_setting: value\n",
@@ -103,15 +110,6 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 		),
 		"empty health probe bind address": strings.Replace(
 			validSettings, "health_probe_bind_address: \":9091\"\n", "health_probe_bind_address: \"\"\n", 1,
-		),
-		"issuer without a name": strings.Replace(validSettings, "  name: test-workload-issuer\n", "", 1),
-		"issuer without a kind": strings.Replace(validSettings, "  kind: ClusterIssuer\n", "", 1),
-		"issuer of an unknown kind": strings.Replace(
-			validSettings, "  kind: ClusterIssuer\n", "  kind: ExternalIssuer\n", 1,
-		),
-		"issuer as a bare name": strings.Replace(
-			validSettings, "runner_certificate_issuer:\n  name: test-workload-issuer\n  kind: ClusterIssuer\n",
-			"runner_certificate_issuer: test-workload-issuer\n", 1,
 		),
 	}
 	for name, line := range missing {

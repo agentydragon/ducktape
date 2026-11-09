@@ -31,7 +31,7 @@ import (
 
 func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 
 func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func (h *workloadRouteHealth) Check(ctx context.Context, _ *healthpb.HealthCheck
 
 func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

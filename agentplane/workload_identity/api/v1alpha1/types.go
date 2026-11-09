@@ -42,14 +42,28 @@ type Binding struct {
 	VMIUID types.UID `json:"vmiUID,omitempty"`
 }
 
+// PodRef names one Pod incarnation.
+type PodRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:Format=uuid
+	UID types.UID `json:"uid"`
+}
+
 // WorkloadCredentialSpec is the requester's. A running incarnation is never re-pointed: the subject
 // changes only together with a new binding, and a record without one is replaced instead. A binding
 // cannot be required at create, because the credential is issued before the Pod or VMI exists.
 // +kubebuilder:validation:XValidation:rule="self.subject == oldSelf.subject || (has(self.binding) && (!has(oldSelf.binding) || self.binding != oldSelf.binding))",message="subject changes only with a new binding"
+// +kubebuilder:validation:XValidation:rule="!has(self.pod) || (has(self.binding) && (!has(self.binding.podUID) || self.binding.podUID == self.pod.uid))",message="pod names the bound Pod, or a bound VMI's Pod"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.pod) || !has(self.pod) || self.pod == oldSelf.pod || self.binding != oldSelf.binding",message="pod changes only with a new binding"
 type WorkloadCredentialSpec struct {
 	Subject Subject `json:"subject"`
 	// Binding is absent for a standing workload, and for an owned one before its incarnation exists.
 	Binding *Binding `json:"binding,omitempty"`
+	// Pod is the Pod the bound incarnation runs in, which a verifier reports as the caller's Pod and
+	// checks a forwarded Pod token against: the bound Pod itself, or a bound VMI's virt-launcher Pod,
+	// which its owner names once KubeVirt has created it.
+	Pod *PodRef `json:"pod,omitempty"`
 }
 
 // WorkloadCredentialStatus is written only by the workload-identity component in the Policy

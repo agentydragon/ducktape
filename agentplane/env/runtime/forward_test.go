@@ -47,7 +47,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if mode == environmentruntimetransport.MutualTLS {
 		ca := environmentruntimetransporttesting.NewCA(t)
 		var err error
-		runnerURI, err = environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+		runnerURI, err = environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +168,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 
 func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	wrongURI, err := environmentruntimetransport.EnvironmentRuntimeURI("another-namespace", "another-sandbox", "credential-id")
+	wrongURI, err := environmentruntimetransport.WorkloadID{Namespace: "another-namespace", Name: "another-sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	runnerURI, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 
 func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	runnerURI, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

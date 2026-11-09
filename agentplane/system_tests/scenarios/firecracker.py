@@ -219,7 +219,9 @@ async def preserves_live_guest(
         assert mounts[mount] == filesystem, before
     pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
     credential_id = pod_json["metadata"]["labels"]["agentplane.allegedly.works/environment-runtime-credential"]
-    secret_name = f"runner-{credential_id}"
+    record = json.loads(await cluster.kubectl("get", "workloadcredential", view.target.name, "-o", "json"))
+    assert record["status"]["credentialID"] == credential_id, record["status"]
+    secret_name = record["status"]["secretName"]
     running_credential = await _renew_credentials(cluster, secret_name)
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
     initial = await client.runner_status(view.target.name, view.target.uid)

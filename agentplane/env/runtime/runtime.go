@@ -219,12 +219,13 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		if err != nil {
 			return nil, fmt.Errorf("Runner control certificate: %w", err)
 		}
-		namespace, sandboxUID, _, err := environmentruntimetransport.ParseEnvironmentRuntimeURI(identity)
+		workload, err := environmentruntimetransport.ParseWorkloadURI(identity)
 		if err != nil {
 			return nil, fmt.Errorf("Runner control certificate: %w", err)
 		}
-		if namespace != config.Launch.Sandbox.Namespace || sandboxUID != config.Launch.Sandbox.UID {
-			return nil, errors.New("Runner control certificate does not name the configured Sandbox namespace and UID")
+		// The Sandbox's WorkloadCredential takes its name; the credential ID tells incarnations apart.
+		if workload.Namespace != config.Launch.Sandbox.Namespace || workload.Name != config.Launch.Sandbox.Name {
+			return nil, errors.New("Runner control certificate does not name the configured Sandbox namespace and name")
 		}
 	}
 	// Acquire the backing store before preparing any native supervision. The

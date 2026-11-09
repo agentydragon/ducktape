@@ -413,6 +413,8 @@ class RunnerGateway(Construct):
                     resources=[custom_resource(GROUP, "sandboxtemplates"), custom_resource(GROUP, "policysets")],
                     verbs=["get", "list"],
                 ),
+                # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],

@@ -55,19 +55,6 @@ async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.Session
 async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
     gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: Path, app_token_file: Path
 ) -> None:
-    credential_id = sandbox.environment_runtime_identity_uri.rsplit("/", maxsplit=1)[1]
-    await sandbox.patch_sandbox_status(
-        {
-            "status": {
-                "runnerCredential": {
-                    "id": credential_id,
-                    "acceptedId": credential_id,
-                    "kind": "Pod",
-                    "podUid": sandbox.pod_uid,
-                }
-            }
-        }
-    )
     bearer = (await asyncio.to_thread(app_token_file.read_text)).strip()
     root_certificates = gateway_service.environment_runtime_ca_file.read_bytes()
 

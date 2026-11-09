@@ -62,9 +62,7 @@ func TestSVIDListenerKeepsInboxOwnershipAndRejectsDeletedSandbox(t *testing.T) {
 			t.Fatalf("caller %s sees %d inboxes, want %d", caller.Sandbox.Name, len(response.GetInboxes()), want)
 		}
 		if i == 0 {
-			if err := caller.Objects.Delete(t.Context(), caller.Sandbox); err != nil {
-				t.Fatal(err)
-			}
+			caller.Delete(t)
 			denied, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			_, err = notificationspb.NewNotificationsClient(conn).ListInboxes(denied, &notificationspb.ListInboxesRequest{})
 			cancel()

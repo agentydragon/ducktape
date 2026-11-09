@@ -102,27 +102,31 @@ def issue_leaf(ca: CertificateAuthority, hostname: str, directory: Path) -> tupl
     return cert_path, key_path
 
 
-def environment_runtime_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) -> str:
-    """Return the Environment Runtime identity URI used by Gateway and transport fixtures."""
-    if (
-        not namespace
-        or len(namespace) > 63
-        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in namespace)
-    ):
-        raise ValueError("namespace must be a lowercase DNS label")
-    if namespace.startswith("-") or namespace.endswith("-"):
-        raise ValueError("namespace must not start or end with a hyphen")
-    for name, value in (("Sandbox UID", sandbox_uid), ("credential ID", credential_id)):
+def workload_uri(namespace: str, name: str, credential_id: str) -> str:
+    """Return the URI a WorkloadCredential's certificate carries: its namespace, its name and its
+    credential ID."""
+    for label, value in (("namespace", namespace), ("credential ID", credential_id)):
         if (
             not value
-            or value in {".", ".."}
-            or any(
-                character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
-                for character in value
-            )
+            or len(value) > 63
+            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in value)
+            or value.startswith("-")
+            or value.endswith("-")
         ):
-            raise ValueError(f"{name} must be a non-empty URI path segment")
-    return f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"
+            raise ValueError(f"{label} must be a lowercase DNS label")
+    if (
+        not name
+        or len(name) > 253
+        or any(
+            not label
+            or label.startswith("-")
+            or label.endswith("-")
+            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in label)
+            for label in name.split(".")
+        )
+    ):
+        raise ValueError("name must be a lowercase DNS subdomain")
+    return f"spiffe://agentplane/{namespace}/{name}/{credential_id}"
 
 
 def issue_workload_leaf(

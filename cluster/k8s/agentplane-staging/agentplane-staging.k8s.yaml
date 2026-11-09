@@ -777,6 +777,12 @@ rules:
       - serviceaccounts
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1886,6 +1892,18 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2546,6 +2564,12 @@ rules:
     verbs:
       - get
       - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -5447,6 +5471,13 @@ spec:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
           name: sandboxLive
         - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
+          name: credential
+        - name: credentialOwner
+          variable:
+            default: {}
+            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
       match:
@@ -5505,21 +5536,27 @@ spec:
               - key: "{{ sandboxLive.status.runnerCredential.kind || '' }}"
                 operator: NotEquals
                 value: VM
-              - key: "{{ sandboxLive.status.runnerCredential.id || '' }}"
-                operator: NotEquals
-                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
-              - key: "{{ sandboxLive.status.runnerCredential.acceptedId || '' }}"
-                operator: NotEquals
-                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
               - key: "{{ sandboxLive.status.runnerCredential.lastVmiUid || '' }}"
                 operator: NotEquals
                 value: "{{vmi.metadata.uid || 'none'}}"
+              - key: "{{ credentialOwner.uid || '' }}"
+                operator: NotEquals
+                value: "{{sandbox.uid || 'none'}}"
+              - key: "{{ credential.spec.binding.vmiUID || '' }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid || 'none'}}"
+              - key: "{{ credential.status.acceptedBinding.vmiUID || '' }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid || 'none'}}"
+              - key: "{{ credential.status.credentialID || '' }}"
+                operator: NotEquals
+                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
               - key: "{{ vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential-vmi-uid\" || '' }}"
                 operator: NotEquals
                 value: "{{vmi.metadata.uid || 'none'}}"
               - key: "{{ vmi.metadata.labels.\"agentplane.allegedly.works/environment-runtime-credential\" || '' }}"
                 operator: NotEquals
-                value: "{{sandboxLive.status.runnerCredential.acceptedId || 'none'}}"
+                value: "{{credential.status.credentialID || 'none'}}"
               - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
                 operator: NotEquals
                 value: 0
@@ -5546,6 +5583,13 @@ spec:
         - apiCall:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
           name: sandboxLive
+        - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
+          name: credential
+        - name: credentialOwner
+          variable:
+            default: {}
+            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
         - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
@@ -5590,7 +5634,7 @@ spec:
                             path: tls.crt
                           - key: tls.key
                             path: tls.key
-                        name: runner-{{ sandboxLive.status.runnerCredential.acceptedId }}
+                        name: "{{ credential.status.secretName }}"
                     - configMap:
                         items:
                           - key: ca-certificates.crt
@@ -5697,6 +5741,13 @@ spec:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
           name: sandboxLive
         - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
+          name: credential
+        - name: credentialOwner
+          variable:
+            default: {}
+            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
       match:
@@ -5752,6 +5803,13 @@ spec:
         - apiCall:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
           name: sandboxLive
+        - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
+          name: credential
+        - name: credentialOwner
+          variable:
+            default: {}
+            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
         - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
@@ -5825,6 +5883,13 @@ spec:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
           name: sandboxLive
         - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
+          name: credential
+        - name: credentialOwner
+          variable:
+            default: {}
+            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
       match:
@@ -5894,6 +5959,12 @@ rules:
       - agentplane.allegedly.works
     resources:
       - sandboxes
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
     verbs:
       - get
 ---
@@ -6432,24 +6503,15 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - cert-manager.io
+      - agentplane.allegedly.works
     resources:
-      - certificates
+      - workloadcredentials
     verbs:
       - get
       - list
       - watch
       - create
       - update
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - get
-      - list
-      - watch
       - delete
   - apiGroups:
       - ""
@@ -7608,6 +7670,12 @@ rules:
       - get
       - list
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
       - ""
     resources:
       - podtemplates
@@ -7692,6 +7760,12 @@ rules:
     verbs:
       - get
       - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -7729,6 +7803,12 @@ rules:
     verbs:
       - get
       - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -8805,6 +8885,12 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - policysets
     verbs:
       - get
@@ -8967,8 +9053,8 @@ spec:
       message: Only cert-manager creates CertificateRequests for the Agentplane workload issuer.
     - expression: "!object.spec.?isCA.orValue(false) && !object.spec.?usages.orValue([]).exists(u, u in ['cert sign', 'crl sign'])"
       message: The Agentplane workload issuer signs no CA.
-    - expression: "!variables.certificate || (size(variables.uris) > 0 && ((request.userInfo.username == 'system:serviceaccount:agentplane-staging:sandbox-controller' && request.namespace == 'agentplane-staging' && variables.uris.all(u, u.matches('^spiffe://agentplane/environment-runtime/agentplane-staging/[^/]+/[^/]+$'))) || (request.userInfo.username == 'system:serviceaccount:agentplane-staging:policy-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/' + request.namespace + '/[a-z0-9]([a-z0-9.-]*[a-z0-9])?/[0-9a-f]{32}$'))) || (request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/[a-z0-9-]+$')))))"
-      message: Only a Sandbox Controller (Runtime URIs in its namespace), the WorkloadCredential issuer (record URIs in the Certificate's namespace) and the manifest applier (one-segment service URIs) request certificates from the Agentplane workload issuer.
+    - expression: "!variables.certificate || (size(variables.uris) > 0 && ((request.userInfo.username == 'system:serviceaccount:agentplane-staging:policy-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/' + request.namespace + '/[a-z0-9]([a-z0-9.-]*[a-z0-9])?/[0-9a-f]{32}$'))) || (request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/[a-z0-9-]+$')))))"
+      message: Only the WorkloadCredential issuer (record URIs in the Certificate's namespace) and the manifest applier (one-segment service URIs) request certificates from the Agentplane workload issuer.
   variables:
     - expression: request.resource.resource == 'certificates'
       name: certificate
@@ -9769,7 +9855,11 @@ spec:
               value: :8082
             - name: AGENTPLANE_POLICY_CONTROLLER_GRPC_AUDIENCE
               value: agentplane-policy
+            - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_ISSUER
+              value: agentplane-workload
             - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
+              value: agentplane-staging
+            - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
               value: agentplane-staging/app

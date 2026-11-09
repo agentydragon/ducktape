@@ -109,7 +109,7 @@ func TestVsockAcceptsOnlyTheHostCID(t *testing.T) {
 func TestSubscriberFollowsRotationAndRefreshesAfterSuspension(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	response := func() *workload.X509SVIDResponse {
-		tls := ca.IssueWithUsage(t, "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/pod-uid", x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
+		tls := ca.IssueWithUsage(t, "spiffe://agentplane/agent-ns/sandbox-uid/pod-uid", x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
 		read := func(path string) []byte {
 			value, err := os.ReadFile(path)
 			if err != nil {

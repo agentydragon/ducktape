@@ -124,8 +124,9 @@ func (w WorkloadID) URI() (string, error) {
 	if !isDNSSubdomain(w.Name) {
 		return "", errors.New("workload name must be a lowercase DNS subdomain")
 	}
-	if len(w.CredentialID) != 32 || strings.Trim(w.CredentialID, "0123456789abcdef") != "" {
-		return "", errors.New("credential ID must be 32 lowercase hexadecimal digits")
+	// The issuer mints 32 hexadecimal digits; a verifier compares the whole URI with its record's.
+	if len(w.CredentialID) > 63 || !isDNSSubdomain(w.CredentialID) || strings.Contains(w.CredentialID, ".") {
+		return "", errors.New("credential ID must be a lowercase DNS label")
 	}
 	id, err := spiffeid.FromSegments(trustDomain, w.Namespace, w.Name, w.CredentialID)
 	if err != nil {
@@ -190,46 +191,8 @@ func isDNSSubdomain(name string) bool {
 	return true
 }
 
-// EnvironmentRuntimeURI returns the identity assigned to one Runner credential. credentialID
-// is a fresh opaque ID bound to the active Pod or VMI incarnation by its label.
-func EnvironmentRuntimeURI(namespace, sandboxUID, credentialID string) (string, error) {
-	if err := validateNamespace(namespace); err != nil {
-		return "", err
-	}
-	id, err := spiffeid.FromSegments(trustDomain, "environment-runtime", namespace, sandboxUID, credentialID)
-	if err != nil {
-		return "", fmt.Errorf("runner identity: %w", err)
-	}
-	return id.String(), nil
-}
-
-// ParseEnvironmentRuntimeURI parses a Runner credential URI and returns its Kubernetes
-// namespace, Sandbox UID, and credential ID, in that order.
-func ParseEnvironmentRuntimeURI(raw string) (namespace, sandboxUID, credentialID string, err error) {
-	id, err := spiffeid.FromString(raw)
-	if err != nil {
-		return "", "", "", fmt.Errorf("parse runner identity URI: %w", err)
-	}
-	if !id.MemberOf(trustDomain) {
-		return "", "", "", errors.New("runner identity URI must use the agentplane SPIFFE trust domain")
-	}
-	segments := strings.Split(strings.TrimPrefix(id.Path(), "/"), "/")
-	if len(segments) != 4 || segments[0] != "environment-runtime" {
-		return "", "", "", errors.New("runner identity URI must contain namespace, Sandbox UID, and credential ID")
-	}
-	namespace, sandboxUID, credentialID = segments[1], segments[2], segments[3]
-	canonical, err := EnvironmentRuntimeURI(namespace, sandboxUID, credentialID)
-	if err != nil {
-		return "", "", "", err
-	}
-	if canonical != raw {
-		return "", "", "", errors.New("runner identity URI is not canonical")
-	}
-	return namespace, sandboxUID, credentialID, nil
-}
-
 // ClientCredentials creates mTLS client credentials pinned to the exact
-// GatewayURI or EnvironmentRuntimeURI supplied as expectedPeerURI.
+// GatewayURI or a workload URI supplied as expectedPeerURI.
 func (c Config) ClientCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("Workload API TLS configuration requires Security.Open(ctx)")
@@ -332,8 +295,8 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", source.identity, localURI)
 	}
 	authorizeRuntime := func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
-		if _, _, _, err := ParseEnvironmentRuntimeURI(id.String()); err != nil {
-			return fmt.Errorf("client identity must be a valid EnvironmentRuntimeURI: %w", err)
+		if _, err := ParseWorkloadURI(id.String()); err != nil {
+			return fmt.Errorf("client identity must be a valid workload URI: %w", err)
 		}
 		if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
 			return errors.New("client certificate chain is not verified")
@@ -645,11 +608,11 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 	return fmt.Errorf("certificate must explicitly allow extended key usage %s", usage)
 }
 
-// parseIdentity accepts only GatewayURI or a canonical EnvironmentRuntimeURI.
+// parseIdentity accepts only GatewayURI or a canonical workload URI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
 	if identity != GatewayURI && !isWorkloadServiceURI(identity) {
-		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
-			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid EnvironmentRuntimeURI: %w", err)
+		if _, err := ParseWorkloadURI(identity); err != nil {
+			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid workload URI: %w", err)
 		}
 	}
 	return spiffeid.FromString(identity)

@@ -67,8 +67,15 @@ async def _unions(records: Records) -> None:
     for name, spec in (
         ("test-standing", {"subject": SUBJECT}),
         ("test-identity", {"subject": identity}),
-        ("test-pod", {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}}),
+        (
+            "test-pod",
+            {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}, "pod": {"name": "test-pod", "uid": FIRST_POD}},
+        ),
         ("test-vmi", {"subject": SUBJECT, "binding": {"vmiUID": FIRST_POD}}),
+        (
+            "test-vmi-launched",
+            {"subject": SUBJECT, "binding": {"vmiUID": FIRST_POD}, "pod": {"name": "test-launcher", "uid": SECOND_POD}},
+        ),
     ):
         assert (await records.create(name, spec))["spec"] == spec
     invalid: tuple[dict[str, Any], ...] = (
@@ -81,6 +88,9 @@ async def _unions(records: Records) -> None:
         {"subject": SUBJECT, "binding": {}},
         {"subject": SUBJECT, "binding": {"podUID": FIRST_POD, "vmiUID": SECOND_POD}},
         {"subject": SUBJECT, "binding": {"podUID": "not-a-uid"}},
+        # The caller's Pod is the bound one, and there is none without a binding.
+        {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}, "pod": {"name": "test-pod", "uid": SECOND_POD}},
+        {"subject": SUBJECT, "pod": {"name": "test-pod", "uid": FIRST_POD}},
     )
     for spec in invalid:
         await records.rejects_create(spec)
@@ -103,6 +113,15 @@ async def _transitions(records: Records) -> None:
         await records.rejects_spec(record, spec)
     record = await records.replace_spec(record, {"subject": OTHER_SUBJECT, "binding": {"podUID": SECOND_POD}})
     assert record["spec"]["subject"] == OTHER_SUBJECT
+
+    # A VMI's launcher Pod is named once, and only a new binding names another.
+    vmi = {"vmiUID": FIRST_POD}
+    record = await records.replace_spec(record, {"subject": OTHER_SUBJECT, "binding": vmi})
+    launcher = {"name": "test-launcher", "uid": SECOND_POD}
+    record = await records.replace_spec(record, {"subject": OTHER_SUBJECT, "binding": vmi, "pod": launcher})
+    await records.rejects_spec(
+        record, {"subject": OTHER_SUBJECT, "binding": vmi, "pod": {**launcher, "uid": FIRST_POD}}
+    )
 
     # The binding moves on its own: clearing it is how an owner revokes its incarnation.
     record = await records.replace_spec(record, {"subject": OTHER_SUBJECT})

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,14 +75,10 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
-	credentialID := runnerCredential(sandbox).ID
-	if w.vm != nil {
-		credentialID = w.vm.Annotations[RunnerCredentialIDAnnotation]
+	if !validRunnerCredentialID(w.credential.ID) {
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next VMI"}, nil
 	}
-	if !validRunnerCredentialID(credentialID) {
-		return w, &unready{reason: "RunnerCredentialMissing", message: "the VM has no registered runner credential"}, nil
-	}
-	vm, blocked := renderVM(sandbox, template, credentialID)
+	vm, blocked := renderVM(sandbox, template, w.credential)
 	if blocked != nil {
 		return w, blocked, nil
 	}
@@ -111,7 +108,7 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w
 // workspace PVC as the volume of its name. The launcher's ServiceAccount is not set here: KubeVirt
 // sets it only from a serviceAccount volume, which would hand the guest the token, so the
 // namespace's launcher admission sets the Sandbox's.
-func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credentialID string) (*kubevirtv1.VirtualMachine, *unready) {
+func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*kubevirtv1.VirtualMachine, *unready) {
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}
@@ -133,7 +130,7 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
 		return nil, blocked
 	}
-	if blocked := withRunnerTLSDisk(sandbox, template, instance, credentialID); blocked != nil {
+	if blocked := withRunnerTLSDisk(template, instance, credential.SecretName); blocked != nil {
 		return nil, blocked
 	}
 	// DataVolume names are per namespace, so each Sandbox's VM gets its own, prefixed with the
@@ -165,13 +162,13 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	})
 	// The VMI and its virt-launcher Pod carry the Sandbox label too.
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
-	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credentialID
+	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
 	always := kubevirtv1.RunStrategyAlways
 	spec.Running, spec.RunStrategy = nil, &always
 	meta := owned(sandbox)
 	meta.Annotations = map[string]string{
 		RenderedSpecAnnotation:               renderedSpec(spec),
-		RunnerCredentialIDAnnotation:         credentialID,
+		RunnerCredentialIDAnnotation:         credential.ID,
 		RunnerCredentialVMIUIDAnnotation:     "",
 		RunnerCredentialLastVMIUIDAnnotation: "",
 	}

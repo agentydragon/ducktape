@@ -48,6 +48,8 @@ class Settings(BaseModel):
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."
     )
-    runner_certificate_issuer: CertificateIssuer = Field(
-        description="cert-manager issuer that signs immutable runner workload credentials."
+    # CLEANUP(added 2026-11-09): remove from the manifests and here once the controller image that
+    #   no longer reads it is deployed (the WorkloadCredential cutover); the previous image requires it.
+    runner_certificate_issuer: CertificateIssuer | None = Field(
+        default=None, description="Unused: the Policy Controller issues runner credentials."
     )

@@ -28,7 +28,10 @@ go_library(
 
 go_test(
     name = "issuer_test",
-    srcs = ["issuer_test.go"],
+    srcs = [
+        "certificate_test.go",
+        "issuer_test.go",
+    ],
     data = ["@cert_manager_certificate_crd//file"],
     embed = [":issuer"],
     env = {"CERT_MANAGER_CERTIFICATE_CRD": "$(rlocationpath @cert_manager_certificate_crd//file)"},

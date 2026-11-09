@@ -16,7 +16,7 @@ import (
 
 func TestHistoryIngressUsesRuntimeOwnedWorkloadAPISource(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity, err := environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "test-credential")
+	identity, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "test-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

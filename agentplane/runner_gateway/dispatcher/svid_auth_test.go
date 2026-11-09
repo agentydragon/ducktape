@@ -153,9 +153,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 		t.Fatalf("handler calls = %d, want 2", probe.calls)
 	}
 
-	if err := workload.Objects.Delete(ctx, workload.Sandbox); err != nil {
-		t.Fatal(err)
-	}
+	workload.Delete(t)
 	if _, err := client.ListSessions(ctx, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("deleted Sandbox SVID status = %v, want Unauthenticated", err)
 	}
@@ -317,7 +315,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	if _, err := client.ListSessions(delegationContext, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("certificate and delegation call = %v, want Unauthenticated", err)
 	}
-	invalidRuntimeURI := "spiffe://agentplane/environment-runtime/" + workloadTestNamespace + "/missing-sandbox/credential"
+	invalidRuntimeURI := "spiffe://agentplane/" + workloadTestNamespace + "/missing-sandbox/credential"
 	invalidClient := ca.Issue(t, invalidRuntimeURI)
 	invalidClientTLS, err := invalidClient.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
 	if err != nil {

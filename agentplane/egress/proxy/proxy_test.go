@@ -33,13 +33,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/google/uuid"
 	"golang.org/x/net/http2"
 	corev1 "k8s.io/api/core/v1"
@@ -186,7 +186,7 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	proxyClientTLS.NextProtos = []string{"http/1.1"}
-	reader, err := sandboxreader.New(runner.Namespace, workload.Objects)
+	svids, err := resolver.New(workload.Objects, []string{runner.Namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func newLab(t *testing.T) *lab {
 		ListenAddress: "127.0.0.1:8888",
 		TLS:           &listener.TLS{CertFile: proxyLeaf.CertFile, KeyFile: proxyLeaf.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: proxyCA.RootFile}},
-	}, identity.NewVerifier(nil, map[string]*auth.Resolver{projectedAudience: projected}), map[string]*sandboxreader.Reader{runner.Namespace: reader})
+	}, identity.NewVerifier(nil, map[string]*auth.Resolver{projectedAudience: projected}), svids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,18 +674,17 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 			case "failing watch":
 				failWatch(l, policy.Secrets)
 			case "revoked credential", "changed incarnation":
-				var current sandboxapi.Sandbox
-				key := types.NamespacedName{Namespace: l.workload.Sandbox.Namespace, Name: l.workload.Sandbox.Name}
-				if err := l.workload.Objects.Get(t.Context(), key, &current); err != nil {
-					t.Fatal(err)
-				}
 				if change == "revoked credential" {
-					current.Status.RunnerCredential.AcceptedID = "0123456789abcdef0123456789abcdef"
+					l.workload.Issue(t, "0123456789abcdef0123456789abcdef")
 				} else {
-					current.Status.Incarnation.UID = "replacement-pod-uid"
-				}
-				if err := l.workload.Objects.Status().Update(t.Context(), &current); err != nil {
-					t.Fatal(err)
+					// The owner accepted another Pod: the one presenting this certificate is no longer it.
+					record := l.workload.Record
+					replacement := types.UID("00000000-0000-4000-8000-0000000000aa")
+					record.Spec.Binding = &workloadapi.Binding{PodUID: replacement}
+					record.Spec.Pod = &workloadapi.PodRef{Name: "test-replacement-pod", UID: replacement}
+					if err := l.workload.Objects.Update(t.Context(), record); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			if got := send(); got != c.status {

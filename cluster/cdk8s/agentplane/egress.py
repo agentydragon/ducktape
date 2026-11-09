@@ -674,10 +674,14 @@ class Egress(Construct):
             ),
             RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
         ]
-        # Resolve only live Sandbox status and its own ServiceAccount name.
-        # The proxy does not read runner Pods; external workload namespaces are not Sandboxes.
+        # A workload SVID names its WorkloadCredential, read live on every request with the
+        # ServiceAccount it names. The proxy does not read runner Pods.
         role_rules.extend(
-            [RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"])]
+            [
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+            ]
         )
         Role(
             self,
