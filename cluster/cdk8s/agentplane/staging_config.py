@@ -17,6 +17,7 @@ from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Sett
 from agentplane.env.runtime.harness import Harness
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agentplane import kubernetes_account_ref
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
@@ -91,11 +92,23 @@ def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
     }
 
 
-def _launch_sets(grants: tuple[str, ...], *, identity_catalog: bool) -> list[str]:
-    """The assignable sets a launch binds for `grants`. In the identity catalog a launch binds only
-    their `PolicySet` halves: its Kubernetes reach is `basic`'s shared account."""
-    sets = agent_access_profiles.covering_policy_sets(grants)
-    return [name for name in sets if name in assignable_set_egress_rules()] if identity_catalog else sets
+def preset_role_sets(preset: str) -> list[str]:
+    """In the identity catalog, the role sets granted to `preset`'s own Kubernetes account: those its
+    launch grants today, plus cluster diagnostics, so the account covers the shared one's reads."""
+    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
+    return list(dict.fromkeys([*sets, agent_access_profiles.CLUSTER_DIAGNOSTICS_POLICY]))
+
+
+def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
+    """The assignable sets a `preset` launch binds. In the identity catalog a launch binds only their
+    `PolicySet` halves and the use set of the preset's own Kubernetes account."""
+    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
+    if not identity_catalog:
+        return sets
+    return [
+        *(name for name in sets if name in assignable_set_egress_rules()),
+        kubernetes_account_ref.account(namespace, preset).credential_name,
+    ]
 
 
 def config(
@@ -135,7 +148,7 @@ def config(
             # Its boxes run as the Sandbox's own ServiceAccount, so they hold its egress, the write-capable
             # agentydragon-agent GitHub token included, and nothing more (operator, 2026-10-24).
             SANDBOX_SELF_SET,
-            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"], identity_catalog=identity_catalog),
+            *_launch_sets("public-coder", namespace=namespace, identity_catalog=identity_catalog),
         ],
         frontend_config=FrontendConfig(
             trace_search=TraceSearchSettings(
@@ -202,7 +215,7 @@ def config(
             # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
             # and the preset is the only thing that decides what this Haku may do without the operator.
             *HAKU_ACTION_POLICY_SETS,
-            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["haku"], identity_catalog=identity_catalog),
+            *_launch_sets("haku", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
         # Each new Thread gets its own haku-state and ducktape checkout.
@@ -236,7 +249,7 @@ def config(
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
             GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
-            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["finance-agent"], identity_catalog=identity_catalog),
+            *_launch_sets("finance-agent", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
     )

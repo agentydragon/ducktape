@@ -23,6 +23,7 @@ from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, external_creds
+from cluster.cdk8s.agentplane import kubernetes_account_ref
 from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP, SANDBOX_GROUP
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -138,6 +139,18 @@ _HAKU_CLAUDE_BASE_POLICIES = (
     _GITHUB_DOWNLOADS_POLICY,
     *HAKU_SHARED_GITHUB_POLICIES,
 )
+
+
+def caller_role_sets() -> list[str]:
+    """In the identity catalog, the role sets granted to `claude-ai`'s and `haku-agent`'s own Kubernetes
+    accounts: those their bindings grant today, plus cluster diagnostics, as a preset's account has."""
+    sets = [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
+    return list(dict.fromkeys([*sets, access.CLUSTER_DIAGNOSTICS_POLICY]))
+
+
+def _kubernetes_account_use(caller: StandingCaller, *, identity_catalog: bool) -> list[str]:
+    """In the identity catalog, the use set of `caller`'s own Kubernetes account, named after its identity."""
+    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name] if identity_catalog else []
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
@@ -740,6 +753,7 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
             *HAKU_SHARED_ACTION_SETS,
+            *_kubernetes_account_use(CLAUDE_AI, identity_catalog=identity_catalog),
         ],
     )
 
@@ -778,7 +792,11 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         scope,
         haku_agent,
         subject=HAKU_AGENT.subject(identity_catalog=identity_catalog),
-        policies=[*_HAKU_CLAUDE_BASE_POLICIES, *HAKU_SHARED_ACTION_SETS],
+        policies=[
+            *_HAKU_CLAUDE_BASE_POLICIES,
+            *HAKU_SHARED_ACTION_SETS,
+            *_kubernetes_account_use(HAKU_AGENT, identity_catalog=identity_catalog),
+        ],
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a

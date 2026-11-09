@@ -61,6 +61,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     electric,
     environment_vm,
+    kubernetes_account_ref,
     llm_ingress,
     mcp_edge,
     notifications,
@@ -78,6 +79,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     HAKU_AGENT,
     HAKU_UI,
     add_staging_action_policies,
+    caller_role_sets,
 )
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -949,6 +951,27 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
         description="Read-only namespace diagnostics every agent may use.",
         role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
     )
+    # One account per preset that grants Kubernetes roles, and per standing caller with roles of its
+    # own (operator, 2026-11-09), so each agent has one kubectl identity.
+    accounts = [
+        *(
+            (preset, f"The '{preset}' preset's Kubernetes identity.", staging_config.preset_role_sets(preset))
+            for preset in agent_access_profiles.MANAGED_GRANTS
+        ),
+        *(
+            (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
+            for caller in (CLAUDE_AI, HAKU_AGENT)
+        ),
+    ]
+    for name, description, names in accounts:
+        KubernetesAccount(
+            chart,
+            f"kubernetes-account-{name}",
+            account=kubernetes_account_ref.account(env.namespace, name),
+            policy_namespace=env.namespace,
+            description=description,
+            role_sets=[role_sets[role_set] for role_set in names],
+        )
 
 
 def delivery_chart(app: App) -> Chart:

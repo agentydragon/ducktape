@@ -108,6 +108,72 @@ def test_basic_acts_as_a_rendered_account_the_proxy_may_impersonate(
     assert use["spec"]["rules"] == [rule]
 
 
+def _kubernetes_rules(rules: list[dict[str, Any]]) -> set[tuple[str, str, str | None]]:
+    """(role kind, role name, namespace or None for cluster-wide) of each binding `rules` provision,
+    whether written as `PolicySet` or as `KubernetesRoleSet` rules."""
+    provisioned: set[tuple[str, str, str | None]] = set()
+    for rule in rules:
+        kind = rule["type"].removeprefix("kubernetes_")
+        if kind == "cluster_role_binding":
+            provisioned.add(("ClusterRole", rule["clusterRole"], None))
+        elif kind == "role_binding":
+            provisioned |= {(rule["role"]["kind"], rule["role"]["name"], ns) for ns in rule["namespaces"]}
+    return provisioned
+
+
+def _holders(docs: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """The sets each launch preset (with the environment defaults) and each Flux binding grants."""
+    app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
+    gateway = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "runner-gateway-settings")
+    defaults = yaml.safe_load(gateway["data"]["settings.yaml"])["environment_default_policy_sets"]
+    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    return {
+        **{f"preset {name}": [*defaults, *spec["policy_sets"]] for name, spec in presets.items()},
+        **{f"binding {doc['metadata']['name']}": doc["spec"]["policySets"] for doc in _of(docs, "PolicyBinding")},
+    }
+
+
+def _reachable(docs: list[dict[str, Any]], sets: list[str]) -> set[tuple[str, str, str | None]]:
+    """What the accounts `sets` let their holder act as are granted, through each use rule's credential."""
+    by_name = {doc["metadata"]["name"]: doc for doc in _of(docs, "PolicySet")}
+    credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in _of(docs, "EgressCredential")}
+    role_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "KubernetesRoleSet")}
+    accounts = {
+        (account["namespace"], account["name"])
+        for name in sets
+        for rule in by_name[name]["spec"]["rules"]
+        if "credentialRef" in rule
+        # Some credentials, such as the proxy's own `agentplane-workload`, are not objects.
+        and (account := credentials.get(rule["credentialRef"]["name"], {}).get("kubernetesServiceAccount")) is not None
+    }
+    return {
+        provisioned
+        for grant in _of(docs, "ServiceAccountGrant")
+        if (grant["spec"]["serviceAccount"]["namespace"], grant["spec"]["serviceAccount"]["name"]) in accounts
+        for role_set in grant["spec"]["roleSets"]
+        for provisioned in _kubernetes_rules(role_sets[role_set])
+    }
+
+
+def test_no_kubernetes_reach_is_lost_on_the_switch(
+    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+) -> None:
+    """Every role binding a preset or a Flux binding provisions for its holder today is granted to
+    an account the same holder may act as in the identity catalog."""
+    today = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(staging_manifests, "PolicySet")}
+    granted = {
+        holder: {provisioned for name in sets for provisioned in _kubernetes_rules(today[name])}
+        for holder, sets in _holders(staging_manifests).items()
+    }
+    assert any(granted.values())
+    after = _holders(identity_catalog_manifests)
+    lost = {
+        holder: sorted(rules - _reachable(identity_catalog_manifests, after[holder]), key=str)
+        for holder, rules in granted.items()
+    }
+    assert {holder: rules for holder, rules in lost.items() if rules} == {}
+
+
 def _bindable(docs: list[dict[str, Any]], *, namespace: str, account: str) -> set[tuple[str, str | None, str]]:
     """(kind, namespace or None for cluster-wide, name) of every role `account` may bind."""
     roles = {

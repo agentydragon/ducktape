@@ -3198,15 +3198,19 @@ on an identity, every assignable set's Kubernetes rules as a same-named `Kuberne
 `PolicySet` remains only where the set has other rules: `coinbase`, `plaid-diagnostics`), the
 `shared-diagnostics` account in the accounts namespace with its grant of the `shared-diagnostics` role
 set, credential and one-rule set, `basic` acting as that account in place of the projected-token
-credential, the controller's and proxy's Roles for the new kinds, and launch presets binding only
-rendered `PolicySet`s. Controller `bind` still derives from the same grants, so a role set's roles
+credential, the proxy's Role reading identities, and launch presets binding only rendered
+`PolicySet`s; the controller's Roles for the new kinds landed unconditionally with `POLICY_GRANTS`.
+Controller `bind` still derives from the same grants, so a role set's roles
 are bindable by construction; relation tests check it with the binding and grant references, and
 the egress manifest tests run on both renderings. With the switch off the manifests are unchanged.
 
-Left for the cutover to decide or do: no grant names the role sets beyond `shared-diagnostics`, so
-the presets' and standing callers' wider Kubernetes reach (`cluster-diagnostics`,
-`haku-sandbox-write`, `public-inventory`, `coinbase`, `spend-policy-config`, `plaid-diagnostics`)
-has no account; the caller ServiceAccounts and the static Flux RoleBindings naming the `claude-ai`
+Kubernetes reach beyond shared diagnostics is one account per preset that grants roles (`haku`,
+`public-coder`, `finance-agent`) and per standing caller with roles of its own (`claude-ai`,
+`haku-agent`), each granted those role sets plus `cluster-diagnostics`, with its credential and use
+set bound by the preset or the caller's Flux binding (operator, 2026-11-09; plan open question 20);
+a relation test shows no holder loses a role binding on the switch.
+
+Left for the cutover to decide or do: the caller ServiceAccounts and the static Flux RoleBindings naming the `claude-ai`
 ServiceAccount stay, since the MCP edge and the Action Service still authenticate them;
 `cluster/cdk8s/test_agent_rbac.py` reads only the ServiceAccount rendering. The MCP edge's
 Connection binding waits: its settings name only `mintable_accounts` ServiceAccounts, whose tokens

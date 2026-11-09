@@ -24,6 +24,11 @@ class KubernetesAccountRef:
         return f"k8s-account-{self.name}"
 
 
+def account(namespace: str, name: str) -> KubernetesAccountRef:
+    """The account `name` that agents of the environment in `namespace` act as."""
+    return KubernetesAccountRef(namespace=kubernetes_accounts_namespace(namespace), name=name)
+
+
 def shared_diagnostics(namespace: str) -> KubernetesAccountRef:
     """The read-only account the `basic` set lets every agent of the environment in `namespace` act as."""
-    return KubernetesAccountRef(namespace=kubernetes_accounts_namespace(namespace), name="shared-diagnostics")
+    return account(namespace, "shared-diagnostics")
