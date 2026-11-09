@@ -13,7 +13,7 @@ use crate::source_unit_refine::{
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
-use graph_provenance::VerifiedGraphSourceContext;
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::decompose::{
     ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
     ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
@@ -60,30 +60,16 @@ impl ModulesNs {
     }
     pub(super) fn verify_graph(
         &self,
-        spec_root: Option<&std::path::Path>,
-        graph_source_root: Option<&std::path::Path>,
-        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
+        roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
         match &self.command {
-            ModulesNsCommand::Merge(args) => verify_edit(
-                &args.edit,
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
-            ),
-            ModulesNsCommand::Delete(args) => verify_edit(
-                &args.edit,
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
-            ),
+            ModulesNsCommand::Merge(args) => verify_edit(&args.edit, roots),
+            ModulesNsCommand::Delete(args) => verify_edit(&args.edit, roots),
             ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
             )
             .map(Some),
@@ -91,9 +77,7 @@ impl ModulesNs {
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
             )
             .map(Some),
@@ -101,9 +85,7 @@ impl ModulesNs {
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
             )
             .map(Some),
@@ -111,9 +93,7 @@ impl ModulesNs {
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
             )
             .map(Some),
@@ -124,18 +104,14 @@ impl ModulesNs {
 
 fn verify_edit(
     edit: &crate::edit_gate::GraphEditArgs,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
+    roots: &CurrentRoots,
 ) -> Result<Option<VerifiedGraphSourceContext>> {
     if let Some(graph) = &edit.dependency_graph_path {
         return crate::verify_graph_compatibility(
             graph,
             &edit.modules_root,
             edit.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
+            roots,
             None,
         )
         .map(Some);

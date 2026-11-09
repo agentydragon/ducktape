@@ -26,6 +26,7 @@
 //! many.
 
 use analysis_model::DepKind;
+use graph_provenance::CurrentRoots;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -200,16 +201,6 @@ pub struct GateDiagnoseArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<peel::OutputFormat>,
-}
-
-/// Root paths that the command used to produce a diagnosis should forward to
-/// its generated `inspect-source` command. Consumers that do not run from a
-/// relocated bundle environment pass the empty default.
-#[derive(Debug, Clone, Default)]
-pub struct InspectionRoots {
-    pub spec_root: Option<PathBuf>,
-    pub graph_source_root: Option<PathBuf>,
-    pub graph_package_roots: BTreeMap<String, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -404,7 +395,7 @@ pub struct GateDiagnoseCallArgumentWitness {
     pub inspection_command: String,
 }
 
-pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result<()> {
+pub fn run_gate_cli(args: GateArgs, inspection_roots: CurrentRoots) -> Result<()> {
     match args.command {
         GateCommand::List(a) => run_list(a),
         GateCommand::Describe(a) => run_describe(a, inspection_roots),
@@ -413,7 +404,7 @@ pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result
     }
 }
 
-fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Result<()> {
+fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: CurrentRoots) -> Result<()> {
     let graph = DependencyGraphInput::read(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
     if limit == 0 && !args.all {
@@ -453,7 +444,7 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
 fn diagnose_binding(
     input: &DependencyGraphInput,
     args: &GateDiagnoseArgs,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
     limit: Option<usize>,
 ) -> Result<(Vec<GateDiagnoseTrace>, usize, bool)> {
     let graph = input.report();
@@ -665,7 +656,7 @@ fn dependency_report(
 fn diagnose_barrier_witness(
     barrier: &CallbackFactoryBarrierReport,
     args: &GateDiagnoseArgs,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
 ) -> Result<(
     GateDiagnoseCoverage,
     GateDiagnoseGuardCode,
@@ -747,7 +738,7 @@ fn inspection_command(
     graph: &Path,
     modules: &Path,
     source_root: &Path,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
 ) -> Result<String> {
     let graph = std::fs::canonicalize(graph).context("resolving --graph for inspection command")?;
     let modules =
@@ -767,21 +758,23 @@ fn inspection_command(
     ))
 }
 
-fn inspection_root_args(roots: &InspectionRoots) -> String {
+/// The root flags the diagnosing command ran with, forwarded so the generated
+/// `inspect-source` command verifies the graph against the same inputs.
+fn inspection_root_args(roots: &CurrentRoots) -> String {
     let mut args = Vec::new();
-    if let Some(spec_root) = &roots.spec_root {
+    if let Some(spec_root) = &roots.spec {
         args.push(format!(
             "--spec-root {}",
             shell_quote(&spec_root.display().to_string())
         ));
     }
-    if let Some(graph_source_root) = &roots.graph_source_root {
+    if let Some(graph_source_root) = &roots.source {
         args.push(format!(
             "--graph-source-root {}",
             shell_quote(&graph_source_root.display().to_string())
         ));
     }
-    for (package, path) in &roots.graph_package_roots {
+    for (package, path) in &roots.packages {
         args.push(format!(
             "--graph-package-root {}",
             shell_quote(&format!("{}={}", package, path.display()))
@@ -800,16 +793,17 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(test)]
 mod inspection_command_tests {
-    use super::{InspectionRoots, inspection_root_args};
+    use super::inspection_root_args;
+    use graph_provenance::CurrentRoots;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
     fn inspection_roots_are_shell_quoted_with_spaces_and_sorted_package_roots() {
-        let roots = InspectionRoots {
-            spec_root: Some(PathBuf::from("spec root")),
-            graph_source_root: Some(PathBuf::from("graph source root")),
-            graph_package_roots: BTreeMap::from([
+        let roots = CurrentRoots {
+            spec: Some(PathBuf::from("spec root")),
+            source: Some(PathBuf::from("graph source root")),
+            packages: BTreeMap::from([
                 ("package one".to_owned(), PathBuf::from("package root one")),
                 ("package two".to_owned(), PathBuf::from("package root two")),
             ]),
@@ -823,7 +817,7 @@ mod inspection_command_tests {
                 "--graph-package-root 'package two=package root two' ",
             )
         );
-        assert_eq!(inspection_root_args(&InspectionRoots::default()), " ");
+        assert_eq!(inspection_root_args(&CurrentRoots::default()), " ");
     }
 }
 
@@ -955,7 +949,7 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
     })
 }
 
-fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Result<()> {
+fn run_describe(args: GateDescribeArgs, inspection_roots: CurrentRoots) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let graph = DependencyGraphInput::read(
