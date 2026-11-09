@@ -1508,22 +1508,22 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
 fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
     // A local export specifier names its binding outside any expression.
     // Member reads re-export the package's named export; a named-kind rename
-    // exports the renamed import under the source's public name (naturalized
-    // back to that name). Unrewritten, the module exports an unbound name and
-    // fails to link.
+    // exports the renamed import under the source's public name. Unrewritten,
+    // the module exports an unbound name and fails to link. (`parse`, not a
+    // reserved word like `boolean`, so the named kind does rename the local.)
     for (kind, emitted) in [
         (
             PartialSwapKind::Member,
             [
-                "export { boolean as zodBoolean } from \"zod\"",
-                "export { boolean as aliased } from \"zod\"",
+                "export { parse as zodBoolean } from \"zod\"",
+                "export { parse as aliased } from \"zod\"",
             ],
         ),
         (
             PartialSwapKind::Named,
             [
-                "import { boolean as zodBoolean } from \"zod\"",
-                "export { zodBoolean, zodBoolean as aliased }",
+                "import { parse } from \"zod\"",
+                "export { parse as zodBoolean, parse as aliased }",
             ],
         ),
     ] {
@@ -1536,9 +1536,9 @@ fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
             caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
                              export { zodBoolean, zodBoolean as aliased };\n\
                              export function go() { return `${zodBoolean()}|${kept()}`; }\n",
-            upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+            upstream_source: "export const parse = () => \"UPSTREAM\";\n",
             chunk_export: "e6",
-            upstream_export: Some("boolean"),
+            upstream_export: Some("parse"),
         });
 
         assert_success(&fixture.result);
@@ -1549,7 +1549,7 @@ fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
             &app_root,
             "zod",
             "3.23.8",
-            "export const boolean = () => \"UPSTREAM\";\n",
+            "export const parse = () => \"UPSTREAM\";\n",
         );
         let probe_path = app_root.join("__run_local_export.mjs");
         write_text_file(
