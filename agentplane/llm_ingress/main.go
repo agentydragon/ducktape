@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -24,7 +25,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
@@ -157,19 +157,12 @@ func newModelConfigServer(resolver auth.PrincipalResolver, service modelconfigpb
 }
 
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeconfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeconfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeconfig, err = rest.InClusterConfig()
-	}
+	kubeconfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, errors.New("could not load Kubernetes client configuration")
 	}
 	kubeconfig.ContentType = "application/json"
 	kubeconfig.AcceptContentTypes = "application/json"
-	kubeconfig.WrapTransport = observability.WrapHTTPTransport(kubeconfig.WrapTransport)
 	return kubeconfig, nil
 }
 

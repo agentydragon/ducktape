@@ -124,6 +124,7 @@ go_library(
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/kubeclient",
         "//agentplane/net/listener",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/api",

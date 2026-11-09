@@ -93,6 +93,7 @@ go_library(
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
+        "//agentplane/kubeclient",
         "//agentplane/mcp_edge/authserver",
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",

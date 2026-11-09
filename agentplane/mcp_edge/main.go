@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
@@ -65,11 +66,10 @@ func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
 		return err
 	}
-	kubeConfig, err := rest.InClusterConfig()
+	kubeConfig, err := kubeclient.Config("")
 	if err != nil {
 		return err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	kubeConfig.QPS = -1
 	kube, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {

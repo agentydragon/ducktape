@@ -9,10 +9,7 @@ go_library(
         "//agentplane/action_service:__subpackages__",
         "//agentplane/mcp_edge:__subpackages__",
     ],
-    deps = [
-        "@com_github_pressly_goose_v3//:goose",
-        "@com_github_pressly_goose_v3//lock",
-    ],
+    deps = ["//agentplane/postgres/migrate"],
 )
 
 go_test(

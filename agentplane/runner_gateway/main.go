@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -45,7 +46,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,20 +53,13 @@ import (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeConfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeConfig, err = rest.InClusterConfig()
-	}
+	kubeConfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
 	// Zero keeps client-go's 5 QPS / burst 10 limiter, which once queued Dispatcher ownership Lease
 	// acquisitions for seconds each; the deployment sets -1 to disable it.
 	kubeConfig.QPS = c.KubernetesClientQPS
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	return kubeConfig, nil
 }
 

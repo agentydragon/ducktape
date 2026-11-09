@@ -17,7 +17,7 @@ func baselineDB(t *testing.T) *sql.DB {
 
 func upBaseline(t *testing.T, db *sql.DB) error {
 	t.Helper()
-	provider, err := newProvider(db)
+	provider, err := schema.Provider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
