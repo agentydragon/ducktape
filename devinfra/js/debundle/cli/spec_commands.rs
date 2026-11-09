@@ -2,9 +2,10 @@
 use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use crate::propose_commutations::ProposeCommutationsArgs;
 use crate::validate::{ValidateArgs, run_validate_cmd};
-use crate::{InspectionRoots, emit_report, print_section};
+use crate::{emit_report, print_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
+use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::{OutputFormat, print_report};
 use transform_command::ProjectAnalysisArgs;
@@ -32,7 +33,7 @@ impl SpecNs {
     /// to current source (and, optionally, a module tree).
     pub(super) fn verify_graph(
         &self,
-        roots: &InspectionRoots,
+        roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
         match &self.command {
             SpecNsCommand::ProposeCommutations(args) => args.verify_graph(roots).map(Some),

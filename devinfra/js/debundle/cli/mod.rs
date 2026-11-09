@@ -26,7 +26,7 @@ mod static_imports;
 use analyze_command::AnalyzeArgs;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
-use graph_provenance::{GraphMismatch, GraphMismatchReason};
+use graph_provenance::{CurrentRoots, GraphMismatch, GraphMismatchReason};
 use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{
@@ -37,7 +37,7 @@ use std::process::ExitCode;
 use transform_command::TransformArgs;
 
 use crate::bindings_commands::BindingsNs;
-use crate::gate::{GateArgs, InspectionRoots, run_gate_cli};
+use crate::gate::{GateArgs, run_gate_cli};
 use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
 use crate::invocation::ResolvedInvocation;
 use crate::modules_commands::ModulesNs;
@@ -59,18 +59,14 @@ pub(crate) fn verify_graph_compatibility(
     graph_path: &std::path::Path,
     modules_root: &std::path::Path,
     selector_source_root: Option<&std::path::Path>,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &CurrentRoots,
     tree_config: Option<&std::path::Path>,
 ) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     verify_graph_compatibility_with_scope(
         graph_path,
         Some(modules_root),
         selector_source_root,
-        spec_root,
-        graph_source_root,
-        graph_package_roots,
+        roots,
         GraphCompatibilityScope::AuthoredModuleTree { tree_config },
     )
 }
@@ -82,9 +78,7 @@ pub(crate) fn verify_graph_compatibility_with_scope(
     graph_path: &std::path::Path,
     modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &CurrentRoots,
     scope: GraphCompatibilityScope<'_>,
 ) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
@@ -93,11 +87,7 @@ pub(crate) fn verify_graph_compatibility_with_scope(
         &graph,
         modules_root,
         selector_source_root,
-        &InspectionRoots {
-            spec_root: spec_root.map(std::path::Path::to_path_buf),
-            graph_source_root: graph_source_root.map(std::path::Path::to_path_buf),
-            graph_package_roots: graph_package_roots.clone(),
-        },
+        roots,
         scope,
     )
 }
@@ -107,7 +97,7 @@ fn verify_graph_header_compatibility(
     graph: &graph_provenance::GraphHeader,
     modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
-    roots: &InspectionRoots,
+    roots: &CurrentRoots,
     scope: GraphCompatibilityScope<'_>,
 ) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let (require_module_scope, tree_config) = match scope {
@@ -127,12 +117,7 @@ fn verify_graph_header_compatibility(
             None,
         )
     })?;
-    let current = graph_provenance::CurrentRoots {
-        spec: roots.spec_root.clone(),
-        source: roots.graph_source_root.clone(),
-        packages: roots.graph_package_roots.clone(),
-    };
-    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
+    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(roots)?;
     if let (true, None) = (require_module_scope, &provenance.modules_directory) {
         return Err(GraphMismatch::new(
             GraphMismatchReason::ModuleScope {
@@ -155,7 +140,7 @@ fn verify_graph_header_compatibility(
             .modules_directory
             .as_ref()
             .expect("checked above");
-        let base = current
+        let base = roots
             .spec
             .as_ref()
             .unwrap_or(&provenance.roots.spec)
@@ -202,7 +187,7 @@ fn verify_graph_header_compatibility(
                 .config_path
                 .as_ref()
                 .map(|path| {
-                    current
+                    roots
                         .spec
                         .as_ref()
                         .unwrap_or(&provenance.roots.spec)
@@ -221,7 +206,7 @@ fn verify_graph_header_compatibility(
             }
         }
     }
-    let source_context = provenance.verify_chunk_source(&current, &graph.chunk_id)?;
+    let source_context = provenance.verify_chunk_source(roots, &graph.chunk_id)?;
     let expected_path = graph_provenance::absolute(source_context.input_file())?;
     let source_path = source_context.source_path().to_string_lossy();
     let selector_candidate = if let Some(root) = selector_source_root {
@@ -531,19 +516,18 @@ fn run_debundle_cli(
             return Ok(());
         }
     }
-    let graph_package_roots = package_args::collect_package_roots(args.graph_package_roots)?;
+    let roots = CurrentRoots {
+        spec: args.spec_root,
+        source: args.graph_source_root,
+        packages: package_args::collect_package_roots(args.graph_package_roots)?,
+    };
     let describe_query = match &args.command {
         DebundleCommand::Describe(describe_args) => {
             Some(inspection_commands::validate_describe_query(describe_args)?)
         }
         _ => None,
     };
-    let source_context = match verify_mixed_graph_command(
-        &args.command,
-        args.spec_root.as_deref(),
-        args.graph_source_root.as_deref(),
-        &graph_package_roots,
-    ) {
+    let source_context = match verify_mixed_graph_command(&args.command, &roots) {
         Ok(source_context) => source_context,
         Err(error) => {
             if top_level_query_format(&args.command).is_none() {
@@ -641,14 +625,9 @@ fn run_debundle_cli(
             inspection_commands::run_inspect_source(args, source_context.as_ref())
         }
         DebundleCommand::StaticImports(args) => static_imports::run(args),
-        DebundleCommand::ExplainIntegrity(explain_args) => integrity_explanation::run(
-            explain_args,
-            graph_provenance::CurrentRoots {
-                spec: args.spec_root.clone(),
-                source: args.graph_source_root.clone(),
-                packages: graph_package_roots.clone(),
-            },
-        ),
+        DebundleCommand::ExplainIntegrity(explain_args) => {
+            integrity_explanation::run(explain_args, roots)
+        }
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref()),
@@ -656,22 +635,8 @@ fn run_debundle_cli(
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(gate_args) => run_gate_cli(
-            gate_args,
-            InspectionRoots {
-                spec_root: args.spec_root.clone(),
-                graph_source_root: args.graph_source_root.clone(),
-                graph_package_roots: graph_package_roots.clone(),
-            },
-        ),
-        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(
-            snapshot_args,
-            graph_provenance::CurrentRoots {
-                spec: args.spec_root,
-                source: args.graph_source_root,
-                packages: graph_package_roots,
-            },
-        ),
+        DebundleCommand::Gate(gate_args) => run_gate_cli(gate_args, roots),
+        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(snapshot_args, roots),
     };
     if result.is_ok() && writes_with_graph {
         eprintln!(
@@ -818,24 +783,16 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
 
 fn verify_mixed_graph_command(
     command: &DebundleCommand,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &CurrentRoots,
 ) -> Result<Option<graph_provenance::VerifiedGraphSourceContext>> {
     match command {
-        DebundleCommand::Bindings(args) => {
-            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
-        }
-        DebundleCommand::Modules(args) => {
-            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
-        }
+        DebundleCommand::Bindings(args) => args.verify_graph(roots),
+        DebundleCommand::Modules(args) => args.verify_graph(roots),
         DebundleCommand::Coverage(args) => verify_graph_compatibility(
             &args.common.dependency_graph_path,
             &args.common.modules_root,
             args.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
+            roots,
             None,
         )
         .map(Some),
@@ -844,9 +801,7 @@ fn verify_mixed_graph_command(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 None,
             )
             .map(Some)
@@ -855,9 +810,7 @@ fn verify_mixed_graph_command(
             &args.common.dependency_graph_path,
             &args.common.modules_root,
             args.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
+            roots,
             args.tree_config.as_deref(),
         )
         .map(Some),
@@ -872,9 +825,7 @@ fn verify_mixed_graph_command(
                 graph,
                 Some(modules),
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 if args.id.as_deref().is_some_and(|id| id.starts_with("unit:")) {
                     GraphCompatibilityScope::ExactSourceUnit
                 } else {
@@ -883,11 +834,7 @@ fn verify_mixed_graph_command(
             )
             .map(Some)
         }
-        DebundleCommand::Spec(args) => args.verify_graph(&InspectionRoots {
-            spec_root: spec_root.map(std::path::Path::to_path_buf),
-            graph_source_root: graph_source_root.map(std::path::Path::to_path_buf),
-            graph_package_roots: graph_package_roots.clone(),
-        }),
+        DebundleCommand::Spec(args) => args.verify_graph(roots),
         _ => Ok(None),
     }
 }

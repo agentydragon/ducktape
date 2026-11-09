@@ -12,7 +12,7 @@ use crate::emit_report;
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
-use graph_provenance::VerifiedGraphSourceContext;
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
 use pipeline::AnalysisArtifactInput;
 use std::path::PathBuf;
@@ -45,9 +45,7 @@ impl BindingsNs {
     }
     pub(super) fn verify_graph(
         &self,
-        spec_root: Option<&std::path::Path>,
-        graph_source_root: Option<&std::path::Path>,
-        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
+        roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
         let edit = match &self.command {
             BindingsNsCommand::Assign(args) => &args.edit,
@@ -59,9 +57,7 @@ impl BindingsNs {
                 graph,
                 &edit.modules_root,
                 edit.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 None,
             )
             .map(Some);
