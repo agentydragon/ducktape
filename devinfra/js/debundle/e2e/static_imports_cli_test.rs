@@ -1,6 +1,6 @@
 //! Original static import reachability is queryable even when authored claims fail.
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture};
+use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture, tree_spec_args};
 use serde_json::{Value, json};
 use std::process::Command;
 
@@ -36,14 +36,7 @@ fn query_with_target_source(args: &[&str], target_source: &str) -> Value {
     let root = run.root();
     let output = Command::new(debundler_path())
         .arg("static-imports")
-        .arg("--tree-config")
-        .arg(root.join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(root.join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(root.join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(root)
+        .args(tree_spec_args(root))
         .arg("--out-root")
         .arg(&run.out_root)
         .args(args)
@@ -163,14 +156,7 @@ fn rejects_target_absent_from_the_input_chunk_table() {
     );
     let output = Command::new(debundler_path())
         .arg("static-imports")
-        .arg("--tree-config")
-        .arg(run.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(run.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(run.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(run.root())
+        .args(tree_spec_args(run.root()))
         .arg("--out-root")
         .arg(&run.out_root)
         .args(["--from", "main", "--target", "absent", "--format", "json"])
@@ -200,14 +186,7 @@ fn conditional_literal_loader_graph_includes_deferred_return_edge() {
         let mut command = Command::new(debundler_path());
         command
             .arg("static-imports")
-            .arg("--tree-config")
-            .arg(run.root().join("spec_config.yaml"))
-            .arg("--tree-modules")
-            .arg(run.root().join("modules"))
-            .arg("--tree-vendor-marks")
-            .arg(run.root().join("vendor_marks.yaml"))
-            .arg("--tree-source-root")
-            .arg(run.root())
+            .args(tree_spec_args(run.root()))
             .arg("--out-root")
             .arg(&run.out_root)
             .args(["--from", "middle", "--target", "main", "--format", "json"]);
@@ -257,14 +236,7 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
     );
     let output = Command::new(debundler_path())
         .arg("static-imports")
-        .arg("--tree-config")
-        .arg(run.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(run.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(run.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(run.root())
+        .args(tree_spec_args(run.root()))
         .arg("--out-root")
         .arg(&run.out_root)
         .args([
