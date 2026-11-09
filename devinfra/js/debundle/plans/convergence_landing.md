@@ -39,6 +39,12 @@ Every PR in this plan:
 1. Adds one capability or removes one duplicate, and **deletes the decision path
    it supersedes** in the same PR (legacy evaluator arm, recognizer, row
    interpretation, join). A slice that only adds is incomplete.
+   **Exception:** a path the legacy gate still reads cannot be deleted while
+   that gate is authoritative (deleting it loses legacy acceptances; routing
+   the legacy gate through the kernel is a second evaluator). Such a path
+   stays, with a `CLEANUP` tombstone gated on L4e that names the kernel rule
+   replacing it, and the slice adds exactly one kernel rule: no second
+   kernel-path copy beside the legacy one. The PR lists each exempted path.
 2. Is validated through the CLI: the fixture runs original and emitted programs
    under Node, the candidate has `swapped_pairs > 0` where the slice claims a
    relocation, and the `DEBUNDLE_TV_ORACLE` legacy/effect comparison is on.
@@ -75,7 +81,15 @@ Every PR in this plan:
 
 The private corpus lives in the sibling repository `../gaffer-private`, which
 pins Ducktape by commit (`DUCKTAPE_COMMIT` in its `MODULE.bazel`; procedure in
-its `DUCKTAPE_PINNING.md`). To test a Ducktape worktree without repinning:
+its `DUCKTAPE_PINNING.md`). Sessions without ordinary network access (cloud
+agents: GitHub source-archive fetches are refused, and a local module override
+cannot reach a remote runner) do not run this check. The orchestrator runs it
+after merge by repinning gaffer-private to the merged `devel` commit and
+building the five targets with `bbr --env=REPO_TOKEN="$REPO_TOKEN" build`; a
+regression found there is reverted or fixed forward before the next repin.
+Batch at most one Wave 3 slice family per repin so a regression has one
+suspect. To test a Ducktape worktree without repinning, from a host with
+network access:
 
 1. In the Ducktape worktree, apply `patches/ducktape_cargo_source_labels.patch`
    from gaffer-private (it rebinds the persisted Rust source-patch label);
@@ -85,7 +99,7 @@ its `DUCKTAPE_PINNING.md`). To test a Ducktape worktree without repinning:
 
    ```sh
    bazelisk build --config=rbe \
-     //claude/cli/re/2.1.292:debundle_passing \
+     //claude/cli/re/2.1.292:debundle \
      //claude/web/re/2026-10-23-dd67f2f258:debundle \
      //tana/re/web/78d928dca7:debundle_passing \
      //tana/re/desktop/spec:debundle_v1_515_0 \
@@ -241,16 +255,38 @@ controls it accepted, and 11 are report-shape assertions; none panicked. The
 group assignment comes from test contracts, not observed root causes, so a
 slice may recover more or fewer cases than its row says.
 
-| Order | Slice                                                                                                                                                                                                    | Cases | Targets owned / touched | Needs                                         |
-| ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------------- |
-|     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                     |    38 |                 10 / 11 | L1b, L2a                                      |
-|     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`) |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
-|     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                              |    77 |                 11 / 16 | L2a, L2b, L2d                                 |
-|     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                              |    26 |                   2 / 5 | L2b, L1f                                      |
-|     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                           |    15 |                   2 / 5 | L2a; parallel to 4                            |
-|     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                              |     7 |                   1 / 1 | L2a, L2b; required by L4a                     |
-|     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                              |    16 |                   1 / 1 | L2c                                           |
-|     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                |    26 |                   8 / 8 | re-measure after 1–5; not a slice             |
+| Order | Slice                                                                                                                                                                                                                                                                                                                                          | Cases | Targets owned / touched | Needs                                   |
+| ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------- |
+|     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                                                                                                                                                           |    38 |                 10 / 11 | L1b, L2a                                |
+|     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`). Kernel rows only: the legacy executor and both recognizers feed the legacy gate and are tombstoned for L4e (§ Slice contract item 1) |    23 |                   7 / 7 | L1b, L2a; forks for the early-exit rows |
+|     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                                                                                                                                                                    |    77 |                 11 / 16 | L2a, L2b, L2d                           |
+|     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                                    |    26 |                   2 / 5 | L2b, L1f                                |
+|     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                                                                                                                                                                 |    15 |                   2 / 5 | L2a; parallel to 4                      |
+|     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                                                                                                                                                                    |     7 |                   1 / 1 | L2a, L2b; required by L4a               |
+|     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                                                                                                                                                                    |    16 |                   1 / 1 | L2c                                     |
+|     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                                                                                                                                                      |    26 |                   8 / 8 | re-measure after 1–5; not a slice       |
+
+Rows 9–12 have no red target at the reference head. They come from the L4c
+audit's missing-coverage classes (<../debug/2026_11_09_l4c_discrepancy_audit.md>
+§ Uncovered havoc, by missing rule) and from slice 2's finding, and they block
+the flip as much as rows 2–7 do. "Evaluations" is the audit's e2e count
+touching the rule.
+
+| Order | Slice                                                                                                                                                       | Evaluations | Needs                 |
+| ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------: | --------------------- |
+|     9 | Anonymous-statement owner coverage (`unsupported_owner_kind`: global publications, heap writes, bare assignments; <abstract_interpreter.md> step 7)         |         110 | none                  |
+|    10 | Whole-owner seal of a completed call initializer (local calls, IIFEs, destructured call results, comma initializers with no execution loss)                 |          75 | none                  |
+|    11 | Non-invoking literal coverage                                                                                                                               |  unmeasured | measure in next audit |
+|    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks |  unmeasured | forks                 |
+
+**Order from here.** Wave 3 is ordered by what the canonical inputs need, not
+by reference-head case counts: at `fa49ae5ed1` the flip would refuse Tana Web,
+Tana Desktop, 14 Claude CLI chunks and 22 Claude Web chunks. The first job
+after the current batch (rows 2 and 3 in flight) is the canonical conflict
+export aggregated by missing rule for those chunks (L4c); rows 4–7 and 9–12
+are then dispatched in the order that export gives, widest canonical recovery
+first. Until it exists, rows 9 and 10 go next: they have no dependencies and
+the largest e2e reach.
 
 Saved-analysis parity has no red target; every slice keeps the direct/saved
 parity tests green.
@@ -268,9 +304,8 @@ parity tests green.
   <../debug/2026_11_09_l4c_discrepancy_audit.md>. It found no unsafe legacy
   acceptance and no gate defect. Every legacy-accepted / effect-refused case
   is uncovered havoc. Rerun with `--test_env=DEBUNDLE_TV_AUDIT=1` after
-  each Wave 3 slice. Left: the full canonical conflict export; owners for anonymous-statement
-  coverage, the completed call-initializer seal and non-invoking literal
-  coverage, which no Wave 3 slice holds.
+  each Wave 3 slice. Left: the canonical conflict export, aggregated by
+  missing rule per rejected chunk (it orders the rest of Wave 3).
 - L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
   `ensure_candidate_emittable_for_write`, plus the README/design/SPEC text that
   #14552 already drafted. needs L4a–L4c green.
@@ -305,6 +340,13 @@ parity tests green.
 - L4e. Delete the legacy gate, `legacy/`, dead `#[serde(default)]` options; move
   `CallableSummary` to a DTO; graduate contracts into `SPEC.md` and
   `docs/design.md`; delete this plan and the burned-down parts of the others.
+
+**Interpreter split (parallel to Waves 3 and 4).** `interpreter.rs` is 12.5k
+lines against the exit gate's 3k and grows with each slice that adds a rule
+beside a legacy path. Mechanical moves only, one owner per PR, into the
+§ Target code shape modules; no behavior change, so no canonical-spec check.
+A slice never adds a new rule to `interpreter.rs`: it goes in `kernel/`,
+`native/`, `roots/` or `alternatives/`.
 
 **Wave 5.** Crate split if the dependency direction warrants it; real-profiler
 performance pass on representative inputs (<analysis_performance.md>).
