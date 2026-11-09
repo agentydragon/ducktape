@@ -3064,15 +3064,19 @@ tests of untouched kinds still pass.
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
 **Draft under review, 2026-11-09:** [workload identity lifecycle](workload_identity_lifecycle.md).
-Question for review: should every non-Sandbox caller bind its SVID through a cert-manager
-`Certificate` its owner requests from one Agentplane workload CA, gated per URI kind by admission
-(recommended), rather than through an issuing service, SPIRE, `csi-driver-spiffe` or a permanent
-bearer mode? Selecting it also adds an edge from the Action-box part of `WORKLOAD_AUTH_CUTOVER` to
-`IDENTITY_CUTOVER`, because boxes run as their caller's Sandbox ServiceAccount. The operator's
-direction of 2026-11-08 stands: one model for Sandboxes, Action boxes, Haku UI/Anki and future
-external callers, with no second subject model and no Sandbox dependency, preserving ServiceAccount
-subjects until `IDENTITY_CUTOVER`. **Exit:** the operator picks an alternative and the open
-questions' recommendations.
+Question for review: should one workload-identity component own SVID issuance and resolution for
+every caller (recommended)? Under it, the Sandbox Controller, the Action Service and Flux-rendered
+workloads only write `WorkloadCredential` requests. The component mints the credential ID and URI,
+requests the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and publishes
+the resolver every verifier links. It is the `agentplane/workload_identity` package hosted in the
+Policy Controller. The alternatives are each owner issuing for itself, an RPC issuing service,
+SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. Selecting the recommendation moves
+issuance out of the Sandbox Controller as the first step. It also adds an edge from the Action-box
+part of `WORKLOAD_AUTH_CUTOVER` to `IDENTITY_CUTOVER`, because boxes run as their caller's Sandbox
+ServiceAccount. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
+boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
+dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
+picks an alternative and the open questions' recommendations.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
