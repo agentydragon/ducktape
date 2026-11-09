@@ -1,11 +1,10 @@
 # Cross-agent communication and authorization: design space
 
-Status: **messaging, same-principal retained reads and delegation tools implemented with scripted
-workflow acceptance; staging tools active; natural-agent usability remains open; broader
-archive policy held.** The send
-rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
-Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
-requirements and the open design: the read rule and the
+Status: **messaging and same-principal delegation implemented; broader cross-SA reads, archive
+policy and Sandbox launch open.** The send rule (`session_inbox_access`), inbox tags, peer messages,
+receipts and notices are the Notification Service's contract
+([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed requirements and
+the open design: the read rule and the
 [archive split](#option-authorize-the-archive-apart-from-live-objects), broader delegation
 and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations);
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
@@ -27,19 +26,11 @@ environment with separate directories. Starting less-privileged agents can wait.
 concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
 for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
 
-The bounded [caller-privilege contract](session_delegation_workflows.md) is approved and does not depend on settling
-the complete management/delegation vocabulary or implementing native-child Session projection.
-Use Claude/Codex workflows as reference designs for natural tool use. Domain identities, authority,
-durable ownership and failure behavior still need to be sound in this first slice. Cross-access
-cooperation remains a product goal; the broader requirements below are not all prerequisites for
+Same-privilege spawning shipped as the [caller-privilege delegation](session_delegation_workflows.md)
+workflow without settling the complete management/delegation vocabulary or native-child Session
+projection; its natural-agent usability and fresh provisioning remain there. Cross-access
+cooperation remains a product goal; the broader requirements below were not prerequisites for
 same-privilege spawning.
-
-The [delegation implementation plan](session_delegation_workflows.md) supplies the concrete call
-sequences and remaining integration work. Same-SA admission, narrow retained reads, shared
-delegated auth, receiver enforcement, Discovery, guidance and Action/MCP adapters are implemented.
-Scripted parent CLI and external MCP workflows have landed, and managed guidance has rolled out;
-the staging tool catalogue is active; natural-agent usability remains open. Creating
-new environments and broader cross-SA grants keep their separate design gates.
 
 ## Requirements and preferences
 
@@ -162,29 +153,15 @@ claimed to exist by this requirement; the chosen design must explain how the tem
 
 ## Current identity and policy wiring
 
-The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to
-retained history and the tentative Session-access rule family; its exact schema and
-administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
-already calls for comparing reusable authorization systems rather than inventing a universal broker.
-
-- External MCP OAuth Connections act as an existing labeled SA selected by the operator
-  at enrollment ([Connection authority](../mcp_edge/connections/store.go)). This is an explicit
-  Connection-to-SA mapping, not an automatic one-SA-per-OAuth-client rule. GitOps defines static
-  accounts such as `claude-ai` and their `PolicyBinding`s. Human/operator authentication remains
-  separate from the caller SA.
-- For managed Sandboxes, the app's preset fills concrete `PolicySet` selections. The app writes
-  those selections, plus platform defaults, into `Sandbox.spec.policySets`; the
-  [Sandbox Controller](../sandbox_controller/identity.go) creates the dedicated SA and its
-  Sandbox-owned base `PolicyBinding`. The app can also write additional runtime bindings for
-  operator grants. Presets are defaults, not identities or authority.
-- The same subject-free `PolicySet` and SA-subject `PolicyBinding` CRs apply to static and
-  runtime-created accounts. The Policy Controller expands Kubernetes rules into native
-  RoleBindings/ClusterRoleBindings and deletes expired bindings. Egress and Actions independently
-  watch the CRs and evaluate their own rule types; they do not enforce through those native RBAC
-  bindings. Action policies govern auto-approval; an unmatched request may still receive explicit
-  operator approval.
-- Editing a `PolicySet` changes the rules for all bound accounts as readers reconcile. Changing a
-  preset's selections does not itself rewrite existing Sandboxes' policy bindings.
+Implemented wiring: [policy sets and bindings](../docs/adr_policy_sets.md) (live edits, readers,
+write authority), the Sandbox Controller's [identity](../sandbox_controller/SPEC.md#identity), and
+MCP Connections acting as an operator-selected labeled SA ([MCP edge](../mcp_edge/README.md)), an
+explicit Connection-to-SA mapping rather than one SA per OAuth client. Human/operator
+authentication stays separate from the caller SA. Presets are defaults, not identities or
+authority; changing a preset's selections does not rewrite existing Sandboxes' bindings. The
+[scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to retained
+history. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
+calls for comparing reusable authorization systems rather than inventing a universal broker.
 
 ## Identity, role, address and isolation
 

@@ -18,6 +18,32 @@ raw child frames and parent delegation results without letting children mutate r
 Child Session discovery remains deferred; its unmeasured configurations and control experiments
 are not additional acceptance gates for native delegation.
 
+## Characterization method
+
+Each scenario runs in the [scripted harness suite](../README.md#scripted-harness-tests). Rules for
+adding or extending one:
+
+1. Assert that delegation is offered in the model-facing tool roster. Explicitly script the native
+   delegation call and prove it caused a child model request. A parent saying it delegated is not proof.
+2. Gate progress on requests/events, not sleeps. For concurrent children, route exchanges by native
+   identity or distinct synthetic task markers; do not assume sibling request ordering. Bound every
+   scenario and settle all exchanges so teardown catches leaked background work.
+3. Assert the native relationship and lifecycle evidence, separately from the model API transcript.
+   Model request IDs help the test drive the harness; they are not necessarily available to the runner.
+4. Retain `stdin.jsonl`, `stdout.jsonl`, and `stderr.jsonl` through the `native_logs` fixture in
+   Bazel undeclared outputs. Record the commit (which fixes the binary pins), launch/initialize
+   options, test target, and CI invocation when reporting a finding. Sanitize any published excerpts.
+5. Distinguish **tested**, **unmeasured**, and **unsupported with evidence**. A missing event in a
+   bounded observation is not proof that the harness can never provide it through another interface.
+   Once a limitation is established, assert that behavior rather than skipping the case.
+
+Tests inherit the `MODULE.bazel` pins; observations of another version are not evidence for the
+pin. Codex `multi_agent_v1` and `multi_agent_v2` are separate configurations, not aliases. A first
+failure is diagnostic evidence to inspect, not a reason to weaken an assertion into accepting either
+behavior. Fix the script if it did not reach the intended stimulus; update a behavioral expectation
+only against the actual native trace. A read-only snapshot is not a live subscription, and process
+restart is not transport reconnect.
+
 ## Claude stream-json (2.1.252)
 
 The child scenarios in [`test_tools.py`](../claude/test_tools.py) establish:

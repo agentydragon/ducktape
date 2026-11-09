@@ -1,12 +1,10 @@
 # Native session discovery: characterization gaps and deferred design
 
-Status: **child Session discovery/projection deferred.** On 2026-10-16 the operator selected native
-delegation without child Session discovery or controls; it is merged
-([#10782](https://github.com/agentydragon/ducktape/pull/10782)): raw child frames remain recorded,
-normalized output and turn/input bookkeeping remain root-only. The characterization in
-[#10776](https://github.com/agentydragon/ducktape/pull/10776) is merged; remaining configurations
-and independent-control experiments below are not gates for native delegation.
-Discovery, if selected later, builds on the
+Status: **child Session discovery/projection deferred.** Native delegation ships without child
+Session discovery or controls ([#10782](https://github.com/agentydragon/ducktape/pull/10782)); the
+landed characterization and its product boundary are [child Session evidence](../native/docs/child_sessions.md).
+The remaining configurations and independent-control experiments below are not gates for native
+delegation. Discovery, if selected later, builds on the
 [event ingress](../docs/runner_control.md#event-ingress): the runner pushes every Session it
 declares, roots and discovered children alike, and the History Service's index is the record of
 which exist. This holds the remaining characterization, proposed design and hardening candidates for
@@ -16,64 +14,29 @@ The [hardening candidates](#deferred-hardening-candidates) are not a dispatch qu
 
 ## Characterization gaps
 
-The latest [child Session evidence](../native/docs/child_sessions.md) records streaming, concurrent
-siblings, nested ancestry, failure and restart assertions for the pinned harnesses. Keep the
-remaining matrix configuration-specific; a read-only snapshot is not a live subscription, and
-process restart is not transport reconnect.
-
-The currently tested child scenarios live beside their assertions: [Claude](../native/claude/test_tools.py),
+Tested child scenarios live beside their assertions: [Claude](../native/claude/test_tools.py),
 [Codex `multi_agent_v1`](../native/codex/test_tools.py), [Codex `multi_agent_v2`](../native/codex/test_v2_discovery.py),
 and the [experimental Claude 2.1.292 comparison](../native/claude/x/remote_io/README.md#acceptance).
-A child must be created by the real harness, not synthesized by an adapter or inferred from parent
-prose. The test index distinguishes these cases from capabilities that remain unmeasured.
-
-### Test method and evidence
-
-Use the existing [scripted harness suite](../native/README.md): real pinned binaries, loopback
-model endpoints, synthetic tool calls, and native input/output traces. This removes model delegation
-choice from the test. It also avoids live credentials and recorded production conversations.
-
-For each case:
-
-1. Assert that delegation is offered in the model-facing tool roster. Explicitly script the native
-   delegation call and prove it caused a child model request. A parent saying it delegated is not proof.
-2. Gate progress on requests/events, not sleeps. For concurrent children, route exchanges by native
-   identity or distinct synthetic task markers; do not assume sibling request ordering. Bound every
-   scenario and settle all exchanges so teardown catches leaked background work.
-3. Assert the native relationship and lifecycle evidence, separately from the model API transcript.
-   Model request IDs help the test drive the harness; they are not necessarily available to the runner.
-4. Retain `stdin.jsonl`, `stdout.jsonl`, and `stderr.jsonl` through the existing `native_logs` fixture
-   in Bazel undeclared outputs. Record the commit (which fixes the binary pins), launch/initialize
-   options, test target, and CI invocation when reporting a finding. Sanitize any published excerpts.
-5. Distinguish **tested**, **unmeasured**, and **unsupported with evidence**. A missing event in a
-   bounded observation is not proof that the harness can never provide it through another interface.
-   Once a limitation is established, assert that behavior rather than skipping the case.
-
-Tests inherit the `MODULE.bazel` pins; observations of another version are not evidence for the
-pin. Codex `multi_agent_v1` and `multi_agent_v2` are separate configurations, not aliases. A first
-failure is diagnostic evidence to inspect, not a reason to weaken an assertion into accepting either
-behavior. Fix the script if it did not reach the intended stimulus; update a behavioral expectation
-only against the actual native trace.
+New cases follow the [characterization method](../native/docs/child_sessions.md#characterization-method);
+a child must be created by the real harness, not synthesized by an adapter or inferred from parent prose.
 
 ### Matrix
 
-Each cell names what is still unmeasured. Scenarios already covered for both harnesses (spawn with
-native identity and parent linkage, child completion and parent continuation) are not listed.
+Each cell names what is still unmeasured. Scenarios covered for both harnesses (spawn with native
+identity and parent linkage, child completion and parent continuation, child shell results,
+child prose forwarding, child tool failure) are recorded in [child Session evidence](../native/docs/child_sessions.md).
 
-| ID  | Scenario and controlled stimulus                                        | Claude Code                                               | Codex app-server                                                         | Evidence needed before normalization                                                            |
-| --- | ----------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| S2  | Child runs a shell tool and returns a unique result                     | Covered                                                   | Covered: v1/v2 automatic initial child attachment                        | Inputs, outputs and attribution asserted while the child is still active                        |
-| S4  | Observe child prose with forwarding defaults and explicit opt-in        | Covered: default and opt-in; tested CLI opt-outs rejected | Covered: initial parent stream vs explicit loaded-child resume           | Claude forwards completed blocks, not child deltas; Codex streams deltas                        |
-| S5  | Two children active together; finish in reverse spawn order             | Covered                                                   | Covered, v1 and v2                                                       | Arbitrary alternating sibling deltas remain outside the reverse-completion script               |
-| S6  | Child tool fails, then child handles it successfully                    | Covered                                                   | Covered, v1 and v2                                                       | Exit 23 remains a tool failure; the child subsequently completes successfully                   |
-| S7  | Child model request fails terminally; parent continues                  | Covered                                                   | Partial: v1/v2 failed leaf while ancestors remain active                 | Codex tests do not complete the held ancestor model exchanges after the failure                 |
-| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists     | Planned: exercise native child control                                   | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior          |
-| S9  | Parent completes, is interrupted, or exits while child is active        | Partial: parent completion and active-child crash         | Partial: active descendants across process crash                         | Parent interruption and alternative foreground/background configurations remain unmeasured      |
-| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport              | Covered: v1/v2 WebSocket reconnect, gap history and child attachment     | Root resume alone does not subscribe to an existing child's live items                          |
-| S11 | Restart harness and resume parent with completed and active children    | Covered for persisted completed history and active crash  | Covered: v1/v2 completed, failed and interrupted child reads             | Immediate-result crash durability and independent execution recovery are not established        |
-| S12 | Child delegates to a grandchild within configured depth limits          | Covered: immediate-parent tool-call ancestry              | Partial: v1 depth 2; tested v2 fresh child omits collaboration tools     | Other v2 role/context configurations and explicit beyond-limit calls remain unmeasured          |
-| S13 | Send child another input after it completes; attempt independent resume | Partial: independent resume                               | Planned                                                                  | Same session vs successor identity, supported addressing, and capability boundaries             |
-| S14 | Repeat core scenarios with alternate subagent configuration             | Partial: forwarding flag; native background children      | Partial: v1/v2, concurrent children and explicit loaded-child attachment | Context forks, alternate roles, foreground mode and child input remain outside these assertions |
+| ID  | Scenario and controlled stimulus                                        | Claude Code                                              | Codex app-server                                                         | Evidence needed before normalization                                                            |
+| --- | ----------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| S5  | Two children active together; finish in reverse spawn order             | Covered                                                  | Covered, v1 and v2                                                       | Arbitrary alternating sibling deltas remain outside the reverse-completion script               |
+| S7  | Child model request fails terminally; parent continues                  | Covered                                                  | Partial: v1/v2 failed leaf while ancestors remain active                 | Codex tests do not complete the held ancestor model exchanges after the failure                 |
+| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists    | Planned: exercise native child control                                   | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior          |
+| S9  | Parent completes, is interrupted, or exits while child is active        | Partial: parent completion and active-child crash        | Partial: active descendants across process crash                         | Parent interruption and alternative foreground/background configurations remain unmeasured      |
+| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport             | Covered: v1/v2 WebSocket reconnect, gap history and child attachment     | Root resume alone does not subscribe to an existing child's live items                          |
+| S11 | Restart harness and resume parent with completed and active children    | Covered for persisted completed history and active crash | Covered: v1/v2 completed, failed and interrupted child reads             | Immediate-result crash durability and independent execution recovery are not established        |
+| S12 | Child delegates to a grandchild within configured depth limits          | Covered: immediate-parent tool-call ancestry             | Partial: v1 depth 2; tested v2 fresh child omits collaboration tools     | Other v2 role/context configurations and explicit beyond-limit calls remain unmeasured          |
+| S13 | Send child another input after it completes; attempt independent resume | Partial: independent resume                              | Planned                                                                  | Same session vs successor identity, supported addressing, and capability boundaries             |
+| S14 | Repeat core scenarios with alternate subagent configuration             | Partial: forwarding flag; native background children     | Partial: v1/v2, concurrent children and explicit loaded-child attachment | Context forks, alternate roles, foreground mode and child input remain outside these assertions |
 
 #### Claude communication surfaces
 
@@ -472,5 +435,5 @@ excluded.
    history, epochs and cursors across reconnect/restart. Missing/unloaded tasks are not completed tasks;
    read-only recovery must not secretly reactivate them.
 
-Follow the [evidence rules](#test-method-and-evidence) and record results in the
-[matrix](#matrix) rather than a second one.
+Follow the [characterization method](../native/docs/child_sessions.md#characterization-method) and
+record results in the [matrix](#matrix) rather than a second one.
