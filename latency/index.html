@@ -89,17 +89,17 @@
           <header>
             <${Box}> ${"Ducktape · CI latency · 9 November 2026 UTC"} <//>
             <${Title} order=${1} mt="md" mb="sm">
-              ${" Real-KVM candidate: 214 seconds; four-minute mean CI remains unproven "}
+              ${" Keep 4 vCPU / 16 GiB; four-minute mean CI remains unproven "}
             <//>
             <${Text} component="p" my="sm">
               ${" The latest production-pool read at 09:21 UTC had "}
               <strong>
                 ${"one active action and 41 queued reservations"}
               </strong>
-              ${". New telemetry correlates two physical wyrm2 runs with modest CPU use and busy storage. On an independent, unpinned HIL canary, the full real-KVM fixture passed in 278s baseline, 214s candidate and 250s warm baseline. This small, ordered comparison is not a mean-CI saving. Queue relief and faster test execution remain separate requirements. "}
+              ${". The earlier telemetry window correlates two physical wyrm2 runs with modest CPU use and busy storage. The completed unpinned HIL experiment passed all three matched-state 4/8-CPU pairs: warm action means were 251.1s and 268.0s. Extra CPUs did not shorten the measured critical path. The fixture candidate separately passed in 214s; none of these action times establishes mean complete CI below four minutes. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" Review the passed warm fixture control and finish four/eight-CPU measurements; retain the real guest, idle suspension and cleanup. The import-batching PR stays draft until measured benefit justifies its complexity. Resource telemetry and current host paging are recorded below; the original cohort retains its own window. "}
+              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is fully drained and deleted; production workers and scalers are unchanged. The early-boot VM readiness failure remains unresolved and its follow-up attempt is underway. Historical resource telemetry, host paging snapshots and the original CI cohort retain their own windows. "}
             <//>
             <${SimpleGrid}
               component=${"div"}
@@ -176,6 +176,8 @@
             <${Anchor} href="#resource-followup"
               >Resource telemetry and HIL trials<//
             >
+            <${Anchor} href="#cpu-comparison">Completed CPU comparison<//>
+            <${Anchor} href="#vm-readiness-followup">VM readiness<//>
             <${Anchor} href=${"#feedback"}> ${"Current feedback"} <//>
             <${Anchor} href=${"#system-tests"}> ${"System-test timeline"} <//>
             <${Anchor} href=${"#experiments"}> ${"Experiments"} <//>
@@ -6668,7 +6670,7 @@
               ${" Dedicated KVM: add independent capacity, preserve one action per guest "}
             <//>
             <${Text} component="p" my="sm">
-              ${" The live pool had one active action and 26 queued reservations at 07:54 UTC on November 9. The single worker has 4 vCPUs, 16 GiB guest memory and a hard one-action limit. That limit protects a shared K3s directory: raising slots would let actions reset each other’s state. Each current action reserves 4 CPUs and 10,000,000,000 bytes (9.31 GiB), plus 50 GB disk headroom. The worker advertises 4 CPUs/14 GiB and has a 40-GB local file cache. Explicit compute units suppress measured sizing. An 8-vCPU resize still has insufficient advertised memory for two current action claims; per-action peak CPU/RSS is missing, so cutting memory is not justified. "}
+              ${" The production-pool snapshot at 07:54 UTC on November 9 had one active action and 26 queued reservations. Its worker has 4 vCPUs, 16 GiB guest memory and a hard one-action limit. That limit protects a shared K3s directory: raising slots would let actions reset each other’s state. The action requests 4 CPUs, a literal 10GB memory budget and 50 GB disk headroom; live canary allocation confirmed 10 GiB memory. The worker advertises 4 CPUs/14 GiB and has a 40-GB local file cache. An 8-vCPU resize still has insufficient advertised memory for two action claims. The completed same-source CPU experiment supports keeping 4 vCPUs; observed memory bounds do not validate reducing 16 GiB. "}
             <//>
             <${Text} component="p" my="sm">
               ${" One additional independent 4-vCPU/16-GiB worker costs approximately 4.025 CPU and 16.476 GiB of scheduler reservations plus another scratch disk. It fits wyrm2’s observed headroom. Its ideal service-rate ceiling is 2×; shared disk contention can reduce that gain. The work disk maps to a virtual disk declared on "}
@@ -6677,7 +6679,7 @@
               >
                 ${"tank-hdd"}
               <//>
-              ${"; its physical hypervisor pool could not be reached for live verification. A 30.53-second read-only sample used 1.71 of 4 vCPUs and showed 22.6-ms writes and 45.7-ms flushes, so an otherwise matched SSD canary is the next useful latency experiment. "}
+              ${"; its physical hypervisor pool could not be reached for live verification. A historical 30.53-second read-only sample used 1.71 of 4 vCPUs and showed 22.6-ms writes and 45.7-ms flushes. The later HIL experiment could compare CPU budgets, but no matched HDD/SSD placement fit the existing capacity. Do not interpret historical cross-host differences as an SSD treatment effect. "}
             <//>
             <${Text} component="p" my="sm">
               ${" KEDA is installed but watches only haku-ci. The singleton VirtualMachine has no scale subresource; a replica set does, but neither it nor HPA owns BuildBuddy drain. Start with independent warm workers; automatic scale-in needs explicit admission shutdown, lease completion and guest cleanup. Current 30/45-second Docker/systemd stop budgets do not protect a 762-second test. "}
@@ -6740,7 +6742,7 @@
                     <${Table.Td}> ${"8 CPU / 16 GiB replacement"} <//>
                     <${Table.Td}> ${"One; +4 reserved CPUs."} <//>
                     <${Table.Td}>
-                      ${" Only a CPU-parallelism experiment. The observed whole-VM sample used 43% of four CPUs, not a saturation result. "}
+                      ${" Completed three matched-state pairs on one shared HIL host: warm means 251.1s at 4 CPUs versus 268.0s at 8 CPUs. No measured critical-path benefit; retain 4 CPUs. Ordered trials and the post-watchdog final sample limit generalization. "}
                     <//>
                   <//>
                   <${Table.Tr}>
@@ -6765,13 +6767,13 @@
               <//>
             <//>
             <${Text} component="p" my="sm">
-              ${" The earlier request inventory showed nominal headroom on wyrm2 and three OVH nodes. Fresh HIL preflight verified NVMe scratch capacity and nested module settings; Kubernetes scheduled the unpinned canary to ovh-ns1001419, where an actual nested-KVM smoke and full Firecracker guest passed. Remaining destinations still need real guest proof before general adoption. "}
+              ${" The earlier request inventory showed nominal headroom on wyrm2 and three OVH nodes. HIL preflight verified NVMe scratch capacity; Kubernetes independently scheduled both unpinned guest lifetimes to ovh-ns1001419. Actual nested-KVM smokes passed at both CPU sizes and all six full Firecracker CPU actions passed. The canary was drained and deleted; other destinations still need real guest proof before general adoption. "}
             <//>
             <${Text} component="p" my="sm">
               ${" A safe autoscaler needs one replica owner, a pool-scoped demand adapter and a drain owner. The observed hosted Prometheus queue series did not map to this dedicated pool; reservation counts may overlap between workers. Keep one warm and begin with max two. Stop claims and wait for leases, cleanup and guest teardown before choosing a scale-in victim. Current Docker/systemd stop budgets are 30/45 seconds, shorter than a 762-second action; a stabilization window alone is insufficient. "}
             <//>
             <${Text} c="dimmed" component="p" my="sm">
-              ${" This earlier read-only sample covered the whole VM, not a known Firecracker phase. The new resource section adds historical phase correlation and a separately deployed opt-in HIL canary. Guest page cache is not action peak RSS; node requests are not free peak capacity. Production workers, scalers and cache settings remain unchanged. "}
+              ${" The earlier read-only sample covered the whole VM, not a known Firecracker phase. The resource section adds historical phase correlation and completed opt-in HIL CPU trials with verified cleanup. Guest page cache is not action peak RSS; node requests are not free peak capacity. Production workers, scalers and cache settings remain unchanged. "}
             <//>
             <${Accordion} variant="contained" my="md">
               <${Accordion.Item} value=${"details-2"}>
@@ -6881,7 +6883,7 @@
                       ${" PR #15099 merged. Full real-KVM acceptance passed; the same-host command comparison was 278.3 → 214.1s. Cache/order and scenario variation confound the observed 64.2s difference. Mean complete-CI impact remains unmeasured. "}
                     <//>
                     <${Table.Td}>
-                      ${" The warm baseline passed in 250.3s with setup still at 120.2s, versus 76.8s candidate setup. Finish repetitions and measure matched post-merge CI heads. The earlier 122.9s removed-import figure is gross historical work, superseded for decision-making by this comparison. "}
+                      ${" The warm baseline passed in 250.3s with setup still at 120.2s, versus 76.8s candidate setup. The completed CPU controls do not substitute for matched post-merge CI heads. One candidate and fixed ordering limit the fixture estimate. The earlier 122.9s removed-import figure is gross historical work, superseded for decision-making by this comparison. "}
                     <//>
                   <//>
                   <${Table.Tr}>
@@ -6897,13 +6899,13 @@
                   <//>
                   <${Table.Tr}>
                     <${Table.Td}>
-                      ${"3 · SSD canary, then independent KVM capacity"}
+                      ${"3 · Keep 4 CPUs; require matched storage/capacity proof"}
                     <//>
                     <${Table.Td}>
-                      ${" Test storage before assuming CPU saturation. A second independent warm worker has a 2× ideal service-rate ceiling; no measured queue/mean-CI gain yet. "}
+                      ${" Three matched-state CPU pairs showed no critical-path benefit from 8 CPUs. A second independent warm worker has a 2× ideal service-rate ceiling, but no queue/mean-CI gain was measured. Matched storage comparison remains unavailable within existing admission capacity. "}
                     <//>
                     <${Table.Td}>
-                      ${" One independent, unpinned HIL canary is running with one slot, four CPUs, 16 GiB RAM and 80-GiB NVMe scratch. Production workers/scalers are unchanged. Record actual placement and physical drain; four/eight-CPU comparison is pending. "}
+                      ${" The unpinned HIL canary completed at 4 and 8 CPUs, fixed 16 GiB RAM/80-GiB NVMe scratch and one slot. Keep 4 vCPU / 16 GiB. All owned demand drained and all canary resources/scratch were removed; production identities and readiness were unchanged. "}
                     <//>
                   <//>
                   <${Table.Tr}>
@@ -6925,7 +6927,7 @@
                       ${" Combine owned prepared infrastructure with measured fast image/checkpoint I/O if repeated current-source profiles justify it. The old 277s case is historical; the new whole candidate action was 214s on HIL. No mean complete-CI result below four minutes is established. "}
                     <//>
                     <${Table.Td}>
-                      ${" Moderate ownership work and measured fast scratch/checkpoint storage. Test 8 outer CPUs only after CPU saturation is demonstrated; deprioritize 16 for now. Keep two guest CPUs and the one-minute idle contract. Measure cold/warm, incompatible, dirty and canceled leases. "}
+                      ${" Moderate ownership work and matched fast scratch/checkpoint evidence are still needed. Eight outer CPUs did not shorten the tested action; deprioritize 16. Keep two inner guest CPUs and the one-minute idle contract. Prepared-state trials must cover cold/warm, incompatible, dirty and canceled leases. "}
                     <//>
                   <//>
                 <//>
@@ -6969,10 +6971,10 @@
             <//>
             <${Blockquote} my="md">
               <strong> ${"Decision threshold, not a forecast:"} </strong>
-              ${" reserve roughly 40–60s for orchestration/build work only if matched runs support that budget. Then system actions need roughly 180–200s with little queueing and every other required gate must fit. The new 214s candidate leaves only 26s for all other work, so a single action below four minutes does not meet the complete-CI objective. Recheck the remaining critical path after repeated fixture and CPU trials. "}
+              ${" reserve roughly 40–60s for orchestration/build work only if matched runs support that budget. Then system actions need roughly 180–200s with little queueing and every other required gate must fit. The 214s fixture candidate leaves only 26s for all other work. Completed CPU trials provide no additional speedup, and a single action below four minutes does not meet the complete-CI objective. Recheck matched post-merge required-gate critical paths. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" The larger worker/storage trial changes the outer resource organization. Earlier failed four-vCPU guest and duplicate-stack Pod experiments do not test that design. Conversely, their negative results still prevent treating more concurrency or guest CPUs as a free improvement. More generic hosted "}
+              ${" The completed outer-CPU trial used the same input and storage, with no observed critical-path gain from 8 CPUs. Earlier failed inner four-vCPU guest and duplicate-stack Pod experiments address different boundaries. Their limits still prevent treating more concurrency or guest CPUs as a free improvement. More generic hosted "}
               <${Code}
                 style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
               >
@@ -7048,7 +7050,7 @@
               <//>
             <//>
             <${Text} component="p" my="sm">
-              ${" Raw API payloads, logs, profiles, worker identities and credentials stay outside publication. Trace excerpts retain only reviewed phase labels and clocks. "}
+              ${" Raw API payloads, logs, worker identities and credentials stay outside this Pages snapshot. Trace excerpts retain reviewed phase labels and clocks; separately allowlisted native-profile CAS hashes are linked in the artifact index. The completed CPU/cleanup follow-up does not refresh the historical cohort or resource telemetry. Browser review of the updated assets is pending. "}
               <${Anchor} href=${"evidence.json"}>
                 ${"Measurements, experiment commands and disposition inventory"}
               <//>
@@ -7056,6 +7058,10 @@
               <${Anchor} href=${"manifest.json"}>
                 ${"Source, window and visual-review receipt"}
               <//>
+              ${" · "}
+              <${Anchor} href="evidence.md"
+                >Native profiles and cleanup evidence index<//
+              >
               ${". "}
             <//>
           <//>

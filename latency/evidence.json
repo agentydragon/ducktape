@@ -42927,7 +42927,6 @@
     "canary": {
       "pr": "https://github.com/agentydragon/ducktape/pull/15124",
       "routing": "Zone hil-ovh, no hostname pin. Kubernetes chose ovh-ns1001419.",
-      "vm_vcpu": 4,
       "vm_memory_gib": 16,
       "scratch_gib": 80,
       "scratch_request_gib": 80,
@@ -42935,7 +42934,12 @@
       "slot_limit": 1,
       "pool": "Independent opt-in canary, production pool unchanged",
       "storage_limit": "No same-host HDD/SSD comparison: wyrm2 local SSD capacity was insufficient; feasible HIL placements have NVMe. Cross-host historical differences are confounded.",
-      "nested_kvm_smoke_invocation": "6aa19171-d924-4726-b552-cea0e490f314"
+      "state": "Experiment complete; gracefully drained and deleted; absence/scratch/production health verified at 2026-11-09T10:57:53.166378+00:00",
+      "vm_vcpu_arms": [4, 8],
+      "nested_kvm_smoke_invocations": [
+        "6aa19171-d924-4726-b552-cea0e490f314",
+        "23a1d221-e968-4704-a57a-72d56b2aa3f5"
+      ]
     },
     "fixture_pair": {
       "pr": "https://github.com/agentydragon/ducktape/pull/15099",
@@ -42977,7 +42981,7 @@
         "One physical candidate under 240s does not establish mean complete required-check CI under four minutes.",
         "Baseline queue clocks were inverted by about one second; no queue duration is derived from that pair. Command intervals above are the physical execution clocks."
       ],
-      "next": "Complete repeated four/eight-vCPU trials and another fixture repetition if needed; full required-check CI mean remains unmeasured.",
+      "next": "Measure matched post-merge complete-CI heads. CPU comparisons are complete on the fixed untrimmed source; no additional fixture repetition was requested.",
       "warm_baseline_control": {
         "invocation": "2ea5b83f-df7e-4139-9d5b-9723b5604953",
         "source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
@@ -43005,7 +43009,8 @@
         "merged_at_utc": "2026-11-09T10:21:37Z",
         "merge_commit": "7c0745f7527876caeb8002e80c7d4f19996d8beb",
         "ordinary_pr_head_ci": "CANCELLED; focused and execution-contract checks passed",
-        "post_merge_complete_ci_impact": "unmeasured"
+        "post_merge_complete_ci_impact": "unmeasured",
+        "verified_live_at_utc": "2026-11-09T11:03:17.556787+00:00"
       },
       "command": "direnv exec . bbr test //agentplane/system_tests/suites:test_firecracker --nocache_test_results --define=kvm-canary-20261109=4",
       "command_context": "Run from each recorded source revision with its shared opt-in canary routing helper; the baseline and candidate use the same define and serially reuse the same HIL guest. The canary producer owns submission, drain and cleanup."
@@ -43029,10 +43034,11 @@
       ]
     },
     "decisions": [
-      "The fixture trim merged in #15099; measure matched post-merge CI heads. Prioritize measured fast scratch/host isolation and continue the four/eight-CPU experiment.",
-      "No current evidence justifies adding guest RAM; preserve sizing until action peak/lifecycle evidence is sufficient.",
-      "Keep one action per guest because K3s state is shared; no production replica/scaler/cache change was made.",
-      "Autoscaling scale-in still requires runner shutdown/reconciliation ownership and safe drain."
+      "Retain 4 vCPU / 16 GiB and one action per guest: all three matched-state CPU pairs passed; extra CPUs did not shorten the measured critical path.",
+      "The fixture trim merged in #15099; post-merge complete-CI impact remains unmeasured.",
+      "Matched HDD/SSD intervention remains unavailable within existing eligible HIL capacity. No cross-host storage speedup is claimed.",
+      "All owned canary demand is terminal; executor drain, graceful unregistration, resource/scratch deletion and production identity/readiness checks passed.",
+      "Autoscaling scale-in still requires runner shutdown/reconciliation ownership and safe drain. No production replica/scaler/cache changes were made."
     ],
     "production_pool_snapshot": {
       "observed_at_utc": "2026-11-09T09:21:07.552539Z",
@@ -43043,6 +43049,673 @@
       "executor_advertised_memory_gib": 14,
       "limit": "Reservation count is not unique still-needed work, useful demand or a FIFO wait estimate. Canary is an independent opt-in pool."
     },
-    "pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00"
+    "pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00",
+    "cpu_experiment": {
+      "assembled_at_utc": "2026-11-09T11:03:17.556787+00:00",
+      "source_pr": "https://github.com/agentydragon/ducktape/pull/15124",
+      "durable_evidence_commit": "791540fbaa160bde261e469adfdd2fcc84f378ec",
+      "durable_evidence_json": "https://github.com/agentydragon/ducktape/blob/791540fbaa160bde261e469adfdd2fcc84f378ec/devinfra/buildbuddy/debug/2026_11_09_hil_kvm_worker_canary.json",
+      "durable_evidence_markdown": "https://github.com/agentydragon/ducktape/blob/791540fbaa160bde261e469adfdd2fcc84f378ec/devinfra/buildbuddy/debug/2026_11_09_hil_kvm_worker_canary.md",
+      "fixed_tested_source": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+      "experiment_start_utc": "2026-11-09T09:56:45.812128Z",
+      "experiment_end_utc": "2026-11-09T10:51:40.932165Z",
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "resource_contract": {
+        "max_vms": 1,
+        "guest_cpu_arms": [4, 8],
+        "guest_memory_gib": 16,
+        "work_disk_gib": 80,
+        "ephemeral_scheduler_request_gib": 80,
+        "max_concurrent_actions": 1,
+        "advertised_memory_gib": 14,
+        "action_memory_reservation_bytes": 10737418240,
+        "live_scheduler_millicpu_confirmed": [4000, 8000],
+        "cpu8_process_allowed_list": "0-7",
+        "docker_cpu_quota_and_nanocpu_limits": 0
+      },
+      "placement": {
+        "constraint": {
+          "topology.kubernetes.io/zone": "hil-ovh"
+        },
+        "hostname_pinned": false,
+        "actual_node_both_arms": "ovh-ns1001419",
+        "host_cpu": "Intel Xeon E-2236, 6 physical cores / 12 threads",
+        "scratch_backend": "guest ext4 work disk, KubeVirt emptyDisk/QCOW2, launcher emptyDir, host /var/lib/kubelet on physical WDC SN720 NVMe /dev/nvme0n1p8"
+      },
+      "input_proof": {
+        "same_input_root_digest": true,
+        "action_platform_difference": {
+          "EstimatedCPU": ["4", "8"]
+        },
+        "command_platform_difference": {
+          "EstimatedCPU": ["4", "8"]
+        },
+        "command_args_environment_and_outputs_equal": true,
+        "other_action_fields_equal": true,
+        "input_root_digest": {
+          "hash": "e71c9682f28f30c8931cde12047f1d58ead52e4f170e6409b3426484cfc5bbe7",
+          "sizeBytes": "165"
+        },
+        "command_non_platform_differing_fields": []
+      },
+      "runs": [
+        {
+          "arm": "cpu4-arm1",
+          "cpu": 4,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "cold worker filecache, RBE image warmed by smoke",
+          "invocation_id": "867d788d-2430-4169-9ffa-4c1557fb776c",
+          "result": "PASSED",
+          "command_start": "2026-11-09T09:56:45.812128Z",
+          "command_end": "2026-11-09T10:01:24.156850Z",
+          "command_s": 278.344722032547,
+          "fetch_s": 12.28250002861023,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 120.2914,
+            "sampled_cpu_s": 114.8608,
+            "cpu_sample_boundary_error_s": [0.352, 0.06],
+            "guest_psi_stall_pct": {
+              "cpu_some": 16.512,
+              "cpu_full": 0.0,
+              "memory_some": 0.202,
+              "memory_full": 0.18,
+              "io_some": 6.737,
+              "io_full": 5.146
+            },
+            "whole_guest_cpu": {
+              "samples": 120,
+              "mean_busy_cores": 1.6448433333333334,
+              "peak_1s_busy_cores": 3.95,
+              "mean_steal_percent": 0.2871666666666667
+            }
+          },
+          "case_s": 138.6965,
+          "scenario_s": 123.3467,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 69.44913840293884,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 4,
+            "mean_busy_cores": 1.1361075268817205,
+            "peak_1s_busy_cores": 3.95
+          },
+          "whole_guest_memory_sar": null,
+          "observed_cgroup_memory_peak_bytes": 6992162816,
+          "last_counter_sample_before_command_end_s": 1.1568500995635986,
+          "sampled_cgroup_cpu_total_s": 138.208595,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 9.847,
+            "cpu_full": 0.0,
+            "memory_some": 0.519,
+            "memory_full": 0.456,
+            "io_some": 4.947,
+            "io_full": 3.97
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 57.465069759464605,
+            "write_iops_weighted_await_ms": 21.047383427115737,
+            "flush_iops_weighted_await_ms": 1.0499729148865782,
+            "mean_util_fill_idle": 17.762508960573477
+          },
+          "native_profile": {
+            "sha256": "61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed",
+            "size_bytes": 1182303,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed/1182303",
+            "cas_readback_verified": true
+          },
+          "health_note": null
+        },
+        {
+          "arm": "cpu4-arm2",
+          "cpu": 4,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "warm worker filecache",
+          "invocation_id": "2ea5b83f-df7e-4139-9d5b-9723b5604953",
+          "result": "PASSED",
+          "command_start": "2026-11-09T10:14:06.439233Z",
+          "command_end": "2026-11-09T10:18:16.722345Z",
+          "command_s": 250.28311204910278,
+          "fetch_s": 0.48088908195495605,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 120.2131,
+            "sampled_cpu_s": 113.0535,
+            "cpu_sample_boundary_error_s": [-0.424, 0.363],
+            "guest_psi_stall_pct": {
+              "cpu_some": 17.789,
+              "cpu_full": 0.0,
+              "memory_some": 0.011,
+              "memory_full": 0.009,
+              "io_some": 4.052,
+              "io_full": 3.202
+            },
+            "whole_guest_cpu": {
+              "samples": 120,
+              "mean_busy_cores": 1.7062233333333334,
+              "peak_1s_busy_cores": 3.95,
+              "mean_steal_percent": 0.4175
+            }
+          },
+          "case_s": 111.2868,
+          "scenario_s": 95.3666,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 67.50391745567322,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 4,
+            "mean_busy_cores": 1.2849184,
+            "peak_1s_busy_cores": 3.95
+          },
+          "whole_guest_memory_sar": {
+            "samples": 250,
+            "min_available_kib": 12437724.0,
+            "max_used_kib": 3346868.0,
+            "max_used_percent": 20.46,
+            "max_committed_percent": 67.1
+          },
+          "observed_cgroup_memory_peak_bytes": 8212283392,
+          "last_counter_sample_before_command_end_s": 0.7223451137542725,
+          "sampled_cgroup_cpu_total_s": 147.131071,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 11.726,
+            "cpu_full": 0.0,
+            "memory_some": 0.455,
+            "memory_full": 0.381,
+            "io_some": 3.557,
+            "io_full": 2.865
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 60.3018058984375,
+            "write_iops_weighted_await_ms": 13.444861782561334,
+            "flush_iops_weighted_await_ms": 0.4983856007002954,
+            "mean_util_fill_idle": 13.01004
+          },
+          "native_profile": {
+            "sha256": "6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd",
+            "size_bytes": 1143479,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd/1143479",
+            "cas_readback_verified": true
+          },
+          "health_note": null
+        },
+        {
+          "arm": "cpu4-arm3",
+          "cpu": 4,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "warm worker filecache",
+          "invocation_id": "611e9676-fbf4-4a4b-9d30-8d529d35f4f9",
+          "result": "PASSED",
+          "command_start": "2026-11-09T10:21:13.476690Z",
+          "command_end": "2026-11-09T10:25:25.320880Z",
+          "command_s": 251.84418988227844,
+          "fetch_s": 0.2513141632080078,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 119.1864,
+            "sampled_cpu_s": 122.6682,
+            "cpu_sample_boundary_error_s": [0.012, -0.174],
+            "guest_psi_stall_pct": {
+              "cpu_some": 17.585,
+              "cpu_full": 0.0,
+              "memory_some": 0.0,
+              "memory_full": 0.0,
+              "io_some": 3.037,
+              "io_full": 2.317
+            },
+            "whole_guest_cpu": {
+              "samples": 120,
+              "mean_busy_cores": 1.7317066666666667,
+              "peak_1s_busy_cores": 3.96,
+              "mean_steal_percent": 0.3016666666666667
+            }
+          },
+          "case_s": 112.4527,
+          "scenario_s": 96.2163,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 66.49500560760498,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 4,
+            "mean_busy_cores": 1.3128539682539682,
+            "peak_1s_busy_cores": 3.96
+          },
+          "whole_guest_memory_sar": {
+            "samples": 252,
+            "min_available_kib": 12515112.0,
+            "max_used_kib": 3270600.0,
+            "max_used_percent": 19.99,
+            "max_committed_percent": 67.1
+          },
+          "observed_cgroup_memory_peak_bytes": 8913137664,
+          "last_counter_sample_before_command_end_s": 1.3208799362182617,
+          "sampled_cgroup_cpu_total_s": 150.313911,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 11.37,
+            "cpu_full": 0.0,
+            "memory_some": 0.528,
+            "memory_full": 0.468,
+            "io_some": 3.4,
+            "io_full": 2.775
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 59.664094277033726,
+            "write_iops_weighted_await_ms": 9.076568980899955,
+            "flush_iops_weighted_await_ms": 0.4229085668114962,
+            "mean_util_fill_idle": 12.901825396825398
+          },
+          "native_profile": {
+            "sha256": "2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e",
+            "size_bytes": 1039319,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e/1039319",
+            "cas_readback_verified": true
+          },
+          "health_note": null
+        },
+        {
+          "arm": "cpu8-arm1",
+          "cpu": 8,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "cold worker filecache, RBE image warmed by smoke",
+          "invocation_id": "37ba5347-411b-4045-95ff-89798015dc9e",
+          "result": "PASSED",
+          "command_start": "2026-11-09T10:32:54.749675Z",
+          "command_end": "2026-11-09T10:37:35.455656Z",
+          "command_s": 280.70598101615906,
+          "fetch_s": 12.955572128295898,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 124.9466,
+            "sampled_cpu_s": 140.4481,
+            "cpu_sample_boundary_error_s": [-0.293, -0.239],
+            "guest_psi_stall_pct": {
+              "cpu_some": 4.52,
+              "cpu_full": 0.0,
+              "memory_some": 0.096,
+              "memory_full": 0.091,
+              "io_some": 5.598,
+              "io_full": 5.105
+            },
+            "whole_guest_cpu": {
+              "samples": 125,
+              "mean_busy_cores": 1.9466304,
+              "peak_1s_busy_cores": 6.6968000000000005,
+              "mean_steal_percent": 0.94976
+            }
+          },
+          "case_s": 137.3407,
+          "scenario_s": 119.2805,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 71.82874488830566,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 8,
+            "mean_busy_cores": 1.333859074733096,
+            "peak_1s_busy_cores": 6.6968000000000005
+          },
+          "whole_guest_memory_sar": {
+            "samples": 281,
+            "min_available_kib": 10837916.0,
+            "max_used_kib": 4929072.0,
+            "max_used_percent": 30.14,
+            "max_committed_percent": 69.81
+          },
+          "observed_cgroup_memory_peak_bytes": 7183945728,
+          "last_counter_sample_before_command_end_s": 0.4556560516357422,
+          "sampled_cgroup_cpu_total_s": 173.574694,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 2.859,
+            "cpu_full": 0.0,
+            "memory_some": 0.834,
+            "memory_full": 0.778,
+            "io_some": 4.652,
+            "io_full": 4.302
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 56.63443373276245,
+            "write_iops_weighted_await_ms": 17.995524504913444,
+            "flush_iops_weighted_await_ms": 1.050512610647347,
+            "mean_util_fill_idle": 18.096975088967973
+          },
+          "native_profile": {
+            "sha256": "05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c",
+            "size_bytes": 1457285,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c/1457285",
+            "cas_readback_verified": true
+          },
+          "health_note": null
+        },
+        {
+          "arm": "cpu8-arm2",
+          "cpu": 8,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "warm worker filecache",
+          "invocation_id": "42bad75a-1d02-4beb-8b24-dd7870d1bc8f",
+          "result": "PASSED",
+          "command_start": "2026-11-09T10:40:00.682270Z",
+          "command_end": "2026-11-09T10:44:20.149504Z",
+          "command_s": 259.4672338962555,
+          "fetch_s": 0.21500015258789062,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 124.9791,
+            "sampled_cpu_s": 155.5716,
+            "cpu_sample_boundary_error_s": [-0.294, -0.273],
+            "guest_psi_stall_pct": {
+              "cpu_some": 5.009,
+              "cpu_full": 0.0,
+              "memory_some": 0.016,
+              "memory_full": 0.016,
+              "io_some": 2.959,
+              "io_full": 2.53
+            },
+            "whole_guest_cpu": {
+              "samples": 125,
+              "mean_busy_cores": 2.027328,
+              "peak_1s_busy_cores": 6.5127999999999995,
+              "mean_steal_percent": 1.63456
+            }
+          },
+          "case_s": 115.1652,
+          "scenario_s": 97.4905,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 71.61019325256348,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 8,
+            "mean_busy_cores": 1.4317907692307692,
+            "peak_1s_busy_cores": 6.5127999999999995
+          },
+          "whole_guest_memory_sar": {
+            "samples": 260,
+            "min_available_kib": 12443056.0,
+            "max_used_kib": 3322316.0,
+            "max_used_percent": 20.31,
+            "max_committed_percent": 69.52
+          },
+          "observed_cgroup_memory_peak_bytes": 9315799040,
+          "last_counter_sample_before_command_end_s": 1.1495039463043213,
+          "sampled_cgroup_cpu_total_s": 179.885791,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 3.345,
+            "cpu_full": 0.0,
+            "memory_some": 0.539,
+            "memory_full": 0.508,
+            "io_some": 3.664,
+            "io_full": 3.33
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 57.573489633413466,
+            "write_iops_weighted_await_ms": 14.914617714139535,
+            "flush_iops_weighted_await_ms": 0.732978950560975,
+            "mean_util_fill_idle": 16.920153846153845
+          },
+          "native_profile": {
+            "sha256": "b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941",
+            "size_bytes": 1393037,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941/1393037",
+            "cas_readback_verified": true
+          },
+          "health_note": null
+        },
+        {
+          "arm": "cpu8-arm3",
+          "cpu": 8,
+          "source_sha": "de9e7c656c00a1dc1e758101bf7dd8009c3d57ae",
+          "cache_state": "warm worker filecache",
+          "invocation_id": "6bb7290f-2f1a-417d-8ffa-15e113f05c14",
+          "result": "PASSED",
+          "command_start": "2026-11-09T10:47:04.359809Z",
+          "command_end": "2026-11-09T10:51:40.932165Z",
+          "command_s": 276.5723559856415,
+          "fetch_s": 0.21105504035949707,
+          "setup": {
+            "name": "system_test.stack.setup",
+            "wall_s": 122.9045,
+            "sampled_cpu_s": 145.2691,
+            "cpu_sample_boundary_error_s": [0.046, 0.141],
+            "guest_psi_stall_pct": {
+              "cpu_some": 4.85,
+              "cpu_full": 0.0,
+              "memory_some": 0.0,
+              "memory_full": 0.0,
+              "io_some": 3.876,
+              "io_full": 3.594
+            },
+            "whole_guest_cpu": {
+              "samples": 123,
+              "mean_busy_cores": 1.9648455284552846,
+              "peak_1s_busy_cores": 7.12,
+              "mean_steal_percent": 0.826910569105691
+            }
+          },
+          "case_s": 135.4256,
+          "scenario_s": 118.9668,
+          "image_import_count": 26,
+          "image_import_serial_sum_s": 66.99547171592712,
+          "whole_guest_cpu": {
+            "logical_cpu_count": 8,
+            "mean_busy_cores": 1.3430840579710146,
+            "peak_1s_busy_cores": 7.12
+          },
+          "whole_guest_memory_sar": {
+            "samples": 276,
+            "min_available_kib": 12395532.0,
+            "max_used_kib": 3363512.0,
+            "max_used_percent": 20.56,
+            "max_committed_percent": 69.63
+          },
+          "observed_cgroup_memory_peak_bytes": 8688148480,
+          "last_counter_sample_before_command_end_s": 0.9321649074554443,
+          "sampled_cgroup_cpu_total_s": 170.544883,
+          "last_memory_events": [
+            "low 0",
+            "high 0",
+            "max 0",
+            "oom 0",
+            "oom_kill 0",
+            "oom_group_kill 0"
+          ],
+          "guest_psi": {
+            "cpu_some": 2.95,
+            "cpu_full": 0.0,
+            "memory_some": 0.355,
+            "memory_full": 0.33,
+            "io_some": 2.851,
+            "io_full": 2.663
+          },
+          "vdb_io": {
+            "mean_write_mib_s_fill_idle": 54.5128416199615,
+            "write_iops_weighted_await_ms": 13.728854332007385,
+            "flush_iops_weighted_await_ms": 0.6444097229287383,
+            "mean_util_fill_idle": 13.337427536231884
+          },
+          "native_profile": {
+            "sha256": "77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e",
+            "size_bytes": 1651025,
+            "cas_uri": "bytestream://remote.buildbuddy.io/blobs/77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e/1651025",
+            "cas_readback_verified": true
+          },
+          "health_note": "prior guest idle softlockup during serial transfer, outside measured action; health rechecked; retain as post-warning sample"
+        }
+      ],
+      "pairs": [
+        {
+          "pair": 1,
+          "cpu4_s": 278.344722032547,
+          "cpu8_s": 280.70598101615906,
+          "cpu8_minus4_s": 2.3612589836120605
+        },
+        {
+          "pair": 2,
+          "cpu4_s": 250.28311204910278,
+          "cpu8_s": 259.4672338962555,
+          "cpu8_minus4_s": 9.18412184715271
+        },
+        {
+          "pair": 3,
+          "cpu4_s": 251.84418988227844,
+          "cpu8_s": 276.5723559856415,
+          "cpu8_minus4_s": 24.728166103363037
+        }
+      ],
+      "warm_means_seconds": {
+        "cpu4": 251.0636509656906,
+        "cpu8": 268.0197949409485
+      },
+      "decision": "Retain 4 vCPU / 16 GiB and one action per guest. Extra CPUs were used and reduced CPU pressure but did not shorten the measured critical path. No smaller-RAM intervention was tested.",
+      "limits": [
+        "Six CPU runs in two guest lifetimes, ordered 4 then 8; match cold/warm states but no randomized order or dedicated physical host.",
+        "Untrimmed fixed source predates PR #15099; candidate separately measured at 4 CPU only.",
+        "No matched HDD/SSD test: all feasible HIL compute hosts have NVMe scratch; HDD hosts lacked 4 CPU / 16 GiB admission headroom.",
+        "Cgroup counters are observed live lower bounds; final held-FD reads fail after cgroup removal.",
+        "Cold 4 CPU lacks sar memory and first 72 s of host PSI; candidate sar starts partway through action.",
+        "8-CPU guest softlockup at 10:45:42 UTC between the second and third 8-CPU runs during serial archive transfer; handle_softirqs over idle task; host CPU pressure spike; cause unproven; no warning observed during prior measured windows."
+      ],
+      "full_ci_boundary": "These are physical target/action measurements, not full required-check CI feedback. No post-merge complete-CI mean below four minutes is demonstrated.",
+      "native_profiles": [
+        {
+          "arm": "cpu4-arm1",
+          "sha256": "61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed",
+          "size_bytes": 1182303,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/61b464f789de0f6480c13bf516bd99c5171821947f55d305a7217da8587a13ed/1182303",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "cpu4-arm2",
+          "sha256": "6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd",
+          "size_bytes": 1143479,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/6949d5019cc3b4e1ed44b64f771ee94280f151b2be768d2a879ad1b7ef088fbd/1143479",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "cpu4-arm3",
+          "sha256": "2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e",
+          "size_bytes": 1039319,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/2e6e35fcb24895dbf1418e4efebb05cd4c08e8c01123e6fd26e06c568a793d3e/1039319",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "cpu8-arm1",
+          "sha256": "05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c",
+          "size_bytes": 1457285,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/05737af038efef4c360109e2375c5f99e5a7fdb43adc5cbb8addc20f4ce26b3c/1457285",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "cpu8-arm2",
+          "sha256": "b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941",
+          "size_bytes": 1393037,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/b0499b98af7145b3c10179c99c270b9da80c699732a51483f846e3180e0a7941/1393037",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "cpu8-arm3",
+          "sha256": "77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e",
+          "size_bytes": 1651025,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/77de041ac0374b6d391a49ff28e681508794b9720c1d4fbf7b52241986d6665e/1651025",
+          "cas_readback_verified": true
+        },
+        {
+          "arm": "candidate-arm1",
+          "sha256": "416eba73d5b431d40358b0387b1ecf7d7e8eef17335f365d839dc0d447e44888",
+          "size_bytes": 802379,
+          "cas_uri": "bytestream://remote.buildbuddy.io/blobs/416eba73d5b431d40358b0387b1ecf7d7e8eef17335f365d839dc0d447e44888/802379",
+          "cas_readback_verified": true
+        }
+      ],
+      "profile_reproduction": "From the repository Nix devshell: bb download HASH/SIZE > profiles.tgz; verify SHA256 and size against this index. Seven allowlisted archives were uploaded and downloaded/hash-verified; CAS follows normal retention. Raw journals, consoles, environment and credential files are excluded.",
+      "cleanup": {
+        "verified_at_utc": "2026-11-09T10:57:53.166378+00:00",
+        "owned_resources_absent": true,
+        "guest_instances_and_launchers_absent": true,
+        "owned_action_ledger": {
+          "physical_executions": 9,
+          "passed": 9,
+          "failed_wrapper_before_physical_execution": 1
+        },
+        "drain": {
+          "cpu4_completed": 5,
+          "cpu8_completed": 4,
+          "assigned_cpu_ram_zero": true,
+          "both_group_queues_zero": true,
+          "docker_only_executor_before_stop": true,
+          "nested_k3s_process_mount_checks_idle": true,
+          "executor_graceful_stop_and_unregistration_logged": true,
+          "service_inactive_result_success_before_vm_stop": true,
+          "profilers_stopped_before_vm_stop": true
+        },
+        "host_conditions": {
+          "NetworkUnavailable": "False",
+          "MemoryPressure": "False",
+          "DiskPressure": "False",
+          "PIDPressure": "False",
+          "Ready": "True"
+        },
+        "api_readyz_passed": true,
+        "host_etcd_status_errors_empty": true,
+        "host_core_services_running_healthy": true,
+        "physical_scratch_available_decimal_gb_before_and_after": 133.57,
+        "owned_scratch_path_absent": true,
+        "production_vm_vmi_identities_unchanged_and_ready": true
+      },
+      "commands": [
+        "direnv exec . bbr test //agentplane/system_tests/suites:test_firecracker --nocache_test_results --define=kvm-canary-20261109=4",
+        "direnv exec . bbr test //agentplane/system_tests/suites:test_firecracker --nocache_test_results --define=kvm-canary-20261109=8"
+      ]
+    }
+  },
+  "vm_readiness_followup": {
+    "recorded_at_utc": "2026-11-09T11:03:17.556787+00:00",
+    "source": "Parent investigation handoff; failure-time passive capture and one full-suite attempt still underway at this report snapshot.",
+    "failed_child_invocation": "46993f63-7c5b-5685-a009-4664f7c8318f",
+    "failed_source_pr": "https://github.com/agentydragon/ducktape/pull/15126",
+    "failed_source_commit_prefix": "a099f643",
+    "console_and_raw_serial_last_guest_uptime_seconds": 5.157459,
+    "last_observed_stage": "Early PCI/ACPI Linux boot, before systemd/runner",
+    "outer_lane": "Default hosted lane; QEMU 10.1 TCG, no /dev/kvm; 2 guest vCPUs / 1.5 GiB RAM",
+    "connection_pending_seconds": 300,
+    "causal_boundary": "ConnectionPending is a downstream readiness symptom. QEMU host snapshot at 09:57:08 UTC followed VM destruction at 09:56:56 UTC, so root cause remains unresolved. No TLS failure or fix is established.",
+    "separate_pod_failure": "Same invocation also had an Unschedulable / Insufficient memory Pod admission failure; this is a distinct boundary.",
+    "next_attempt": {
+      "invocation": "cb469644-f04f-4844-9021-f3a425dce6ef",
+      "status_at_handoff": "PENDING",
+      "result": "not yet established"
+    }
   }
 }
