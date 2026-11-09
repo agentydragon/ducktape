@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,6 +116,50 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 	got[1].Binding.Spec.PolicySets[0] = "test-changed"
 	if again := index.Bindings(subject); again[1].Binding.Spec.PolicySets[0] != "test-broken" {
 		t.Errorf("changing a returned binding changed the index: %+v", again[1].Binding)
+	}
+}
+
+// A binding past its expiresAt stops granting under a live index, though nothing deletes it: the
+// controller may be down.
+func TestExpiredBindingStopsGrantingWithoutADelete(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	index.now = func() time.Time { return now }
+	index.PutPolicySet(testSet("test-own", 1))
+	expiresAt := metav1.NewTime(now.Add(time.Hour))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: bindingSubject, PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt},
+	})
+	if got := index.Grants(subject); len(got) != 1 || len(index.Bindings(subject)) != 1 {
+		t.Fatalf("before expiry: Grants = %+v", got)
+	}
+	now = expiresAt.Add(time.Second)
+	if got := index.Grants(subject); len(got) != 0 {
+		t.Errorf("after expiry: Grants = %+v, want none", got)
+	}
+	if got := index.Bindings(subject); len(got) != 0 {
+		t.Errorf("after expiry: Bindings = %+v, want none", got)
+	}
+}
+
+// Watchers of the index learn of an expiry at its deadline, with no event from the API server.
+func TestExpiryNotifiesWatchers(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	expiresAt := metav1.NewTime(time.Now().Add(100 * time.Millisecond))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: bindingSubject, PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt},
+	})
+	changed := index.Changed()
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change at the binding's expiresAt")
+	}
+	if got := index.Grants(subject); len(got) != 0 {
+		t.Errorf("Grants after the expiry notification = %+v, want none", got)
 	}
 }
 

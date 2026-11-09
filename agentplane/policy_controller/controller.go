@@ -105,13 +105,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 	if conflictingExpiry(&binding, binding.Spec.ExpiresAt) {
 		e = conflictingExpiryExpansion()
 	} else {
-		// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
-		// native bindings.
+		// Expiry is deletion for every rule type.
 		var requeue time.Duration
 		var expired bool
 		// Assigns the named err, which the deferred requeue reads.
-		if requeue, expired, err = r.expire(ctx, &binding, binding.Spec.ExpiresAt); expired || err != nil {
+		if requeue, expired, err = r.expire(ctx, &binding, binding.Spec.ExpiresAt); err != nil {
 			return ctrl.Result{}, err
+		} else if expired {
+			// Not live: revoke in this pass rather than the NotFound reconcile the deletion triggers.
+			return ctrl.Result{}, r.converge(ctx, bindingOwner, binding.Name, nil)
 		}
 		defer func() {
 			if err == nil {
@@ -133,11 +135,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 // remains: no event marks the deadline, so a successful reconcile asks to be run again at it (a
 // failed one is retried with backoff anyway). Without expiresAt it returns zero.
 func (r *Reconciler) expire(ctx context.Context, obj client.Object, expiresAt *metav1.Time) (time.Duration, bool, error) {
+	now := time.Now()
 	if expiresAt == nil {
 		return 0, false, nil
 	}
-	if remaining := time.Until(expiresAt.Time); remaining > 0 {
-		return remaining, false, nil
+	if policyapi.Live(expiresAt, now) {
+		return expiresAt.Sub(now), false, nil
 	}
 	uid := obj.GetUID()
 	return 0, true, client.IgnoreNotFound(r.Delete(ctx, obj, client.Preconditions{UID: &uid}))

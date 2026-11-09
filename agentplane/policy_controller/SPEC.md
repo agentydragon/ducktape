@@ -9,9 +9,12 @@ every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
 ## Expiry
 
 The controller deletes a `PolicyBinding`, `KubernetesAccountGrant` or `ManagedServiceAccount` once
-its `expiresAt` passes, so each grants by existing: a reader of any rule type honours the bindings
-that exist and needs no expiry handling of its own. These three kinds are the only ones with an
-expiry. An object that a GitOps tool owns must not set `expiresAt`, or the tool recreates it.
+its `expiresAt` passes, and is the only deleter. The pass that deletes one also treats it as gone,
+removing what it kept in the same pass. Until it is deleted, an expired object is absent to
+readers too: the shared reader (`agentplane/policy/reader`) skips a `PolicyBinding` past its
+`expiresAt` and tells its watchers at that instant, so a controller outage does not extend a
+grant. Liveness is derived from `expiresAt` in that one reader; individual services never carry
+expiry logic of their own. These three kinds are the only ones with an expiry. An object that a GitOps tool owns must not set `expiresAt`, or the tool recreates it.
 
 An owner's clock is the only clock. A binding or grant that a `ManagedServiceAccount` owns goes with
 the account and must not set its own `expiresAt`. Admission cannot see ownerReferences, so the
@@ -102,8 +105,8 @@ precondition prevents deleting a binding edited or replaced after its read.
 ## Revocation timing
 
 Expiry takes effect when the controller deletes the `PolicyBinding` or grant, and deletion when it
-deletes the native bindings. While it is not running an expired binding stays and its native bindings keep
-granting; nothing in the API server expires them.
+deletes the native bindings. While it is not running, the shared reader already treats an expired
+binding as absent, but its native bindings keep granting: nothing in the API server expires them.
 
 ## Status
 

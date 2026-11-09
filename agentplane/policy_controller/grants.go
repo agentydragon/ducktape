@@ -38,8 +38,11 @@ func (r *Reconciler) ReconcileGrant(ctx context.Context, req reconcile.Request) 
 		var requeue time.Duration
 		var expired bool
 		// Assigns the named err, which the deferred requeue reads.
-		if requeue, expired, err = r.expire(ctx, &grant, grant.Spec.ExpiresAt); expired || err != nil {
+		if requeue, expired, err = r.expire(ctx, &grant, grant.Spec.ExpiresAt); err != nil {
 			return ctrl.Result{}, err
+		} else if expired {
+			// Not live: revoke in this pass rather than the NotFound reconcile the deletion triggers.
+			return ctrl.Result{}, r.converge(ctx, grantOwner, grant.Name, nil)
 		}
 		defer func() {
 			if err == nil {

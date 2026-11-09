@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
@@ -126,6 +127,45 @@ func TestRecreatedAccountIsBoundAfreshNotAdopted(t *testing.T) {
 	})
 	if err := api.Get(ctx, client.ObjectKeyFromObject(old), old.DeepCopyObject().(client.Object)); !apierrors.IsNotFound(err) {
 		t.Fatalf("the previous account's native binding survived: err=%v", err)
+	}
+}
+
+// The reconcile that expires a grant also deletes its native bindings: nothing else runs between.
+func TestExpiredGrantRevokesInOnePass(t *testing.T) {
+	ctx := context.Background()
+	api, cached, r := startPolicyAPIServer(t, false)
+	setUpGrantCluster(t, api)
+	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: accountsNamespace, Name: "test-flux-account"}}
+	set := testRoleSet("test-node-read", clusterRoleBindingRule(nodeReader))
+	grant := testGrant("test-expiring-grant", accountsNamespace, account.Name, set.Name)
+	create(t, api, account, set, grant)
+	waitForCached(t, cached, &corev1.ServiceAccount{}, client.ObjectKeyFromObject(account))
+	waitForCached(t, cached, &policyapi.KubernetesRoleSet{}, client.ObjectKeyFromObject(set))
+	waitForCached(t, cached, &policyapi.KubernetesAccountGrant{}, client.ObjectKeyFromObject(grant))
+	request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(grant)}
+	if _, err := r.ReconcileGrant(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if natives := grantNatives(t, api, grant.Name); len(natives) != 1 {
+		t.Fatalf("the grant's native bindings: %s", describe(natives))
+	}
+
+	current := readGrant(t, api, grant.Name)
+	current.Spec.ExpiresAt = &metav1.Time{Time: time.Now().Add(-time.Second)}
+	if err := api.Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the expiry in the cache", func() (bool, string) {
+		var cachedGrant policyapi.KubernetesAccountGrant
+		err := cached.Get(ctx, client.ObjectKeyFromObject(grant), &cachedGrant)
+		return err == nil && cachedGrant.Spec.ExpiresAt != nil, fmt.Sprint(err)
+	})
+	if _, err := r.ReconcileGrant(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	grantErr := api.Get(ctx, client.ObjectKeyFromObject(grant), &policyapi.KubernetesAccountGrant{})
+	if natives := grantNatives(t, api, grant.Name); len(natives) != 0 || !apierrors.IsNotFound(grantErr) {
+		t.Fatalf("after the expiring reconcile: grant %v, natives %s", grantErr, describe(natives))
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
@@ -34,7 +35,10 @@ type Index[R any] struct {
 	// refused holds each set with a rule of this type that does not parse, which grants nothing.
 	refused  map[string]Refusal
 	bindings map[string]policyapi.PolicyBinding
+	// expiries fire a change at each binding's expiresAt, when it stops granting with no event.
+	expiries map[string]*time.Timer
 	changed  chan struct{}
+	now      func() time.Time
 }
 
 // NewIndex returns an empty Index of the rules whose type is ruleType, each read by parse.
@@ -45,7 +49,9 @@ func NewIndex[R any](ruleType string, parse func(policyapi.Rule) (R, error)) *In
 		sets:     map[string]PolicySet[R]{},
 		refused:  map[string]Refusal{},
 		bindings: map[string]policyapi.PolicyBinding{},
+		expiries: map[string]*time.Timer{},
 		changed:  make(chan struct{}),
+		now:      time.Now,
 	}
 }
 
@@ -149,20 +155,39 @@ func (i *Index[R]) resolve(names []string) Resolution[R] {
 	return resolution
 }
 
-// PutBinding adds or replaces a binding. A binding that exists grants: the Policy Controller
-// deletes it at expiry.
+// PutBinding adds or replaces a binding. A binding grants while it exists and is live: the Policy
+// Controller deletes it at expiry, and until then the index treats an expired one as absent.
 func (i *Index[R]) PutBinding(binding *policyapi.PolicyBinding) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	defer i.notifyChanged()
+	i.stopExpiry(binding.Name)
 	i.bindings[binding.Name] = *binding.DeepCopy()
+	if expiresAt := binding.Spec.ExpiresAt; expiresAt != nil {
+		if remaining := expiresAt.Sub(i.now()); remaining > 0 {
+			i.expiries[binding.Name] = time.AfterFunc(remaining, func() {
+				i.mu.Lock()
+				defer i.mu.Unlock()
+				i.notifyChanged()
+			})
+		}
+	}
 }
 
 func (i *Index[R]) DeleteBinding(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	defer i.notifyChanged()
+	i.stopExpiry(name)
 	delete(i.bindings, name)
+}
+
+// stopExpiry is called with mu held.
+func (i *Index[R]) stopExpiry(name string) {
+	if timer, ok := i.expiries[name]; ok {
+		timer.Stop()
+		delete(i.expiries, name)
+	}
 }
 
 // Grant is one binding naming the caller, and the sets with rules of this type it grants.
@@ -211,11 +236,13 @@ func (i *Index[R]) Bindings(subject policyapi.ServiceAccountRef) []BindingResolu
 	return found
 }
 
-// naming is the names of the bindings naming the subject, sorted.
+// naming is the names of the live bindings naming the subject, sorted.
 func (i *Index[R]) naming(subject policyapi.ServiceAccountRef) []string {
 	var names []string
+	now := i.now()
 	for name, binding := range i.bindings {
-		if s := binding.Spec.Subject; s.Identity == nil && s.Namespace == subject.Namespace && s.Name == subject.Name {
+		if s := binding.Spec.Subject; s.Identity == nil && s.Namespace == subject.Namespace && s.Name == subject.Name &&
+			policyapi.Live(binding.Spec.ExpiresAt, now) {
 			names = append(names, name)
 		}
 	}

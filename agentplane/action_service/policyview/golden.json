@@ -848,7 +848,7 @@
         ],
         "bindings": [
           {
-            "expiresAt": "2026-10-01T13:00:00Z",
+            "expiresAt": "2999-10-01T13:00:00Z",
             "generation": 1,
             "labels": {},
             "missingPolicySets": [],
@@ -923,7 +923,7 @@
             "uid": "uid-test-a"
           },
           "spec": {
-            "expiresAt": "2026-10-01T13:00:00Z",
+            "expiresAt": "2999-10-01T13:00:00Z",
             "policySets": ["test-reads"],
             "subject": {
               "name": "test-workload",
@@ -1216,7 +1216,7 @@
         ],
         "bindings": [
           {
-            "expiresAt": "2026-10-01T13:00:00Z",
+            "expiresAt": "2999-10-01T13:00:00Z",
             "name": "test-a",
             "policySets": [
               {
