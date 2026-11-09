@@ -11,9 +11,11 @@ from dataclasses import dataclass
 
 
 class PrState(enum.StrEnum):
-    MERGED = "merged"
-    OPEN = "open"
-    CLOSED = "closed"
+    """GitHub's `PullRequestState`, spelled as the GraphQL API returns it."""
+
+    MERGED = "MERGED"
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
 
 
 @dataclass(frozen=True, slots=True)
