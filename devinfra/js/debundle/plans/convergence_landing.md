@@ -56,6 +56,45 @@ Every PR in this plan:
    in § Test debt and are restored by the slice that owns them.
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
    cannot meet that and say so in their description.
+8. Runs the canonical-spec check (§ below) when it changes any acceptance,
+   placement, emitted order or emitted bytes. Mechanical refactors, report-only
+   additions and test-only splits skip it and say so.
+
+## Canonical-spec check
+
+The private corpus lives in the sibling repository `../gaffer-private`, which
+pins Ducktape by commit (`DUCKTAPE_COMMIT` in its `MODULE.bazel`; procedure in
+its `DUCKTAPE_PINNING.md`). To test a Ducktape worktree without repinning:
+
+1. In the Ducktape worktree, apply `patches/ducktape_cargo_source_labels.patch`
+   from gaffer-private (it rebinds the persisted Rust source-patch label);
+   reverse it before pushing the worktree's branch.
+2. From gaffer-private, build the accepted products through RBE with the
+   override:
+
+   ```sh
+   bazelisk build --config=rbe \
+     //claude/cli/re/2.1.292:debundle_passing \
+     //claude/web/re/2026-10-23-dd67f2f258:debundle \
+     //tana/re/web/78d928dca7:debundle_passing \
+     //tana/re/desktop/spec:debundle_v1_515_0 \
+     //platform_sessions/quest/re/2026-11-08:debundle \
+     --override_module=ducktape=/path/to/ducktape-worktree
+   ```
+
+3. Compare each product's ordinary gate and translation-validation summaries
+   and emitted-file inventory against the same build at the slice's `devel`
+   base. A new rejection, a changed emitted order or changed emitted bytes is a
+   regression unless the PR shows the old acceptance was unsafe with a Node
+   divergence. Run the focused runtime targets named in `DUCKTAPE_PINNING.md`
+   when the slice touches browser or vendor loading.
+
+Not every spec passes cleanly at the current pin; that is the recorded state,
+not a target. A slice may update a gaffer-private spec for compatibility with a
+changed contract (new premise key, renamed field, explicit claim replacing a
+removed implicit rule) in a paired gaffer-private PR, and must not make a spec
+pass by weakening an obligation. A slice does not have to make a spec more
+correct than it is today.
 
 ## Debt inventory
 
@@ -132,8 +171,10 @@ the #14552 code to port by reference.
 - L1d. Preflight/emission-plan refactor without authority change. src:
   `assignment_analysis.rs` `CandidatePreflight`, `lowering/candidate_emission.rs`,
   gate types in `gate.rs`.
-- L1e. Saved codec identities: `SavedChunk`, `SavedModuleCell`, `ContextOrdinals`
-  borrowing the chunk table; module-cell saved entries. src: `analysis_codec.rs`.
+- L1e. Withdrawn as a standalone slice: devel's saved analysis already keys
+  chunks by name and has no `ModuleCellId`, so `SavedChunk`/`SavedModuleCell`
+  and the chunk-table-borrowing `ContextOrdinals` would be dead code until
+  module cells exist. They land with the Wave 3 module-cell slice.
 - L1f. Final global-resolution check, report-only. src:
   `final_global_resolution.rs`, `ParsedGlobalUses`, `vendor/strip.rs` recorder.
   Tests: `final_global_resolution_*`, `bundle_owned_globals_test`.
