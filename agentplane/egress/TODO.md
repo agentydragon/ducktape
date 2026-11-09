@@ -31,3 +31,8 @@ enforcement half moving into the Pod the enforcement is against.
 
 Neither is obviously right. Settle it before a third credential source picks a side by accident,
 and fold the answer into the SPEC rather than leaving both shapes described.
+
+The only `projectedWorkloadToken` source today is the Kubernetes-audience token a Sandbox sidecar
+forwards beside its SVID. The identity cutover replaces that token with the proxy impersonating a
+named account, which removes the source. If that lands first, delete the source and this entry
+together instead of settling the question.

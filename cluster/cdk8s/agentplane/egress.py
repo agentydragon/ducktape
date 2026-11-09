@@ -579,6 +579,8 @@ class Egress(Construct):
                 ),
                 auth=[
                     SPIFFEAuth(ca_file=Path(f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}")),
+                    # CLEANUP(added 2026-11-09): Remove the bearer mode once no non-Sandbox workload
+                    # (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer.
                     KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
                 ],
             ).model_dump(mode="json", exclude_none=True),

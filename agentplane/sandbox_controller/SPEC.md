@@ -122,8 +122,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   the bound Pod UID, and the last accepted VMI UID and credential ID. Only the controller writes it,
   through the status subresource, so a writer of the Sandbox's spec or metadata cannot rebind it.
 - An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
-  the controller does not halt an active VM just to install credentials. A coordinated Gateway
-  authentication rollout must wait until legacy runners are stopped.
+  the controller does not halt an active VM just to install credentials.
 - Each Pod and VM carries the spec rendered from the template when it started
   (`agentplane.allegedly.works/rendered-spec`), for diffing against what the template renders now.
 - A template that does not exist, sets none or multiple kinds, has an incompatible workspace layout, or
