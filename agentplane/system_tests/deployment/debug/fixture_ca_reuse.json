@@ -65,6 +65,60 @@
     "named_library_build": {
       "invocation": "45073596-e20c-4c45-ae23-72d409eb3aa6",
       "result": "SUCCESS in authoritative invocation; wrapper later failed downloading CAS result"
+    },
+    "full_vm": {
+      "originating_invocation": "aed9b899-fa04-5901-8bdd-68f5b8d00b69",
+      "originating_source": "9758d0a54b141afcf38e1ba727b3fdc629b6a1ee",
+      "receiving_invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "receiving_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+      "receiving_pr_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "input_proof": "Originating invocation has link type NEW=1; receiving invocation reused the same physical execution ID and action digest (type 2). It is one fresh physical run, not two or an old cached duration.",
+      "action_digest": {
+        "hash": "ee6fdbbf273713138616808fde52685e22306954c0cc12403a7226287aee4d5f",
+        "sizeBytes": "1850"
+      },
+      "result": "PASSED: all three VM scenarios and cleanup completed",
+      "start_utc": "2026-11-09T18:24:24.696022Z",
+      "end_utc": "2026-11-09T18:31:27.838550Z",
+      "action_seconds": 423.142528,
+      "pytest_seconds": 380.54,
+      "phases": [
+        {
+          "phase": "Stack setup",
+          "seconds": 127.44116
+        },
+        {
+          "phase": "Scenarios",
+          "seconds": 216.689288
+        },
+        {
+          "phase": "Cleanup",
+          "seconds": 29.930315
+        },
+        {
+          "phase": "Other action",
+          "seconds": 49.08176500000002
+        }
+      ],
+      "readiness_seconds": [84.88434, 88.266122, 116.21973],
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/33f11dc38abc7eb870d8d0470fccaf4a9d51dec0d347c3464e7fa1d01aa2168e/4537",
+      "test_xml_uri": "bytestream://remote.buildbuddy.io/blobs/4af696c982c08524f8a5559e26198261606e18a7decec64a93ddcb91b36ca28a/354",
+      "spans_uri": "bytestream://remote.buildbuddy.io/blobs/024538b9b44b817e4ba0e4f28fc18f3ac117f7a7b16d313a5930a4467d1f7e1f/93333",
+      "limits": [
+        "One fresh passing execution does not diagnose or establish a repair for the earlier intermittent early-kernel stop.",
+        "Selected top-level phases are disjoint; Other action is elapsed action time outside those spans. Nested readiness and baseline-clean spans are not added.",
+        "Even removing all 127.44 seconds of setup leaves about 295.70 action seconds. This conditional bound holds all other work fixed; it is not an observed optimization.",
+        "Broader CI failed Pod memory admission and MCP delegation after bootstrap; full CI is not green."
+      ]
+    },
+    "broader_ci": {
+      "invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "tested_pr_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "result": "FAILED",
+      "failures": {
+        "//agentplane/system_tests/suites:test_pod": "19/20 passed; messaging Sandbox Unschedulable/Insufficient memory,300-second readiness deadline; physical action749.180919s.",
+        "//agentplane/system_tests/suites/mcp:test_parent_delegation": "environments/get shell call lost exec-server transport during codex-executor liveness restart; receipt parser then found no JSON. Underlying health-loss cause remains unresolved."
+      }
     }
   }
 }

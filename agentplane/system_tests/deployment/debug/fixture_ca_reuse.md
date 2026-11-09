@@ -52,6 +52,17 @@ latency treatment claim.
 
 Focused cleanup/stack tests and named-library builds passed. Hosted full-suite
 validation is tracked by [PR #15193](https://github.com/agentydragon/ducktape/pull/15193).
-No fresh guest-boot result or cause for the original early-kernel stop is claimed.
+The [full VM action](https://app.buildbuddy.io/invocation/aed9b899-fa04-5901-8bdd-68f5b8d00b69)
+subsequently passed all three scenarios and cleanup in a fresh physical execution
+at source `9758d0a54b141afcf38e1ba727b3fdc629b6a1ee`: 423.143 action seconds,
+380.54 pytest seconds. The next head reused that same in-flight execution; it is
+one physical run. This verifies guest boot on the repaired branch, not a repair
+for the original intermittent early-kernel stop.
+
+Broader CI failed two other cases after bootstrap: Pod messaging could not admit
+a memory request and waited 300 seconds; MCP delegation lost its exec-server
+session during an executor liveness restart, then reported an empty JSON receipt.
+Those do not reproduce the CA-chain mismatch. Their underlying causes and repairs
+are separate work; full CI is not green.
 The cleanup helper now participates in the baseline fingerprint, so the first
 attachment also rejects old snapshots certified by the incomplete cleanup.
