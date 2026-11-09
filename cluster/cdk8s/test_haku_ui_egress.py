@@ -66,7 +66,7 @@ def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any
     return cast(dict[str, Any], yaml.safe_load(one(data.values())))
 
 
-def test_haku_sandbox_retains_explicit_bearer_authentication(resources: list[dict[str, Any]]) -> None:
+def test_haku_sandbox_reaches_the_tls_proxy_and_actions(resources: list[dict[str, Any]]) -> None:
     egress = _settings(resources, "egress-go-settings")
     actions = _settings(resources, "actions-settings")
 
