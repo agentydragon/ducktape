@@ -336,6 +336,19 @@ exists, only the Policy Controller may request three-segment workload URIs from 
 issuer, in the Certificate's own namespace. Flux keeps the one-segment service URIs. The Sandbox
 Controller loses Certificate create.
 
+**Avoiding the Certificate admission policy (revisit).** Two pure-RBAC forms were considered and
+lost:
+
+- **A namespaced CA `Issuer` in a dedicated issuer namespace,** with the External Secrets
+  Operator's Kubernetes provider copying each issued Secret into the workload namespace. It lost on
+  three counts: an operator poll added to every Sandbox and box start, the operator becoming the
+  one holder of every workload key, and an extra controller in renewal.
+- **cert-manager approver-policy.** It lost because it needs cert-manager's default approver
+  disabled cluster-wide.
+
+Revisit if the External Secrets Operator or cert-manager gains push-based cross-namespace delivery,
+or if a namespaced Issuer can sign for Secrets in other namespaces.
+
 ### Standing workloads
 
 Haku UI and Anki are Haku-authored Deployments with replicas, not controller-owned incarnations.
