@@ -7111,19 +7111,21 @@
          "index": 0,
          "policy": {
           "exactActions": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7134,13 +7136,14 @@
          "index": 1,
          "policy": {
           "argumentSchema": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
+           ],
            "argumentSchema": {
             "type": "object",
             "properties": {
@@ -7159,19 +7162,21 @@
          "index": 2,
          "policy": {
           "githubRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           },
+           ],
            "owner": "test-owner",
            "repository": "test-repo"
           }
@@ -7184,13 +7189,14 @@
          "index": 3,
          "policy": {
           "githubPublicRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "beta"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7201,21 +7207,23 @@
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
-           "entities": {
-            "light.test": {
-             "values": [
+           ],
+           "entities": [
+            {
+             "entityId": "light.test",
+             "services": [
               "turn_off",
               "turn_on"
              ]
             }
-           }
+           ]
           }
          }
         }
@@ -7308,19 +7316,21 @@
          "index": 0,
          "policy": {
           "exactActions": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7331,13 +7341,14 @@
          "index": 1,
          "policy": {
           "argumentSchema": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
+           ],
            "argumentSchema": {
             "type": "object",
             "properties": {
@@ -7356,19 +7367,21 @@
          "index": 2,
          "policy": {
           "githubRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           },
+           ],
            "owner": "test-owner",
            "repository": "test-repo"
           }
@@ -7381,13 +7394,14 @@
          "index": 3,
          "policy": {
           "githubPublicRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "beta"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7398,21 +7412,23 @@
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
-           "entities": {
-            "light.test": {
-             "values": [
+           ],
+           "entities": [
+            {
+             "entityId": "light.test",
+             "services": [
               "turn_off",
               "turn_on"
              ]
             }
-           }
+           ]
           }
          }
         }
@@ -7599,19 +7615,21 @@
          "index": 0,
          "policy": {
           "exactActions": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7622,13 +7640,14 @@
          "index": 1,
          "policy": {
           "argumentSchema": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
+           ],
            "argumentSchema": {
             "type": "object",
             "properties": {
@@ -7647,19 +7666,21 @@
          "index": 2,
          "policy": {
           "githubRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           },
+           ],
            "owner": "test-owner",
            "repository": "test-repo"
           }
@@ -7672,13 +7693,14 @@
          "index": 3,
          "policy": {
           "githubPublicRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "beta"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7689,21 +7711,23 @@
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
-           "entities": {
-            "light.test": {
-             "values": [
+           ],
+           "entities": [
+            {
+             "entityId": "light.test",
+             "services": [
               "turn_off",
               "turn_on"
              ]
             }
-           }
+           ]
           }
          }
         }
@@ -7883,19 +7907,21 @@
          "index": 0,
          "policy": {
           "exactActions": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7906,13 +7932,14 @@
          "index": 1,
          "policy": {
           "argumentSchema": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
+           ],
            "argumentSchema": {
             "type": "object",
             "properties": {
@@ -7931,19 +7958,21 @@
          "index": 2,
          "policy": {
           "githubRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha",
               "beta"
              ]
             },
-            "test-sandbox": {
-             "values": [
+            {
+             "group": "test-sandbox",
+             "names": [
               "exec"
              ]
             }
-           },
+           ],
            "owner": "test-owner",
            "repository": "test-repo"
           }
@@ -7956,13 +7985,14 @@
          "index": 3,
          "policy": {
           "githubPublicRepository": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "beta"
              ]
             }
-           }
+           ]
           }
          }
         },
@@ -7973,21 +8003,23 @@
          "index": 4,
          "policy": {
           "homeAssistantEntityControl": {
-           "actions": {
-            "test-mcp": {
-             "values": [
+           "actions": [
+            {
+             "group": "test-mcp",
+             "names": [
               "alpha"
              ]
             }
-           },
-           "entities": {
-            "light.test": {
-             "values": [
+           ],
+           "entities": [
+            {
+             "entityId": "light.test",
+             "services": [
               "turn_off",
               "turn_on"
              ]
             }
-           }
+           ]
           }
          }
         }

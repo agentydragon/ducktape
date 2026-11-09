@@ -45,7 +45,7 @@ it("shows the generated effective policy in evaluation order", async () => {
         index: 1,
         policy: {
           argumentSchema: {
-            actions: { github: { values: ["create_issue"] } },
+            actions: [{ group: "github", names: ["create_issue"] }],
             argumentSchema: { properties: { owner: { const: "test-owner" } } },
           },
         },

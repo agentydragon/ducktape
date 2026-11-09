@@ -1,6 +1,7 @@
 //! The application adapter: the five kernel context traits over the
 //! application `Executor`, for ordered root initializers and callable bodies.
 
+use super::super::alternatives::execution_state::ExecutionPath;
 use super::super::array_transfer::{self, ArrayPushSelection};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
 use super::super::execution_index::{
@@ -10,7 +11,7 @@ use super::super::interpreter::{Executor, Outcome, unknown};
 use super::super::kernel::cells::missing_activation_binding;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
-    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
 // Module-qualified: the builtin table's `Invocation` also has a
@@ -1018,6 +1019,20 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl ControlContext for LocalExecutionContext<'_, '_, '_> {
+    type Branch = ExecutionPath;
+    fn fork_policy(&self) -> ForkPolicy {
+        ForkPolicy::Explore
+    }
+    fn branch(&self) -> ExecutionPath {
+        self.executor
+            .state
+            .path(&self.executor.allocation_judgment, self.outcome)
+    }
+    fn enter(&mut self, path: ExecutionPath) {
+        let (allocation_judgment, outcome) = self.executor.state.enter(path);
+        self.executor.allocation_judgment = allocation_judgment;
+        *self.outcome = outcome;
+    }
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition {
         match what {
             Unproved::FieldRead {

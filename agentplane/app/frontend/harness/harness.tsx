@@ -588,7 +588,7 @@ function actionPolicy(namespace: string, name: string) {
     binding,
     policySet,
     index,
-    policy: { kind: { case: "exactActions" as const, value: { actions: { github: { values: actionNames } } } } },
+    policy: { kind: { case: "exactActions" as const, value: { actions: [{ group: "github", names: actionNames }] } } },
   });
   return create(GetActionPolicyResponseSchema, {
     actionPolicy: {
@@ -604,7 +604,7 @@ function actionPolicy(namespace: string, name: string) {
             kind: {
               case: "argumentSchema",
               value: {
-                actions: { github: { values: ["create_issue"] } },
+                actions: [{ group: "github", names: ["create_issue"] }],
                 argumentSchema: {
                   properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
                   required: ["owner", "repo"],
@@ -622,7 +622,7 @@ function actionPolicy(namespace: string, name: string) {
             kind: {
               case: "argumentSchema",
               value: {
-                actions: { github: { values: ["push_files"] } },
+                actions: [{ group: "github", names: ["push_files"] }],
                 argumentSchema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
               },
             },
