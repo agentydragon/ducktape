@@ -15,8 +15,6 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.namespaces import Vpa
 
-STAGING_ACCOUNTS_NAMESPACE = "agentplane-staging-k8s-accounts"
-
 
 class KubernetesAccounts(Construct):
     """The accounts namespace and the proxy's impersonation Role in it."""
