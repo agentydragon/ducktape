@@ -17,6 +17,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -149,7 +150,7 @@ func TestResolveAndAuthorize(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver := newResolver(t, api.TokenReviews())
-	principal, err := resolver.RequireAccount(incoming(token), map[auth.Account]struct{}{app: {}})
+	principal, err := resolver.RequireAccount(incoming(token), sets.New(app))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestResolveAndAuthorize(t *testing.T) {
 	if principal != want {
 		t.Fatalf("principal %+v, want %+v", principal, want)
 	}
-	_, err = resolver.RequireAccount(incoming(token), map[auth.Account]struct{}{{Namespace: testNamespace, Name: "test-notifications"}: {}})
+	_, err = resolver.RequireAccount(incoming(token), sets.New(auth.Account{Namespace: testNamespace, Name: "test-notifications"}))
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("wrong account: %v", err)
 	}

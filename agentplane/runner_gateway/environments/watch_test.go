@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -178,7 +179,7 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, map[auth.Account]struct{}{readerAccount: {}}, ManagementOptions{})
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, sets.New(readerAccount), ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

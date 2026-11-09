@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -237,7 +238,7 @@ func authorityClientWithDelegation(
 		t.Fatal(err)
 	}
 	service := &Service{
-		Store: store, DispatcherCallers: map[auth.Account]struct{}{actor: {}},
+		Store: store, DispatcherCallers: sets.New(actor),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
@@ -283,7 +284,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 	store := testStore(t, 10)
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
 	service := &Service{
-		Store: store, DispatcherCallers: map[auth.Account]struct{}{},
+		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}

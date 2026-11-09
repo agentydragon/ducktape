@@ -46,6 +46,7 @@ go_library(
         "@com_github_go_jose_go_jose_v4//jwt",
         "@com_github_google_uuid//:uuid",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "@io_k8s_apimachinery//pkg/util/sets",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // SandboxReader is the shared, UID-fenced live Sandbox view supplied by the
@@ -58,7 +59,7 @@ type Service struct {
 	Store *Store
 	// DispatcherCallers retain the existing explicit Pod-bound backend path. An account-only
 	// bearer for one of these names remains an ordinary execution-principal caller.
-	DispatcherCallers map[auth.Account]struct{}
+	DispatcherCallers sets.Set[auth.Account]
 	Sandboxes         SandboxReader
 	Hub               *WatchHub
 	WatchLease        time.Duration
@@ -252,7 +253,7 @@ func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
 		direct := call
 		if direct.Pod != nil {
 			attribution.ActorPod = &PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
-			_, configured := s.DispatcherCallers[auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()}]
+			configured := s.DispatcherCallers.Has(auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()})
 			privileged = configured && direct.Pod.IsPodBound()
 		}
 	case auth.DelegatedAdmission:

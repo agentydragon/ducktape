@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -26,23 +25,21 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	maxBootstrapCharacters = 65_536
-	mutationAttempts       = 5
-)
+const maxBootstrapCharacters = 65_536
 
 // Access scopes Sandbox operations to one namespace, caller identity, and set of default policies.
 type Access struct {
 	namespace        string
 	objects          client.Client
 	reader           *sandboxreader.Reader
-	defaultPolicySet map[string]struct{}
+	defaultPolicySet sets.Set[string]
 	caller           *identitypb.ServiceAccount
 }
 
@@ -60,13 +57,9 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	defaults := make(map[string]struct{}, len(defaultPolicySets))
-	for _, name := range defaultPolicySets {
-		defaults[name] = struct{}{}
-	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
-		defaultPolicySet: defaults, caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+		defaultPolicySet: sets.New(defaultPolicySets...), caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 	}, nil
 }
 
@@ -100,15 +93,7 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 		return &identitypb.EnvironmentTarget{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
 	}
 
-	policySets := make(map[string]struct{}, len(a.defaultPolicySet)+len(request.GetPolicySets()))
-	for name := range a.defaultPolicySet {
-		policySets[name] = struct{}{}
-	}
-	for _, name := range request.GetPolicySets() {
-		policySets[name] = struct{}{}
-	}
-	policySetNames := slices.AppendSeq(make([]string, 0, len(policySets)), maps.Keys(policySets))
-	slices.Sort(policySetNames)
+	policySetNames := sets.List(a.defaultPolicySet.Clone().Insert(request.GetPolicySets()...))
 	if err := a.requirePolicySets(ctx, policySetNames); err != nil {
 		return nil, err
 	}
@@ -137,7 +122,7 @@ func (a *Access) Suspend(ctx context.Context, name, uid string) error {
 
 // SetWakeOnSend changes the durable wake policy on the UID selected by the caller.
 func (a *Access) SetWakeOnSend(ctx context.Context, name, uid string, wakeOnSend bool) error {
-	return a.retryConflict(func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
 			return err
@@ -162,7 +147,7 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 		}
 		duration = &metav1.Duration{Duration: value.AsDuration()}
 	}
-	return a.retryConflict(func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
 			return err
@@ -186,7 +171,7 @@ func (a *Access) Delete(ctx context.Context, name, uid string) error {
 	if uid == "" {
 		return &InvalidSandboxError{Reason: "Sandbox UID is required"}
 	}
-	return a.retryConflict(func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
 			return err
@@ -196,7 +181,7 @@ func (a *Access) Delete(ctx context.Context, name, uid string) error {
 }
 
 func (a *Access) setStopped(ctx context.Context, name, uid string) error {
-	return a.retryConflict(func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		resource, err := a.incarnation(ctx, name, uid)
 		if err != nil {
 			return err
@@ -234,16 +219,6 @@ func (a *Access) beginTeardown(ctx context.Context, resource *sandboxapi.Sandbox
 	default:
 		return &SandboxModeUnknownError{Name: name}
 	}
-}
-
-func (a *Access) retryConflict(operation func() error) error {
-	for attempt := 0; attempt < mutationAttempts; attempt++ {
-		err := operation()
-		if err == nil || !apierrors.IsConflict(err) || attempt == mutationAttempts-1 {
-			return err
-		}
-	}
-	return nil
 }
 
 func (a *Access) requirePolicySets(ctx context.Context, names []string) error {

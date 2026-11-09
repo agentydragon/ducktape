@@ -42,6 +42,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -63,14 +64,6 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	return kubeConfig, nil
 }
 
-func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
-	result := make(map[auth.Account]struct{}, len(accounts))
-	for _, account := range accounts {
-		result[account] = struct{}{}
-	}
-	return result
-}
-
 // dispatcherAccount proves that the token used by delivery workers belongs to this
 // Gateway/Dispatcher Pod. Caller headers and an account allowlist alone cannot identify
 // the combined process; TokenReview's Pod UID must agree with the current Pod as well.
@@ -80,7 +73,7 @@ func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, o
 		return auth.Account{}, errors.New("could not read Dispatcher workload credential")
 	}
 	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+strings.TrimSpace(string(token))))
-	principal, err := resolver.RequireAccount(ctx, accountSet(c.GatewayCallers))
+	principal, err := resolver.RequireAccount(ctx, sets.New(c.GatewayCallers...))
 	if err != nil {
 		return auth.Account{}, fmt.Errorf("review Dispatcher workload credential: %w", err)
 	}
@@ -98,23 +91,19 @@ func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, o
 }
 
 func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional ...auth.Account) []string {
-	names := make(map[string]struct{}, len(accounts)+1+len(additional))
+	names := sets.New[string]()
 	for _, account := range accounts {
-		names[account.Namespace] = struct{}{}
+		names.Insert(account.Namespace)
 	}
 	if extra != nil {
-		names[extra.Namespace] = struct{}{}
+		names.Insert(extra.Namespace)
 	}
 	for _, account := range additional {
 		if account.Namespace != "" {
-			names[account.Namespace] = struct{}{}
+			names.Insert(account.Namespace)
 		}
 	}
-	result := make([]string, 0, len(names))
-	for name := range names {
-		result = append(result, name)
-	}
-	return result
+	return sets.List(names)
 }
 
 type lifecycleWakeBudget struct {
@@ -251,8 +240,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, accountSet(c.EnvironmentReaders), environments.ManagementOptions{
-		Managers: accountSet(c.EnvironmentManagers), Launchers: accountSet(c.EnvironmentLaunchers), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
+		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
 	})
 	if err != nil {
 		return err
@@ -347,7 +336,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers),
+		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...),
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
