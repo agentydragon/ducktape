@@ -243,7 +243,7 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     // The chunk's report-tree depth keeps the graph's relative
     // `program_graph` reference inside `analysis/`.
     let graph_path = Path::new("analysis")
-        .join(graph.chunk_id.split('/').collect::<PathBuf>())
+        .join(artifact::paths::path_from_module_path(&graph.chunk_id))
         .join(
             args.graph
                 .file_name()

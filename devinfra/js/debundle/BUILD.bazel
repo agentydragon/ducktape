@@ -301,7 +301,10 @@ rust_library(
     srcs = ["artifacts/output_layout.rs"],
     crate_root = "artifacts/output_layout.rs",
     edition = "2024",
-    deps = ["@crates//:anyhow"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:relative-path",
+    ],
 )
 
 rust_library(

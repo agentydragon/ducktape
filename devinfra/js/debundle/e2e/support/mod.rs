@@ -45,6 +45,7 @@ pub use spec::{
     ValueInputContract, VendorLevel, VendorMark,
 };
 
+use artifact::paths::path_from_module_path;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -145,7 +146,7 @@ impl RejectedFixture {
 
     pub fn entry_path(&self) -> PathBuf {
         self.app_root()
-            .join(self.chunk_id.split('/').collect::<PathBuf>())
+            .join(path_from_module_path(&self.chunk_id))
             .join("entry.js")
     }
 
@@ -238,7 +239,7 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     );
 
     let entry_path = app_root
-        .join(opts.chunk_id.split('/').collect::<PathBuf>())
+        .join(path_from_module_path(opts.chunk_id))
         .join("entry.js");
     Fixture {
         chunk_id: opts.chunk_id.to_string(),
