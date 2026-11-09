@@ -212,10 +212,10 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   interpreter reads are `pub(super)`; devel had no provider program registry.
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
-reference's (no regions, `if`/`try`/`catch` bindings, array or argument spread,
+reference's (no regions, `if`/`try`/`catch` bindings, argument spread,
 optional calls, conditional and logical operators, class definitions, or
 `Function.prototype.call`/`apply`). Several kernel rules in <kernel_design.md>
-(regions, catch cells, `IterateSpread`, forks) have nothing to apply to until
+(regions, catch cells, forks) have nothing to apply to until
 the construct is lowered. Each construct family lands as its own slice inside
 Wave 3, ordered with the coverage producer that needs it: lowering in
 `local_operations.rs`, the kernel rule, the e2e positive with Node parity, and
@@ -237,7 +237,7 @@ slice may recover more or fewer cases than its row says.
 | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----: | ----------------------: | --------------------------------------------- |
 |     0 | Commuting-premise validator plus three stale expectations (`repeated_var_loop_test`, `at_init_s_chain_dataflow_test`)                                                                                                                                                                                                          |     4 |                   1 / 3 | none                                          |
 |     1 | Descriptor and native rows; also retires the string-matched frozen-namespace recognizer that L1b tombstones (needs a symbol-keyed three-argument `Object.defineProperty` row, `Mutation::Integrity` admission on a non-literal operand, and a replacement coverage producer for the eight native-reentry and array-push tests) |    38 |                 10 / 11 | L1b, L2a                                      |
-|     2 | Array iteration and spread (`intrinsic_array_iteration`, `stable_array_spread`, `set_iterable_reentry`)                                                                                                                                                                                                                        |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
+|     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`)                                                                                                                       |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
 |     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                                                                                                                                                    |    77 |                 11 / 16 | L2a, L2b, L2d                                 |
 |     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                    |    26 |                   2 / 5 | L2b, L1f                                      |
 |     5 | Class construction                                                                                                                                                                                                                                                                                                             |    15 |                   2 / 5 | L2a; parallel to 4                            |

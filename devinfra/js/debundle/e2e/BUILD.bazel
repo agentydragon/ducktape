@@ -279,6 +279,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "effect_tv_array_spread_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
+
+debundle_e2e_test(
     name = "translation_validation_differential_test",
     deps = ["@crates//:serde_json"],
 )

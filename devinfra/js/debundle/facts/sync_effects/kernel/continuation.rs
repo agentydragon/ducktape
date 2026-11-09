@@ -8,9 +8,11 @@ use super::super::allocation_transfer::{
 };
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::local_operations::{
-    DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
+    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
+    LocalExpression, LocalOperation,
 };
 use super::super::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
+use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
 use super::super::value_model::{
     AbstractValue, CallSite, LiteralPropertyKind, PropertyDefinition, ValueExpr, Values,
 };
@@ -41,7 +43,7 @@ enum Aggregate {
         /// fresh.
         new_record: bool,
     },
-    Array(ArrayTransfer),
+    Array(Box<ArrayTransfer>),
 }
 
 enum Step {
@@ -73,10 +75,16 @@ enum Step {
     FinishRecord(usize),
     ArrayNext {
         aggregate: usize,
-        elements: Arc<[Option<LocalExpression>]>,
+        elements: Arc<[LocalArrayElement]>,
         index: usize,
     },
     ArrayValue(usize),
+    /// The spread operand has run; expand its iterator receipt into the
+    /// literal.
+    ArraySpread {
+        aggregate: usize,
+        span: Span,
+    },
     FinishArray(usize),
     Sequence {
         expressions: Arc<[LocalExpression]>,
@@ -468,7 +476,7 @@ impl LocalContinuation {
                 }
                 match elements.get(index) {
                     None => {}
-                    Some(None) => {
+                    Some(LocalArrayElement::Hole) => {
                         transfer.hole();
                         self.steps.push(Step::ArrayNext {
                             aggregate,
@@ -476,7 +484,7 @@ impl LocalContinuation {
                             index: index + 1,
                         });
                     }
-                    Some(Some(element)) => {
+                    Some(LocalArrayElement::Value(element)) => {
                         let element = element.clone();
                         self.steps.push(Step::ArrayNext {
                             aggregate,
@@ -486,6 +494,43 @@ impl LocalContinuation {
                         self.steps.push(Step::ArrayValue(aggregate));
                         self.steps.push(Step::Expression(element));
                     }
+                    Some(LocalArrayElement::Spread { value, span }) => {
+                        let (value, span) = (value.clone(), *span);
+                        self.steps.push(Step::ArrayNext {
+                            aggregate,
+                            elements,
+                            index: index + 1,
+                        });
+                        self.steps.push(Step::ArraySpread { aggregate, span });
+                        self.steps.push(Step::Expression(value));
+                    }
+                }
+            }
+            Step::ArraySpread { aggregate, span } => {
+                let selected = self.take_value();
+                self.frame.inputs.extend(selected.values.iter().cloned());
+                let Some(Aggregate::Array(transfer)) = self.aggregates.get_mut(&aggregate) else {
+                    return Err(RemainderDisposition::NeedsSummary);
+                };
+                let mut bridge = LocalValueContext {
+                    context,
+                    frame: &mut self.frame,
+                    refusal: None,
+                };
+                transfer.spread(
+                    &mut bridge,
+                    span,
+                    AllocationValue {
+                        values: selected.values,
+                        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
+                    },
+                );
+                if let Some(remainder) = bridge.refusal {
+                    self.frame
+                        .ledger
+                        .allocation
+                        .compose(&AllocationJudgment::Opaque);
+                    return Err(remainder);
                 }
             }
             Step::ArrayValue(aggregate) => {
@@ -823,6 +868,9 @@ impl LocalContinuation {
                 allocation,
                 elements,
             } => {
+                let has_spread = elements
+                    .iter()
+                    .any(|element| matches!(element, LocalArrayElement::Spread { .. }));
                 let transfer = ArrayTransfer::begin(
                     &mut LocalValueContext {
                         context,
@@ -830,9 +878,10 @@ impl LocalContinuation {
                         refusal: None,
                     },
                     allocation,
+                    has_spread,
                     AllocationJudgment::CoveredAllocationOnly(Box::default()),
                 );
-                let aggregate = self.begin_aggregate(Aggregate::Array(transfer))?;
+                let aggregate = self.begin_aggregate(Aggregate::Array(Box::new(transfer)))?;
                 self.steps.push(Step::FinishArray(aggregate));
                 self.steps.push(Step::ArrayNext {
                     aggregate,
@@ -1009,15 +1058,53 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
     fn source_covered(&self) -> bool {
         true
     }
-    fn array_created(&mut self, allocation: u32, sparse: bool) {
-        if sparse {
+    fn array_created(&mut self, allocation: u32, tainted: bool) {
+        if tainted {
             // A hole has no own property, so later index reads see the
-            // prototype; the object is no longer a settled literal.
+            // prototype; an unproved spread has unknown slots. Either way the
+            // object is no longer a settled literal.
             self.context
                 .world_mut()
                 .surface
                 .tainted_objects
                 .insert(allocation);
+        }
+    }
+    /// The one `IterateSpread` rule: the adapter's receipt covers the
+    /// protocol and its source reads go into this frame's ledger; without a
+    /// receipt the body's remainder is the adapter's to summarize.
+    fn array_spread(&mut self, span: Span, operand: &Values) -> Option<NativeIterableReceipt> {
+        match self
+            .context
+            .native_iterable(NativeIterableUse::ArraySpread(span), operand)
+        {
+            Some(receipt) => {
+                self.frame
+                    .ledger
+                    .heap_accesses
+                    .reads
+                    .extend(receipt.external_heap_contents().reads);
+                self.frame.ledger.effects.compose(&receipt.coverage);
+                Some(receipt)
+            }
+            None => {
+                self.frame
+                    .ledger
+                    .effects
+                    .compose(&EffectCoverageFragment::default());
+                self.refusal = Some(
+                    match self
+                        .context
+                        .unproved(self.frame, Unproved::IterateSpread { operand, span })
+                    {
+                        Disposition::Summarized => RemainderDisposition::AlreadySummarized,
+                        Disposition::Resolved(_) | Disposition::Refused => {
+                            RemainderDisposition::NeedsSummary
+                        }
+                    },
+                );
+                None
+            }
         }
     }
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {

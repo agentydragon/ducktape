@@ -184,6 +184,7 @@ impl World {
             maps: &mut self.descriptors,
             surface: &mut self.surface,
             arrays: &mut self.arrays.dense,
+            primitive_arrays: &mut self.arrays.primitive,
             revision: &mut self.revision.prefix,
             track_writable_prefix: self.scope == WorldScope::Application,
         }
