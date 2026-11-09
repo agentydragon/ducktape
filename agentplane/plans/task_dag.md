@@ -3019,7 +3019,7 @@ flowchart LR
     EGRESS_IDENTITY_RULES[Candidate: identity rules at the proxy]
     SERVICES_IDENTITY_PRINCIPAL[Candidate: services act and record by identity]
     APP_IDENTITIES_UI[Candidate: identities in the app]
-    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle, steps 1-2 landed] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_AUTH_CUTOVER[Candidate: lifecycle steps 3-5]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
@@ -3029,24 +3029,6 @@ flowchart LR
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
 ```
-
-### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
-
-**Decision; draft merged (#15087).** [Workload identity lifecycle](workload_identity_lifecycle.md).
-Steps 1 and 2 of the recommendation landed on 2026-11-09 (workload CA; `WorkloadCredential` kind,
-issuer and resolver, with the Sandbox Controller as requester), under the operator's per-question
-decisions recorded in the plan; the plan still lists the overall pick as its question for review.
-Question for review: should one workload-identity component own SVID issuance and resolution for
-every caller (recommended)? Under it, the Sandbox Controller, the Action Service and Flux-rendered
-workloads only write `WorkloadCredential` requests. The component mints the credential ID and URI,
-requests the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and publishes
-the resolver every verifier links. It is the `agentplane/workload_identity` package hosted in the
-Policy Controller. The alternatives are each owner issuing for itself, an RPC issuing service,
-SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. The Action-box step's edge to
-`SANDBOX_IDENTITY_SPEC` is recorded. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
-boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
-dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
-picks an alternative and the open questions' recommendations.
 
 ### `WORKLOAD_CA_CLIENT_TRUST` — Firecracker runners' control listener trusts the workload CA alone
 
@@ -3062,8 +3044,12 @@ also passes against the Firecracker template.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
-**Blocked on `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN`.** Implement the selected lifecycle and move every
-active workload/proxy caller to it. Until then, keep the proxy's explicit `kubernetes_bearer` mode and the
+**Steps 1 and 2 of the [workload identity lifecycle](workload_identity_lifecycle.md) landed;
+steps 3 to 5 remain.** The operator chose one issuer, `agentplane/workload_identity` hosted in the
+Policy Controller: the workload CA (#15104, #15113, #15129, #15131, #15134) and the
+`WorkloadCredential` kind, issuer and resolver with the Sandbox Controller as requester (#15119,
+#15127, `c377184466`; [contract](../docs/workload_authentication.md#workloadcredentials)). Move every
+remaining active workload/proxy caller to it. Until then, keep the proxy's explicit `kubernetes_bearer` mode and the
 non-Sandbox sidecars' Pod-bound projections; Sandbox templates use SVIDs and do not project the
 hop bearer. Keep the shared TLS listener and service-owned verification, without proxy identity
 assertions or insecure transport fallback. Inventory the actual native service clients; Haku's
@@ -3206,8 +3192,8 @@ an Identity to the Action Service ([open question 21](identity_and_kubernetes_ac
 app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their two prerequisites:
 the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity, and that question is decided.
-Running Sandboxes are replaced, not patched. Expected downtime: every
-running Sandbox loses egress and platform routes until its sidecar image carries the SVID hop.
+Running Sandboxes are replaced, not patched, so each loses its running incarnation; Sandbox sidecars
+already use the SVID hop.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section

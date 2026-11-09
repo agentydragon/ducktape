@@ -1,8 +1,8 @@
 # Workload identity lifecycle
 
-Status: **steps 1 and 2 landed; steps 3 to 5 remain, 2026-11-09.** Decision node
-[`WORKLOAD_IDENTITY_LIFECYCLE_DESIGN`](task_dag.md#workload_identity_lifecycle_design--choose-shared-identity-and-svid-management);
-implementation is `WORKLOAD_AUTH_CUTOVER`. One issuer for owners' requests, hosted in the Policy
+Status: **steps 1 and 2 landed; steps 3 to 5 remain, 2026-11-09.** DAG node
+[`WORKLOAD_AUTH_CUTOVER`](task_dag.md#workload_auth_cutover--migrate-workload-callers-and-remove-the-proxy-bearer-hop).
+One issuer for owners' requests, hosted in the Policy
 Controller, is implemented for Sandboxes: the workload CA (#15104, #15113, #15129, #15131), the
 `WorkloadCredential` kind, requester and resolver (#15119), the issuer (#15127) and the Sandbox
 Controller as the first requester (c3771844). The contract, and the constraints that rejected the
