@@ -294,17 +294,25 @@ def test_accounts_hold_only_their_grants(identity_rendering: Rendering) -> None:
         assert direct == set(), name
 
 
-def test_no_preset_gains_access_on_the_switch(
+def test_no_holder_gains_access_on_the_switch(
     serviceaccount_rendering: Rendering, identity_rendering: Rendering
 ) -> None:
-    """The accounts a preset's launch acts as let it do no more than its PolicySets bound for it:
-    the converse of `test_identity_catalog`'s no reach lost on the switch."""
+    """The accounts a preset's launch or a Flux binding's holder acts as let it do no more than its
+    PolicySets bound for it: the converse of `test_identity_catalog`'s no reach lost on the switch."""
     assert identity_rendering.launches.keys() == serviceaccount_rendering.launches.keys()
+    assert identity_rendering.bindings.keys() == serviceaccount_rendering.bindings.keys()
     gained = {
-        preset: sorted(map(str, uncovered(identity_rendering.launch(preset), serviceaccount_rendering.launch(preset))))
+        f"preset {preset}": uncovered(identity_rendering.launch(preset), serviceaccount_rendering.launch(preset))
         for preset in identity_rendering.launches
     }
-    assert {preset: permissions for preset, permissions in gained.items() if permissions} == {}
+    for name, before in serviceaccount_rendering.bindings.items():
+        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch.
+        subject = before["subject"]
+        today = serviceaccount_rendering.binding(name) | serviceaccount_rendering.rbac.identity(
+            "ServiceAccount", subject["name"], subject["namespace"]
+        )
+        gained[f"binding {name}"] = uncovered(identity_rendering.binding(name), today)
+    assert {holder: sorted(map(str, permissions)) for holder, permissions in gained.items() if permissions} == {}
 
 
 def test_rule_coverage_is_not_role_name_equality() -> None:
