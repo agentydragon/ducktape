@@ -391,6 +391,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -417,6 +418,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -443,6 +445,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -478,6 +481,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -504,6 +508,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -530,6 +535,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
