@@ -218,7 +218,6 @@ proto_library(
     deps = [":identity_proto"],
 )
 
-# The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.
 go_proto_library(
     name = "command_go_proto",
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/command",
