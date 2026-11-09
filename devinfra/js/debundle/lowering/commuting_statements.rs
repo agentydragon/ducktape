@@ -134,7 +134,7 @@ fn resolve_source_unit_endpoint(
                 SelectorOutcome::Resolved { body_index, .. } => (*body_index, None),
                 other => bail!(
                     "{endpoint_id}.source_match must select exactly one anonymous statement; selector outcome: {} {other:?}",
-                    other.kind().as_str()
+                    other.kind()
                 ),
             }
         }

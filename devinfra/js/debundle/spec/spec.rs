@@ -1194,8 +1194,14 @@ pub enum BuiltinGlobalRoot {
 /// docs/design.md assumption it enforces. Used both as the
 /// spec-override list-element type and as the violation tag in
 /// admission diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+///
+/// `Display` is the spec-facing snake_case name (the `admission_overrides`
+/// list element spelling), for diagnostics.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum AdmissionCheck {
     /// A1: no `eval(...)` / `(0, eval)(...)` at module top level.
     A1Eval,
@@ -1206,24 +1212,6 @@ pub enum AdmissionCheck {
     /// A5 (partial): no `import.meta` reflection beyond
     /// `import.meta.url` at module top level.
     A5ImportMeta,
-}
-
-impl AdmissionCheck {
-    /// The spec-facing snake_case name (the `admission_overrides`
-    /// list element spelling), for diagnostics.
-    pub fn spec_name(self) -> &'static str {
-        match self {
-            Self::A1Eval => "a1_eval",
-            Self::A3DynamicImport => "a3_dynamic_import",
-            Self::A5ImportMeta => "a5_import_meta",
-        }
-    }
-}
-
-impl fmt::Display for AdmissionCheck {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.spec_name())
-    }
 }
 
 /// Per-chunk escape hatch for the input-chunk admission scan: the set
@@ -2027,18 +2015,11 @@ impl AnonymousStatement {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error("{message}")]
 pub struct AnonymousStatementSelectorError {
     message: &'static str,
 }
-
-impl fmt::Display for AnonymousStatementSelectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl std::error::Error for AnonymousStatementSelectorError {}
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
@@ -2214,16 +2195,9 @@ impl std::fmt::Display for ModulePath {
 /// Carries the offending raw input; module paths only fail validation
 /// in one way from the caller's view (the value isn't a valid relative
 /// path), so no caller branches on a reason.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("not a valid relative module path: {0:?}")]
 pub struct ModulePathError(String);
-
-impl std::fmt::Display for ModulePathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "not a valid relative module path: {:?}", self.0)
-    }
-}
-
-impl std::error::Error for ModulePathError {}
 
 #[cfg(test)]
 mod module_path_tests {
@@ -2698,18 +2672,11 @@ impl MemberSelectorSpec {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error("{message}")]
 pub struct MemberSelectorError {
     message: &'static str,
 }
-
-impl fmt::Display for MemberSelectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl std::error::Error for MemberSelectorError {}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]

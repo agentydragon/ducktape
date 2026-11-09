@@ -1,6 +1,5 @@
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap};
-use std::fmt;
 
 use swc_ecma_ast::Id;
 
@@ -300,22 +299,13 @@ impl DependencyGraph {
 
 /// An `dependency_graph.json.gz` edge references a source unit id absent from the
 /// report's node table. See [`DependencyGraph::from_report`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "dependency-graph edge {edge_id} references source-unit ID {endpoint} which is not in the report's node table \
+     (malformed or version-skewed dependency_graph.json.gz)"
+)]
 pub struct UnresolvedDependencyEdgeEndpoint {
     pub edge_id: String,
     /// The source unit id (e.g. `unit:42`) that didn't resolve.
     pub endpoint: String,
 }
-
-impl fmt::Display for UnresolvedDependencyEdgeEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "dependency-graph edge {} references source-unit ID {} which is not in the report's node table \
-             (malformed or version-skewed dependency_graph.json.gz)",
-            self.edge_id, self.endpoint,
-        )
-    }
-}
-
-impl std::error::Error for UnresolvedDependencyEdgeEndpoint {}

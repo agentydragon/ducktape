@@ -253,15 +253,17 @@ pub struct ModuleProposal {
     pub merge_into: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedResidualDependency,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ProposalDiagnosticReason {
     ExceedsSizeCap,
 }
@@ -939,7 +941,7 @@ fn collect_size_cap_diagnostics(
         diagnostics.push(ProposalDiagnostic {
             diagnostic_id: format!(
                 "diagnostic:{}_{idx:04}",
-                diagnostic_reason_key(ProposalDiagnosticReason::ExceedsSizeCap),
+                ProposalDiagnosticReason::ExceedsSizeCap,
             ),
             source_unit_ids,
             binding_ids: binding_ids.into_iter().collect(),
@@ -1196,9 +1198,7 @@ fn anonymous_addressability(
 fn status_counts(proposals: &[ModuleProposal]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for proposal in proposals {
-        *counts
-            .entry(status_key(proposal.status).to_string())
-            .or_insert(0) += 1;
+        *counts.entry(proposal.status.to_string()).or_insert(0) += 1;
     }
     counts
 }
@@ -1206,9 +1206,7 @@ fn status_counts(proposals: &[ModuleProposal]) -> BTreeMap<String, usize> {
 fn diagnostic_counts(diagnostics: &[ProposalDiagnostic]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for diagnostic in diagnostics {
-        *counts
-            .entry(diagnostic_reason_key(diagnostic.reason).to_string())
-            .or_insert(0) += 1;
+        *counts.entry(diagnostic.reason.to_string()).or_insert(0) += 1;
     }
     counts
 }
@@ -1273,19 +1271,6 @@ fn size_bucket(value: usize) -> &'static str {
         251..=500 => "251-500",
         501..=1000 => "501-1000",
         _ => ">1000",
-    }
-}
-
-fn status_key(status: PeelCandidateStatus) -> &'static str {
-    match status {
-        PeelCandidateStatus::PeelableNow => "peelable_now",
-        PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
-    }
-}
-
-fn diagnostic_reason_key(reason: ProposalDiagnosticReason) -> &'static str {
-    match reason {
-        ProposalDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
     }
 }
 

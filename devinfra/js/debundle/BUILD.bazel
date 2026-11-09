@@ -311,6 +311,7 @@ rust_library(
     edition = "2024",
     deps = [
         "@crates//:serde",
+        "@crates//:strum",
     ],
 )
 
@@ -407,6 +408,8 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@crates//:strum",
+        "@crates//:thiserror",
     ],
 )
 
@@ -750,6 +753,7 @@ rust_library(
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1032,6 +1036,8 @@ rust_library(
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:strum",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1452,8 +1458,10 @@ rust_library(
         "@crates//:serde_yaml",
         "@crates//:sha2",
         "@crates//:shlex",
+        "@crates//:strum",
         "@crates//:swc_atoms",
         "@crates//:tempfile",
+        "@crates//:thiserror",
     ],
 )
 

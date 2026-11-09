@@ -271,24 +271,13 @@ pub struct GateDiagnoseReport {
     pub traces: Vec<GateDiagnoseTrace>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum GateDiagnoseStatus {
     InconclusiveNoSupportedPromotedDependency,
     LocalSupportedWitnessFound,
     InconclusiveForSupportedGuardFamily,
-}
-
-impl GateDiagnoseStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::InconclusiveNoSupportedPromotedDependency => {
-                "inconclusive_no_supported_promoted_dependency"
-            }
-            Self::LocalSupportedWitnessFound => "local_supported_witness_found",
-            Self::InconclusiveForSupportedGuardFamily => "inconclusive_for_supported_guard_family",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -354,8 +343,9 @@ pub enum GateDiagnoseCoverage {
     InconclusiveCallbackArgumentSourceMismatch,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum GateDiagnoseGuardCode {
     NoSupportedCallbackFactoryBarrier,
     AmbiguousCallbackFactoryBarrierLink,
@@ -365,21 +355,6 @@ pub enum GateDiagnoseGuardCode {
     NamespaceDynamicPropertyWrite,
     NamespaceCallArgument,
     UnsupportedGuard,
-}
-
-impl GateDiagnoseGuardCode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::NoSupportedCallbackFactoryBarrier => "no_supported_callback_factory_barrier",
-            Self::AmbiguousCallbackFactoryBarrierLink => "ambiguous_callback_factory_barrier_link",
-            Self::CallbackArgumentSourceUnresolved => "callback_argument_source_unresolved",
-            Self::CallbackArgumentSourceMismatch => "callback_argument_source_mismatch",
-            Self::NamespaceMemberWrite => "namespace_member_write",
-            Self::NamespaceDynamicPropertyWrite => "namespace_dynamic_property_write",
-            Self::NamespaceCallArgument => "namespace_call_argument",
-            Self::UnsupportedGuard => "unsupported_guard",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -860,7 +835,7 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
         report.total_count,
         if report.truncated { " (truncated)" } else { "" },
     ));
-    out.push_str(&format!("  status: {}\n", report.query_status.as_str()));
+    out.push_str(&format!("  status: {}\n", report.query_status));
     for trace in &report.traces {
         out.push_str(&format!(
             "  {} in {} <- {} via {} [{}]\n",
@@ -868,7 +843,7 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
             trace.ownership_target.module,
             trace.constraining_dependency.source_unit,
             trace.constraining_dependency.callee_source_unit,
-            trace.first_rejected_guard.code.as_str(),
+            trace.first_rejected_guard.code,
         ));
         if let Some(contract) = &trace.matched_contract {
             out.push_str(&format!(
@@ -1196,7 +1171,7 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
                 .unwrap_or_else(|| "<location unavailable>".to_string());
             out.push_str(&format!(
                 "      impure initializer `{binding}` at {location}: {}{}{}\n",
-                reason.rule.as_str(),
+                reason.rule,
                 reason
                     .detail
                     .as_deref()

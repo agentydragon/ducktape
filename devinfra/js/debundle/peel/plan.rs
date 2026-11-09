@@ -6,8 +6,6 @@
 
 use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -310,20 +308,12 @@ pub struct EdgeCensusRow {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum EdgeCensusRole {
     Direct,
     PromotedAtInit,
-}
-
-impl EdgeCensusRole {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Direct => "direct",
-            Self::PromotedAtInit => "promoted_at_init",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1709,22 +1699,11 @@ struct ResolvedSelection {
     unknown_binding_ids: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("source-unit ID {source_unit_id:?} not found in dependency graph")]
 pub struct SourceUnitNotFound {
     source_unit_id: String,
 }
-
-impl Display for SourceUnitNotFound {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "source-unit ID {:?} not found in dependency graph",
-            self.source_unit_id
-        )
-    }
-}
-
-impl Error for SourceUnitNotFound {}
 
 struct ResolveSourceUnitContext<'a> {
     common: &'a CommonArgs,
