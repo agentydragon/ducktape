@@ -1142,6 +1142,38 @@ func TestLargeRequestBodyStreamsWithoutFullBuffering(t *testing.T) {
 	}
 }
 
+// Regression: with request logging on, a bodyless request (GET /v1/models) crashed the process
+// from the transport's body probe goroutine.
+func TestBodylessRequestIsForwardedWithRequestLogging(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = io.WriteString(writer, request.Method+" "+request.URL.Path)
+	}))
+	t.Cleanup(backend.Close)
+	ingress := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
+		LiteLLMURL:     backend.URL,
+		LiteLLMKey:     testBackendKey,
+		LogLLMRequests: true,
+	})
+	client := testClient()
+	defer client.CloseIdleConnections()
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		req, err := http.NewRequest(method, ingress.URL+"/v1/models", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = bearer(workloadToken(t, "test-sandbox-a"))
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || string(body) != method+" /v1/models" {
+			t.Fatalf("%s: status=%d body=%q err=%v", method, response.StatusCode, body, err)
+		}
+	}
+}
+
 func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
 	tokenA := workloadToken(t, "test-sandbox-a")
 	backend := newFakeLiteLLM()
