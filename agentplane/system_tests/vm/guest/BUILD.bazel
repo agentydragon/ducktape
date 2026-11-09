@@ -361,8 +361,11 @@ py_test(
     name = "root_layout_test",
     srcs = ["root_layout_test.py"],
     data = [
+        ":agentplane-environment-runtime.conf",
+        ":fstab",
         ":root_erofs",
         ":root_profile_erofs",
+        "//agentplane/env/images:vm_guest_contract.json",
         "//devinfra/erofs:erofs_tool_bin",
         "@trixie_erofs_utils//:flat",
     ],
@@ -371,6 +374,9 @@ py_test(
         "EROFS_TOOL_RLOCATION": "$(rlocationpath //devinfra/erofs:erofs_tool_bin)",
         "ROOT_IMAGE_RLOCATION": "$(rlocationpath :root_erofs)",
         "ROOT_PROFILE_IMAGE_RLOCATION": "$(rlocationpath :root_profile_erofs)",
+        "FSTAB_RLOCATION": "$(rlocationpath :fstab)",
+        "RUNTIME_TMPFILES_RLOCATION": "$(rlocationpath :agentplane-environment-runtime.conf)",
+        "VM_GUEST_CONTRACT_RLOCATION": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)",
     },
     deps = [
         "//:conftest",
