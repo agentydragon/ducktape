@@ -27,6 +27,14 @@
   parameters; see `props/debug/glm46_strict_tool_schema_experiments.md`.
 - Defer a dedicated `correlation_id` column until DB-to-Langfuse joins need it.
   Current correlation rides in injected props metadata.
+- Make the trace-metadata injection in `llm_proxy/routes.py` (`_merge_props_metadata`)
+  configurable, including whether it runs and which LiteLLM field carries it.
+- Get the props correlation keys into Langfuse again, then verify them on a live run.
+  Only LiteLLM's v1 `langfuse_otel` logger reads `trace_metadata`, and our LiteLLM uses the
+  generic `otel` callback. Candidates: carry the keys as LiteLLM `baggage_metadata_keys`,
+  as Agentplane attribution does in `cluster/cdk8s/litellm/config.py`, or fix the v2
+  `langfuse` mapper upstream. Details:
+  `cluster/cdk8s/litellm/docs/langfuse_tracing.md` § Open: props correlation keys.
 
 ## Testing
 
