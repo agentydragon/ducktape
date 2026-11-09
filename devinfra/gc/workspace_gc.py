@@ -20,30 +20,28 @@ run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an 
 object store is a bigger blast radius than anything else this tool does); it additionally
 needs `--delete-foreign-clones`.
 
-Nothing is removed without an explicit flag; every apply re-scans and revalidates each
-candidate immediately before removing it. This module owns GitHub access (PR state); the scan
-itself is network-free.
+Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
+beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
+still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
+Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
+clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
+network-free.
 """
 
 from __future__ import annotations
 
 import asyncio
-import itertools
-import json
 import logging
 import os
-import re
 import shutil
-import subprocess
 import sys
 import threading
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence, Set
+from collections.abc import Callable, Sequence, Set
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
-import httpx
 import humanize
 import typer
 from rich.console import Console
@@ -57,12 +55,13 @@ from devinfra.gc import (
     branch_gc,
     foreign_clone_gc,
     git_repo,
+    github_prs,
     output_base_gc,
     repo_contents_cache_gc,
     workspace_scan,
     worktree_gc,
 )
-from devinfra.gc.branch_gc import BranchClassification, FailedBranch, PrunableBranch, RemovedBranch, RetainedBranch
+from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RemovedBranch, RetainedBranch, SkippedBranch
 from devinfra.gc.foreign_clone_gc import (
     ForeignCloneClassification,
     PrunableForeignClone,
@@ -71,153 +70,29 @@ from devinfra.gc.foreign_clone_gc import (
 )
 from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import DeletedBase, FailedBase, PrunableBase, SkippedBase, default_output_user_root
-from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.repo_contents_cache_gc import DeletedEntry, EntryInspection, FailedEntry, PrunableEntry, SkippedEntry
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.verdict import verdict_of
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import (
     Classification,
-    FailedWorktree,
     PrunableWorktree,
     RemovedWorktree,
     RetainedWorktree,
     ReviewWorktree,
+    SkippedWorktree,
 )
 
 logger = logging.getLogger(__name__)
 
-_PR_RANK = {PrState.MERGED: 3, PrState.OPEN: 2, PrState.CLOSED: 1}
 _DEFAULT_OUTPUT_USER_ROOT = default_output_user_root()
 _PROGRESS_COUNT_COLUMNS: dict[ProgressCategory, str] = {"PRUNE": "prune", "KEEP": "keep", "REVIEW": "review"}
 _PROGRESS_BAR_WIDTH = 24
 
 
-def _github_token() -> str | None:
-    if token := os.environ.get("GITHUB_TOKEN"):
-        return token
-    try:
-        token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True).stdout.strip()
-    except OSError, subprocess.CalledProcessError:
-        return None
-    return token or None
-
-
-_REMOTE_SLUG_RE = re.compile(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?/?$")
-
-
-def _repo_slug(repo: Path) -> str | None:
-    """The `owner/name` GitHub slug of `repo`'s `origin` remote, for the GraphQL PR lookup.
-
-    GitHub-specific and `origin`-specific on purpose — this only feeds the PR API call, unlike
-    `git_repo.shares_a_remote`'s host-and-remote-agnostic match used to find foreign clones.
-    """
-    pg = git_repo.open_repo(repo)
-    try:
-        url = pg.remotes["origin"].url
-    except KeyError:
-        return None
-    if url is None:
-        return None
-    match = _REMOTE_SLUG_RE.search(url)
-    return match.group(1) if match else None
-
-
-_GRAPHQL_URL = "https://api.github.com/graphql"
-_GRAPHQL_BATCH = 50  # aliased pullRequests fields per request; well under GraphQL node limits
-_GRAPHQL_STATE = {"MERGED": PrState.MERGED, "OPEN": PrState.OPEN, "CLOSED": PrState.CLOSED}
-
-
-def _pr_query(owner: str, name: str, branches: list[str]) -> tuple[str, dict[str, str]]:
-    """A GraphQL query fetching each branch's PRs under an alias, plus the alias→branch map."""
-    alias_to_branch = {f"b{i}": branch for i, branch in enumerate(branches)}
-    fields = " ".join(
-        f"{alias}: pullRequests(headRefName: {json.dumps(branch)}, first: 5, "
-        f"orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ number state headRefOid }} }}"
-        for alias, branch in alias_to_branch.items()
-    )
-    query = f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"
-    return query, alias_to_branch
-
-
-def _most_decisive(nodes: Iterable[Mapping[str, Any]]) -> PrInfo | None:
-    """The merged > open > closed PR among `nodes` (a branch's `pullRequests.nodes`)."""
-    best: PrInfo | None = None
-    for node in nodes:
-        info = PrInfo(number=node["number"], state=_GRAPHQL_STATE[node["state"]], head_sha=node["headRefOid"])
-        if best is None or _PR_RANK[info.state] > _PR_RANK[best.state]:
-            best = info
-    return best
-
-
-def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
-    """Most-decisive PR (merged > open > closed) per branch, via one batched GraphQL query.
-
-    Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
-    REST call per branch — a few round-trips rather than hundreds. `headRefName` matches PR
-    records, so a branch whose remote ref was deleted after merge still resolves. Returns {}
-    when there is no token, no GitHub remote, or the API is unreachable, and returns whatever
-    it resolved before a mid-sweep quota exhaustion — the caller classifies the rest on git
-    signals alone.
-    """
-    if not branches:
-        return {}
-    slug = _repo_slug(repo)
-    token = _github_token()
-    if slug is None:
-        logger.warning("PR check skipped: origin is not a GitHub remote")
-        return {}
-    if token is None:
-        logger.warning("PR check skipped: no GITHUB_TOKEN and `gh auth token` unavailable")
-        return {}
-    owner, name = slug.split("/", 1)
-    headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
-    states: dict[str, PrInfo] = {}
-    batches = list(itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False))
-    logger.info("Checking GitHub PR state for %d branches in %d batches", len(branches), len(batches))
-    try:
-        with httpx.Client(headers=headers, timeout=30) as client:
-            for index, batch in enumerate(batches, start=1):
-                logger.info("Checking GitHub PR state batch %d/%d (%d branches)", index, len(batches), len(batch))
-                query, alias_to_branch = _pr_query(owner, name, list(batch))
-                payload = client.post(_GRAPHQL_URL, json={"query": query}).raise_for_status().json()
-                data = payload.get("data")
-                if not data or data.get("repository") is None:
-                    errors = payload.get("errors") or []
-                    if any(error.get("type") == "RATE_LIMIT" for error in errors):
-                        # Quota is per-hour and shared with every other GitHub caller, so it
-                        # says nothing about this repo: keep the batches already resolved,
-                        # stop asking, and let the rest classify on git signals alone.
-                        logger.warning(
-                            "PR check incomplete: GitHub GraphQL quota exhausted; "
-                            "classified %d of %d branches with PR data",
-                            len(states),
-                            len(branches),
-                        )
-                        return states
-                    raise RuntimeError(f"GraphQL returned no data: {errors}")
-                repository = data["repository"]
-                for alias, branch in alias_to_branch.items():
-                    connection = repository.get(alias)
-                    if connection is not None and (info := _most_decisive(connection["nodes"])) is not None:
-                        states[branch] = info
-                logger.info("Finished GitHub PR state batch %d/%d", index, len(batches))
-        logger.info("GitHub PR state complete: %d/%d branches resolved", len(states), len(branches))
-        return states
-    except Exception:
-        logger.warning("PR check skipped: GitHub API error", exc_info=True)
-        return {}
-
-
 def _short(path: Path) -> str:
     return os.fspath(path).replace(os.fspath(Path.home()), "~")
-
-
-def _worktree_status(item: Classification) -> str:
-    if isinstance(item, PrunableWorktree):
-        return "PRUNE"
-    if isinstance(item, RetainedWorktree):
-        return "KEEP"
-    return "REVIEW"
 
 
 def _activity(item: Classification) -> str:
@@ -230,7 +105,7 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedWorktree)]
     rows = [
         [
-            _worktree_status(item),
+            verdict_of(item),
             _activity(item),
             _short(item.worktree.path),
             item.worktree.branch or "(detached)",
@@ -252,17 +127,9 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
     return "\n".join(parts)
 
 
-def _branch_status(item: BranchClassification) -> str:
-    if isinstance(item, PrunableBranch):
-        return "PRUNE"
-    if isinstance(item, RetainedBranch):
-        return "KEEP"
-    return "REVIEW"
-
-
 def render_branches(items: list[BranchClassification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedBranch)]
-    rows = [[_branch_status(item), item.branch.name, branch_gc.describe_reason(item)] for item in visible]
+    rows = [[verdict_of(item), item.branch.name, branch_gc.describe_reason(item)] for item in visible]
     counts = {
         "prunable": sum(isinstance(item, PrunableBranch) for item in items),
         "kept": sum(isinstance(item, RetainedBranch) for item in items),
@@ -277,19 +144,9 @@ def render_branches(items: list[BranchClassification], *, include_kept: bool) ->
     return "\n".join(parts)
 
 
-def _foreign_clone_status(item: ForeignCloneClassification) -> str:
-    if isinstance(item, PrunableForeignClone):
-        return "PRUNE"
-    if isinstance(item, RetainedForeignClone):
-        return "KEEP"
-    return "REVIEW"
-
-
 def render_foreign_clones(items: list[ForeignCloneClassification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedForeignClone)]
-    rows = [
-        [_foreign_clone_status(item), _short(item.clone.root), len(item.clone.members), item.reason] for item in visible
-    ]
+    rows = [[verdict_of(item), _short(item.clone.root), len(item.clone.members), item.reason] for item in visible]
     counts = {
         "prunable": sum(isinstance(item, PrunableForeignClone) for item in items),
         "kept": sum(isinstance(item, RetainedForeignClone) for item in items),
@@ -312,7 +169,7 @@ def _active_worktree(repo: Path) -> Path | None:
 def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozenset()) -> dict[str, PrInfo]:
     if no_prs:
         return {}
-    return pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
+    return github_prs.pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
 
 
 @dataclass(slots=True)
@@ -428,31 +285,48 @@ async def _run_bounded[T, R](items: Sequence[T], function: Callable[[T], R], *, 
     return list(await asyncio.gather(*(run_one(item) for item in items)))
 
 
-async def _apply_worktree_removals(repo: Path, worktrees: list[Classification], *, workers: int) -> bool:
-    """Remove every prunable worktree; returns whether all of them succeeded."""
+async def _apply_worktree_removals(
+    repo: Path, worktrees: list[Classification], *, prs: dict[str, PrInfo], workers: int
+) -> bool:
+    """Remove every prunable worktree that is still prunable now; returns whether all succeeded."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return True
     logger.info("Removing %d worktrees", len(candidates))
+    main_path = git_repo.main_worktree(repo)
+    active_path = _active_worktree(repo)
+    live = worktree_gc.processes_by_worktree(item.worktree.path for item in candidates)
 
     def remove_one(item: PrunableWorktree) -> worktree_gc.RemovalResult:
         logger.info("Removing worktree %s", item.worktree.path)
-        return worktree_gc.remove_worktree(repo, item.worktree.path)
+        return worktree_gc.remove_if_still_prunable(
+            repo,
+            item.worktree,
+            main=item.main,
+            pr_states=prs,
+            main_path=main_path,
+            active_path=active_path,
+            live_pids=live.get(item.worktree.path, []),
+        )
 
     results = await _run_bounded(candidates, remove_one, workers=workers)
     for result in results:
         if isinstance(result, RemovedWorktree):
             print(f"REMOVED worktree {_short(result.path)}")
-        elif isinstance(result, FailedWorktree):
+        elif isinstance(result, SkippedWorktree):
+            print(f"SKIPPED worktree {_short(result.path)}: {result.reason}", file=sys.stderr)
+        else:
             print(f"FAILED worktree {_short(result.path)}: {result.error}", file=sys.stderr)
     removed = sum(isinstance(result, RemovedWorktree) for result in results)
-    failed = len(results) - removed
-    print(f"Worktrees: {removed} removed, {failed} failed")
-    return failed == 0
+    skipped = sum(isinstance(result, SkippedWorktree) for result in results)
+    failed = len(results) - removed - skipped
+    print(f"Worktrees: {removed} removed, {skipped} skipped, {failed} failed")
+    return skipped == 0 and failed == 0
 
 
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> bool:
-    """Delete every prunable branch; returns whether all of them succeeded."""
+    """Delete every prunable branch that has not moved since it was classified; returns whether
+    all of them succeeded."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
         return True
@@ -460,16 +334,19 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     results = []
     for index, item in enumerate(candidates, start=1):
         logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
-        results.append(branch_gc.delete_branch(repo, item.branch.name))
+        results.append(branch_gc.delete_branch(repo, item.branch.name, expected_tip=item.tip))
     for result in results:
         if isinstance(result, RemovedBranch):
             print(f"DELETED branch {result.name}")
-        elif isinstance(result, FailedBranch):
+        elif isinstance(result, SkippedBranch):
+            print(f"SKIPPED branch {result.name}: {result.reason}", file=sys.stderr)
+        else:
             print(f"FAILED branch {result.name}: {result.error}", file=sys.stderr)
     deleted = sum(isinstance(result, RemovedBranch) for result in results)
-    failed = len(results) - deleted
-    print(f"Branches: {deleted} deleted, {failed} failed")
-    return failed == 0
+    skipped = sum(isinstance(result, SkippedBranch) for result in results)
+    failed = len(results) - deleted - skipped
+    print(f"Branches: {deleted} deleted, {skipped} skipped, {failed} failed")
+    return skipped == 0 and failed == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -585,7 +462,7 @@ async def _apply_foreign_clone_deletions(
         phase="foreign_clones",
         noun="foreign clone",
         progress=NULL_PROGRESS,
-        category_of=workspace_scan.foreign_clone_category,
+        category_of=verdict_of,
         describe=str,
         workers=workers,
     )
@@ -619,11 +496,7 @@ async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool
         if any(isinstance(item, PrunableWorktree) for item in scan.worktrees):
             print("Dry run only; pass --prune to remove the prunable worktrees.")
         return
-    with progress:
-        rescanned = _scan(
-            repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers
-        ).worktrees
-    if not await _apply_worktree_removals(repo, rescanned, workers=workers):
+    if not await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers):
         raise SystemExit(1)
 
 
@@ -640,7 +513,7 @@ async def run_bases(
             bases = list(
                 output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases, progress=progress)
             )
-        prs = {} if no_prs else pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
+        prs = {} if no_prs else github_prs.pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
         with _ProgressReporter() as progress:
             bases = workspace_scan.annotate_bases(
                 repo,
@@ -785,7 +658,7 @@ async def run_all(
     # are re-classified because the removals change who holds them. Every step runs regardless
     # of an earlier one's failures — each domain is independent — and the combined outcome
     # decides the process exit status once, at the end.
-    worktrees_ok = await _apply_worktree_removals(repo, scan.worktrees, workers=workers)
+    worktrees_ok = await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)
     branches_ok = _apply_branch_deletions(repo, rescan_branches())
     # Bases are rescanned because removing worktrees orphans bases the first scan kept. Cache
     # entries need no rescan: one is newly unreferenced exactly when every base linking to it

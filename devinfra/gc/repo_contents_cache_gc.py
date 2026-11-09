@@ -49,7 +49,8 @@ from devinfra.gc.output_base_gc import (
     nested_mount,
     retry_rmtree_after_permission_error,
 )
-from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
+from devinfra.gc.verdict import Prunable, Retained, Review, verdict_of
 
 logger = logging.getLogger(__name__)
 
@@ -99,19 +100,19 @@ class ReviewEntryReason(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableEntry:
+class PrunableEntry(Prunable):
     entry: CacheEntry
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedEntry:
+class RetainedEntry(Retained):
     entry: CacheEntry
     reason: RetainedEntryReason
     referrers: frozenset[Path]  # output bases whose `external/` links to the entry
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewEntry:
+class ReviewEntry(Review):
     path: Path
     reason: ReviewEntryReason
     detail: str | None = None
@@ -236,14 +237,6 @@ def references(bases: Iterable[Path], contents: Path) -> dict[Path, set[Path]]:
     return referrers
 
 
-def _status(inspection: EntryInspection) -> ProgressCategory:
-    if isinstance(inspection, PrunableEntry):
-        return "PRUNE"
-    if isinstance(inspection, RetainedEntry):
-        return "KEEP"
-    return "REVIEW"
-
-
 def scan_repo_contents_cache(
     contents: Path,
     bases: Sequence[Inspection],
@@ -281,7 +274,7 @@ def scan_repo_contents_cache(
             else:
                 inspection = RetainedEntry(item, RetainedEntryReason.REFERENCED, linked_from)
         inspections.append(inspection)
-        progress.record("repo-cache", _status(inspection))
+        progress.record("repo-cache", verdict_of(inspection))
     return inspections
 
 
@@ -483,7 +476,7 @@ def render_report(
     rows: list[list[str]] = []
     for item in visible:
         path = entry_path(item)
-        row = [_status(item), _last_used(item), os.path.relpath(path, contents), _detail(item)]
+        row = [verdict_of(item), _last_used(item), os.path.relpath(path, contents), _detail(item)]
         if include_sizes:
             size = sizes[path]
             row.insert(1, humanize.naturalsize(size, binary=True) if size is not None else "?")

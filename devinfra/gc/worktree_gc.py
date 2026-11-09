@@ -32,6 +32,7 @@ import pygit2
 
 from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.verdict import Prunable, Retained, Review
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class ReviewWorktreeReason(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableWorktree:
+class PrunableWorktree(Prunable):
     worktree: Worktree
     reason: PrunableWorktreeReason
     last_activity: datetime | None
@@ -67,7 +68,7 @@ class PrunableWorktree:
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedWorktree:
+class RetainedWorktree(Retained):
     worktree: Worktree
     reason: RetainedWorktreeReason
     last_activity: datetime | None
@@ -76,7 +77,7 @@ class RetainedWorktree:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewWorktree:
+class ReviewWorktree(Review):
     worktree: Worktree
     reason: ReviewWorktreeReason
     last_activity: datetime | None
@@ -288,9 +289,11 @@ type RemovalResult = RemovedWorktree | SkippedWorktree | FailedWorktree
 def remove_worktree(repo: Path, path: Path) -> RemovalResult:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
-    git refuses a dirty tree, so a tree that turned dirty since the scan fails rather than
-    losing work. The branch is left intact — its work stays reachable through it (branch GC
-    is a separate step). The caller re-scans and only passes still-prunable paths here.
+    git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
+    since the scan fails rather than losing work. It does not refuse ignored files: those are
+    deleted with the tree. The branch is left intact — its work stays reachable through it
+    (branch GC is a separate step). Use `remove_if_still_prunable` unless the caller has just
+    classified `path` itself.
     """
     try:
         outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
@@ -299,3 +302,26 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult:
     if outcome.returncode == 0:
         return RemovedWorktree(path)
     return FailedWorktree(path, outcome.stderr.strip() or "git worktree remove failed")
+
+
+def remove_if_still_prunable(
+    repo: Path,
+    worktree: Worktree,
+    *,
+    main: str,
+    pr_states: dict[str, PrInfo],
+    main_path: Path,
+    active_path: Path | None,
+    live_pids: list[int],
+) -> RemovalResult:
+    """Re-classify `worktree` now and remove it only if it is still prunable.
+
+    The scan that found it may be seconds old: a process may have entered the tree, or a
+    commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
+    """
+    fresh = classify_worktree(
+        worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
+    )
+    if not isinstance(fresh, PrunableWorktree):
+        return SkippedWorktree(worktree.path, describe_reason(fresh))
+    return remove_worktree(repo, worktree.path)

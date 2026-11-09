@@ -24,7 +24,10 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it.
+immediately before removing it, skipping (and exiting nonzero for) one that changed.
+Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
+them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
+anything you would miss.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
@@ -88,7 +91,7 @@ default is the only root.
 - `PRUNE`: clean, idle (not main/active, no process cwd'd inside), and its work is already
   in the main branch — an ancestor, a squash/rebase-merge (merging into main is a no-op),
   an empty branch, or a **merged GitHub PR** for its branch. Remove with
-  `workspace-gc worktrees --prune`: it re-scans, runs `git worktree remove` **without
+  `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
   `--force`** (so a tree that turned dirty is skipped), and **never deletes branches** —
   the work stays reachable through them.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)

@@ -35,6 +35,7 @@ import pygit2
 from devinfra.gc import git_repo, worktree_gc
 from devinfra.gc.git_repo import GitError, Worktree
 from devinfra.gc.pull_request import PrInfo
+from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
 logger = logging.getLogger(__name__)
@@ -53,19 +54,19 @@ class ForeignClone:
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableForeignClone:
+class PrunableForeignClone(Prunable):
     clone: ForeignClone
     reason: str
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedForeignClone:
+class RetainedForeignClone(Retained):
     clone: ForeignClone
     reason: str
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewForeignClone:
+class ReviewForeignClone(Review):
     clone: ForeignClone
     reason: str
 

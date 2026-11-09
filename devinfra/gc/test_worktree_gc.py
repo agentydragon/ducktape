@@ -249,6 +249,44 @@ def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     assert wt.path.exists()
 
 
+def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> wg.RemovalResult:
+    return wg.remove_if_still_prunable(
+        repo.path,
+        Worktree(path=wt.path, branch="feature"),
+        main="main",
+        pr_states={},
+        main_path=repo.path,
+        active_path=None,
+        live_pids=live_pids,
+    )
+
+
+def test_remove_if_still_prunable_removes_an_unchanged_tree(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+
+    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == wg.RemovedWorktree(wt.path)
+    assert not wt.path.exists()
+
+
+def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+
+    result = _remove_if_still_prunable(repo, wt, live_pids=[4242])
+
+    assert isinstance(result, wg.SkippedWorktree)
+    assert wt.path.exists()
+
+
+def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    (wt.path / "notes").write_text("new since the scan\n")
+
+    result = _remove_if_still_prunable(repo, wt, live_pids=[])
+
+    assert isinstance(result, wg.SkippedWorktree)
+    assert wt.path.exists()
+
+
 _MAIN = "origin/test-main"
 _PR = PrInfo(7421, PrState.MERGED)
 
