@@ -574,6 +574,12 @@ report's structure and retain useful explanations, comparisons and evidence navi
 as you revise it. Reorganization must preserve the reader's ability to understand and
 follow up on still-relevant prior work.
 
+Prefer a standard CSS framework from a version-pinned CDN for layout, typography,
+tables, cards and responsive utilities. Use its documented integrity and cross-origin
+attributes, and verify the stylesheet actually loads during browser review. Keep
+custom CSS limited to data visualizations and small report-specific adjustments;
+do not build a bespoke design system or add a build pipeline just to style a report.
+
 A prolonged failure caused by an exhausted quota should lead with the incident,
 its impact, the evidence for the cause, and the decision needed to restore service.
 A healthy system with modest optimization opportunities may benefit from a time

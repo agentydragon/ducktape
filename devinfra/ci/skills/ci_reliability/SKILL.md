@@ -296,6 +296,12 @@ observation window and source SHA easy to find. Use semantic sections/tables and
 purposeful charts; do not wrap a Markdown report in a preformatted block. Visually
 inspect desktop/mobile rendering and exercise any filters before publication.
 
+Prefer a standard CSS framework from a version-pinned CDN for layout, typography,
+tables, cards and responsive utilities. Use its documented integrity and cross-origin
+attributes, and verify the stylesheet actually loads during browser review. Keep
+custom CSS limited to data visualizations and small report-specific adjustments;
+do not build a bespoke design system or add a build pipeline just to style a report.
+
 Keep compact reviewed measurements and provenance in `evidence.json`. Full API
 payloads, logs, credentials, and profiles stay local. Preserve still-relevant prior
 findings with commit-pinned links rather than copying every historical report.
