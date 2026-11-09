@@ -10,7 +10,6 @@ use analysis::reports::schema::{
 };
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 const REGISTRY_SOURCE: &str = r#"globalThis.events = [];
@@ -597,24 +596,16 @@ export { Registry, registry, unique, PlainRegistry, plain };
 "#;
 const COMPOSITION_OUTPUT: &str = "true 3 40 0 capture,getter\n";
 
-fn source_hash(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn captured_input() -> ValueInputContract {
     ValueInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [captured]\n",
-            "var captured = globalThis.runtimeSettings.state;"
-        ))
-        .expect("valid captured declaration match"),
+        source_match: source_match_selector(
+            "var captured = globalThis.runtimeSettings.state;",
+            &["captured"],
+        ),
         value: CapturedValueContract {
             kind: CapturedValueKind::OrdinaryObject,
         },
-        audited_source_sha256: source_hash(CAPTURE_PROVIDER),
+        audited_source_sha256: source_sha256(CAPTURE_PROVIDER),
         expected_export: None,
         note: Some("Neutral fixture audits this captured object.".to_string()),
     }

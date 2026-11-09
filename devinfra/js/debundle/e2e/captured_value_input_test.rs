@@ -4,7 +4,6 @@
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const OPAQUE: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
@@ -17,24 +16,13 @@ const OPAQUE_FILES: &[(&str, &str)] = &[
     ("static/app/opaque.js", OPAQUE),
 ];
 
-fn source_hash(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn input_for(source: &str, declaration: &str) -> ValueInputContract {
     ValueInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [captured]\n",
-            declaration.trim()
-        ))
-        .expect("valid declaration source match"),
+        source_match: source_match_selector(declaration.trim(), &["captured"]),
         value: CapturedValueContract {
             kind: CapturedValueKind::OrdinaryObject,
         },
-        audited_source_sha256: source_hash(source),
+        audited_source_sha256: source_sha256(source),
         expected_export: None,
         note: Some("Neutral fixture audits this captured object.".to_string()),
     }

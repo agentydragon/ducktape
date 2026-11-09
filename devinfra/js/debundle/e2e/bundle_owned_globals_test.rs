@@ -176,10 +176,7 @@ const ACCESSOR_CALL: &str = "const root = globalThis;\nfunction install(name, va
 
 fn no_accessor_install(declaration: &str, binding: &str) -> NoAccessorInstallCallableContract {
     NoAccessorInstallCallableContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {declaration:?}\nbindings: [{binding}]\n"
-        ))
-        .expect("source selector"),
+        source_match: source_match_selector(declaration, &[binding]),
         note: Some("Every caller passes a primitive value.".into()),
     }
 }

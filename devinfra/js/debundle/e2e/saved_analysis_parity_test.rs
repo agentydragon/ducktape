@@ -7,7 +7,6 @@ use std::fs;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 /// Parser-owned unresolved identity must survive both fresh and restored
 /// analysis paths. The explicit member rename introduces `unbound_value` in
@@ -313,17 +312,14 @@ fn captured_value_bindings_survive_saved_program_summary() {
     const PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nexport function read() { return captured.value; }\n";
     const SETUP: &str = "globalThis.runtimeSettings = { state: { value: 41 } };\n";
     let input = ValueInputContract {
-        source_match: serde_yaml::from_str(
-            "match: var captured = globalThis.runtimeSettings.state;\nbindings: [captured]\n",
-        )
-        .expect("source selector"),
+        source_match: source_match_selector(
+            "var captured = globalThis.runtimeSettings.state;",
+            &["captured"],
+        ),
         value: CapturedValueContract {
             kind: CapturedValueKind::OrdinaryObject,
         },
-        audited_source_sha256: Sha256::digest(PROVIDER.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(PROVIDER),
         expected_export: None,
         note: None,
     };
@@ -359,17 +355,14 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
     const PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function read() { return captured.value; }\n";
     const SETUP: &str = "globalThis.runtimeSettings = { state: { value: 41 } };\n";
     let input = ValueInputContract {
-        source_match: serde_yaml::from_str(
-            "match: var captured = globalThis.runtimeSettings.state;\nbindings: [captured]\n",
-        )
-        .expect("source selector"),
+        source_match: source_match_selector(
+            "var captured = globalThis.runtimeSettings.state;",
+            &["captured"],
+        ),
         value: CapturedValueContract {
             kind: CapturedValueKind::OrdinaryObject,
         },
-        audited_source_sha256: Sha256::digest(PROVIDER.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(PROVIDER),
         expected_export: None,
         note: None,
     };
@@ -790,17 +783,12 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
             ]
             .into_iter()
             .map(|(binding, operation)| NativeOperationInputContract {
-                selector: SourceUnitSelector::SourceMatch(
-                    serde_yaml::from_str(&format!(
-                        "match: {DECLARATION:?}\nbindings: [{binding}]\n"
-                    ))
-                    .expect("native construction selector"),
-                ),
+                selector: SourceUnitSelector::SourceMatch(source_match_selector(
+                    DECLARATION,
+                    &[binding],
+                )),
                 operation,
-                audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect(),
+                audited_source_sha256: source_sha256(SOURCE),
                 note: None,
             })
             .collect();

@@ -4,7 +4,6 @@
 use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 #[test]
 fn local_cell_read_effects_compose_without_an_allocation_result() {
@@ -640,10 +639,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
     let promise_input = NativeOperationInputContract {
         selector: declared_source_unit("const gate = Promise.resolve();", "gate"),
         operation: NativeOperationKind::PromiseResolve,
-        audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(SOURCE),
         note: Some("Neutral fixture audits this exact empty Promise.resolve call.".to_string()),
     };
     let fixture = run_fixture(

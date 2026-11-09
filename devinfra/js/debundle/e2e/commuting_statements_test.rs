@@ -133,10 +133,10 @@ fn unresolved_endpoint_names_the_entry_and_endpoint() {
         || {
             opts(vec![commuting_pair(
                 anonymous_source_unit("globalThis.record(\"boot\");"),
-                serde_yaml::from_str(&format!(
-                    "source_match:\n  match: {FIRST_SECOND:?}\n  bindings: [first, second]\n"
-                ))
-                .expect("valid selector"),
+                SourceUnitSelector::SourceMatch(source_match_selector(
+                    FIRST_SECOND,
+                    &["first", "second"],
+                )),
             )])
         },
         &[&format!("{ENTRY}.b"), "at most one declared binding"],

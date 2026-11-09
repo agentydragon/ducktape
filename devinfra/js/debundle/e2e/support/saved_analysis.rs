@@ -3,7 +3,6 @@
 //! output comparison.
 
 use super::*;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 pub struct StagedInvocation {
@@ -911,10 +910,7 @@ pub fn native_member_fixture() -> FixtureOpts<'static> {
                 name: "alias".to_owned(),
             }),
             operation: NativeOperationKind::ObjectOwnDataFunctionRead,
-            audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
+            audited_source_sha256: source_sha256(SOURCE),
             note: Some("The selected native read is audited.".to_owned()),
         }],
     )

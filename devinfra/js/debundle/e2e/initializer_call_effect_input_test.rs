@@ -4,7 +4,6 @@
 use analysis::analysis_provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage,
     InitializerCallEffectiveReplacement, PartialSwapKind, PartialSwapSymbol,
@@ -69,23 +68,16 @@ const EFFECTIVE_BUNDLE: &str = "const bundleWrap = callback => {\n\
 };\n\
 export { bundleWrap };\n";
 
-fn digest(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn input(source: &str, binding: &str) -> InitializerCallEffectInputContract {
     InitializerCallEffectInputContract {
         resolved_member: ResolvedMemberSelector {
             module: format!("callbacks/{binding}"),
             name: binding.into(),
         },
-        audited_source_sha256: digest(source),
+        audited_source_sha256: source_sha256(source),
         provider_chunk: "static/peer".into(),
         provider_export: "wrap".into(),
-        audited_provider_sha256: digest(PROVIDER),
+        audited_provider_sha256: source_sha256(PROVIDER),
         effective_replacement: None,
         note: Some(
             "Audited wrapper writes only fresh per-call records and reads stable protocol slots."
@@ -251,7 +243,7 @@ fn exact_wrapper_effect_input_does_not_cover_eager_callback_body() {
         input(SOURCE_DEFERRED_OPAQUE, "second"),
     ];
     for input in &mut eager_inputs {
-        input.audited_provider_sha256 = digest(EAGER_PROVIDER);
+        input.audited_provider_sha256 = source_sha256(EAGER_PROVIDER);
     }
     let eager = run_rejection_fixture(
         FixtureOpts::new(SOURCE_DEFERRED_OPAQUE, modules())
@@ -318,7 +310,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
     let opaque_provider = [("static/peer", PROVIDER_WITHOUT_RESULT_SUMMARY)];
     let mut opaque_inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
     for entry in &mut opaque_inputs {
-        entry.audited_provider_sha256 = digest(PROVIDER_WITHOUT_RESULT_SUMMARY);
+        entry.audited_provider_sha256 = source_sha256(PROVIDER_WITHOUT_RESULT_SUMMARY);
     }
     let without_result_evidence = run_rejection_fixture(
         FixtureOpts::new(SOURCE, modules())
@@ -402,7 +394,7 @@ fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
         input(SOURCE_INLINE_FACTORY, "second"),
     ];
     for entry in &mut inputs {
-        entry.audited_provider_sha256 = digest(PROVIDER_INLINE_FACTORY);
+        entry.audited_provider_sha256 = source_sha256(PROVIDER_INLINE_FACTORY);
     }
     let extra_chunks = [("static/peer", PROVIDER_INLINE_FACTORY)];
     let fixture = run_fixture(
@@ -503,7 +495,7 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
                     audited_bundle_sha256: if case == "stale_digest" {
                         "0".repeat(64)
                     } else {
-                        digest(EFFECTIVE_BUNDLE)
+                        source_sha256(EFFECTIVE_BUNDLE)
                     },
                 });
             }
@@ -588,7 +580,7 @@ fn source_known_original_provider_global_write_rejects_audited_call() {
             .build()];
         let mut inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
         for entry in &mut inputs {
-            entry.audited_provider_sha256 = digest(provider);
+            entry.audited_provider_sha256 = source_sha256(provider);
         }
         let fixture = write_validate_fixture_spec(
             FixtureOpts::new(SOURCE, modules())

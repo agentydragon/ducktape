@@ -3,36 +3,21 @@
 
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 fn input(source: &str, binding: &str, declaration: &str) -> NativeCallIdentityInputContract {
     NativeCallIdentityInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [{binding}]\n",
-            declaration
-        ))
-        .expect("valid function selector"),
+        source_match: source_match_selector(declaration, &[binding]),
         callee: NativeCallIdentityKind::ObjectFreeze,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("The original Object.freeze binding is audited at this call.".to_owned()),
     }
 }
 
 fn empty_set_field_input(source: &str, declaration: &str) -> NativeCallIdentityInputContract {
     NativeCallIdentityInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [Registry]\n",
-            declaration
-        ))
-        .expect("valid class selector"),
+        source_match: source_match_selector(declaration, &["Registry"]),
         callee: NativeCallIdentityKind::SetEmptyPrivateField,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("Original Set binding is audited for every field initialization.".into()),
     }
 }

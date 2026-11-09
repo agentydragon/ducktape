@@ -3,25 +3,18 @@
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 const SOURCE: &str = "const sentinel = [1];\nconst before = external();\nvar alias = Object.defineProperty;\nconst after = alias;\n";
 const SOURCE_INFERRED: &str = "const sentinel = [1];\nconst before = Math.random();\nvar alias = Object.defineProperty;\nconst after = alias;\n";
 
 fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [alias]\n",
-                declaration.trim()
-            ))
-            .unwrap(),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["alias"],
+        )),
         operation: NativeOperationKind::ObjectOwnDataFunctionRead,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("Only this original Object own-data read is audited.".to_owned()),
     }
 }
@@ -101,10 +94,7 @@ fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationIn
             name: name.to_owned(),
         }),
         operation: NativeOperationKind::ObjectOwnDataFunctionRead,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("One resolved original read is audited.".to_owned()),
     }
 }

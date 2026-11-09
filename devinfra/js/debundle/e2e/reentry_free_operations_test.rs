@@ -3,7 +3,6 @@
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 fn policy(operations: &[ReentryFreeOperation]) -> HostBehavior {
     HostBehavior {
@@ -31,28 +30,18 @@ const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
 const REFLECT_FILES: &[(&str, &str)] = &[("static/reflect.js", REFLECT_SOURCE)];
 const PROMISE_REENTRY_SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst gate = Promise.resolve();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst laterValue = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(Boolean(gate), laterValue.name, LaterError.name, globalThis.unrelatedKey);\nexport { gate, factory, LaterError, reflect };\n";
 
-fn source_hash(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn promise_input(source: &str, binding: &str) -> NativeOperationInputContract {
     let declaration = source
         .lines()
         .find(|line| line.starts_with(&format!("const {binding} =")))
         .expect("fixture has a direct Promise initializer");
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [{binding}]\n",
-                declaration.trim()
-            ))
-            .expect("valid declaration source match"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &[binding],
+        )),
         operation: NativeOperationKind::PromiseResolve,
-        audited_source_sha256: source_hash(source),
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits this one Promise initializer.".to_string()),
     }
 }

@@ -2,7 +2,6 @@
 
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 const SOURCE: &str = r#"const clientBefore = console.log("before");
 const first = ["a"], second = ["b"], scopes = ["base", ...first, ...second];
@@ -40,18 +39,12 @@ fn modules() -> Vec<LogicalModuleEntry> {
 
 fn spread_input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(
-            serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [scopes]\n",
-                declaration.trim()
-            ))
-            .expect("valid exact source selector"),
-        ),
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["scopes"],
+        )),
         operation: NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        audited_source_sha256: source_sha256(source),
         note: Some("Neutral fixture audits this exact Array iterator protocol.".to_string()),
     }
 }

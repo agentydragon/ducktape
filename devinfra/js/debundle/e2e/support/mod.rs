@@ -18,8 +18,8 @@ pub use fixture_spec::{
     logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
     logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,
-    unassigned_mode_catchall_file, unassigned_mode_coarse_atomic_groups, unassigned_mode_inline,
-    unassigned_mode_per_atomic_group,
+    source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,
+    unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
