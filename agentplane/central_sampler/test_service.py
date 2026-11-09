@@ -17,9 +17,17 @@ import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler import sampler_pb2
 from agentplane.central_sampler.settings import ModelConfig, ResponsesConfig
-from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
+from agentplane.central_sampler.testing import (
+    METADATA,
+    SESSION_ID,
+    Endpoint,
+    create_request,
+    service,
+    settings,
+    turn_completed,
+)
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import (
@@ -34,20 +42,6 @@ from agentplane.proto import event_pb2
 from agentplane.testing.codex_fixtures import ExecutorServer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
-
-
-async def completed(
-    stub: sampler_pb2_grpc.SamplerAsyncStub, turn_id: str, session_id: str = "079bd706-77b3-4b71-8c7e-605a7e19324c"
-) -> event_pb2.TurnCompleted:
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
-    try:
-        async with asyncio.timeout(15):
-            async for frame in stream:
-                if frame.entry.event.HasField("turn_completed") and frame.entry.event.turn_completed.turn_id == turn_id:
-                    return frame.entry.event.turn_completed
-    finally:
-        stream.cancel()
-    raise AssertionError("event stream ended")
 
 
 async def test_flat_model_routes_enforce_effort_and_session_contract(
@@ -150,7 +144,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                     )
                 assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
                 await exchange.send(*response_stream([Message("done")], model="test-model").events)
-            assert (await completed(stub, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, SESSION_ID, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_session_store_survives_idle_turns_and_is_separate_between_sessions(
@@ -186,7 +180,7 @@ async def test_session_store_survives_idle_turns_and_is_separate_between_session
                     ]
                     assert expected in json.dumps(outputs[-1])
                     await exchange.send(*response_stream([Message("cell complete")], model="test-model").events)
-                assert (await completed(stub, command_id, session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+                assert (await turn_completed(stub, session_id, command_id)).status == event_pb2.TURN_STATUS_COMPLETED
                 async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
                     with attempt:
                         generation = await store.resident_generation(session_id)
@@ -213,9 +207,9 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         )
         async with service(config) as stub:
             opened = await stub.CreateSession(create_request(tmp_path), metadata=METADATA, timeout=10)
-            assert opened.attached.session_id == "079bd706-77b3-4b71-8c7e-605a7e19324c"
+            assert opened.attached.session_id == SESSION_ID
             request = environment_runtime_pb2.SubmitInputRequest(
-                session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="first", text="Exercise execution. " * 100
+                session_id=SESSION_ID, command_id="first", text="Exercise execution. " * 100
             )
             first = await stub.SubmitInput(request, metadata=METADATA, timeout=10)
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
@@ -268,9 +262,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 # Input admitted while the provider is held steers the running turn.
                 queued = await stub.SubmitInput(
                     environment_runtime_pb2.SubmitInputRequest(
-                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-                        command_id="queued",
-                        text="Also mention the steering input.",
+                        session_id=SESSION_ID, command_id="queued", text="Also mention the steering input."
                     ),
                     metadata=METADATA,
                     timeout=10,
@@ -293,17 +285,13 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 )
                 assert answer < steering[0]
                 await exchange.send(*response_stream([Message("first complete")], model="test-model").events)
-            assert (await completed(stub, "first")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, SESSION_ID, "first")).status == event_pb2.TURN_STATUS_COMPLETED
             steered = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="queued"),
-                metadata=METADATA,
-                timeout=10,
+                sampler_pb2.GetCommandRequest(session_id=SESSION_ID, command_id="queued"), metadata=METADATA, timeout=10
             )
             assert steered.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
             await stub.Compact(
-                sampler_pb2.CompactRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="compact"),
-                metadata=METADATA,
-                timeout=10,
+                sampler_pb2.CompactRequest(session_id=SESSION_ID, command_id="compact"), metadata=METADATA, timeout=10
             )
             async with await endpoint.next() as exchange:
                 assert exchange.request.body["input"][-1] == {"type": "compaction_trigger"}
@@ -317,8 +305,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 for payload in payloads:
                     await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
             stream = stub.FollowEvents(
-                sampler_pb2.FollowEventsRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", follow=True),
-                metadata=METADATA,
+                sampler_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
             )
             try:
                 async with asyncio.timeout(10):
@@ -336,7 +323,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
-                    session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="after", text="After compaction"
+                    session_id=SESSION_ID, command_id="after", text="After compaction"
                 ),
                 metadata=METADATA,
                 timeout=10,
@@ -344,8 +331,8 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             async with await endpoint.next() as exchange:
                 assert any(item.get("encrypted_content") == "test-opaque" for item in exchange.request.body["input"])
                 await exchange.send(*response_stream([Message("resumed")], model="test-model").events)
-            await completed(stub, "after")
-        events = await store.events("079bd706-77b3-4b71-8c7e-605a7e19324c", 0, limit=10000)
+            await turn_completed(stub, SESSION_ID, "after")
+        events = await store.events(SESSION_ID, 0, limit=10000)
         assert [entry.cursor for entry in events] == list(range(1, len(events) + 1))
         assert len({entry.origin.source_id for entry in events}) == 1
         assert any(
@@ -373,14 +360,12 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             ):
                 with pytest.raises(grpc.aio.AioRpcError) as error:
                     await stub.GetSession(
-                        sampler_pb2.GetSessionRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c"),
-                        metadata=metadata,
-                        timeout=10,
+                        sampler_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=metadata, timeout=10
                     )
                 assert error.value.code() == expected
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
-                    session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="active", text="Wait for interrupt"
+                    session_id=SESSION_ID, command_id="active", text="Wait for interrupt"
                 ),
                 metadata=METADATA,
                 timeout=10,
@@ -389,8 +374,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
                 payload = {"type": "response.output_text.delta", "item_id": "partial", "delta": "partial output"}
                 await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
                 stream = stub.FollowEvents(
-                    sampler_pb2.FollowEventsRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", follow=True),
-                    metadata=METADATA,
+                    sampler_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
                 )
                 try:
                     async with asyncio.timeout(10):
@@ -401,17 +385,15 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
                 finally:
                     stream.cancel()
                 interrupt = environment_runtime_pb2.InterruptTurnRequest(
-                    session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="interrupt", turn_id="active"
+                    session_id=SESSION_ID, command_id="interrupt", turn_id="active"
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
-                assert (await completed(stub, "active")).status == event_pb2.TURN_STATUS_INTERRUPTED
+                assert (await turn_completed(stub, SESSION_ID, "active")).status == event_pb2.TURN_STATUS_INTERRUPTED
             assert await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10) == receipt
             with pytest.raises(grpc.aio.AioRpcError) as error:
                 await stub.SubmitInput(
                     environment_runtime_pb2.SubmitInputRequest(
-                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-                        command_id="interrupt",
-                        text="different payload",
+                        session_id=SESSION_ID, command_id="interrupt", text="different payload"
                     ),
                     metadata=METADATA,
                     timeout=10,
@@ -419,14 +401,14 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             assert error.value.code() == grpc.StatusCode.ALREADY_EXISTS
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
-                    session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="continued", text="Continue"
+                    session_id=SESSION_ID, command_id="continued", text="Continue"
                 ),
                 metadata=METADATA,
                 timeout=10,
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(*response_stream([Message("continued")], model="test-model").events)
-            await completed(stub, "continued")
+            await turn_completed(stub, SESSION_ID, "continued")
 
 
 async def test_nested_command_inherits_executor_environment(
@@ -458,7 +440,7 @@ async def test_nested_command_inherits_executor_environment(
                 text = "\n".join(part["text"] for part in outputs[-1]["output"] if part["type"] == "input_text")
                 variables = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
                 await exchange.send(*response_stream([Message("done")], model="test-model").events)
-            assert (await completed(stub, "env", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, request.session_id, "env")).status == event_pb2.TURN_STATUS_COMPLETED
     # Inherited from the exec-server's own environment; the Session's variables are set over it.
     assert variables.get("PATH")
     assert variables.get("HOME")
@@ -491,7 +473,7 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
                         model="test-model",
                     ).events
                 )
-            assert (await completed(stub, "think", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, request.session_id, "think")).status == event_pb2.TURN_STATUS_COMPLETED
         events = [entry.event for entry in await store.events(request.session_id, 0, limit=10000)]
     assert reasoning["summary"] == "auto"
     assert reasoning["context"] == "all_turns"
@@ -534,7 +516,7 @@ async def test_restart_never_replays_unresolved_provider_intent(
                 intent_id = intents[0].id
                 await active.aclose()
         async with service(config) as stub:
-            terminal = await completed(stub, "lost")
+            terminal = await turn_completed(stub, SESSION_ID, "lost")
             assert terminal.status == event_pb2.TURN_STATUS_FAILED
             snapshot = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
@@ -599,7 +581,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
                 assert receipt.admission.event.command_admitted.command.interrupt_turn.turn_id == "remote"
-                assert (await completed(stub, "remote")).status == event_pb2.TURN_STATUS_INTERRUPTED
+                assert (await turn_completed(stub, SESSION_ID, "remote")).status == event_pb2.TURN_STATUS_INTERRUPTED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
@@ -644,7 +626,7 @@ async def test_restart_cannot_reconstruct_live_javascript(
             async with await endpoint.next() as exchange:
                 assert "Script running with cell ID" in json.dumps(exchange.request.body)
                 await exchange.send(*response_stream([Message("cell remains live")], model="test-model").events)
-            await completed(stub, "yielded")
+            await turn_completed(stub, SESSION_ID, "yielded")
         async with service(config) as stub:
             stream = stub.FollowEvents(
                 sampler_pb2.FollowEventsRequest(session_id=request.session_id, follow=True), metadata=METADATA
@@ -717,7 +699,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
                 process_id = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(*response_stream([Message("Process started.")], model="test-model").events)
-            assert (await completed(stub, "background")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, SESSION_ID, "background")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
             assert process is not None
             assert process.status == "running"
@@ -734,7 +716,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                     item.get("content") == "Run once capacity is released." for item in exchange.request.body["input"]
                 )
                 await exchange.send(*response_stream([Message("Queued session ran.")], model="test-model").events)
-            assert (await completed(stub, "queued", second.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, second.session_id, "queued")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
             assert process is not None
             assert process.status == "exited_unread"
@@ -767,7 +749,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 assert (result["output"], result["exit_code"]) == ("retained-output", 0)
                 assert "session_id" not in result
                 await exchange.send(*response_stream([Message("Retained output read.")], model="test-model").events)
-            assert (await completed(stub, "read-retained")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, SESSION_ID, "read-retained")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
             assert process is not None
             assert process.status == "exited"
@@ -872,7 +854,7 @@ async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
                     await exchange.send(*response_stream([Message("continued")], model="test-model").events)
 
                 assert (
-                    await completed(stub, "unknown-custom", request.session_id)
+                    await turn_completed(stub, request.session_id, "unknown-custom")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
             finally:
                 release.write_text("")
@@ -951,7 +933,7 @@ async def test_unknown_json_function_call_returns_function_output(
                 await exchange.send(*response_stream([Message("continued")], model="test-model").events)
 
             assert (
-                await completed(stub, "unknown-function", request.session_id)
+                await turn_completed(stub, request.session_id, "unknown-function")
             ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
@@ -1177,7 +1159,7 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                 )
 
             assert (
-                await completed(stub, "standard-json", request.session_id)
+                await turn_completed(stub, request.session_id, "standard-json")
             ).status == event_pb2.TURN_STATUS_COMPLETED
 
 
@@ -1238,7 +1220,7 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
                 assert wait_parts[1:] == ["done"]
                 assert notification == ("yielded", ["late"])
                 await exchange.send(*response_stream([Message("notified")], model="test-model").events)
-            assert (await completed(stub, "notify", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, request.session_id, "notify")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_interrupt_discards_queued_notify_output(
@@ -1284,7 +1266,7 @@ async def test_interrupt_discards_queued_notify_output(
                     timeout=10,
                 )
                 assert (
-                    await completed(stub, "interrupted", request.session_id)
+                    await turn_completed(stub, request.session_id, "interrupted")
                 ).status == event_pb2.TURN_STATUS_INTERRUPTED
             assert await store.queued_notifications(request.session_id) == []
         settled = [
@@ -1347,7 +1329,7 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
                 # 3000x1000 exceeds high detail's 2048-pixel bound; the aspect ratio is kept.
                 assert Image.open(io.BytesIO(base64.b64decode(encoded))).size == (2048, 683)
                 await exchange.send(*response_stream([Message("Seen.")], model="test-model").events)
-            assert (await completed(stub, "view-image")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, SESSION_ID, "view-image")).status == event_pb2.TURN_STATUS_COMPLETED
             # Nested read evidence keeps digests, not the file's bytes.
             file_base64 = base64.b64encode(oversized.getvalue()).decode()
             assert not [
@@ -1406,7 +1388,7 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
                 )
             async with await endpoint.next() as exchange:
                 await exchange.send(*response_stream([Message("steered")], model="test-model").events)
-            assert (await completed(stub, "steered", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, request.session_id, "steered")).status == event_pb2.TURN_STATUS_COMPLETED
             steer = await stub.GetCommand(
                 sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="steer"),
                 metadata=METADATA,
