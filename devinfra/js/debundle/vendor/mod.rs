@@ -28,7 +28,8 @@ pub use emission::{
 };
 use export_surface::collect_local_idents_by_export_name;
 pub use import_rewrites::{
-    DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites,
+    DeferredImport, IdentRewriteTarget, LocalExportRewrite, PartialSwapIdentRewriter,
+    VendorImportRewrites,
 };
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
@@ -200,6 +201,7 @@ fn seed_bundled_partial_swap_self_rewrites(
                         property_path: upstream_property_path(target.kind, upstream_export),
                         chunk_id: caller_chunk_id,
                         chunk_export: chunk_export.clone(),
+                        local_export: None,
                     },
                 );
             }
@@ -210,6 +212,8 @@ fn seed_bundled_partial_swap_self_rewrites(
                         upstream_export: local.clone(),
                         chunk_id: caller_chunk_id,
                         chunk_export: chunk_export.clone(),
+                        // The strip pass owns the chunk's own export surface.
+                        rename_local_exports: false,
                     },
                 );
                 *outputs
@@ -492,6 +496,7 @@ mod tests {
                     property_path: vec!["DiagLogLevel".to_string()],
                     chunk_id: ChunkId(0),
                     chunk_export: "l3".to_string(),
+                    local_export: None,
                 },
             )]);
             let mut references_by_symbol = BTreeMap::new();
