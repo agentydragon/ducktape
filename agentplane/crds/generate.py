@@ -1,6 +1,6 @@
 """Go-derived Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin`.
 
-Sandbox, EgressCredential, PolicySet and PolicyBinding CRDs are generated from Go API types by
+Sandbox, EgressCredential, policy, identity and Kubernetes account CRDs are generated from Go API types by
 controller-gen. Flux packages the CRDs directly from
 `agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
 """
@@ -21,6 +21,10 @@ CRD_FILES = (
     "crd-egresscredentials.yaml",
     "crd-policysets.yaml",
     "crd-policybindings.yaml",
+    "crd-identities.yaml",
+    "crd-kubernetesrolesets.yaml",
+    "crd-kubernetesaccountgrants.yaml",
+    "crd-managedserviceaccounts.yaml",
     "crd-sandboxtemplates.yaml",
     "crd-sandboxes.yaml",
 )
@@ -35,6 +39,10 @@ POLICY_GENERATED_CRDS = "ducktape/agentplane/policy/api/v1alpha1/generated_crds"
 POLICY_CRDS = {
     "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",
     "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
+    "crd-identities.yaml": "agentplane.allegedly.works_identities.yaml",
+    "crd-kubernetesrolesets.yaml": "agentplane.allegedly.works_kubernetesrolesets.yaml",
+    "crd-kubernetesaccountgrants.yaml": "agentplane.allegedly.works_kubernetesaccountgrants.yaml",
+    "crd-managedserviceaccounts.yaml": "agentplane.allegedly.works_managedserviceaccounts.yaml",
 }
 
 

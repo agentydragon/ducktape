@@ -1,4 +1,4 @@
-// Package v1alpha1 defines Agentplane's v1alpha1 PolicySet and PolicyBinding Kubernetes API.
+// Package v1alpha1 defines Agentplane's v1alpha1 policy, identity and Kubernetes account Kubernetes API.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works

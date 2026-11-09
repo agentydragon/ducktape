@@ -1,0 +1,109 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: kubernetesrolesets.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  names:
+    kind: KubernetesRoleSet
+    listKind: KubernetesRoleSetList
+    plural: kubernetesrolesets
+    singular: kubernetesroleset
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: KubernetesRoleSet is a reusable, named set of Kubernetes RBAC
+            rules that grants attach to accounts.
+          properties:
+            apiVersion:
+              description: "APIVersion defines the versioned schema of this representation
+                of an object.
+
+                Servers should convert recognized schemas to the latest internal value,
+                and
+
+                may reject unrecognized values.
+
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources"
+              type: string
+            kind:
+              description: "Kind is a string value representing the REST resource this
+                object represents.
+
+                Servers may infer this from the endpoint the client submits requests
+                to.
+
+                Cannot be updated.
+
+                In CamelCase.
+
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                rules:
+                  items:
+                    description: KubernetesRule is one native RBAC binding the Policy
+                      Controller provisions for a granted account.
+                    properties:
+                      clusterRole:
+                        description: ClusterRole names the ClusterRole bound cluster-wide.
+                        minLength: 1
+                        type: string
+                      namespaces:
+                        description: Namespaces names the target namespaces explicitly,
+                          never by selection; labeling a namespace grants nothing.
+                        items:
+                          minLength: 1
+                          type: string
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: set
+                      role:
+                        description: Role names the Role or ClusterRole to bind in each
+                          namespace; the named object must already exist.
+                        properties:
+                          kind:
+                            enum:
+                              - Role
+                              - ClusterRole
+                            type: string
+                          name:
+                            minLength: 1
+                            type: string
+                        required:
+                          - kind
+                          - name
+                        type: object
+                      type:
+                        enum:
+                          - role_binding
+                          - cluster_role_binding
+                        type: string
+                    required:
+                      - type
+                    type: object
+                    x-kubernetes-validations:
+                      - message: Rule fields must match type.
+                        rule: "self.type == 'role_binding' ? (has(self.role) && has(self.namespaces)
+                          && !has(self.clusterRole)) : (has(self.clusterRole) && !has(self.role)
+                          && !has(self.namespaces))"
+                  maxItems: 256
+                  minItems: 1
+                  type: array
+              required:
+                - rules
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true

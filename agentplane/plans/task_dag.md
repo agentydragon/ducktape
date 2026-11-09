@@ -3062,13 +3062,15 @@ flowchart LR
 
 ### `IDENTITY_KINDS` — identity and grant kinds
 
-**Ready.** Go types, controller-gen output, `crds/generate.py` manifests and admission tests for
-`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`;
-`PolicyBinding.spec.subject` becomes an identity reference; the two Kubernetes rule types leave
-`PolicySet`; `EgressCredential` gains the `kubernetesServiceAccount` source. Generated clients and
-the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the envtest apiserver,
-admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
-tests of untouched kinds still pass.
+**In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
+`crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
+`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`, purely
+additive. Schema changes to deployed kinds are split out, since Flux would apply them to staging
+ahead of any reader: the `PolicyBinding` identity subject and the removal of `PolicySet`'s
+Kubernetes rule types move to `IDENTITY_CUTOVER`; the `kubernetesServiceAccount` source on
+`EgressCredential` is added additively in its own change. No reader changes. **Exit:** the CRDs
+install on the envtest apiserver, admission accepts the plan's example objects and rejects
+malformed ones, and existing tests of untouched kinds still pass.
 
 ### `SVID_STAGING_CHECK` — one Sandbox through the SVID route on staging
 
@@ -3205,7 +3207,9 @@ scenarios pass on the new rendering in CI; they are the gate the cutover PR cite
 ### `IDENTITY_CUTOVER` — the staging cutover
 
 **Blocked on `IDENTITY_SYSTEM_TESTS` and `APP_IDENTITIES_UI`.** One PR flips the staging rendering
-and settings, deletes the old code paths (SA binding subject, Kubernetes rule types in `PolicySet`,
+and settings, changes `PolicyBinding.spec.subject` to an identity reference (admission rejects a
+binding with no identity and a Kubernetes rule in a `PolicySet`), deletes the old code paths (SA
+binding subject, Kubernetes rule types in `PolicySet`,
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
 the objects of the new kinds. Running Sandboxes are replaced, not patched. Expected downtime: every

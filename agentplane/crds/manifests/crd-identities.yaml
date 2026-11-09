@@ -1,0 +1,112 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: identities.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  names:
+    kind: Identity
+    listKind: IdentityList
+    plural: identities
+    singular: identity
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.description
+          name: Description
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: "Identity is who an agent is: the subject of PolicyBindings,
+            independent of any environment it runs in.
+
+            Nothing in Kubernetes owns an identity; its creator deletes it."
+          properties:
+            apiVersion:
+              description: "APIVersion defines the versioned schema of this representation
+                of an object.
+
+                Servers should convert recognized schemas to the latest internal value,
+                and
+
+                may reject unrecognized values.
+
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources"
+              type: string
+            kind:
+              description: "Kind is a string value representing the REST resource this
+                object represents.
+
+                Servers may infer this from the endpoint the client submits requests
+                to.
+
+                Cannot be updated.
+
+                In CamelCase.
+
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                description:
+                  description: "Description says who this agent is, for the operator.
+                    An identity is a subject only; it holds no harness,
+
+                    model or environment configuration."
+                  minLength: 1
+                  type: string
+              required:
+                - description
+              type: object
+            status:
+              description: IdentityStatus is written by controllers, never by the identity's
+                creator.
+              properties:
+                workloadCredentials:
+                  description: WorkloadCredentials lists what currently authenticates
+                    as this identity.
+                  items:
+                    description: "WorkloadCredential is one credential that authenticates
+                      a workload as the identity: a SPIFFE ID or, for a
+
+                      workload with no SVID, a ServiceAccount."
+                    properties:
+                      serviceAccount:
+                        description: ServiceAccount whose token authenticates a workload
+                          that has no SVID.
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                          namespace:
+                            minLength: 1
+                            type: string
+                        required:
+                          - name
+                          - namespace
+                        type: object
+                      spiffeID:
+                        maxLength: 2048
+                        pattern: ^spiffe://[^/]+(/.*)?$
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                      - message: Set exactly one of spiffeID and serviceAccount.
+                        rule: has(self.spiffeID) != has(self.serviceAccount)
+                  maxItems: 256
+                  type: array
+                  x-kubernetes-list-type: atomic
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
