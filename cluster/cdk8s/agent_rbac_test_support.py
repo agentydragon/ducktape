@@ -48,13 +48,20 @@ def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -
 class Rbac:
     """Resolve declared RBAC from the dictionaries returned by ``Testing.synth``.
 
-    This is not an apiserver authorizer: admission, impersonation, egress, and access obtained
-    through exec/node proxy are outside this declarative contract. Aggregated roles fail closed.
+    This is not an apiserver authorizer: admission, egress, and access obtained through exec/node
+    proxy are outside this declarative contract, as is impersonation other than the egress proxy's
+    acting as a rendered `kubernetesServiceAccount` credential. Aggregated roles fail closed.
     """
 
     def __init__(self, resources: Iterable[dict[str, Any]]):
         self.roles: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.bindings: list[dict[str, Any]] = []
+        # Agentplane's catalog, by name; staging renders each in its policy namespace.
+        self.policy_sets: dict[str, list[dict[str, Any]]] = {}
+        self.role_sets: dict[str, list[dict[str, Any]]] = {}
+        self.credentials: dict[str, dict[str, Any]] = {}
+        # ServiceAccountGrant specs.
+        self.grants: list[dict[str, Any]] = []
         for resource in resources:
             kind = resource["kind"]
             metadata = resource["metadata"]
@@ -65,6 +72,14 @@ class Rbac:
                 self.roles[key] = resource
             elif kind in {"RoleBinding", "ClusterRoleBinding"}:
                 self.bindings.append(resource)
+            elif kind == "ServiceAccountGrant":
+                self.grants.append(resource["spec"])
+            elif kind == "PolicySet":
+                _add_unique(self.policy_sets, metadata["name"], resource["spec"]["rules"])
+            elif kind == "KubernetesRoleSet":
+                _add_unique(self.role_sets, metadata["name"], resource["spec"]["rules"])
+            elif kind == "EgressCredential":
+                _add_unique(self.credentials, metadata["name"], resource["spec"]["source"])
 
     def rules(self, kind: str, name: str, namespace: str | None) -> set[Permission]:
         assert kind in ("Role", "ClusterRole"), kind
@@ -107,9 +122,10 @@ class Rbac:
                     ("User", f"system:serviceaccount:{namespace}:{name}", ""),
                 }
             )
-        return self._subjects(subjects)
+        return self.subjects(subjects)
 
-    def _subjects(self, subjects: set[tuple[str, str, str]]) -> set[Permission]:
+    def subjects(self, subjects: set[tuple[str, str, str]]) -> set[Permission]:
+        """What rendered bindings naming any of `subjects` ((kind, name, namespace)) grant."""
         permissions: set[Permission] = set()
         for binding in self.bindings:
             if any(
@@ -123,32 +139,89 @@ class Rbac:
                 permissions.update(self.rules(role_ref["kind"], role_ref["name"], namespace))
         return permissions
 
-    def policy_set_permissions(
-        self, policy_sets: dict[str, list[dict[str, Any]]], names: Iterable[str]
-    ) -> set[Permission]:
-        permissions: set[Permission] = set()
-        for rule in (rule for name in names for rule in policy_sets[name]):
-            if rule["type"] == "kubernetes_role_binding":
-                for namespace in rule["namespaces"]:
-                    permissions.update(self.rules(rule["role"]["kind"], rule["role"]["name"], namespace))
-            elif rule["type"] == "kubernetes_cluster_role_binding":
-                permissions.update(self.rules("ClusterRole", rule["clusterRole"], None))
+    def bound(self, roles: Iterable[BoundRole]) -> set[Permission]:
+        return {permission for role in roles for permission in self.rules(role.kind, role.name, role.namespace)}
+
+    def set_roles(self, name: str) -> set[BoundRole]:
+        """The roles assignable set `name` binds: its `PolicySet`'s Kubernetes rules, or in the identity
+        catalog its `KubernetesRoleSet`, which a holder reaches only through an account granted it."""
+        if name in self.role_sets:
+            return _bound_roles(self.role_sets[name])
+        return _bound_roles(rule for rule in self.policy_sets[name] if rule["type"].startswith("kubernetes_"))
+
+    def accounts(self, sets: Iterable[str]) -> set[tuple[str, str]]:
+        """(namespace, name) of each ServiceAccount a holder of `sets` acts as through the egress proxy."""
+        return {
+            (account["namespace"], account["name"])
+            for name in sets
+            for rule in self.policy_sets[name]
+            if "credentialRef" in rule
+            # Some credentials, such as the proxy's own workload token, are not objects.
+            and (account := self.credentials.get(rule["credentialRef"]["name"], {}).get("kubernetesServiceAccount"))
+            is not None
+        }
+
+    def account_roles(self, namespace: str, name: str) -> set[BoundRole]:
+        """The roles the Policy Controller binds for an account: what its grants' role sets expand to."""
+        return {
+            role
+            for grant in self.grants
+            if (grant["serviceAccount"]["namespace"], grant["serviceAccount"]["name"]) == (namespace, name)
+            for role_set in grant["roleSets"]
+            for role in _bound_roles(self.role_sets[role_set])
+        }
+
+    def held_roles(self, sets: Iterable[str]) -> set[BoundRole]:
+        """The roles bound for a holder of the policy sets `sets` or for an account it acts as."""
+        sets = tuple(sets)
+        assert len(sets) == len(set(sets)), sets
+        roles = {role for name in sets if name not in self.role_sets for role in self.set_roles(name)}
+        for namespace, name in self.accounts(sets):
+            roles |= self.account_roles(namespace, name)
+        return roles
+
+    def held(self, sets: Iterable[str]) -> set[Permission]:
+        """A holder of the policy sets `sets`: its bound roles and the accounts' own rendered bindings."""
+        sets = tuple(sets)
+        permissions = self.bound(self.held_roles(sets))
+        for namespace, name in self.accounts(sets):
+            permissions |= self.identity("ServiceAccount", name, namespace)
         return permissions
 
-    def managed(
-        self, config: dict[str, Any], policy_sets: dict[str, list[dict[str, Any]]], preset: str, *, namespace: str
-    ) -> set[Permission]:
-        """`preset`'s Kubernetes access: its PolicySets' (name -> spec rules) Kubernetes rules."""
+    def launch(self, sets: Iterable[str], *, namespace: str) -> set[Permission]:
+        """A sandbox launched into `namespace` holding `sets`."""
         # Fresh sandbox SAs also inherit standing group bindings. Do not mistake
         # the selectable catalog for their entire declarative authority.
-        permissions = self._subjects(
+        return self.held(sets) | self.subjects(
             {
                 ("Group", "system:authenticated", ""),
                 ("Group", "system:serviceaccounts", ""),
                 ("Group", f"system:serviceaccounts:{namespace}", ""),
             }
         )
-        names = config["sandbox_presets"][preset]["policy_sets"]
-        assert len(names) == len(set(names)), names
-        permissions.update(self.policy_set_permissions(policy_sets, names))
-        return permissions
+
+
+@dataclass(frozen=True)
+class BoundRole:
+    kind: str
+    name: str
+    # None is a ClusterRoleBinding.
+    namespace: str | None
+
+
+def _add_unique[T](by_name: dict[str, T], name: str, value: T) -> None:
+    assert name not in by_name, name
+    by_name[name] = value
+
+
+def _bound_roles(rules: Iterable[dict[str, Any]]) -> set[BoundRole]:
+    """The roles `rules` bind, written as `PolicySet` (`kubernetes_`-prefixed) or `KubernetesRoleSet` rules."""
+    roles: set[BoundRole] = set()
+    for rule in rules:
+        kind = rule["type"].removeprefix("kubernetes_")
+        if kind == "cluster_role_binding":
+            roles.add(BoundRole("ClusterRole", rule["clusterRole"], None))
+        else:
+            assert kind == "role_binding", rule
+            roles |= {BoundRole(rule["role"]["kind"], rule["role"]["name"], ns) for ns in rule["namespaces"]}
+    return roles
