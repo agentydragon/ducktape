@@ -668,6 +668,7 @@ rust_library(
         "facts/sync_effects.rs",
         "facts/sync_effects/adapters.rs",
         "facts/sync_effects/adapters/application.rs",
+        "facts/sync_effects/adapters/provider.rs",
         "facts/sync_effects/allocation_transfer.rs",
         "facts/sync_effects/array_transfer.rs",
         "facts/sync_effects/callable_body_facts.rs",

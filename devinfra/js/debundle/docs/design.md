@@ -3936,7 +3936,7 @@ this remains separate from the prepared/completed publication boundary.
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `kernel/`   | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ. |
 | `world/`    | `World`, the per-prefix execution state, and `World::join`.                                                                                                              |
-| `adapters/` | The application adapter. The strict provider (`strict_provider.rs`) is the other adapter.                                                                                |
+| `adapters/` | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), driven by the strict provider query (`strict_provider.rs`).                         |
 | `roots/`    | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                             |
 | `legacy/`   | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                      |
 

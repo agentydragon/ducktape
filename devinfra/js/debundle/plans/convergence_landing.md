@@ -206,7 +206,8 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   `capture_policy` and `admit_closure`), closures are
   `AbstractValue::Closure(HeapAddress, CapturedContext)` in both adapters, and
   the prefix prerequisites live in `World.prerequisites`. needs L2a.
-- L2c. **Landed** as #15116 (`adapters/application.rs`), #15125
+- L2c. **Landed** as #15116 (`adapters/application.rs`), the provider-adapter
+  move (`adapters/provider.rs`), #15125
   (`execute_owner` as `roots/` phases) and the call-transfer PR, which split
   `execute_call_transfer` by mode: the operands-supplied mode is in
   `roots/call_operands.rs`, and the self-evaluating mode and the evaluator are
