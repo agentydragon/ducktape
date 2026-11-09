@@ -1,0 +1,472 @@
+{
+  "status": "PASSED",
+  "test": "//x/ci_reports_preview:visual_test",
+  "cases": [
+    "light-desktop 1280x900",
+    "light-mobile 390x844",
+    "dark-desktop 1280x900",
+    "dark-mobile 390x844"
+  ],
+  "invocation": "https://app.buildbuddy.io/invocation/f452a593-ceb7-4314-8fee-ad182182edf5",
+  "report_assets": [
+    {
+      "path": "latency/index.html",
+      "sha256": "e46e843c1c3deb300b5e465f6df90a46e70dc41a4f32610490f40836b182c7aa"
+    },
+    {
+      "path": "latency/resource-followup.js",
+      "sha256": "74fbb839b5fe908a5822a97f1d282f9dfcad684f4453f467d5dea81cf2ef2607"
+    },
+    {
+      "path": "latency/evidence.json",
+      "sha256": "1388e694eef7158669ba7beede675f73284946c03728bd074a198519eb73acfa"
+    },
+    {
+      "path": "latency/resource-timeline.png",
+      "sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e"
+    },
+    {
+      "path": "latency/manifest.json",
+      "sha256": "d37158b84725b3e6f0e785c5fbd956d2c9a0a6f544c41dc211caca58e619141c"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "screenshots/light-mobile__resource-day-resource-pressure.png",
+      "sha256": "9d09d5096c048fa0fcd8059468430be27762e640ce9c96db9845d2ba03742f7e",
+      "case": "light-mobile",
+      "checkpoint": "resource-day-resource-pressure",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-physical-runs-table.png",
+      "sha256": "fbd104c6ca452f0546267d1fdc36795a8fd68c0892c8758975952d381ce109ae",
+      "case": "light-mobile",
+      "checkpoint": "resource-physical-runs-table",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-memory-table.png",
+      "sha256": "a5e277a7d1ceb3138bfcb983f8ad3e637b84aaebb04f361b67d50af2756fc911",
+      "case": "dark-desktop",
+      "checkpoint": "resource-memory-table",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-day-resource-disk.png",
+      "sha256": "1bc8a089c5e55f48990cbc7c6c6c6848d3101d8ffcae9cbfa088f31802cd1514",
+      "case": "light-desktop",
+      "checkpoint": "resource-day-resource-disk",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-day-resource-disk.png",
+      "sha256": "4f28bf2018b1138bb77988ac5734bc054cca64b23d49251d49b2dc96525f4eee",
+      "case": "dark-mobile",
+      "checkpoint": "resource-day-resource-disk",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-physical-runs-table.png",
+      "sha256": "767e29f77f1556ec7c9ca01f659a7ea8c8d836763389360996505f1dc0b0c72e",
+      "case": "dark-mobile",
+      "checkpoint": "resource-physical-runs-table",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-day-resource-memory.png",
+      "sha256": "832bba72382a9d3aaf8c22bf3f3e654957e989d0589aeed23e8b9df755a96194",
+      "case": "light-desktop",
+      "checkpoint": "resource-day-resource-memory",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-day-resource-memory.png",
+      "sha256": "f63cabd702fc1e2e3616ce69cd648352dbdb9f1d751c1bc649e3f691ef2780e6",
+      "case": "dark-desktop",
+      "checkpoint": "resource-day-resource-memory",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-fixture-pair-table.png",
+      "sha256": "af9b9fccfbc5ff626110e677760a5ab3126fdb21fce3b60f64ad2465dd7a8c61",
+      "case": "light-desktop",
+      "checkpoint": "resource-fixture-pair-table",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-day-resource-memory.png",
+      "sha256": "02e08c80e9c790a495939b81a240d6f02cbdabc509622d93b9de8189715eb324",
+      "case": "light-mobile",
+      "checkpoint": "resource-day-resource-memory",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-day-resource-cpu.png",
+      "sha256": "d0cfbc5b3d96320893c22305e9c16071ec034702b2f45ac83ee03f319c471875",
+      "case": "dark-mobile",
+      "checkpoint": "resource-day-resource-cpu",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__retained-mean-phase-bar.png",
+      "sha256": "7ab36df41b75581f122b0bc88436c07acafe741c42e887a6c287768d64f44f78",
+      "case": "dark-mobile",
+      "checkpoint": "retained-mean-phase-bar",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__retained-mean-phase-bar.png",
+      "sha256": "fbf6807b05b8f3472266b3d07706b77299205521847c311cd9b713b5832d2fec",
+      "case": "dark-desktop",
+      "checkpoint": "retained-mean-phase-bar",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-fixture-pair.png",
+      "sha256": "b65a8cd87b103f95300dfbc7a6a33511283659962ab263bd3e233f7181b4ebc7",
+      "case": "dark-mobile",
+      "checkpoint": "resource-fixture-pair",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-memory-table.png",
+      "sha256": "3745d2b5f7c9eba4cf6c6e4272a7460c162ff418e6f7b85a947fe904a3594ca8",
+      "case": "light-mobile",
+      "checkpoint": "resource-memory-table",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-runs-resource-disk.png",
+      "sha256": "c2b41b9da067d07fc0ca895b56b00d23abbae690751c5d83ac77603f63c50a5c",
+      "case": "dark-desktop",
+      "checkpoint": "resource-runs-resource-disk",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-runs-resource-memory.png",
+      "sha256": "6ecd6a79b570bc2a67ba55effec5da3bc6f18ff087b3533e1dde89f178df5769",
+      "case": "dark-mobile",
+      "checkpoint": "resource-runs-resource-memory",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-runs-resource-cpu.png",
+      "sha256": "60d3b9f9165c7e7be18e4995aa8b21e9c031c7497af0e09050fcf121a13a0b3d",
+      "case": "light-mobile",
+      "checkpoint": "resource-runs-resource-cpu",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-fixture-pair.png",
+      "sha256": "88010b9c200c2f5454180bcafd6b1647903253e5c2d1fde32390c7b5f06449b2",
+      "case": "dark-desktop",
+      "checkpoint": "resource-fixture-pair",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-runs-resource-disk.png",
+      "sha256": "2491c175f48ea4387ac9989d88a762ea4ec896e5ccf34b6f6284a3524586f085",
+      "case": "light-mobile",
+      "checkpoint": "resource-runs-resource-disk",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-runs-resource-disk.png",
+      "sha256": "a5b85250510dc20faca80d74c1fba023689a0117fad40face830f98f327bda69",
+      "case": "light-desktop",
+      "checkpoint": "resource-runs-resource-disk",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-runs-resource-memory.png",
+      "sha256": "610a98e05841d0bf0be4f4a896a6c281f8b663100fa19a58b8eb60c5a61d164e",
+      "case": "dark-desktop",
+      "checkpoint": "resource-runs-resource-memory",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-day-resource-cpu.png",
+      "sha256": "7052810fa444a874b0d260c825ec3a86ab7b7187b2c1c4d0ccfbbebc5b971305",
+      "case": "dark-desktop",
+      "checkpoint": "resource-day-resource-cpu",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__retained-historical-trace.png",
+      "sha256": "2e32abb3420df99181d52c03f4761faf7c51b436b4c9f82ff04013235352cf36",
+      "case": "dark-desktop",
+      "checkpoint": "retained-historical-trace",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-fixture-pair.png",
+      "sha256": "25d41e67e203306d61d3cff81ae961915c64324ee38935a03298a8b9ee159f71",
+      "case": "light-mobile",
+      "checkpoint": "resource-fixture-pair",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-memory-table.png",
+      "sha256": "13e1ce76c3a5f678dc24c6b2802be10110ae46b0fbc01e1ecdef666c06948e63",
+      "case": "dark-mobile",
+      "checkpoint": "resource-memory-table",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-day-resource-disk.png",
+      "sha256": "6a7262c325f57bc5c20fc0d0a39ad85c5b6174c14b9d4a1f14bc78e069d79186",
+      "case": "light-mobile",
+      "checkpoint": "resource-day-resource-disk",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-runs-resource-memory.png",
+      "sha256": "5faca661b3e417cd9245de95bbe971f102169a0da1369d3beb84014dd2d31eab",
+      "case": "light-mobile",
+      "checkpoint": "resource-runs-resource-memory",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-runs-resource-cpu.png",
+      "sha256": "c7f021f9e64867cd197d0068647704abdacdcb5e9b8f3f2fa82a46a859ebda40",
+      "case": "light-desktop",
+      "checkpoint": "resource-runs-resource-cpu",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-runs-resource-pressure.png",
+      "sha256": "b95c0d28e7e9ba3241b9fcdea6678793896abe2490d9a45e8c8489d1396727fe",
+      "case": "dark-mobile",
+      "checkpoint": "resource-runs-resource-pressure",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-runs-resource-disk.png",
+      "sha256": "85d136bbc74665c877576d4a28306ca2c263c6868b9f32cc3800c1735e333d45",
+      "case": "dark-mobile",
+      "checkpoint": "resource-runs-resource-disk",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-day-resource-disk.png",
+      "sha256": "8214c675309250a09d22f0b903dc2bcba6034109e7ec3250cb62c3b0373d215d",
+      "case": "dark-desktop",
+      "checkpoint": "resource-day-resource-disk",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-day-resource-pressure.png",
+      "sha256": "dd04249d7f7f3d6f0f2501494086217260e55aa3912f182c70b2efd6500af0c4",
+      "case": "light-desktop",
+      "checkpoint": "resource-day-resource-pressure",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__retained-historical-trace.png",
+      "sha256": "0a6c3d9ac342711b9ae988ef090a52440a723b23b5a27c029fbc8c9d2dbcf002",
+      "case": "light-mobile",
+      "checkpoint": "retained-historical-trace",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-mobile__retained-mean-phase-bar.png",
+      "sha256": "e422c1ee832813d823bd2f905066d1712dc951cf932306db6ce2f117dec03b53",
+      "case": "light-mobile",
+      "checkpoint": "retained-mean-phase-bar",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__first-screen.png",
+      "sha256": "0539fdf7776bdea3207e4fdd77db04ea81635cda80d645c485667dc0e77a26d8",
+      "case": "dark-mobile",
+      "checkpoint": "first-screen",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-day-resource-pressure.png",
+      "sha256": "7b0f83dcfd9900b2c9a1e93e4d34b7395108a76f7154700eb449845bd90135e6",
+      "case": "dark-desktop",
+      "checkpoint": "resource-day-resource-pressure",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-fixture-pair-table.png",
+      "sha256": "18e576ab69037f6ede5d4eab5245e38a03fb5debf3349c1f61460eab5dc33343",
+      "case": "dark-mobile",
+      "checkpoint": "resource-fixture-pair-table",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__retained-historical-trace.png",
+      "sha256": "e3f870e2f2fc53e4022f1e7174d6d1e61c8f57f3aa1e1318d8d60cf815185281",
+      "case": "dark-mobile",
+      "checkpoint": "retained-historical-trace",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-day-resource-pressure.png",
+      "sha256": "0715e477e71a39044193ff262cb83ecc3ec81b9a06f89b819704d7693e775128",
+      "case": "dark-mobile",
+      "checkpoint": "resource-day-resource-pressure",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-day-resource-cpu.png",
+      "sha256": "252e570a4e0c991708b489923e659928376c377589db8c9290b98947e259068b",
+      "case": "light-mobile",
+      "checkpoint": "resource-day-resource-cpu",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-day-resource-memory.png",
+      "sha256": "a1ee731ec158fba887a1e7efe30b46614352276bc75753b7a4403e0971389a96",
+      "case": "dark-mobile",
+      "checkpoint": "resource-day-resource-memory",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/dark-mobile__resource-runs-resource-cpu.png",
+      "sha256": "c6313399676a5bef6fbb66803b570aa0ea6dafa010562185924ef2051bc45ff2",
+      "case": "dark-mobile",
+      "checkpoint": "resource-runs-resource-cpu",
+      "title": "latency-dark-390"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-memory-table.png",
+      "sha256": "ac79bcee0ad75ef7afb8f80d51efcf158a8c6dfa8041f44a962377b371c948c5",
+      "case": "light-desktop",
+      "checkpoint": "resource-memory-table",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-fixture-pair-table.png",
+      "sha256": "34b68679a22e316c010be58a540aea2e6edc60e8ea7fc329855c11189a51fd73",
+      "case": "dark-desktop",
+      "checkpoint": "resource-fixture-pair-table",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-physical-runs-table.png",
+      "sha256": "8651b6b3a0378c4a1315e15c0b04d4b26ef054e8e3ac45f975580bfbaeb03bbb",
+      "case": "light-desktop",
+      "checkpoint": "resource-physical-runs-table",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-physical-runs-table.png",
+      "sha256": "c77eca18c07624a9af84a4651a78241248177cb6d04501325d74763d605476d9",
+      "case": "dark-desktop",
+      "checkpoint": "resource-physical-runs-table",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__first-screen.png",
+      "sha256": "b879daeaf14fce7eba27d748139c34a6db623a8eb9ffdbf17397244e776654c2",
+      "case": "light-mobile",
+      "checkpoint": "first-screen",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-desktop__first-screen.png",
+      "sha256": "ab3531d727b9432e8ceb0a89f04a72db695ca139a5d863dad6b0fac94ef22d87",
+      "case": "light-desktop",
+      "checkpoint": "first-screen",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-fixture-pair-table.png",
+      "sha256": "40c025c3872f4172d61c884b17ca15d33fb207c0a0a0f73ed70370ef86dff27e",
+      "case": "light-mobile",
+      "checkpoint": "resource-fixture-pair-table",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-runs-resource-memory.png",
+      "sha256": "a5baf1b7b2e6bb0d087597655b5bee70b7eaf2267cf8d9253e0e9c5d236a120f",
+      "case": "light-desktop",
+      "checkpoint": "resource-runs-resource-memory",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-runs-resource-cpu.png",
+      "sha256": "4ce5cbfad25f82a8756b9dcc734031dbb0f198ba0e4b15edb05a931d656648fc",
+      "case": "dark-desktop",
+      "checkpoint": "resource-runs-resource-cpu",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-day-resource-cpu.png",
+      "sha256": "72981e4e033dce4e0d698372ab2b064f319161820b754fe156f34ab93f9b4c2f",
+      "case": "light-desktop",
+      "checkpoint": "resource-day-resource-cpu",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__resource-runs-resource-pressure.png",
+      "sha256": "19788c706380ff47bba1213d247834ce97cdf7195140ab6ce0248b7b2e3d1677",
+      "case": "dark-desktop",
+      "checkpoint": "resource-runs-resource-pressure",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-runs-resource-pressure.png",
+      "sha256": "b305f09f9330772b57ae2e42703621404256aa3b6cc63f9822a8c7c8bbac0971",
+      "case": "light-desktop",
+      "checkpoint": "resource-runs-resource-pressure",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/dark-desktop__first-screen.png",
+      "sha256": "89e79e4906a7afb012ff00c41acd560ecb59e0b0b1f34ee6e5ecbf8ace5b716f",
+      "case": "dark-desktop",
+      "checkpoint": "first-screen",
+      "title": "latency-dark-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__resource-fixture-pair.png",
+      "sha256": "19be0f26bd82b6af581532bf1f70c5f775271e463665e5dc1652021ff73800da",
+      "case": "light-desktop",
+      "checkpoint": "resource-fixture-pair",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/light-mobile__resource-runs-resource-pressure.png",
+      "sha256": "189e536077effcbd35a118ddf609bda830d06fe842b44be355537240499a842b",
+      "case": "light-mobile",
+      "checkpoint": "resource-runs-resource-pressure",
+      "title": "latency-light-390"
+    },
+    {
+      "path": "screenshots/light-desktop__retained-historical-trace.png",
+      "sha256": "e5fec173eb3b53d87ed5865c5d38df522e91c6febc65c20061568b0a2d09b3d3",
+      "case": "light-desktop",
+      "checkpoint": "retained-historical-trace",
+      "title": "latency-light-1280"
+    },
+    {
+      "path": "screenshots/light-desktop__retained-mean-phase-bar.png",
+      "sha256": "5d0bcc481139ce1fe12eaf8ede73527f9538ca1365913ba49e4838f2ab8f6cda",
+      "case": "light-desktop",
+      "checkpoint": "retained-mean-phase-bar",
+      "title": "latency-light-1280"
+    }
+  ],
+  "reviewed_at_utc": "2026-11-09T10:44:33.532126+00:00",
+  "visual_review": {
+    "worker_review": "All 60 captures reviewed: populated resource and fixture charts, retained historical phase bars and span timeline, readable labels in desktop/mobile light/dark.",
+    "parent_review": "Reviewed representative first screens, CPU/memory/disk/pressure charts, fixture bars/tables and historical trace; annotated timeline PNG reviewed separately.",
+    "mobile_tables": "Mantine native horizontal scroll containers retain all columns. Mobile screenshots show the left edge; desktop captures show the full tables. Offscreen columns are intentionally horizontally scrollable, not removed.",
+    "checks": [
+      "Actual pinned Mantine/React/Charts CDNs",
+      "Initial light/dark and live preference change",
+      "Run-window versus full-day chart control",
+      "Meaningful line paths and twelve fixture bars",
+      "All three fixture rows including warm control",
+      "Retained phase bar and four selectable historical span timelines",
+      "No document horizontal overflow or page errors",
+      "Timeline PNG browser download and byte identity",
+      "Manifest hashes match rendered files"
+    ]
+  }
+}
