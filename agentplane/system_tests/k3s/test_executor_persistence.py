@@ -110,6 +110,51 @@ def test_image_cleanup_protects_imported_layout_during_cri_publication(
     assert removed == ["sha256:obsolete"]
 
 
+@pytest.mark.parametrize(
+    ("image", "removed"),
+    [
+        ({"id": "sha256:mcp", "repoTags": ["git.allegedly.works/ducktape-ci/mcp-fixture:unset"]}, ["sha256:mcp"]),
+        ({"id": "sha256:pod", "repoTags": ["git.allegedly.works/ducktape-ci/pod-fixture:unset"]}, []),
+        # The same layout under a declared and an undeclared tag still serves this target.
+        (
+            {
+                "id": "sha256:shared",
+                "repoTags": [
+                    "git.allegedly.works/ducktape-ci/mcp-fixture:unset",
+                    "git.allegedly.works/ducktape-ci/pod-fixture:unset",
+                ],
+            },
+            [],
+        ),
+        ({"id": "sha256:upstream", "repoTags": ["registry.example.test/upstream:1"], "pinned": True}, []),
+        ({"id": "sha256:running", "repoTags": ["git.allegedly.works/ducktape-ci/mcp-fixture:unset"]}, []),
+    ],
+)
+def test_undeclared_fixture_image_removal_keeps_declared_foreign_and_used_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, image: dict[str, Any], removed: list[str]
+) -> None:
+    k3s = baseline.K3s(tmp_path, tmp_path / "unused-k3s")
+    removals: list[str] = []
+
+    def crictl(*args: str, check: bool = True) -> str:
+        match args:
+            case ("images", "-o", "json"):
+                return json.dumps({"images": [image]})
+            case ("ps", "-a", "-o", "json"):
+                return json.dumps({"containers": [{"imageRef": "sha256:running"}]})
+            case ("rmi", *ids):
+                removals.extend(ids)
+                return ""
+            case _:
+                raise AssertionError(args)
+
+    monkeypatch.setattr(k3s, "crictl", crictl)
+
+    k3s.remove_undeclared_fixture_images({"git.allegedly.works/ducktape-ci/pod-fixture:unset"})
+
+    assert removals == removed
+
+
 def _postgres_pod(
     uid: str,
     *,
