@@ -22,7 +22,7 @@ def github_api_proxy(
         name,
         artifact,
         timeout="5m",
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        deletion_policy=KustomizationSpecDeletionPolicy.DELETE,
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
