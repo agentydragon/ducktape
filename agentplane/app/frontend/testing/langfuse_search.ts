@@ -1,9 +1,11 @@
-import type { LangfuseSearchSettings } from "../app_config_client";
+import { create } from "@bufbuild/protobuf";
 
-export const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = {
-  base_url: "https://langfuse.test.invalid",
-  project_id: "test-project",
-  session_metadata_key: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
-  sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-  sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
-};
+import { LangfuseSearchSettingsSchema, type LangfuseSearchSettings } from "../../app_service_pb";
+
+export const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = create(LangfuseSearchSettingsSchema, {
+  baseUrl: "https://langfuse.test.invalid",
+  projectId: "test-project",
+  sessionMetadataKey: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
+  sandboxNamespaceMetadataKey: "attributes.agentplane.namespace",
+  sandboxServiceAccountMetadataKey: "attributes.agentplane.service_account",
+});

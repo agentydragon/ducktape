@@ -35,9 +35,9 @@ ts_library(
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:model_catalog",
-        "//agentplane/app/frontend:schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -46,9 +46,8 @@ ts_library(
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:app_config_client",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:langfuse_search",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
     ],
 )
 

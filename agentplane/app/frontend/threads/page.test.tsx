@@ -23,8 +23,13 @@ import {
 } from "../../../environments/v1/environment_service_pb";
 
 import { clone, create, toJson } from "@bufbuild/protobuf";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
-import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import {
+  FrontendConfigSchema,
+  TraceSearchSettingsSchema,
+  type LangfuseSearchSettings,
+  type TraceSearchSettings,
+} from "../../app_service_pb";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
@@ -35,7 +40,6 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
-import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import * as appConfigClient from "../app_config_client";
@@ -50,7 +54,6 @@ import {
   getThread,
   listThreadWindow,
 } from "./client";
-import { models } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, useRequiredSandboxesLive } from "../sandboxes/live";
@@ -91,10 +94,6 @@ vi.mock("./client", async (importOriginal) => ({
   interruptTurn: vi.fn(),
   getThread: vi.fn(),
   listThreadWindow: vi.fn(),
-}));
-vi.mock("../model_catalog", async (importOriginal) => ({
-  ...(await importOriginal<typeof ModelCatalogModule>()),
-  models: vi.fn(),
 }));
 vi.mock("../sandboxes/client", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxClientModule>()),
@@ -160,11 +159,11 @@ let inventoryDrops = false;
 let sharedFeed: FeedStatus = FeedStatus.ACTIVE;
 let sharedThread: ThreadViewInit = {};
 let eventStreamUrls: string[] = [];
-const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
-  grafana_base_url: "https://grafana.test.invalid",
-  tempo_datasource_uid: "tempo-test",
-  deployment_environment: "agentplane-test",
-};
+const TRACE_SEARCH_SETTINGS: TraceSearchSettings = create(TraceSearchSettingsSchema, {
+  grafanaBaseUrl: "https://grafana.test.invalid",
+  tempoDatasourceUid: "tempo-test",
+  deploymentEnvironment: "agentplane-test",
+});
 let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
 let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 // The Dispatcher watches the page opened, which a test answers itself.
@@ -191,15 +190,16 @@ beforeEach(() => {
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
   noticeInboxes = [];
-  vi.spyOn(appConfigClient, "getFrontendConfig").mockImplementation(async () => ({
-    trace_search: traceSearchSettings,
-    langfuse_search: langfuseSearchSettings,
-  }));
+  vi.spyOn(appConfigClient, "getFrontendConfig").mockImplementation(async () =>
+    create(FrontendConfigSchema, {
+      traceSearch: traceSearchSettings ?? undefined,
+      langfuseSearch: langfuseSearchSettings ?? undefined,
+    })
+  );
   vi.mocked(getThread).mockResolvedValue(THREAD);
-  vi.mocked(models).mockResolvedValue({
-    models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
-    harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
-  });
+  vi.spyOn(appConfigClient, "listModels").mockResolvedValue(
+    testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }], [])
+  );
   for (const operation of [submitInput, changeModel, changeReasoningEffort, interruptTurn]) {
     vi.mocked(operation).mockReturnValue(new Promise(() => {}));
   }

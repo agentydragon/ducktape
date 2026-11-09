@@ -1,13 +1,14 @@
 import { expect, it } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
-import type { TraceSearchSettings } from "./app_config_client";
+import { TraceSearchSettingsSchema } from "../app_service_pb";
 import { traceSearchUrl } from "./trace_search";
 
-const settings: TraceSearchSettings = {
-  grafana_base_url: "https://grafana.example.test/observability/",
-  tempo_datasource_uid: "tempo-uid",
-  deployment_environment: "agentplane-staging",
-};
+const settings = create(TraceSearchSettingsSchema, {
+  grafanaBaseUrl: "https://grafana.example.test/observability/",
+  tempoDatasourceUid: "tempo-uid",
+  deploymentEnvironment: "agentplane-staging",
+});
 
 function pane(url: string): Record<string, unknown> {
   return JSON.parse(new URL(url).searchParams.get("panes") ?? "{}") as Record<string, unknown>;
@@ -45,7 +46,7 @@ it.each([
 });
 
 it("escapes quotes, backslashes, and newlines in the deployment environment", () => {
-  const configured = { ...settings, deployment_environment: 'stage "one"\\west\nnext' };
+  const configured = { ...settings, deploymentEnvironment: 'stage "one"\\west\nnext' };
   const url = new URL(traceSearchUrl(configured, { kind: "session", id: "s" }));
   const explorePane = pane(url.toString()).A as { queries: { query: string }[] };
   expect(explorePane.queries[0].query).toBe(
@@ -55,7 +56,7 @@ it("escapes quotes, backslashes, and newlines in the deployment environment", ()
 
 it("uses the Grafana root when the configured base URL has no path", () => {
   const url = new URL(
-    traceSearchUrl({ ...settings, grafana_base_url: "https://grafana.example.test" }, { kind: "session", id: "s" })
+    traceSearchUrl({ ...settings, grafanaBaseUrl: "https://grafana.example.test" }, { kind: "session", id: "s" })
   );
   expect(url.pathname).toBe("/explore");
 });
