@@ -9692,6 +9692,8 @@ spec:
         - env:
             - name: AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE
               value: agentplane-staging
+            - name: AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE
+              value: agentplane-k8s-accounts
             - name: AGENTPLANE_POLICY_CONTROLLER_METRICS_BIND_ADDRESS
               value: :8080
             - name: AGENTPLANE_POLICY_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
@@ -9945,6 +9947,44 @@ rules:
     verbs:
       - patch
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - kubernetesrolesets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - kubernetesaccountgrants
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - managedserviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - kubernetesaccountgrants/status
+    verbs:
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - managedserviceaccounts/status
+    verbs:
+      - patch
+  - apiGroups:
       - ""
     resources:
       - serviceaccounts
@@ -10001,6 +10041,38 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: policy-controller
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: policy-controller-accounts
+  namespace: agentplane-k8s-accounts
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: policy-controller-accounts
+  namespace: agentplane-k8s-accounts
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: policy-controller-accounts
 subjects:
   - apiGroup: ""
     kind: ServiceAccount

@@ -72,7 +72,7 @@ func run(c config) error {
 		return out
 	}
 	// The cache holds only what the controller reads: its own namespace's policy objects, the
-	// subject namespaces' accounts, and the native bindings carrying its label.
+	// subject and accounts namespaces' ServiceAccounts, and the native bindings carrying its label.
 	config := ctrl.GetConfigOrDie()
 	config.WrapTransport = observability.WrapHTTPTransport(config.WrapTransport)
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -84,11 +84,14 @@ func run(c config) error {
 		LeaderElectionID:        "agentplane-policy-controller",
 		LeaderElectionNamespace: c.PolicyNamespace,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:       {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.PolicyBinding{}:   {Namespaces: only(c.PolicyNamespace)},
-			&corev1.ServiceAccount{}:     {Namespaces: only(c.SubjectNamespaces...)},
-			&rbacv1.RoleBinding{}:        {Label: ours},
-			&rbacv1.ClusterRoleBinding{}: {Label: ours},
+			&policyapi.PolicySet{}:              {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.PolicyBinding{}:          {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.KubernetesRoleSet{}:      {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.KubernetesAccountGrant{}: {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.ManagedServiceAccount{}:  {Namespaces: only(c.PolicyNamespace)},
+			&corev1.ServiceAccount{}:            {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
+			&rbacv1.RoleBinding{}:               {Label: ours},
+			&rbacv1.ClusterRoleBinding{}:        {Label: ours},
 		}},
 	})
 	if err != nil {
@@ -156,6 +159,7 @@ func run(c config) error {
 		APIReader:         mgr.GetAPIReader(),
 		PolicyNamespace:   c.PolicyNamespace,
 		SubjectNamespaces: c.SubjectNamespaces,
+		AccountsNamespace: c.AccountsNamespace,
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

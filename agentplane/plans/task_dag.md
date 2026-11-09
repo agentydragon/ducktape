@@ -3037,7 +3037,7 @@ the sidecar and the command-box templates keep a bearer hop, each marked `CLEANU
 
 ```mermaid
 flowchart LR
-    IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
+    IDENTITY_KINDS --> POLICY_GRANTS[In review: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
@@ -3058,7 +3058,7 @@ flowchart LR
 
 **In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
 `crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
-`Identity`, `KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount`, and an
+`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`, and an
 additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject (exactly one), so
 identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
 so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
@@ -3107,16 +3107,22 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `ServiceAccountGrant` and
-`KubernetesRoleSet` instead of `PolicyBinding` Kubernetes rules, keeping native RoleBindings per
-grant, role and namespace with the existing additive, pruned, never-adopt-on-name semantics;
-expiry extends to grants and managed accounts; `ManagedServiceAccount` creates the SA in the
-accounts namespace with a UID label, emits the account's `EgressCredential` and one-rule
-`PolicySet` owned by it, and prunes the SA on reconcile once the account is gone. Local apiserver
-only; remote targets are a settings entry added when one exists. **Exit:** envtest coverage for a
-grant on a Flux SA, a temporary account's full lifecycle including expiry with no restart, and a
-same-name SA recreated while a grant is live; the controller's RBAC adds SA create and delete in the
-accounts namespace and nothing else.
+**In review (PR from `claude/policy-grants`, stacked on `IDENTITY_KINDS`, 2026-11-08).** The Policy
+Controller reads `KubernetesAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
+Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
+and namespace through the same additive, pruned, never-adopt-on-name machinery; expiry extends to
+grants and managed accounts; `ManagedServiceAccount` creates the SA in the accounts namespace (the
+controller's `accounts_namespace` setting) with a UID label and prunes it on reconcile once the
+account is gone. Local apiserver only; remote targets are a settings entry added when one exists.
+Envtest covers a grant on a Flux SA, two grants on one account revoked independently, a temporary
+account's full lifecycle including expiry with no restart, and a same-name SA recreated while a
+grant is live. The controller's RBAC gains SA create, delete and reads in the accounts namespace
+only, plus reads, expiry deletes and status patches on the new kinds. **Merge hold:** the staging
+Role lives in `agentplane-k8s-accounts`, which the `claude/egress-k8s-impersonation` change
+renders; this merges after that namespace is on devel. **Remaining:** emitting each managed account's
+`EgressCredential` and one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount`
+credential source, not on devel at 2026-11-08, together with open question 11's admission rule.
+**Exit:** those two objects are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 

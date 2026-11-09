@@ -735,7 +735,12 @@ def chart(app: App) -> Chart:
             rules=[Rule.send_message(inbox_tags=[group])],
         )
     controller = policy_controller.PolicyController(
-        chart, "policy-controller", ENV, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
+        chart,
+        "policy-controller",
+        ENV,
+        accounts_namespace=kubernetes_accounts_namespace(ENV.namespace),
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
     )
     controller.add_platform_resources()
     policy_controller_rbac.PolicyControllerRbac(
@@ -744,6 +749,7 @@ def chart(app: App) -> Chart:
         ENV,
         account=controller.account,
         assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
+        accounts_namespace=kubernetes_accounts_namespace(ENV.namespace),
     )
     reader = ServiceAccount(
         chart,

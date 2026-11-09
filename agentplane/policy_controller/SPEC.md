@@ -1,16 +1,17 @@
 # Policy Controller
 
-Grants ServiceAccounts access by named, reusable `PolicySet`s, so a person chooses "basic cluster
+Grants ServiceAccounts access by named, reusable sets, so a person chooses "basic cluster
 diagnostics" rather than hundreds of per-namespace RoleBindings. It owns `PolicyBinding` expiry for
 every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
-(`agentplane/crds/manifests/crd-policysets.yaml`).
+(`agentplane/crds/manifests/crd-policysets.yaml`), of `KubernetesAccountGrant` and
+`KubernetesRoleSet`, and of `ManagedServiceAccount`.
 
 ## Expiry
 
-The controller deletes a `PolicyBinding` once its `expiresAt` passes, so a binding grants by
-existing, for every rule type: a reader of any rule type honours the bindings that exist and needs no
-expiry handling of its own. A binding that a GitOps tool owns must not set `expiresAt`, or the tool
-recreates it.
+The controller deletes a `PolicyBinding`, `KubernetesAccountGrant` or `ManagedServiceAccount` once
+its `expiresAt` passes, so each grants by existing: a reader of any rule type honours the bindings
+that exist and needs no expiry handling of its own. An object that a GitOps tool owns must not set
+`expiresAt`, or the tool recreates it.
 
 ## Grants
 
@@ -54,10 +55,44 @@ name-based ServiceAccount grant before cleanup or owner-reference garbage collec
 prevents that binding from belonging to a later Sandbox incarnation. Revoke's resourceVersion
 precondition prevents deleting a binding edited or replaced after its read.
 
+## Kubernetes account grants
+
+- A `KubernetesAccountGrant` in the policy namespace attaches `KubernetesRoleSet`s in its own
+  namespace to one ServiceAccount, named by apiserver, namespace and name. Its role sets'
+  `role_binding` and `cluster_role_binding` rules mean what the `PolicySet` Kubernetes rule types
+  mean, and the controller keeps their native bindings exactly as it keeps a binding's: one per
+  grant, role and namespace; additive across grants and bindings on one account; converged on
+  every change; never adopted on name alone; a recreated ServiceAccount bound afresh. A grant's
+  native bindings carry its name and UID in place of a binding's, so a grant and a binding never
+  share or prune each other's.
+- The account may live in a subject namespace or the accounts namespace. Only the `local` apiserver,
+  the one the controller runs in, is reached; a grant naming another reports
+  `APIServerNotConfigured` and keeps no native bindings.
+- Its status is a binding's: `KubernetesReady` with reasons `Applied`, `SubjectNotWatched`,
+  `SubjectMissing`, `RoleMissing`, `RoleSetUnavailable`, `APIServerNotConfigured` or
+  `ApplyFailed`, and `status.missingRoles`.
+
+## Managed ServiceAccounts
+
+- For a `ManagedServiceAccount` on the `local` apiserver, the controller creates a ServiceAccount
+  of the same name in the accounts namespace, labeled with the account's UID, and records that
+  incarnation in `status.serviceAccount`. One deleted by hand is recreated.
+- A ServiceAccount at that name without this account's UID label is never adopted: the reconcile
+  fails and `status.serviceAccount` stays unset until the name is free. One created for an earlier
+  account of the same name is deleted and replaced.
+- Once the account is gone, through expiry, its owner's deletion or by hand, the controller deletes
+  the ServiceAccounts labeled with its UID. No ownerReference reaches across namespaces, and no
+  finalizer holds the account.
+- An account on another apiserver gets nothing; its status has no condition, so the controller
+  logs it.
+- Deleting the ServiceAccount is not revocation: RBAC matches by name. Revocation is the grants
+  going, and the native bindings of a grant whose ServiceAccount is missing are deleted
+  (`SubjectMissing`).
+
 ## Revocation timing
 
-Expiry takes effect when the controller deletes the `PolicyBinding`, and deletion when it deletes the
-native bindings. While it is not running an expired binding stays and its native bindings keep
+Expiry takes effect when the controller deletes the `PolicyBinding` or grant, and deletion when it
+deletes the native bindings. While it is not running an expired binding stays and its native bindings keep
 granting; nothing in the API server expires them.
 
 ## Status

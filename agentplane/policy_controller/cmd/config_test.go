@@ -11,6 +11,7 @@ const settingPrefix = "AGENTPLANE_POLICY_CONTROLLER_"
 var required = map[string]string{
 	"POLICY_NAMESPACE":   "agentplane",
 	"SUBJECT_NAMESPACES": "agentplane",
+	"ACCOUNTS_NAMESPACE": "agentplane-accounts",
 }
 
 func setEnvironment(t *testing.T, environment map[string]string) {
@@ -22,7 +23,7 @@ func setEnvironment(t *testing.T, environment map[string]string) {
 
 func TestEverySettingComesFromTheEnvironment(t *testing.T) {
 	setEnvironment(t, map[string]string{
-		"POLICY_NAMESPACE": "policies", "SUBJECT_NAMESPACES": "agents,tools",
+		"POLICY_NAMESPACE": "policies", "SUBJECT_NAMESPACES": "agents,tools", "ACCOUNTS_NAMESPACE": "accounts",
 		"METRICS_BIND_ADDRESS": ":9090", "HEALTH_PROBE_BIND_ADDRESS": ":9091",
 		"WRITER_ACCOUNTS": "policies/app",
 	})
@@ -30,7 +31,7 @@ func TestEverySettingComesFromTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) ||
+	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) || c.AccountsNamespace != "accounts" ||
 		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
 		t.Fatalf("settings were not read: %+v", c)
 	}

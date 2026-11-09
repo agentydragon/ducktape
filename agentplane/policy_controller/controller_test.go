@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	policyNamespace  = "test-policies"
-	subjectNamespace = "test-subjects"
-	namespaceReader  = "test-namespace-reader"
-	nodeReader       = "test-node-reader"
+	policyNamespace   = "test-policies"
+	subjectNamespace  = "test-subjects"
+	accountsNamespace = "test-accounts"
+	namespaceReader   = "test-namespace-reader"
+	nodeReader        = "test-node-reader"
 )
 
 var grantRequest = reconcile.Request{NamespacedName: client.ObjectKey{Namespace: policyNamespace, Name: "test-grant"}}

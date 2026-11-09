@@ -1,4 +1,4 @@
-// Package apply prepares narrowly owned PolicyBinding server-side apply configurations.
+// Package apply prepares narrowly owned policy status server-side apply configurations.
 package apply
 
 import (
@@ -25,18 +25,30 @@ func PrepareConditionApply(binding *policyapi.PolicyBinding, condition metav1.Co
 // conditions stay, and whether it differs from the binding's. It calculates transition time from
 // the binding's current status. The condition observes the binding's generation.
 func ConditionApply(binding *policyapi.PolicyBinding, condition metav1.Condition) (*policyapplyv1.PolicyBindingApplyConfiguration, bool) {
-	condition.ObservedGeneration = binding.Generation
-	conditions := slices.Clone(binding.Status.Conditions)
+	configuration, changed := conditionConfiguration(binding.Status.Conditions, binding.Generation, condition)
+	return policyapplyv1.PolicyBinding(binding.Name, binding.Namespace).WithStatus(
+		policyapplyv1.Status().WithConditions(configuration),
+	), changed
+}
+
+// GrantConditionApply is ConditionApply for a KubernetesAccountGrant.
+func GrantConditionApply(grant *policyapi.KubernetesAccountGrant, condition metav1.Condition) (*policyapplyv1.KubernetesAccountGrantApplyConfiguration, bool) {
+	configuration, changed := conditionConfiguration(grant.Status.Conditions, grant.Generation, condition)
+	return policyapplyv1.KubernetesAccountGrant(grant.Name, grant.Namespace).WithStatus(
+		policyapplyv1.KubernetesAccountGrantStatus().WithConditions(configuration),
+	), changed
+}
+
+func conditionConfiguration(current []metav1.Condition, generation int64, condition metav1.Condition) (*metav1apply.ConditionApplyConfiguration, bool) {
+	condition.ObservedGeneration = generation
+	conditions := slices.Clone(current)
 	changed := meta.SetStatusCondition(&conditions, condition)
 	condition = *meta.FindStatusCondition(conditions, condition.Type)
-
-	return policyapplyv1.PolicyBinding(binding.Name, binding.Namespace).WithStatus(
-		policyapplyv1.Status().WithConditions(metav1apply.Condition().
-			WithType(condition.Type).
-			WithStatus(condition.Status).
-			WithObservedGeneration(condition.ObservedGeneration).
-			WithLastTransitionTime(condition.LastTransitionTime).
-			WithReason(condition.Reason).
-			WithMessage(condition.Message)),
-	), changed
+	return metav1apply.Condition().
+		WithType(condition.Type).
+		WithStatus(condition.Status).
+		WithObservedGeneration(condition.ObservedGeneration).
+		WithLastTransitionTime(condition.LastTransitionTime).
+		WithReason(condition.Reason).
+		WithMessage(condition.Message), changed
 }

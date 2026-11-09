@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,16 +37,40 @@ const (
 	BindingAnnotation  = "policy.agentplane.allegedly.works/binding"
 	BindingUIDAnn      = "policy.agentplane.allegedly.works/binding-uid"
 	SubjectUIDAnn      = "policy.agentplane.allegedly.works/subject-uid"
+	GrantAnnotation    = "policy.agentplane.allegedly.works/account-grant"
+	GrantUIDAnn        = "policy.agentplane.allegedly.works/account-grant-uid"
+	// On a ServiceAccount the controller created: the ManagedServiceAccount it was created for, and
+	// that account's UID, which is the ownership proof.
+	ManagedAccountAnnotation = "policy.agentplane.allegedly.works/managed-service-account"
+	ManagedAccountUIDLabel   = "policy.agentplane.allegedly.works/managed-service-account-uid"
+	// LocalAPIServer names the cluster the controller runs in, the only apiserver it reaches.
+	LocalAPIServer = "local"
 
 	setsIndex          = "spec.policySets"
 	subjectIndex       = "spec.subject"
+	roleSetsIndex      = "spec.roleSets"
+	accountIndex       = "spec.account"
 	nativeBindingIndex = "metadata.annotations[" + BindingAnnotation + "]"
-	// Bindings by each role in status.missingRoles; that role's creation retries them.
+	nativeGrantIndex   = "metadata.annotations[" + GrantAnnotation + "]"
+	managedAccountIdx  = "metadata.annotations[" + ManagedAccountAnnotation + "]"
+	// Bindings and grants by each role in status.missingRoles; that role's creation retries them.
 	missingRoleIndex = "status.missingRoles"
 )
 
-// Reconciler converges one PolicyBinding at a time: its native RoleBindings and ClusterRoleBindings,
-// and its KubernetesReady condition.
+// owner is a kind native bindings are kept for: the annotations naming the owning object on each
+// native binding, the field index over the name annotation, and the native binding name prefix.
+//
+// +kubebuilder:object:generate=false
+type owner struct{ nameAnn, uidAnn, index, prefix string }
+
+var (
+	bindingOwner = owner{nameAnn: BindingAnnotation, uidAnn: BindingUIDAnn, index: nativeBindingIndex, prefix: "pb"}
+	grantOwner   = owner{nameAnn: GrantAnnotation, uidAnn: GrantUIDAnn, index: nativeGrantIndex, prefix: "kag"}
+)
+
+// Reconciler converges one PolicyBinding or KubernetesAccountGrant at a time: its native
+// RoleBindings and ClusterRoleBindings, and its KubernetesReady condition. It also keeps each
+// ManagedServiceAccount's ServiceAccount.
 //
 // +kubebuilder:object:generate=false
 type Reconciler struct {
@@ -55,6 +80,9 @@ type Reconciler struct {
 	APIReader         client.Reader
 	PolicyNamespace   string
 	SubjectNamespaces []string
+	// Where ManagedServiceAccounts' ServiceAccounts are created. Grants may name accounts here as
+	// well as in SubjectNamespaces.
+	AccountsNamespace string
 }
 
 // native is one binding to keep; a ClusterRoleBinding when Namespace is empty.
@@ -69,37 +97,47 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 	var binding policyapi.PolicyBinding
 	if err := r.Get(ctx, req.NamespacedName, &binding); err != nil {
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, r.converge(ctx, req.Name, nil)
+			return ctrl.Result{}, r.converge(ctx, bindingOwner, req.Name, nil)
 		}
 		return ctrl.Result{}, err
 	}
-	if expiresAt := binding.Spec.ExpiresAt; expiresAt != nil {
-		if remaining := time.Until(expiresAt.Time); remaining > 0 {
-			// No event marks the deadline, so a successful reconcile asks to be run again at it (a
-			// failed one is retried with backoff anyway).
-			defer func() {
-				if err == nil {
-					result.RequeueAfter = remaining
-				}
-			}()
-		} else {
-			// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
-			// native bindings.
-			return ctrl.Result{}, client.IgnoreNotFound(r.Delete(ctx, &binding, client.Preconditions{UID: &binding.UID}))
-		}
+	// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
+	// native bindings.
+	requeue, expired, err := r.expire(ctx, &binding, binding.Spec.ExpiresAt)
+	if expired || err != nil {
+		return ctrl.Result{}, err
 	}
+	defer func() {
+		if err == nil {
+			result.RequeueAfter = requeue
+		}
+	}()
 	e, err := r.expand(ctx, &binding)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.converge(ctx, binding.Name, e.desired); err != nil {
+	if err := r.converge(ctx, bindingOwner, binding.Name, e.desired); err != nil {
 		e.reason, e.message = "ApplyFailed", err.Error()
 		return ctrl.Result{}, errors.Join(err, r.applyStatus(ctx, &binding, e))
 	}
 	return ctrl.Result{}, r.applyStatus(ctx, &binding, e)
 }
 
-// expansion is what a binding grants and what its status reports.
+// expire deletes obj once expiresAt has passed, reporting expired. Before then it returns how long
+// remains: no event marks the deadline, so a successful reconcile asks to be run again at it (a
+// failed one is retried with backoff anyway). Without expiresAt it returns zero.
+func (r *Reconciler) expire(ctx context.Context, obj client.Object, expiresAt *metav1.Time) (time.Duration, bool, error) {
+	if expiresAt == nil {
+		return 0, false, nil
+	}
+	if remaining := time.Until(expiresAt.Time); remaining > 0 {
+		return remaining, false, nil
+	}
+	uid := obj.GetUID()
+	return 0, true, client.IgnoreNotFound(r.Delete(ctx, obj, client.Preconditions{UID: &uid}))
+}
+
+// expansion is what a binding or grant grants and what its status reports.
 //
 // +kubebuilder:object:generate=false
 type expansion struct {
@@ -111,18 +149,12 @@ type expansion struct {
 
 func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (expansion, error) {
 	spec := binding.Spec
-	if !slices.Contains(r.SubjectNamespaces, spec.Subject.Namespace) {
-		return expansion{reason: "SubjectNotWatched", message: fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace)}, nil
+	account, e, err := r.subject(ctx, spec.Subject.Namespace, spec.Subject.Name, r.SubjectNamespaces)
+	if account == nil {
+		return e, err
 	}
-	var account corev1.ServiceAccount
-	if err := r.Get(ctx, types.NamespacedName{Namespace: spec.Subject.Namespace, Name: spec.Subject.Name}, &account); err != nil {
-		if apierrors.IsNotFound(err) {
-			return expansion{reason: "SubjectMissing", message: fmt.Sprintf("ServiceAccount %s/%s not found", spec.Subject.Namespace, spec.Subject.Name)}, nil
-		}
-		return expansion{}, err
-	}
-	e := expansion{desired: map[native]client.Object{}}
-	var missingSets []string
+	var natives []native
+	missing := unavailableSets{reason: policyapi.PolicySetUnavailable, kind: "PolicySets"}
 	for _, setName := range spec.PolicySets {
 		var set policyapi.PolicySet
 		if err := r.Get(ctx, types.NamespacedName{Namespace: r.PolicyNamespace, Name: setName}, &set); err != nil {
@@ -130,25 +162,56 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 				return expansion{}, err
 			}
 			// The binding's other sets still grant.
-			missingSets = append(missingSets, setName)
+			missing.names = append(missing.names, setName)
 			continue
 		}
 		for _, rule := range set.Spec.Rules {
-			for _, n := range scopes(rule) {
-				role := requiredRole(n)
-				found, err := r.roleExists(ctx, role)
-				if err != nil {
-					return expansion{}, err
-				}
-				if !found {
-					if !slices.Contains(e.missingRoles, role) {
-						e.missingRoles = append(e.missingRoles, role)
-					}
-					continue
-				}
-				e.desired[n] = r.render(binding, &account, n)
-			}
+			natives = append(natives, scopes(rule)...)
 		}
+	}
+	return r.expandNatives(ctx, bindingOwner, binding, account, natives, missing)
+}
+
+// subject is the ServiceAccount a binding or grant names, or, when there is none to bind, the
+// expansion reporting why.
+func (r *Reconciler) subject(ctx context.Context, namespace, name string, allowed []string) (*corev1.ServiceAccount, expansion, error) {
+	if !slices.Contains(allowed, namespace) {
+		return nil, expansion{reason: "SubjectNotWatched", message: fmt.Sprintf("subject namespace %s is not one this controller binds", namespace)}, nil
+	}
+	var account corev1.ServiceAccount
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &account); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, expansion{reason: "SubjectMissing", message: fmt.Sprintf("ServiceAccount %s/%s not found", namespace, name)}, nil
+		}
+		return nil, expansion{}, err
+	}
+	return &account, expansion{}, nil
+}
+
+// unavailableSets are the sets an owner names that do not exist, and how its condition reports them.
+//
+// +kubebuilder:object:generate=false
+type unavailableSets struct {
+	reason, kind string
+	names        []string
+}
+
+// expandNatives renders the native bindings for natives whose role exists and reports the rest.
+func (r *Reconciler) expandNatives(ctx context.Context, o owner, obj metav1.Object, account *corev1.ServiceAccount, natives []native, missing unavailableSets) (expansion, error) {
+	e := expansion{desired: map[native]client.Object{}}
+	for _, n := range natives {
+		role := requiredRole(n)
+		found, err := r.roleExists(ctx, role)
+		if err != nil {
+			return expansion{}, err
+		}
+		if !found {
+			if !slices.Contains(e.missingRoles, role) {
+				e.missingRoles = append(e.missingRoles, role)
+			}
+			continue
+		}
+		e.desired[n] = r.render(o, obj, account, n)
 	}
 	switch {
 	case len(e.missingRoles) > 0:
@@ -160,8 +223,8 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 			names = append(names, missingRoleKey(role))
 		}
 		e.reason, e.message = "RoleMissing", "missing roles: "+strings.Join(names, ", ")
-	case len(missingSets) > 0:
-		e.reason, e.message = policyapi.PolicySetUnavailable, "missing PolicySets: "+strings.Join(missingSets, ", ")
+	case len(missing.names) > 0:
+		e.reason, e.message = missing.reason, "missing "+missing.kind+": "+strings.Join(missing.names, ", ")
 	default:
 		e.reason, e.message = "Applied", fmt.Sprintf("%d native bindings", len(e.desired))
 	}
@@ -214,16 +277,16 @@ func (r *Reconciler) roleExists(ctx context.Context, role policyapi.MissingRole)
 	return err == nil, err
 }
 
-func (r *Reconciler) render(binding *policyapi.PolicyBinding, account *corev1.ServiceAccount, n native) client.Object {
-	digest := sha256.Sum256(fmt.Appendf(nil, "%s/%s/%s/%s/%s", binding.UID, account.UID, n.Role.Kind, n.Role.Name, n.Namespace))
+func (r *Reconciler) render(o owner, obj metav1.Object, account *corev1.ServiceAccount, n native) client.Object {
+	digest := sha256.Sum256(fmt.Appendf(nil, "%s/%s/%s/%s/%s", obj.GetUID(), account.UID, n.Role.Kind, n.Role.Name, n.Namespace))
 	meta := metav1.ObjectMeta{
-		Name:      fmt.Sprintf("pb-%.40s-%s", binding.Name, hex.EncodeToString(digest[:])[:16]),
+		Name:      fmt.Sprintf("%s-%.40s-%s", o.prefix, obj.GetName(), hex.EncodeToString(digest[:])[:16]),
 		Namespace: n.Namespace,
 		Labels:    map[string]string{ManagedByLabel: FieldManager, PolicyNamespaceLbl: r.PolicyNamespace},
 		Annotations: map[string]string{
-			BindingAnnotation: binding.Name,
-			BindingUIDAnn:     string(binding.UID),
-			SubjectUIDAnn:     string(account.UID),
+			o.nameAnn:     obj.GetName(),
+			o.uidAnn:      string(obj.GetUID()),
+			SubjectUIDAnn: string(account.UID),
 		},
 	}
 	roleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: n.Role.Kind, Name: n.Role.Name}
@@ -234,19 +297,19 @@ func (r *Reconciler) render(binding *policyapi.PolicyBinding, account *corev1.Se
 	return &rbacv1.RoleBinding{ObjectMeta: meta, RoleRef: roleRef, Subjects: subjects}
 }
 
-// converge makes the binding's labeled native bindings exactly `desired`, keyed by name.
-func (r *Reconciler) converge(ctx context.Context, bindingName string, desired map[native]client.Object) error {
+// converge makes the owner's labeled native bindings exactly `desired`, keyed by name.
+func (r *Reconciler) converge(ctx context.Context, o owner, ownerName string, desired map[native]client.Object) error {
 	want := map[client.ObjectKey]client.Object{}
 	for _, obj := range desired {
 		want[client.ObjectKeyFromObject(obj)] = obj
 	}
-	actual, err := r.natives(ctx, bindingName)
+	actual, err := r.natives(ctx, o, ownerName)
 	if err != nil {
 		return err
 	}
 	for key, obj := range actual {
 		if wanted, ok := want[key]; ok {
-			if sameIdentity(obj, wanted) {
+			if sameIdentity(o, obj, wanted) {
 				if !sameRoleRef(obj, wanted) {
 					if err := r.deleteNative(ctx, obj); err != nil {
 						return err
@@ -273,9 +336,9 @@ func (r *Reconciler) converge(ctx context.Context, bindingName string, desired m
 	return nil
 }
 
-func (r *Reconciler) natives(ctx context.Context, bindingName string) (map[client.ObjectKey]client.Object, error) {
+func (r *Reconciler) natives(ctx context.Context, o owner, ownerName string) (map[client.ObjectKey]client.Object, error) {
 	labels := client.MatchingLabels{ManagedByLabel: FieldManager, PolicyNamespaceLbl: r.PolicyNamespace}
-	index := client.MatchingFields{nativeBindingIndex: bindingName}
+	index := client.MatchingFields{o.index: ownerName}
 	var roleBindings rbacv1.RoleBindingList
 	var clusterBindings rbacv1.ClusterRoleBindingList
 	if err := r.List(ctx, &roleBindings, labels, index); err != nil {
@@ -310,8 +373,8 @@ func matches(actual, wanted client.Object) bool {
 	return actualRef == wantedRef && slices.Equal(actualSubjects, wantedSubjects)
 }
 
-func sameIdentity(actual, wanted client.Object) bool {
-	return actual.GetAnnotations()[BindingUIDAnn] == wanted.GetAnnotations()[BindingUIDAnn] &&
+func sameIdentity(o owner, actual, wanted client.Object) bool {
+	return actual.GetAnnotations()[o.uidAnn] == wanted.GetAnnotations()[o.uidAnn] &&
 		actual.GetAnnotations()[SubjectUIDAnn] == wanted.GetAnnotations()[SubjectUIDAnn]
 }
 
@@ -412,97 +475,171 @@ func matchesIdentity(actual, wanted client.Object) bool {
 // applyStatus server-side applies the status this controller owns, KubernetesReady and
 // missingRoles, in one configuration; other readers' conditions stay.
 func (r *Reconciler) applyStatus(ctx context.Context, binding *policyapi.PolicyBinding, e expansion) error {
+	configuration, changed := policyapply.ConditionApply(binding, e.condition())
+	if !changed && slices.Equal(binding.Status.MissingRoles, e.missingRoles) {
+		return nil
+	}
+	configuration.Status.WithMissingRoles(e.missingRoleConfigurations()...)
+	return r.Status().Apply(ctx, configuration,
+		client.FieldOwner(FieldManager), client.ForceOwnership)
+}
+
+func (e expansion) condition() metav1.Condition {
 	status := metav1.ConditionFalse
 	if e.reason == "Applied" {
 		status = metav1.ConditionTrue
 	}
-	configuration, changed := policyapply.ConditionApply(binding, metav1.Condition{Type: KubernetesReady, Status: status, Reason: e.reason, Message: e.message})
-	if !changed && slices.Equal(binding.Status.MissingRoles, e.missingRoles) {
-		return nil
-	}
+	return metav1.Condition{Type: KubernetesReady, Status: status, Reason: e.reason, Message: e.message}
+}
+
+func (e expansion) missingRoleConfigurations() []*policyapplyv1.MissingRoleApplyConfiguration {
+	var out []*policyapplyv1.MissingRoleApplyConfiguration
 	for _, role := range e.missingRoles {
 		missing := policyapplyv1.MissingRole().WithKind(role.Kind).WithName(role.Name)
 		if role.Namespace != "" {
 			missing.WithNamespace(role.Namespace)
 		}
-		configuration.Status.WithMissingRoles(missing)
+		out = append(out, missing)
 	}
-	return r.Status().Apply(ctx, configuration,
-		client.FieldOwner(FieldManager), client.ForceOwnership)
+	return out
 }
 
-// SetupWithManager wires the watches: each PolicyBinding, plus whatever it reads mapped back to it.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	ctx := context.Background()
-	indexer := mgr.GetFieldIndexer()
-	indexNativeBinding := func(obj client.Object) []string {
-		if bindingName := obj.GetAnnotations()[BindingAnnotation]; bindingName != "" {
-			return []string{bindingName}
+// IndexFields registers the field indexes the reconcilers list by.
+func (r *Reconciler) IndexFields(ctx context.Context, indexer client.FieldIndexer) error {
+	byAnnotation := func(key string) client.IndexerFunc {
+		return func(obj client.Object) []string {
+			if name := obj.GetAnnotations()[key]; name != "" {
+				return []string{name}
+			}
+			return nil
 		}
-		return nil
 	}
-	if err := indexer.IndexField(ctx, &rbacv1.RoleBinding{}, nativeBindingIndex, indexNativeBinding); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &rbacv1.ClusterRoleBinding{}, nativeBindingIndex, indexNativeBinding); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, setsIndex, func(obj client.Object) []string {
-		return obj.(*policyapi.PolicyBinding).Spec.PolicySets
-	}); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, subjectIndex, func(obj client.Object) []string {
-		subject := obj.(*policyapi.PolicyBinding).Spec.Subject
-		return []string{subject.Namespace + "/" + subject.Name}
-	}); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, missingRoleIndex, func(obj client.Object) []string {
+	missingRoles := func(roles []policyapi.MissingRole) []string {
 		var out []string
-		for _, role := range obj.(*policyapi.PolicyBinding).Status.MissingRoles {
+		for _, role := range roles {
 			out = append(out, missingRoleKey(role))
 		}
 		return out
-	}); err != nil {
-		return err
 	}
-	byIndex := func(index string, value func(client.Object) string) handler.EventHandler {
-		return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			var bindings policyapi.PolicyBindingList
-			if err := r.List(ctx, &bindings, client.InNamespace(r.PolicyNamespace), client.MatchingFields{index: value(obj)}); err != nil {
+	for _, index := range []struct {
+		obj   client.Object
+		field string
+		value client.IndexerFunc
+	}{
+		{&rbacv1.RoleBinding{}, nativeBindingIndex, byAnnotation(BindingAnnotation)},
+		{&rbacv1.ClusterRoleBinding{}, nativeBindingIndex, byAnnotation(BindingAnnotation)},
+		{&rbacv1.RoleBinding{}, nativeGrantIndex, byAnnotation(GrantAnnotation)},
+		{&rbacv1.ClusterRoleBinding{}, nativeGrantIndex, byAnnotation(GrantAnnotation)},
+		{&corev1.ServiceAccount{}, managedAccountIdx, byAnnotation(ManagedAccountAnnotation)},
+		{&policyapi.PolicyBinding{}, setsIndex, func(obj client.Object) []string {
+			return obj.(*policyapi.PolicyBinding).Spec.PolicySets
+		}},
+		{&policyapi.PolicyBinding{}, subjectIndex, func(obj client.Object) []string {
+			subject := obj.(*policyapi.PolicyBinding).Spec.Subject
+			return []string{subject.Namespace + "/" + subject.Name}
+		}},
+		{&policyapi.PolicyBinding{}, missingRoleIndex, func(obj client.Object) []string {
+			return missingRoles(obj.(*policyapi.PolicyBinding).Status.MissingRoles)
+		}},
+		{&policyapi.KubernetesAccountGrant{}, roleSetsIndex, func(obj client.Object) []string {
+			return obj.(*policyapi.KubernetesAccountGrant).Spec.RoleSets
+		}},
+		{&policyapi.KubernetesAccountGrant{}, accountIndex, func(obj client.Object) []string {
+			account := obj.(*policyapi.KubernetesAccountGrant).Spec.Account
+			if account.APIServer != LocalAPIServer {
 				return nil
 			}
-			var out []reconcile.Request
-			for _, b := range bindings.Items {
-				out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&b)})
-			}
-			return out
-		})
+			return []string{account.Namespace + "/" + account.Name}
+		}},
+		{&policyapi.KubernetesAccountGrant{}, missingRoleIndex, func(obj client.Object) []string {
+			return missingRoles(obj.(*policyapi.KubernetesAccountGrant).Status.MissingRoles)
+		}},
+	} {
+		if err := indexer.IndexField(ctx, index.obj, index.field, index.value); err != nil {
+			return err
+		}
 	}
-	// A native binding maps back by annotation, including to a PolicyBinding deleted while the
-	// controller was down: the initial list enqueues it, and its NotFound reconcile deletes them.
-	toBinding := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		name, ok := obj.GetAnnotations()[BindingAnnotation]
+	return nil
+}
+
+// enqueueByIndex maps an object to the policy-namespace objects of list type L whose index holds
+// value(obj).
+func enqueueByIndex[T any, L interface {
+	*T
+	client.ObjectList
+}](r *Reconciler, index string, value func(client.Object) string) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		list := L(new(T))
+		if err := r.List(ctx, list, client.InNamespace(r.PolicyNamespace), client.MatchingFields{index: value(obj)}); err != nil {
+			ctrl.LoggerFrom(ctx).Error(err, "listing objects to reconcile", "index", index)
+			return nil
+		}
+		items, err := apimeta.ExtractList(list)
+		if err != nil {
+			ctrl.LoggerFrom(ctx).Error(err, "listing objects to reconcile", "index", index)
+			return nil
+		}
+		var out []reconcile.Request
+		for _, item := range items {
+			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(item.(client.Object))})
+		}
+		return out
+	})
+}
+
+// toOwner maps a native binding back to its owner by annotation, including to one deleted while the
+// controller was down: the initial list enqueues it, and its NotFound reconcile deletes them.
+func (r *Reconciler) toOwner(o owner) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+		name, ok := obj.GetAnnotations()[o.nameAnn]
 		if !ok {
 			return nil
 		}
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: r.PolicyNamespace, Name: name}}}
 	})
-	return ctrl.NewControllerManagedBy(mgr).
+}
+
+func accountKey(obj client.Object) string { return obj.GetNamespace() + "/" + obj.GetName() }
+
+func roleKey(obj client.Object) string {
+	return missingRoleKey(policyapi.MissingRole{Kind: "Role", Namespace: obj.GetNamespace(), Name: obj.GetName()})
+}
+
+func clusterRoleKey(obj client.Object) string {
+	return missingRoleKey(policyapi.MissingRole{Kind: "ClusterRole", Name: obj.GetName()})
+}
+
+// SetupWithManager wires three controllers: PolicyBindings, KubernetesAccountGrants and
+// ManagedServiceAccounts, each with whatever it reads mapped back to it.
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := r.IndexFields(context.Background(), mgr.GetFieldIndexer()); err != nil {
+		return err
+	}
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&policyapi.PolicyBinding{}).
-		Watches(&policyapi.PolicySet{}, byIndex(setsIndex, client.Object.GetName)).
-		Watches(&corev1.ServiceAccount{}, byIndex(subjectIndex, func(obj client.Object) string {
-			return obj.GetNamespace() + "/" + obj.GetName()
-		})).
-		Watches(&rbacv1.RoleBinding{}, toBinding).
-		Watches(&rbacv1.ClusterRoleBinding{}, toBinding).
+		Watches(&policyapi.PolicySet{}, enqueueByIndex[policyapi.PolicyBindingList](r, setsIndex, client.Object.GetName)).
+		Watches(&corev1.ServiceAccount{}, enqueueByIndex[policyapi.PolicyBindingList](r, subjectIndex, accountKey)).
+		Watches(&rbacv1.RoleBinding{}, r.toOwner(bindingOwner)).
+		Watches(&rbacv1.ClusterRoleBinding{}, r.toOwner(bindingOwner)).
 		// Metadata only: whether a role exists is all a binding depends on.
-		WatchesMetadata(&rbacv1.Role{}, byIndex(missingRoleIndex, func(obj client.Object) string {
-			return missingRoleKey(policyapi.MissingRole{Kind: "Role", Namespace: obj.GetNamespace(), Name: obj.GetName()})
-		})).
-		WatchesMetadata(&rbacv1.ClusterRole{}, byIndex(missingRoleIndex, func(obj client.Object) string {
-			return missingRoleKey(policyapi.MissingRole{Kind: "ClusterRole", Name: obj.GetName()})
-		})).
-		Complete(r)
+		WatchesMetadata(&rbacv1.Role{}, enqueueByIndex[policyapi.PolicyBindingList](r, missingRoleIndex, roleKey)).
+		WatchesMetadata(&rbacv1.ClusterRole{}, enqueueByIndex[policyapi.PolicyBindingList](r, missingRoleIndex, clusterRoleKey)).
+		Complete(r); err != nil {
+		return err
+	}
+	if err := ctrl.NewControllerManagedBy(mgr).
+		For(&policyapi.KubernetesAccountGrant{}).
+		Watches(&policyapi.KubernetesRoleSet{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, roleSetsIndex, client.Object.GetName)).
+		Watches(&corev1.ServiceAccount{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, accountIndex, accountKey)).
+		Watches(&rbacv1.RoleBinding{}, r.toOwner(grantOwner)).
+		Watches(&rbacv1.ClusterRoleBinding{}, r.toOwner(grantOwner)).
+		WatchesMetadata(&rbacv1.Role{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, missingRoleIndex, roleKey)).
+		WatchesMetadata(&rbacv1.ClusterRole{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, missingRoleIndex, clusterRoleKey)).
+		Complete(reconcile.Func(r.ReconcileGrant)); err != nil {
+		return err
+	}
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&policyapi.ManagedServiceAccount{}).
+		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.toManagedAccount)).
+		Complete(reconcile.Func(r.ReconcileManagedServiceAccount))
 }

@@ -732,11 +732,23 @@ def build_chart(
         metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
         rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
     )
+    # The fixture keeps managed accounts in its own namespace rather than rendering a dedicated one.
     controller = policy_controller.PolicyController(
-        chart, "policy-controller", env, placement=None, registry_secret_name=None, memory_limit=None
+        chart,
+        "policy-controller",
+        env,
+        accounts_namespace=NAMESPACE,
+        placement=None,
+        registry_secret_name=None,
+        memory_limit=None,
     )
     policy_controller_rbac.PolicyControllerRbac(
-        chart, "policy-controller-rbac", env, account=controller.account, assignable_grants=[tool_config_grant]
+        chart,
+        "policy-controller-rbac",
+        env,
+        account=controller.account,
+        assignable_grants=[tool_config_grant],
+        accounts_namespace=NAMESPACE,
     )
     return FixtureChart(
         chart=chart,
