@@ -23,9 +23,15 @@ from agentplane.system_tests.driver.sandbox import SandboxNotReadyError, suspend
 
 
 def _environment(
-    name: str, uid: str, *, ready: bool, operating_mode: str = "OPERATING_MODE_RUNNING", namespace: str = "test"
+    name: str,
+    uid: str,
+    *,
+    ready: bool,
+    operating_mode: str = "OPERATING_MODE_RUNNING",
+    namespace: str = "test",
+    pod_uid: str | None = None,
 ) -> environment_service_pb2.EnvironmentDescriptor:
-    return environment_service_pb2.EnvironmentDescriptor(
+    view = environment_service_pb2.EnvironmentDescriptor(
         target=identity_pb2.EnvironmentTarget(namespace=namespace, name=name, uid=uid),
         execution_account=identity_pb2.ServiceAccountIdentity(
             account=identity_pb2.ServiceAccount(namespace="test", name="runner")
@@ -39,6 +45,11 @@ def _environment(
             ),
         ),
     )
+    if pod_uid is not None:
+        view.kubernetes_diagnostics.pod.CopyFrom(
+            environment_service_pb2.SandboxPod(name=f"virt-launcher-{name}", namespace=namespace, uid=pod_uid)
+        )
+    return view
 
 
 def _snapshot(
@@ -164,6 +175,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
         await sandbox.wait_until_running(client, view.target)
 
     assert isinstance(raised.value.__cause__, TimeoutError)
+    assert raised.value.last_view is view
     assert closed
 
 
@@ -446,6 +458,124 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
     with pytest.raises(RuntimeError, match="boot did not become ready"):
         await use_scope()
     assert cleanup == [(created.name, created.uid)]
+
+
+async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_error(
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = create_autospec(Client, instance=True)
+    created = _create_targets(client, ("failed-vm",))["failed-vm"]
+    view = _environment(created.name, created.uid, ready=False, pod_uid=str(uuid4()))
+    readiness_error = SandboxNotReadyError("VM did not reach Ready", last_view=view)
+    events: list[str] = []
+
+    async def not_ready(
+        _client: Client, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == created
+        raise readiness_error
+
+    def capture(failed_view: environment_service_pb2.EnvironmentDescriptor, artifact_root: object) -> object:
+        assert failed_view is view
+        events.append("capture")
+        raise RuntimeError("/proc snapshot unavailable")
+
+    async def delete(_cluster: Cluster, _client: Client, name: str, uid: str) -> None:
+        assert (name, uid) == (created.name, created.uid)
+        events.append("suspend-delete")
+
+    monkeypatch.setattr(sandbox, "wait_until_running", not_ready)
+    monkeypatch.setattr(sandbox.boot_rcu, "capture_readiness_failure", capture)
+    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+
+    async def use_scope() -> None:
+        async with sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
+            await create(created.name, template=sandbox.VM_TEMPLATE)
+
+    with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
+        await use_scope()
+
+    assert raised.value is readiness_error
+    assert events == ["capture", "suspend-delete"]
+    assert any("Passive host QEMU readiness snapshot failed" in note for note in raised.value.__notes__)
+
+
+async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = create_autospec(Client, instance=True)
+    created = _create_targets(client, ("failed-vm",))["failed-vm"]
+    replacement = _environment(created.name, str(uuid4()), ready=False, pod_uid=str(uuid4()))
+    readiness_error = SandboxNotReadyError("VM was replaced", last_view=replacement)
+    captures: list[str] = []
+
+    async def not_ready(
+        _client: Client, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == created
+        raise readiness_error
+
+    def capture(view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
+        captures.append(view.target.uid)
+
+    async def delete(_cluster: Cluster, _client: Client, _name: str, _uid: str) -> None:
+        return
+
+    monkeypatch.setattr(sandbox, "wait_until_running", not_ready)
+    monkeypatch.setattr(sandbox.boot_rcu, "capture_readiness_failure", capture)
+    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+
+    async def use_scope() -> None:
+        async with sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
+            await create("failed-vm", template=sandbox.VM_TEMPLATE)
+
+    with pytest.raises(SandboxNotReadyError, match="VM was replaced") as raised:
+        await use_scope()
+
+    assert raised.value is readiness_error
+    assert replacement.target.uid != created.uid
+    assert captures == []
+
+
+async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = create_autospec(Client, instance=True)
+    views = _create_targets(client, ("failed-pod", "ready-vm"))
+    pod_error = SandboxNotReadyError(
+        "Pod did not reach Ready",
+        last_view=_environment("failed-pod", views["failed-pod"].uid, ready=False, pod_uid=str(uuid4())),
+    )
+    ready_vm = _environment("ready-vm", views["ready-vm"].uid, ready=True, pod_uid=str(uuid4()))
+    captures: list[str] = []
+
+    async def readiness(
+        _client: Client, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        if target.name == "failed-pod":
+            raise pod_error
+        return ready_vm
+
+    def capture(view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
+        captures.append(view.target.name)
+
+    async def delete(_cluster: Cluster, _client: Client, _name: str, _uid: str) -> None:
+        return
+
+    async def admitted_launcher(*_args: object) -> None:
+        return
+
+    monkeypatch.setattr(sandbox, "wait_until_running", readiness)
+    monkeypatch.setattr(sandbox.boot_rcu, "capture_readiness_failure", capture)
+    monkeypatch.setattr(sandbox, "assert_admitted_launcher_topology", admitted_launcher)
+    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+
+    async with sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
+        with pytest.raises(SandboxNotReadyError, match="Pod did not reach Ready"):
+            await create("failed-pod")
+        assert await create("ready-vm", template=sandbox.VM_TEMPLATE) is ready_vm
+
+    assert captures == []
 
 
 async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(

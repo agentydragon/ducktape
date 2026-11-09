@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+# gazelle:include_dep @pypi//protobuf
+from agentplane.environments.v1 import environment_service_pb2
 from agentplane.system_tests.vm import host_qemu
 
 INTERVAL_SECONDS = 1.0
@@ -123,6 +125,48 @@ def _sample_qemu(proc_root: Path, pod_uid: str) -> dict[str, object]:
         "process_scan_truncated": truncated,
         "process_scan_incomplete": incomplete or truncated,
     }
+
+
+def capture_readiness_failure(view: environment_service_pb2.EnvironmentDescriptor, artifact_root: Path) -> Path:
+    """Write one passive, exact-Pod-UID QEMU snapshot for a VM that missed readiness."""
+    target = view.target
+    if not target.namespace or not target.name or not re.fullmatch(r"[A-Za-z0-9-]+", target.uid):
+        raise ValueError("VM readiness snapshot requires a complete Sandbox identity")
+
+    pod_identity: dict[str, str] | None = None
+    host_state: dict[str, object] = {"not_sampled": "launcher Pod identity unavailable"}
+    capture_status = "skipped_no_launcher_identity"
+    if view.kubernetes_diagnostics.HasField("pod"):
+        pod = view.kubernetes_diagnostics.pod
+        pod_identity = {"namespace": pod.namespace, "name": pod.name, "uid": pod.uid}
+        if pod.namespace == target.namespace and pod.name and re.fullmatch(r"[A-Za-z0-9-]+", pod.uid):
+            try:
+                host_state = _sample_qemu(Path("/proc"), pod.uid)
+                capture_status = "sampled"
+            except Exception as error:
+                host_state = {"capture_error": type(error).__name__, "message": str(error)[:512]}
+                capture_status = "collector_error"
+        else:
+            capture_status = "skipped_pod_identity_mismatch"
+            host_state = {"not_sampled": "launcher Pod identity is incomplete or in another namespace"}
+
+    record = {
+        "captured_at_utc": datetime.now(UTC).isoformat(),
+        "capture_status": capture_status,
+        "sandbox": {"namespace": target.namespace, "name": target.name, "uid": target.uid},
+        "launcher_pod": pod_identity,
+        "host_qemu": host_state,
+    }
+    encoded = (json.dumps(record, sort_keys=True) + "\n").encode()
+    if len(encoded) > MAX_BYTES:
+        raise ValueError(f"VM readiness QEMU snapshot exceeded {MAX_BYTES} bytes")
+
+    destination = artifact_root / "readiness-failures" / f"{target.uid}.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".partial")
+    temporary.write_bytes(encoded)
+    temporary.replace(destination)
+    return destination
 
 
 def _append_bounded(path: Path, record: dict[str, object], *, max_bytes: int | None = None) -> bool:

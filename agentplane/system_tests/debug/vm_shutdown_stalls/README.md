@@ -38,6 +38,11 @@ identify the proof unit as the blocker.
 
 ## Separate boot RCU wedge: opt-in observation
 
+The [November 9 pre-userspace readiness failure](../vm_boot_before_userspace_2026_11_09.md)
+has an earlier observed boundary: both serial copies stop during kernel PCI/ACPI
+initialization, with no retained live QEMU snapshot. Its shared cause with the
+RCU or shutdown failures below is unproven.
+
 The full VM suite also has a distinct **pre-Ready** failure. In [invocation
 `c4d8ad7d-afbd-4d14-8a93-f54b968fce8f`](https://app.buildbuddy.io/invocation/c4d8ad7d-afbd-4d14-8a93-f54b968fce8f),
 run 1 VM 2 did not become Ready. Cleanup sent ACPI, but PID 1 remained in
