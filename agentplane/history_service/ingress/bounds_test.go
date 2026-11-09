@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // acknowledgementSink is the server side of a call whose frames the test has already queued.
@@ -22,6 +24,13 @@ type acknowledgementSink struct {
 func (acknowledgementSink) Send(*session_ingresspb.Acknowledgement) error { return nil }
 
 func (acknowledgementSink) Recv() (*session_ingresspb.PushFrame, error) { return nil, io.EOF }
+
+type authenticatedAcknowledgementSink struct {
+	acknowledgementSink
+	ctx context.Context
+}
+
+func (s authenticatedAcknowledgementSink) Context() context.Context { return s.ctx }
 
 // A runner that never pauses keeps the ingress's frame queue non-empty, so only the batch limits bound a
 // transaction. Each commit is one transaction, so the distinct transaction IDs on the stored entries count them.
@@ -45,13 +54,28 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 				frames.queue <- received{frame: entryFrame(testEntry(cursor, burst.text))}
 			}
 			frames.queue <- received{err: io.EOF}
-			c := &pushCall{history: service.History, timing: testTiming, stream: acknowledgementSink{}, frames: frames, log: slog.Default(), service: service}
-			writer := storage.Writer{Namespace: testNamespace, Name: "test-sandbox-a", UID: "test-account-a-uid"}
-			if err := c.failure(c.run(context.Background(), writer, auth.Account{Namespace: writer.Namespace, Name: writer.Name})); err != nil {
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+writerToken))
+			stream := authenticatedAcknowledgementSink{ctx: ctx}
+			c := &pushCall{history: service.History, timing: testTiming, stream: stream, frames: frames, log: slog.Default(), service: service}
+			principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+			if err != nil {
+				t.Fatal(err)
+			}
+			methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+			interceptor := methods.StreamInterceptor(time.Second)
+			err = interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: session_ingresspb.SessionJournalIngress_Push_FullMethodName}, func(_ any, admitted grpc.ServerStream) error {
+				principal, err := auth.Caller(admitted.Context())
+				if err != nil {
+					return err
+				}
+				writer := storage.Writer{Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID}
+				return c.failure(c.run(admitted.Context(), writer, principal.Account))
+			})
+			if err != nil {
 				t.Fatal(err)
 			}
 			var stored, transactions int
-			err := db.QueryRowContext(t.Context(), "SELECT count(*), count(DISTINCT xmin::text) FROM session_event WHERE session_id = $1", sessionID).
+			err = db.QueryRowContext(t.Context(), "SELECT count(*), count(DISTINCT xmin::text) FROM session_event WHERE session_id = $1", sessionID).
 				Scan(&stored, &transactions)
 			if err != nil {
 				t.Fatal(err)

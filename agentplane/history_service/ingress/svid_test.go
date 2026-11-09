@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"context"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -32,7 +34,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, _ := newService(t, testTiming)
+	service, _ := newService(t, Timing{IdleAck: time.Hour, SilenceLimit: 2 * time.Hour})
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
 	rpc := listener.Config{
 		ListenAddress: "127.0.0.1:0",
@@ -68,18 +70,39 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	connect := func(workload workloadauthtesting.Workload) testIngress {
+	idleListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleService := &Service{History: service.History, Timing: Timing{IdleAck: testTiming.IdleAck, SilenceLimit: time.Hour}}
+	idleServer := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
+	session_ingresspb.RegisterSessionJournalIngressServer(idleServer, idleService)
+	go func() { _ = idleServer.Serve(idleListener) }()
+	t.Cleanup(idleServer.Stop)
+	connectAt := func(address string, workload workloadauthtesting.Workload) testIngress {
 		config := ca.Issue(t, workload.URI)
 		security, err := config.ClientCredentials(transport.HistoryIngressURI)
 		if err != nil {
 			t.Fatal(err)
 		}
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(security), grpc.WithNoProxy())
+		connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(security), grpc.WithNoProxy())
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = connection.Close() })
 		return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
+	}
+	connect := func(workload workloadauthtesting.Workload) testIngress {
+		return connectAt(listener.Addr().String(), workload)
+	}
+	openSVID := func(ingress testIngress) *call {
+		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+		t.Cleanup(cancel)
+		stream, err := ingress.client.Push(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &call{t: t, stream: stream, cancel: cancel}
 	}
 	session := uuid.New()
 	// Mixed certificate and bearer credentials are rejected before Push reaches its handler.
@@ -99,7 +122,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if got := pushHandlers.Load(); got != 1 {
 		t.Fatalf("SVID call reached Push handler %d times, want 1", got)
 	}
-	refused := connect(other).open(t, "")
+	refused := openSVID(connect(other))
 	refused.send(announce(session, 0, ""))
 	if code := refused.refused(); code != codes.PermissionDenied {
 		t.Fatalf("different SVID writer: %v", code)
@@ -107,6 +130,19 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if got := committed(t, service.History, session); len(got) != 1 {
 		t.Fatalf("committed %v", got)
 	}
+	entryRevocationSession := uuid.New()
+	entryRevocation := openSVID(firstIngress)
+	entryRevocation.send(append([]*session_ingresspb.PushFrame{announce(entryRevocationSession, 0, "")}, entries(1)...)...)
+	entryRevocation.acknowledged(1, false)
+	heartbeatRevocationSession := uuid.New()
+	heartbeatRevocation := openSVID(firstIngress)
+	heartbeatRevocation.send(append([]*session_ingresspb.PushFrame{announce(heartbeatRevocationSession, 0, "")}, entries(1)...)...)
+	heartbeatRevocation.acknowledged(1, false)
+	sealRevocationSession := uuid.New()
+	sealRevocation := openSVID(firstIngress)
+	sealRevocation.send(append([]*session_ingresspb.PushFrame{announce(sealRevocationSession, 0, "")}, entries(1)...)...)
+	sealRevocation.acknowledged(1, false)
+
 	// Deletion retains the credential while Runtime flushes its final History seal.
 	first.Sandbox.Finalizers = []string{"test.example/keep-until-sealed"}
 	if err := first.Objects.Update(t.Context(), first.Sandbox); err != nil {
@@ -125,14 +161,46 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	admitted.send(sealed(1, first.Principal.PodUID))
 	admitted.acknowledged(1, true)
 
-	// Clearing acceptance revokes subsequent calls on the existing TLS connection.
+	// Clearing acceptance revokes durable writes on an already-admitted stream.
+	idleRevocation := openSVID(connectAt(idleListener.Addr().String(), first))
+	idleRevocation.send(announce(uuid.New(), 0, ""))
+	idleRevocation.acknowledged(0, false)
 	first.Sandbox.Status.RunnerCredential.AcceptedID = ""
 	if err := first.Objects.Status().Update(t.Context(), first.Sandbox); err != nil {
 		t.Fatal(err)
 	}
-	revoked := firstIngress.open(t, "")
-	revoked.send(announce(uuid.New(), 0, ""))
-	if code := revoked.refused(); code != codes.Unauthenticated {
-		t.Fatalf("revoked credential: %v", code)
+	if code := idleRevocation.refused(); code != codes.Unauthenticated {
+		t.Fatalf("revoked idle acknowledgement: %v", code)
+	}
+	heartbeatRevocation.send(heartbeat())
+	if code := heartbeatRevocation.refused(); code != codes.Unauthenticated {
+		t.Fatalf("revoked heartbeat: %v", code)
+	}
+	entryRevocation.send(append(entries(2), heartbeat())...)
+	if code := entryRevocation.refused(); code != codes.Unauthenticated {
+		t.Fatalf("revoked established stream: %v", code)
+	}
+	if got := committed(t, service.History, entryRevocationSession); len(got) != 1 {
+		t.Fatalf("revoked stream committed %v", got)
+	}
+
+	// Removing the Sandbox also revokes an established stream before it can write a seal.
+	first.Sandbox.Finalizers = nil
+	if err := first.Objects.Update(t.Context(), first.Sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Objects.Get(t.Context(), client.ObjectKeyFromObject(first.Sandbox), first.Sandbox); !apierrors.IsNotFound(err) {
+		t.Fatalf("Sandbox after finalizer removal: %v", err)
+	}
+	sealRevocation.send(sealed(1, first.Principal.PodUID))
+	if code := sealRevocation.refused(); code != codes.Unauthenticated {
+		t.Fatalf("removed Sandbox established seal: %v", code)
+	}
+	page, err := service.History.ReadPage(t.Context(), sealRevocationSession, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.FeedState.GetSealed() != nil {
+		t.Fatalf("revoked stream recorded seal %v", page.FeedState.GetSealed())
 	}
 }

@@ -63,6 +63,17 @@ acknowledgement follows its commit. The ingress queues at most 16 decoded frames
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
 own transaction); a full queue applies backpressure to the stream.
 
+An admitted Push stream does not retain writer authority for its lifetime. Before binding or
+reopening a journal, each durable entry batch or attached-snapshot write, and the final seal write,
+History revalidates the original proof through shared workload authentication and requires the same
+caller. An idle acknowledgement and a heartbeat with no pending batch also revalidate, so an idle
+connection cannot keep a revoked credential alive indefinitely. If an accepted credential is cleared
+or its Sandbox is removed, the next such check ends the stream before that write; a still-accepted
+credential remains valid while its Sandbox is finalizing so Runtime can record its final seal.
+Revocation is observed at these checks: a Sandbox status change racing a check and its immediately
+following storage transaction can still let that transaction finish, while every later write boundary
+checks again. Previously committed entries remain durable when a stream is refused.
+
 ## Read and follow one Session
 
 `FollowSession` reads raw runner entries in cursor order and can keep sending them as they commit.
