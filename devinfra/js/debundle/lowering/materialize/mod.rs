@@ -37,8 +37,8 @@ use crate::{
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, EntryDestination, ModuleId, ModuleRole,
-    PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
+    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
 use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
@@ -450,13 +450,15 @@ pub(super) fn finish_logical_chunk(
         match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
             Ok(precomputed) => precomputed,
             Err(error) => {
-                // A rejected `commuting_statements` entry is an author-premise
-                // diagnostic, not a pipeline fault: record it, with the selector
-                // outcomes gathered so far, where `spec validate` collects the
-                // chunk's reports; the chunk still fails.
-                if let Some(diagnostic) = error
+                // A contradicted `commuting_statements` entry is an
+                // author-premise diagnostic, not a pipeline fault: record it,
+                // with the selector outcomes gathered so far, where `spec
+                // validate` collects the chunk's reports; the chunk still fails.
+                if let Some(contradiction) = error
                     .downcast_ref::<analysis::DependencyGraphBuildError>()
-                    .and_then(analysis::DependencyGraphBuildError::commuting_statements_diagnostic)
+                    .and_then(
+                        analysis::DependencyGraphBuildError::commuting_statements_contradiction,
+                    )
                     && let Some(report_out_dir) = report_emission.rejection_dir()
                 {
                     write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
@@ -464,12 +466,32 @@ pub(super) fn finish_logical_chunk(
                         report_out_dir,
                         chunk_id,
                         COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-                        &[diagnostic],
+                        &[CommutingStatementsDiagnostic::Contradicted(
+                            contradiction.clone(),
+                        )],
                     )?;
                 }
                 return Err(error);
             }
         };
+    // An unused entry is a warning: the graph is exactly the graph without it.
+    for unused in &precomputed.unused_commuting_statements {
+        eprintln!("warning: chunk {chunk_id}: {unused}");
+    }
+    if !precomputed.unused_commuting_statements.is_empty()
+        && let Some(report_out_dir) = report_emission.rejection_dir()
+    {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+            &precomputed
+                .unused_commuting_statements
+                .iter()
+                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
+                .collect::<Vec<_>>(),
+        )?;
+    }
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     let source_unit_layout = SourceUnitLayout::checked(
         &precomputed.dependency_graph,

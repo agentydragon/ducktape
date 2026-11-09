@@ -850,6 +850,39 @@ pub fn assert_module_exports(
     }
 }
 
+/// Every file below `left` and `right` has the same bytes: two runs emitted
+/// the same tree.
+pub fn assert_same_tree(left: &Path, right: &Path) {
+    fn files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            for entry in
+                fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    let bytes =
+                        fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                    out.insert(path.strip_prefix(root).unwrap().to_path_buf(), bytes);
+                }
+            }
+        }
+        out
+    }
+    let (left, right) = (files(left), files(right));
+    assert_eq!(
+        left.keys().collect::<Vec<_>>(),
+        right.keys().collect::<Vec<_>>(),
+        "emitted file sets differ"
+    );
+    for (file, bytes) in &left {
+        assert!(right[file] == *bytes, "{} differs", file.display());
+    }
+}
+
 pub fn assert_same_module_bytes(left: &Fixture, right: &Fixture, module_path: &str) {
     let read = |fixture: &Fixture| {
         fs::read(fixture.out_root.join(module_path))

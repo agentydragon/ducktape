@@ -38,8 +38,8 @@ use source_identity::SourceUnitId;
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DependencyEdge, DependencyGraph, DependencyGraphBuildError, GraphOptions,
-    build_dependency_graph_with,
+    CommutingStatementsUnused, DependencyEdge, DependencyGraph, DependencyGraphBuildError,
+    GraphOptions, build_dependency_graph_with,
 };
 
 /// One atomic factor group: a set of source units that any valid
@@ -65,6 +65,9 @@ pub struct AtomicGroup {
 pub struct DependencyGraphAndAtomicGroups {
     pub dependency_graph: DependencyGraph,
     pub atomic_groups: Vec<AtomicGroup>,
+    /// Authored `commuting_statements` entries that inerted no edge: warnings
+    /// the run reports, not inputs to the gate.
+    pub unused_commuting_statements: Vec<CommutingStatementsUnused>,
 }
 
 /// How one dependency edge contributes to the atomic-group path projection.
@@ -156,11 +159,13 @@ pub fn compute_dependency_graph_and_atomic_groups_with(
     options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
-    let dependency_graph = build_dependency_graph_with(facts, options, commuting_statements)?;
+    let (dependency_graph, unused_commuting_statements) =
+        build_dependency_graph_with(facts, options, commuting_statements)?;
     let atomic_groups = compute_atomic_groups(&dependency_graph);
     Ok(DependencyGraphAndAtomicGroups {
         dependency_graph,
         atomic_groups,
+        unused_commuting_statements,
     })
 }
 

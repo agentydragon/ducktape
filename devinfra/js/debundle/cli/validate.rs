@@ -82,8 +82,9 @@ pub struct ValidateArgs {
 }
 
 /// What `spec validate` reports: the selector outcomes, plus the author
-/// premises the graph build rejected, which no selector entity carries (any
-/// fails `validation.success`).
+/// premises the graph build diagnosed, which no selector entity carries. A
+/// `contradicted` entry fails `validation.success`; an `unused` one is a
+/// warning.
 #[derive(Debug, Default, Serialize)]
 struct ValidateReport {
     #[serde(flatten)]
@@ -96,7 +97,11 @@ impl ValidateReport {
     fn render_text(&self, out: &mut String) {
         self.selectors.render_text(out, None);
         for diagnostic in &self.commuting_statements_diagnostics {
-            let _ = writeln!(out, "  - {diagnostic}");
+            let severity = match diagnostic {
+                CommutingStatementsDiagnostic::Contradicted(_) => "error",
+                CommutingStatementsDiagnostic::Unused(_) => "warning",
+            };
+            let _ = writeln!(out, "  - {severity}: {diagnostic}");
         }
     }
 }
@@ -226,7 +231,10 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
         .validation
         .as_mut()
         .expect("validation counts initialized")
-        .rejected_premises = commuting_statements_diagnostics.len();
+        .rejected_premises = commuting_statements_diagnostics
+        .iter()
+        .filter(|diagnostic| matches!(diagnostic, CommutingStatementsDiagnostic::Contradicted(_)))
+        .count();
     if pass_error.is_some()
         && (!keep_going
             || report

@@ -8,7 +8,7 @@ use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
-use crate::analysis_inputs::ResolvedCommutingStatements;
+use crate::analysis_inputs::{CommutingEndpoint, ResolvedCommutingStatements};
 use crate::execution_evidence::SourceLocation;
 use crate::facts::{
     CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
@@ -198,13 +198,16 @@ pub enum UnusedPremiseReason {
 }
 
 /// A `commuting_statements` entry whose endpoints resolve but which inerts
-/// no edge: the premise buys nothing and the spec carries a stale trust
-/// assertion.
+/// no edge: the premise buys nothing. A warning, never a failure — an engine
+/// improvement that makes a premise unnecessary must not reject a spec that
+/// passed (SPEC.md § Commuting statements). Identifies the entry by what the
+/// author wrote, not by analysis ordinals or input binding spellings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 #[error(
-    "{spec_location} inerts no sequenced edge: endpoints {} and {} {}; remove the entry",
-    unused_endpoint_label(*.a, .a_binding, .a_logical_members, .a_source_location),
-    unused_endpoint_label(*.b, .b_binding, .b_logical_members, .b_source_location),
+    "{spec_location} inerts no sequenced edge: endpoints {} and {} {}; the entry is \
+     removable — delete it in a reviewed spec edit and revalidate",
+    .a,
+    .b,
     match .reason {
         UnusedPremiseReason::NoSequencedEdge => "are already unordered",
         UnusedPremiseReason::SummarizedEndpoints =>
@@ -213,60 +216,67 @@ pub enum UnusedPremiseReason {
     }
 )]
 pub struct CommutingStatementsUnused {
+    /// `<spec path>:chunk_analysis_options.<chunk>.commuting_statements[<i>]`.
     pub spec_location: String,
-    pub a: SourceUnitOrdinal,
-    pub a_binding: Option<String>,
-    /// Authored module/member assignments that resolve to endpoint `a`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub a_logical_members: Vec<spec::ResolvedMemberSelector>,
-    /// Source location of endpoint `a` in this graph's input snapshot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub a_source_location: Option<SourceLocation>,
-    pub b: SourceUnitOrdinal,
-    pub b_binding: Option<String>,
-    /// Authored module/member assignments that resolve to endpoint `b`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub b_logical_members: Vec<spec::ResolvedMemberSelector>,
-    /// Source location of endpoint `b` in this graph's input snapshot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub b_source_location: Option<SourceLocation>,
+    pub a: UnusedCommutingEndpoint,
+    pub b: UnusedCommutingEndpoint,
     pub reason: UnusedPremiseReason,
 }
 
-fn unused_endpoint_label(
-    ordinal: SourceUnitOrdinal,
-    binding: &Option<String>,
-    logical_members: &[spec::ResolvedMemberSelector],
-    source_location: &Option<SourceLocation>,
-) -> String {
-    let member_labels = logical_members
-        .iter()
-        .map(|member| format!("module `{}` member `{}`", member.module, member.name))
-        .collect::<Vec<_>>();
-    let mut label = match member_labels.as_slice() {
-        [] => match binding {
-            Some(binding) => format!("binding `{binding}`"),
-            None => "anonymous statement".to_owned(),
-        },
-        [member] => member.clone(),
-        members => format!("members [{}]", members.join(", ")),
-    };
-    if !logical_members.is_empty()
-        && let Some(binding) = binding
-    {
-        label.push_str(&format!(" (binding `{binding}`)"));
-    }
-    label.push_str(&format!(" (source unit #{})", ordinal.0));
-    if let Some(location) = source_location {
-        label.push_str(&format!(
-            " at {}:{}",
-            location.source_path, location.start_line
-        ));
-        if let Some(column) = location.start_column {
-            label.push_str(&format!(":{column}"));
+/// One endpoint of an unused `commuting_statements` entry, by authored
+/// identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnusedCommutingEndpoint {
+    /// The endpoint selector exactly as authored.
+    pub selector: spec::SourceUnitSelector,
+    /// Authored module/member assignments that resolve to this endpoint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logical_members: Vec<spec::ResolvedMemberSelector>,
+    /// Source location of the endpoint in this run's input snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl UnusedCommutingEndpoint {
+    fn new(nodes: &[SourceUnit], endpoint: &CommutingEndpoint) -> Self {
+        Self {
+            selector: endpoint.selector.clone(),
+            logical_members: endpoint.logical_members.clone(),
+            source_location: source_unit_location(nodes, endpoint.source_unit),
         }
     }
-    label
+}
+
+impl fmt::Display for UnusedCommutingEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let members = self
+            .logical_members
+            .iter()
+            .map(|member| format!("module `{}` member `{}`", member.module, member.name))
+            .collect::<Vec<_>>();
+        match (members.as_slice(), &self.selector) {
+            ([member], _) => f.write_str(member)?,
+            ([], spec::SourceUnitSelector::ResolvedMember(member)) => {
+                write!(f, "module `{}` member `{}`", member.module, member.name)?;
+            }
+            ([], spec::SourceUnitSelector::SourceMatch(claim)) => {
+                let source = claim.match_source.split_whitespace().collect::<Vec<_>>();
+                let mut preview = source.join(" ");
+                if preview.chars().count() > 60 {
+                    preview = preview.chars().take(57).collect::<String>() + "...";
+                }
+                write!(f, "source_match `{preview}`")?;
+            }
+            (members, _) => write!(f, "members [{}]", members.join(", "))?,
+        }
+        if let Some(location) = &self.source_location {
+            write!(f, " at {}:{}", location.source_path, location.start_line)?;
+            if let Some(column) = location.start_column {
+                write!(f, ":{column}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The typed diagnostic of a `commuting_statements` entry the graph build
@@ -275,7 +285,7 @@ fn unused_endpoint_label(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommutingStatementsDiagnostic {
     Contradicted(CommutingStatementsContradiction),
-    Unused(CommutingStatementsUnused),
+    Unused(Box<CommutingStatementsUnused>),
 }
 
 impl fmt::Display for CommutingStatementsDiagnostic {
@@ -296,21 +306,14 @@ pub enum DependencyGraphBuildError {
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
     #[error(transparent)]
     CommutingStatementsContradicted(CommutingStatementsContradiction),
-    #[error(transparent)]
-    CommutingStatementsUnused(Box<CommutingStatementsUnused>),
 }
 
 impl DependencyGraphBuildError {
-    /// The rejected `commuting_statements` entry, for the two variants that
-    /// are author-premise diagnostics rather than pipeline faults.
-    pub fn commuting_statements_diagnostic(&self) -> Option<CommutingStatementsDiagnostic> {
+    /// The rejected `commuting_statements` entry, for the variant that is an
+    /// author-premise diagnostic rather than a pipeline fault.
+    pub fn commuting_statements_contradiction(&self) -> Option<&CommutingStatementsContradiction> {
         match self {
-            Self::CommutingStatementsContradicted(error) => {
-                Some(CommutingStatementsDiagnostic::Contradicted(error.clone()))
-            }
-            Self::CommutingStatementsUnused(error) => Some(CommutingStatementsDiagnostic::Unused(
-                error.as_ref().clone(),
-            )),
+            Self::CommutingStatementsContradicted(error) => Some(error),
             Self::DuplicateTopLevelDeclaration(_) => None,
         }
     }
@@ -331,7 +334,8 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 /// `commuting_statements` are the chunk's resolved author premises; each is
 /// applied by [`apply_commuting_statements`] after every edge exists, so the
 /// emitted graph still records what source analysis found and marks the
-/// edges a premise made inert.
+/// edges a premise made inert. Entries that inert nothing are returned beside
+/// the graph as warnings.
 ///
 /// [`build_module_quotient`]: super::quotient::build_module_quotient
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
@@ -339,7 +343,7 @@ pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
     options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
-) -> Result<DependencyGraph, DependencyGraphBuildError> {
+) -> Result<(DependencyGraph, Vec<CommutingStatementsUnused>), DependencyGraphBuildError> {
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
     let mut nodes = Vec::<SourceUnit>::with_capacity(facts.len());
     for stmt in facts {
@@ -706,17 +710,16 @@ pub fn build_dependency_graph_with(
         .collect();
     retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
     let analyzed_edge_count = edges.len();
-    let commuting_premises =
+    let (commuting_premises, unused_commuting_premises) =
         apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
     retain_premise_verdicts(
         &mut edges[analyzed_edge_count..],
         &stmt_by_source_unit,
         &premise_effects,
     );
-    Ok(DependencyGraph::from_parts(
-        nodes,
-        edges,
-        commuting_premises,
+    Ok((
+        DependencyGraph::from_parts(nodes, edges, commuting_premises),
+        unused_commuting_premises,
     ))
 }
 
@@ -898,14 +901,15 @@ fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> O
 /// [`PremiseVerdict`] is a modeled conflict, in which case the entry
 /// contradicts a source fact and the build fails. `EagerUse` edges are never
 /// touched: an at-init read is a dataflow dependence, not an ordering of
-/// effects. A pair with no inertable edge is unused and the build fails so
-/// the spec sheds the stale assertion.
+/// effects. A pair with no inertable edge is unused: it is returned as a
+/// warning and leaves the graph exactly as without the entry.
 fn apply_commuting_statements(
     nodes: &[SourceUnit],
     edges: &mut Vec<DependencyEdge>,
     commuting_statements: &[ResolvedCommutingStatements],
     premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
-) -> Result<Vec<AppliedCommutingPremise>, DependencyGraphBuildError> {
+) -> Result<(Vec<AppliedCommutingPremise>, Vec<CommutingStatementsUnused>), DependencyGraphBuildError>
+{
     let mut applied = Vec::with_capacity(commuting_statements.len());
     let mut summarized_endpoints = Vec::with_capacity(commuting_statements.len());
     for premise in commuting_statements {
@@ -973,33 +977,29 @@ fn apply_commuting_statements(
     }
     // An assertion can discharge an edge exposed by another assertion, in
     // either spec order. Only the completed closure decides whether it was used.
+    let mut used = Vec::with_capacity(applied.len());
+    let mut unused = Vec::new();
     for ((premise, result), summarized) in commuting_statements
         .iter()
-        .zip(&applied)
+        .zip(applied)
         .zip(summarized_endpoints)
     {
-        if result.inerted_edges.is_empty() {
-            return Err(DependencyGraphBuildError::CommutingStatementsUnused(
-                Box::new(CommutingStatementsUnused {
-                    spec_location: premise.spec_location.clone(),
-                    a: premise.a.source_unit,
-                    a_binding: premise.a.selected_binding.clone(),
-                    a_logical_members: premise.a.logical_members.clone(),
-                    a_source_location: source_unit_location(nodes, premise.a.source_unit),
-                    b: premise.b.source_unit,
-                    b_binding: premise.b.selected_binding.clone(),
-                    b_logical_members: premise.b.logical_members.clone(),
-                    b_source_location: source_unit_location(nodes, premise.b.source_unit),
-                    reason: if summarized {
-                        UnusedPremiseReason::SummarizedEndpoints
-                    } else {
-                        UnusedPremiseReason::NoSequencedEdge
-                    },
-                }),
-            ));
+        if !result.inerted_edges.is_empty() {
+            used.push(result);
+            continue;
         }
+        unused.push(CommutingStatementsUnused {
+            spec_location: premise.spec_location.clone(),
+            a: UnusedCommutingEndpoint::new(nodes, &premise.a),
+            b: UnusedCommutingEndpoint::new(nodes, &premise.b),
+            reason: if summarized {
+                UnusedPremiseReason::SummarizedEndpoints
+            } else {
+                UnusedPremiseReason::NoSequencedEdge
+            },
+        });
     }
-    Ok(applied)
+    Ok((used, unused))
 }
 
 /// Preserve third-statement paths using the same closure as proposal queries.

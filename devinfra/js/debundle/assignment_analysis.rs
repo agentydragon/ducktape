@@ -585,6 +585,8 @@ impl AssignmentAnalysis {
         let DependencyGraphAndAtomicGroups {
             dependency_graph,
             atomic_groups,
+            // Reported by materialization before the gate runs.
+            unused_commuting_statements: _,
         } = precomputed;
         let outcome = {
             let local_bindings = binding_catalogue.local_view(chunk_identity)?;
