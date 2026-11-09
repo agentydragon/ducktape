@@ -276,7 +276,7 @@ cannot reach these node IPs with the current CIDR match mode. There is no world/
 DNS stays on the existing kube-dns endpoints/53; JWKS paths are pinned in each verifier, not enforced
 by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup requires revalidation.
 
-### Live acceptance after merge/reconciliation (not performed in this PR)
+### Live acceptance after merge/reconciliation
 
 - Confirm the Terraform resource and both Flux layers are ready, configuration ConfigMap references
   resolved, the intended image revisions running, both Action and app migrations healthy, and the

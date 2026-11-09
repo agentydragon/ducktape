@@ -12,7 +12,7 @@ requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths
 verifies the client certificates this side serves; `ca_file` keeps verifying its own chain and the
 servers it dials. Firecracker Runtime selects the Workload API; the Gateway uses
 projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `runner/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
+The service definitions are `env/runtime/control/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
 
 ## State observation and fencing
@@ -72,7 +72,7 @@ unary calls over the runner gRPC connection and returns the runner's status and 
 
 ## Event ingress
 
-The runner pushes to the `ingress` endpoint in its configuration (`runner/transport.go`) and
+The runner pushes to the `ingress` endpoint in its configuration (`env/configuration/configuration.go`) and
 reports `flushed` from what it recorded. The History
 Service serves the ingress (`history_service/ingress/ingress.go`) on a listener of its own, and follows no
 runner.

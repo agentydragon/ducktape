@@ -39,13 +39,8 @@ The manual queue, replica and wake probes are documented in the
 - **Creating a Session**: `CreateSession` durably commits the logical Session using the caller-minted
   canonical lowercase UUID `session_id` and returns a minimal `Session` resource. Its `placement`
   projects the shared `SessionPlacement` in `SessionSpec.placement`; the read projection does not
-  expose SessionSpec or instructions. `status` reports owner materialization using
-  `SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
-  `SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` or
-  `SESSION_MATERIALIZATION_UNKNOWN`, with `reason`, `delivery_blocker` and `wake_assessment` where
-  available. This is owner materialization state, not harness readiness.
-  `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner durably admitted the Session; it does
-  not mean a native harness is ready, a model turn ran, or History projected a Thread.
+  expose SessionSpec or instructions. `status` reports owner materialization, not harness readiness
+  ([contract](SPEC.md#session-resource)).
   `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
   `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
   existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its
