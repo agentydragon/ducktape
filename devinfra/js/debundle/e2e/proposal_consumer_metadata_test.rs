@@ -16,34 +16,6 @@ fn proposal_for_binding<'a>(report: &'a Value, binding: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("proposal for {binding:?} missing from {report:#}"))
 }
 
-fn source_unit_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
-    fixture
-        .dependency_graph()
-        .nodes
-        .into_iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding.as_str() == binding)
-        })
-        .unwrap_or_else(|| panic!("source unit for {binding:?} missing"))
-        .id
-}
-
-fn source_unit_id_for_line(fixture: &GraphFixture, line: usize) -> String {
-    fixture
-        .dependency_graph()
-        .nodes
-        .into_iter()
-        .find(|node| {
-            node.source_location
-                .as_ref()
-                .is_some_and(|location| location.start_line == line)
-        })
-        .unwrap_or_else(|| panic!("source unit on line {line} missing"))
-        .id
-}
-
 fn current_module_for_source_unit(fixture: &GraphFixture, source_unit_id: &str) -> String {
     let graph = fixture.dependency_graph();
     let source_unit = graph
@@ -79,8 +51,8 @@ fn reports_the_sole_value_reader_without_changing_the_proposal() {
         &[],
     );
     let report = proposals(&fixture);
-    let primitive_id = source_unit_id_for_binding(&fixture, "primitive");
-    let consumer_id = source_unit_id_for_binding(&fixture, "onlyConsumer");
+    let primitive_id = fixture.source_unit_for_binding("primitive");
+    let consumer_id = fixture.source_unit_for_binding("onlyConsumer");
     let proposal = proposal_for_binding(&report, "primitive");
     assert_single_unit_proposal(proposal, &primitive_id);
 
@@ -113,7 +85,7 @@ fn excludes_an_existing_extension_member_from_external_consumers() {
         )],
     );
     let report = proposals_with_cap(&fixture, 10);
-    let primitive_id = source_unit_id_for_binding(&fixture, "primitive");
+    let primitive_id = fixture.source_unit_for_binding("primitive");
     let proposal = proposal_for_binding(&report, "primitive");
 
     assert!(
@@ -136,9 +108,9 @@ fn distinguishes_a_shared_primitive_from_a_sole_reader() {
         &[],
     );
     let report = proposals(&fixture);
-    let primitive_id = source_unit_id_for_binding(&fixture, "primitive");
-    let first_id = source_unit_id_for_binding(&fixture, "first");
-    let second_id = source_unit_id_for_binding(&fixture, "second");
+    let primitive_id = fixture.source_unit_for_binding("primitive");
+    let first_id = fixture.source_unit_for_binding("first");
+    let second_id = fixture.source_unit_for_binding("second");
     let proposal = proposal_for_binding(&report, "primitive");
     assert!(
         proposal["source_unit_ids"]
@@ -169,7 +141,7 @@ fn source_adjacency_without_a_dependency_is_not_a_consumer() {
         &[],
     );
     let report = proposals(&fixture);
-    let primitive_id = source_unit_id_for_binding(&fixture, "primitive");
+    let primitive_id = fixture.source_unit_for_binding("primitive");
     let proposal = proposal_for_binding(&report, "primitive");
     assert_single_unit_proposal(proposal, &primitive_id);
 
@@ -198,8 +170,8 @@ fn cross_owner_write_is_not_reported_for_added_merge_units() {
         ],
     );
     let report = proposals_with_cap(&fixture, 10);
-    let primitive_id = source_unit_id_for_binding(&fixture, "primitive");
-    let update_id = source_unit_id_for_binding(&fixture, "update");
+    let primitive_id = fixture.source_unit_for_binding("primitive");
+    let update_id = fixture.source_unit_for_binding("update");
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -246,7 +218,7 @@ fn cross_owner_write_is_not_reported_for_added_merge_units() {
 fn reports_scheduling_context_separately_from_value_reads_and_writes() {
     let fixture = GraphFixture::new("console.log('first');\nconsole.log('second');\n", &[]);
     let report = proposals(&fixture);
-    let first_id = source_unit_id_for_line(&fixture, 1);
+    let first_id = fixture.source_unit_for_line(1);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -266,7 +238,7 @@ fn reports_scheduling_context_separately_from_value_reads_and_writes() {
     assert_eq!(context["total_edges"], 1);
     assert_eq!(
         context["edges"][0]["source"],
-        source_unit_id_for_line(&fixture, 2)
+        fixture.source_unit_for_line(2)
     );
     assert_eq!(context["edges"][0]["target"], first_id);
     assert_eq!(context["edges"][0]["edge_kind"], "sequenced");
