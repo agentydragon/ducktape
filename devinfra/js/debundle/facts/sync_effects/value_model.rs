@@ -1,5 +1,6 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
+use super::world::WorldScope;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -336,6 +337,15 @@ pub(super) struct SymbolicInputId {
     pub(super) input: ProviderInput,
 }
 
+/// A callable's function allocation in one world. The scope keeps an
+/// isolated provider query's closures apart from the application's, even when
+/// both create the same source callable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct HeapAddress {
+    pub(super) scope: WorldScope,
+    pub(super) callable: u32,
+}
+
 /// Provenance of a local class capability; neither variant proves allocation identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum InstanceOrigin {
@@ -351,7 +361,9 @@ pub(super) enum AbstractValue {
     /// Unknown kind/capabilities; only forwarding, storing and returning this
     /// query-local input is covered. It proves no shape or native identity.
     SymbolicInput(SymbolicInputId),
-    Closure(u32, CapturedContext),
+    /// A function object: its callable's address in the creating world and
+    /// the lexical captures it retains.
+    Closure(HeapAddress, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
     ClassMembers(u32),

@@ -2,7 +2,7 @@
 
 use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
+use super::value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -706,7 +706,13 @@ impl OriginalInitializer {
             (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
-                AbstractValue::Closure(evaluated, _),
+                AbstractValue::Closure(
+                    HeapAddress {
+                        callable: evaluated,
+                        ..
+                    },
+                    _,
+                ),
             ) => values.len() == 1 && expected == lowered && expected == evaluated,
             _ => false,
         };

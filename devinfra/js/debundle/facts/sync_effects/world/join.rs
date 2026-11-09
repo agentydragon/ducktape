@@ -84,6 +84,7 @@ impl World {
             classes: _,
             publication: _,
             reachability: _,
+            prerequisites: _,
             revision: _,
         } = first;
         let mut widened = true;
@@ -120,6 +121,14 @@ impl World {
             classes: ClassState::join(&each(worlds, |world| &world.classes), &mut widened),
             publication: Publication::join(&each(worlds, |world| &world.publication), &mut widened),
             reachability,
+            // A joined prefix holds only under every alternative's conditions.
+            prerequisites: worlds.iter().fold(
+                crate::analysis_inputs::ProofDependencies::default(),
+                |mut prerequisites, world| {
+                    prerequisites.extend(&world.prerequisites);
+                    prerequisites
+                },
+            ),
             revision,
         };
         Joined {

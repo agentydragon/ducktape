@@ -5,7 +5,7 @@
 //! native call, and the projection borrows it only while deriving that result.
 
 use super::value_model::{
-    AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
+    AbstractValue, HeapAddress, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
 use crate::analysis_inputs::ProofDependencies;
@@ -107,7 +107,7 @@ fn descriptor_projection(
                 let expected: BTreeSet<_> = getter.iter().chain(setter.iter()).copied().collect();
                 let mut callbacks = Values::new();
                 for value in values {
-                    let AbstractValue::Closure(key, _) = value else {
+                    let AbstractValue::Closure(HeapAddress { callable: key, .. }, _) = value else {
                         return None;
                     };
                     if !expected.contains(key) {
@@ -120,7 +120,7 @@ fn descriptor_projection(
                         callbacks
                             .iter()
                             .filter(|value| {
-                                matches!(value, AbstractValue::Closure(found, _) if *found == key)
+                                matches!(value, AbstractValue::Closure(HeapAddress { callable: found, .. }, _) if *found == key)
                             })
                             .cloned()
                             .collect()

@@ -14,8 +14,11 @@ use super::super::local_operations::{
 use super::super::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
 use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
 use super::super::value_model::{
-    AbstractValue, CallSite, LiteralPropertyKind, PropertyDefinition, ValueExpr, Values,
+    AbstractValue, CallSite, HeapAddress, LiteralPropertyKind, PropertyDefinition, ValueExpr,
+    Values,
 };
+use super::cells;
+use super::closure;
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{
     CallableSelection, EvaluatedCallee, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
@@ -232,7 +235,7 @@ impl LocalContinuation {
                         );
                         self.frame.binding_selections.remove(&parameter.binding);
                     }
-                    context.instantiate_parameter_bindings(&mut self.frame);
+                    cells::instantiate_parameter_cells(context, body, &self.frame);
                     self.steps.push(Step::Parameter(0));
                 }
             }
@@ -258,7 +261,7 @@ impl LocalContinuation {
                     self.steps.push(Step::Expression(default.clone()));
                     return Ok(None);
                 }
-                bind_parameter(context, &mut self.frame, &parameter.binding, selected);
+                bind_parameter(context, body, &mut self.frame, &parameter.binding, selected);
             }
             Step::BindDefault {
                 binding,
@@ -279,7 +282,7 @@ impl LocalContinuation {
                 } else {
                     default
                 };
-                bind_parameter(context, &mut self.frame, &binding, selected);
+                bind_parameter(context, body, &mut self.frame, &binding, selected);
             }
             Step::PrepareBody => prepare_body_bindings(context, body, &mut self.frame),
             Step::Operation(index) => {
@@ -356,9 +359,9 @@ impl LocalContinuation {
                         self.frame.binding_selections.remove(&binding);
                     }
                 }
-                context.local_binding_stored(&binding, &self.frame);
+                cells::declared_binding_stored(context, body, &binding, &self.frame);
                 self.frame.initialized_bindings.insert(binding.clone());
-                let effects = context.declarative_binding_operation(&binding, &self.frame);
+                let effects = cells::declarative_binding_operation(context, body, &binding);
                 self.frame.ledger.effects.compose(&effects);
             }
             Step::Discard => {
@@ -1335,7 +1338,7 @@ fn read_field(
     };
     match slot {
         Ok(slot) => {
-            let selection_dependencies = context.settled_dependencies();
+            let selection_dependencies = context.current_prerequisites();
             let read = slot.read(context);
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
@@ -1427,7 +1430,7 @@ fn store_field(
     };
     let write_dependencies = context
         .property_is_writable(slot.object, property)
-        .then(|| context.settled_dependencies());
+        .then(|| context.current_prerequisites());
     frame.ledger.heap_accesses.writes.insert(slot.cell());
     context.world_mut().literal_heap().write_property(
         slot.object,
@@ -1480,7 +1483,7 @@ fn closure_expression(
     frame: &mut LocalFrame,
     callable: DeferredCallableCreation,
 ) -> Result<SelectedValue, RemainderDisposition> {
-    let result = context.closure(frame, callable)?;
+    let result = closure::create(context, frame, callable)?;
     Ok(absorb(frame, result))
 }
 
@@ -1503,7 +1506,7 @@ fn store_binding(
             .effects
             .compose(&EffectCoverageFragment::default());
         frame.binding_selections.remove(binding);
-        let result = context.assign_capture(frame, binding, &values, span)?;
+        let result = cells::store_captured(context, frame, binding, &values, span)?;
         frame.ledger.allocation.compose(&result.judgment);
         return Ok(completing_selected(
             SelectedValue::raw(result.values),
@@ -1540,7 +1543,7 @@ fn store_binding(
     {
         // The adapter's declarative-cell proof already rejects live captured
         // cells. Assignment's earlier unknown fragment remains unknown.
-        let effects = context.declarative_binding_operation(binding, frame);
+        let effects = cells::declarative_binding_operation(context, body, binding);
         frame.ledger.effects.compose(&effects);
     } else {
         frame
@@ -1557,7 +1560,7 @@ fn store_binding(
     } else {
         frame.binding_selections.remove(binding);
     }
-    context.local_binding_stored(binding, frame);
+    cells::declared_binding_stored(context, body, binding, frame);
     Ok(SelectedValue {
         values,
         selection: frame.binding_selections.get(binding).cloned(),
@@ -1654,6 +1657,7 @@ fn evaluated_callee(
 
 fn bind_parameter(
     context: &mut impl KernelContext,
+    body: &LocalBody,
     frame: &mut LocalFrame,
     binding: &Id,
     selected: SelectedValue,
@@ -1675,9 +1679,9 @@ fn bind_parameter(
             frame.binding_selections.remove(binding);
         }
     }
-    context.local_binding_stored(binding, frame);
+    cells::declared_binding_stored(context, body, binding, frame);
     frame.initialized_bindings.insert(binding.clone());
-    let effects = context.declarative_binding_operation(binding, frame);
+    let effects = cells::declarative_binding_operation(context, body, binding);
     frame.ledger.effects.compose(&effects);
 }
 
@@ -1697,7 +1701,7 @@ fn prepare_body_bindings(
                     values.is_empty()
                         || values.iter().any(|value| {
                             !matches!(value,
-                                AbstractValue::Closure(key, _)
+                                AbstractValue::Closure(HeapAddress { callable: key, .. }, _)
                                 | AbstractValue::Value(Value::Alloc(Kind::Function, key))
                                     if key == function)
                         })
@@ -1728,7 +1732,7 @@ fn prepare_body_bindings(
             }
         }
     }
-    context.instantiate_bindings(frame);
+    cells::instantiate_body_cells(context, body, frame);
     for (binding, kind) in &body.bindings {
         if *kind == LocalBinding::Parameter && frame.initialized_bindings.contains(binding) {
             continue;
@@ -1736,7 +1740,7 @@ fn prepare_body_bindings(
         // Let/const cells have actually been created in TDZ above. Hoisted
         // values and compatibility parameters retain their separate boundary.
         let effects = if matches!(kind, LocalBinding::Let | LocalBinding::Const) {
-            context.declarative_binding_operation(binding, frame)
+            cells::declarative_binding_operation(context, body, binding)
         } else {
             EffectCoverageFragment::default()
         };

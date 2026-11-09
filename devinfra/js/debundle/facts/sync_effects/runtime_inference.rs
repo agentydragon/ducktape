@@ -176,6 +176,10 @@ pub(super) struct RuntimeQueries<'source, 'query> {
     inputs: &'query ExecutionInputs<'source>,
     point: ProgramPoint,
     next_child: Cell<usize>,
+    // CLEANUP(added 2026-11-09): the last interior-mutable observation ledger.
+    //   Remove once query results return their dependencies and the adopter
+    //   composes them; until then `HeapContext::current_prerequisites` reads
+    //   this beside `World.prerequisites` at the moment of each kernel read.
     dependencies: RefCell<ProofDependencies>,
     context: RefCell<&'query mut dyn FactContext<RuntimeKey, RuntimeFact>>,
 }

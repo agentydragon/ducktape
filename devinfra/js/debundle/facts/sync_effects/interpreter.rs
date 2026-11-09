@@ -11,8 +11,11 @@ use super::execution_index::{
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
     native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
 };
+use super::kernel::cells::missing_activation_binding;
+use super::kernel::closure::{CapturePolicy, ClosureAdmission, lexical_captures};
 use super::kernel::context::{
-    BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    NativeContext, Unproved,
 };
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
@@ -42,11 +45,11 @@ use super::runtime_inference::{
 };
 use super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index,
+    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, HeapAddress, InstanceOrigin,
+    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
+    Values, canonical_array_index,
 };
-use super::world::cells::{CellInitialization, CellTrace, LexicalCell};
+use super::world::cells::{CellInitialization, CellTrace};
 use super::world::descriptor_heap::{
     self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
@@ -803,6 +806,13 @@ pub(super) struct OwnPropertyQuery {
 }
 
 impl ExecutionInputs<'_> {
+    fn capture_policy(&self) -> CapturePolicy<'_> {
+        CapturePolicy::Application {
+            module_bindings: &self.top_bindings,
+            mutable: &self.mutable_captures,
+        }
+    }
+
     /// Admit a source-checked imported primitive to the ordered kernel. This
     /// grants entry only; each reached read still checks its actual value.
     fn imported_primitive_read(&self, binding: &Id) -> Option<&ImportedPrimitiveRead> {
@@ -1035,9 +1045,6 @@ pub(super) struct ExecutionState {
     /// Program-prefix values, heap facts, reachability and identity-bearing
     /// cells, copy-on-write so a fork clones the handle, not the contents.
     world: Arc<World>,
-    /// Conservative conditions under which settled prefix values hold,
-    /// retained across owner/child boundaries. Prerequisites are not coverage.
-    ledger_dependencies: ProofDependencies,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
     author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
@@ -1543,13 +1550,6 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         }
     }
 
-    fn missing_activation_binding(&self, binding: &Id, frame: &LocalFrame) -> bool {
-        matches!(
-            self.body.bindings.get(binding),
-            Some(LocalBinding::NamedSelf(_) | LocalBinding::HoistedFunction(_))
-        ) && !frame.environment.contains_key(binding)
-    }
-
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor.state.world.module.prefix_values.get(binding)
@@ -1703,193 +1703,29 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl BindingContext for LocalExecutionContext<'_, '_, '_> {
-    fn instantiate_parameter_bindings(&mut self, frame: &mut LocalFrame) {
-        for parameter in self.body.parameters.iter() {
-            let binding = &parameter.binding;
-            if !self
-                .executor
-                .inputs
-                .captured_local_bindings
-                .contains(binding)
-            {
-                continue;
-            }
-            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
-                values: frame.environment[binding].clone(),
-                kind: LocalBinding::Parameter,
-                initialization: CellInitialization::Uninitialized,
-            });
-            self.executor
-                .state
-                .world_mut()
-                .active_cells
-                .insert(binding.clone(), cell);
-            self.executor.state.world_mut().revision.bump_prefix();
+    fn cell_policy(&self) -> CellPolicy<'_> {
+        CellPolicy {
+            captured: &self.executor.inputs.captured_local_bindings,
         }
     }
-    fn declarative_binding_operation(
-        &self,
-        binding: &Id,
-        _frame: &LocalFrame,
-    ) -> EffectCoverageFragment {
-        if !matches!(
-            self.body.bindings.get(binding),
-            Some(LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)
-        ) || self.executor.state.world.active_cells.contains_key(binding)
-            || self
-                .executor
-                .inputs
-                .captured_local_bindings
-                .contains(binding)
-        {
-            // Live captured cells and other activation kinds need their own
-            // receipt families, independently of a stored value.
-            EffectCoverageFragment::default()
-        } else {
-            // This activation-local binding has no live cell to expose a
-            // heap, global, or host effect. Its value's evaluation is covered
-            // separately by the ordered operation that produced it.
-            EffectCoverageFragment::no_effects()
-        }
+    fn capture_policy(&self) -> CapturePolicy<'_> {
+        self.executor.inputs.capture_policy()
     }
-    fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
-        let mut allocated = false;
-        for (binding, kind) in &self.body.bindings {
-            if *kind == LocalBinding::Parameter && frame.parameter_inputs.is_some() {
-                // The parameter environment already exists, including cells
-                // captured while a default expression was evaluated.
-                continue;
-            }
-            if self.missing_activation_binding(binding, frame) {
-                // A captured context can carry a prior activation's cell.
-                // Its source binding is not this missing function value.
-                self.executor.state.world_mut().active_cells.remove(binding);
-                continue;
-            }
-            if !self
-                .executor
-                .inputs
-                .captured_local_bindings
-                .contains(binding)
-            {
-                continue;
-            }
-            let Some(values) = frame.environment.get(binding) else {
-                // The shared activation model cannot instantiate a missing
-                // self/hoisted-function value from source identity alone.
-                continue;
-            };
-            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
-                values: values.clone(),
-                kind: *kind,
-                initialization: match kind {
-                    LocalBinding::Parameter
-                    | LocalBinding::Var
-                    | LocalBinding::NamedSelf(_)
-                    | LocalBinding::HoistedFunction(_) => CellInitialization::Initialized,
-                    LocalBinding::Let | LocalBinding::Const => CellInitialization::Uninitialized,
-                },
-            });
-            self.executor
-                .state
-                .world_mut()
-                .active_cells
-                .insert(binding.clone(), cell);
-            allocated = true;
-        }
-        if allocated {
-            // A cached factory result cannot stand in for another activation:
-            // its captured cells have distinct identities, even at one site.
-            self.executor.state.world_mut().revision.bump_prefix();
-        }
-    }
-    fn local_binding_stored(&mut self, binding: &Id, frame: &LocalFrame) {
-        if !self.executor.state.world.active_cells.contains_key(binding)
-            && self
-                .executor
-                .inputs
-                .captured_local_bindings
-                .contains(binding)
-            && let Some(kind @ LocalBinding::HoistedFunction(_)) = self.body.bindings.get(binding)
-        {
-            // The prologue could not manufacture this function value. An
-            // actually executed initializer now establishes this activation's
-            // mutable cell using its evaluated value, as for other locals.
-            let cell = self.executor.state.world_mut().cells.insert(LexicalCell {
-                values: frame.environment[binding].clone(),
-                kind: *kind,
-                initialization: CellInitialization::Initialized,
-            });
-            self.executor
-                .state
-                .world_mut()
-                .active_cells
-                .insert(binding.clone(), cell);
-            self.executor.state.world_mut().revision.bump_prefix();
-        }
-        if let Some(id) = self.executor.state.world.active_cells.get(binding).copied() {
-            let cell = &mut self.executor.state.world_mut().cells[id.0];
-            let values = &frame.environment[binding];
-            let changed =
-                cell.values != *values || cell.initialization != CellInitialization::Initialized;
-            cell.values = values.clone();
-            cell.initialization = CellInitialization::Initialized;
-            if changed {
-                self.executor.state.world_mut().revision.bump_prefix();
-            }
-        }
+    fn cell_effect(&self) -> EffectCoverageFragment {
+        // This activation-local binding has no live cell to expose a heap,
+        // global, or host effect. Its value's evaluation is covered
+        // separately by the ordered operation that produced it.
+        EffectCoverageFragment::no_effects()
     }
     fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
-    }
-    fn assign_capture(
-        &mut self,
-        frame: &mut LocalFrame,
-        binding: &Id,
-        values: &Values,
-        span: Span,
-    ) -> Result<super::allocation_transfer::AllocationValue, RemainderDisposition> {
-        if let Some(id) = self.executor.state.world.active_cells.get(binding).copied() {
-            let cell = &mut self.executor.state.world_mut().cells[id.0];
-            if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
-                || cell.initialization == CellInitialization::Uninitialized
-            {
-                return Ok(super::allocation_transfer::AllocationValue::opaque(
-                    Values::from([AbstractValue::Value(Value::Unavailable)]),
-                ));
-            }
-            let mut result = values.clone();
-            if cell.initialization == CellInitialization::MaybeInitialized {
-                result.insert(AbstractValue::Value(Value::Unavailable));
-            }
-            // General invocation queries also cover calls that may be skipped.
-            // Join captured writes until their caller supplies ordered control
-            // evidence; the no-call path must retain its old cell contents.
-            let before = cell.values.len();
-            cell.values.extend(values.iter().cloned());
-            if cell.values.len() != before {
-                self.executor.state.world_mut().revision.bump_prefix();
-            }
-            return Ok(super::allocation_transfer::AllocationValue::opaque(result));
-        }
-        self.fallback(
-            frame,
-            values.clone(),
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::OpaqueExecution,
-                ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: None,
-            },
-            span,
-        );
-        Err(RemainderDisposition::AlreadySummarized)
     }
     fn read_binding(
         &mut self,
         binding: &Id,
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition> {
-        if self.missing_activation_binding(binding, frame) {
+        if missing_activation_binding(self.body, binding, frame) {
             self.refuse_activation_value(frame);
             return Err(RemainderDisposition::AlreadySummarized);
         }
@@ -2288,21 +2124,19 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     fn world_mut(&mut self) -> &mut World {
         self.executor.state.world_mut()
     }
-    fn settled_dependencies(&self) -> Box<ProofDependencies> {
+    fn current_prerequisites(&self) -> Box<ProofDependencies> {
         self.executor.boxed_settled_prefix_dependencies()
     }
-    fn closure(
+    fn admit_closure(
         &mut self,
-        frame: &mut LocalFrame,
+        frame: &LocalFrame,
         creation: super::local_operations::DeferredCallableCreation,
-    ) -> Result<LocalValueResult, RemainderDisposition> {
+        captures: &LexicalCaptures,
+    ) -> Result<ClosureAdmission, RemainderDisposition> {
         let callable = creation.callable();
-        assert_eq!(
-            self.executor.inputs.index.callable_creation(callable),
-            Some(creation),
-            "canonical callable creation kind/home-object association"
-        );
-        let body = &self.executor.inputs.index.callables[&callable];
+        let Some(body) = self.executor.inputs.index.callables.get(&callable) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
         let reads = self
             .executor
             .inputs
@@ -2312,18 +2146,11 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
             .unwrap_or(&body.reads);
         if reads
             .iter()
-            .any(|binding| self.missing_activation_binding(binding, frame))
+            .any(|binding| missing_activation_binding(self.body, binding, frame))
         {
             self.refuse_activation_value(frame);
             return Err(RemainderDisposition::AlreadySummarized);
         }
-        let captures = self.executor.closure_captures(callable, &frame.environment);
-        let values = Values::from([AbstractValue::Closure(callable, captures)]);
-        frame.inputs.extend(values.iter().cloned());
-        let captured_cells_are_empty = matches!(
-            values.first(),
-            Some(AbstractValue::Closure(_, captured)) if captured.values.cells.is_empty()
-        );
         // This exact root creates one fresh ordinary function as the provider
         // call's argument. Its body does not run at creation, even when the
         // deferred body contains syntax the callable interpreter marks opaque.
@@ -2357,7 +2184,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
                                     .is_some()
                             })
                 });
-        let effects = if captured_cells_are_empty
+        let effects = if captures.cells.is_empty()
             && (!body.opaque || selected_function_argument)
             && !body.generator
             && !self
@@ -2376,13 +2203,13 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
         } else {
             EffectCoverageFragment::default()
         };
-        Ok(LocalValueResult {
-            selection: effects
-                .lexical_selection_dependencies()
-                .and_then(|dependencies| CallableSelection::observed(&values, dependencies)),
-            allocation: super::allocation_transfer::AllocationValue::opaque(values),
+        Ok(ClosureAdmission {
             effects,
+            judgment: super::allocation_transfer::AllocationJudgment::Opaque,
         })
+    }
+    fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
+        self.executor.intern_captures(captures)
     }
 }
 
@@ -2586,6 +2413,19 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 );
                 Disposition::Summarized
             }
+            Unproved::CaptureStore { values, span } => {
+                self.fallback(
+                    frame,
+                    values.clone(),
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::OpaqueExecution,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+                Disposition::Summarized
+            }
             Unproved::Operator { operands, span } => {
                 self.fallback(
                     frame,
@@ -2652,11 +2492,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.queries.assume(dependencies);
         }
-        self.state
-            .ledger_dependencies
-            .extend(&self.queries.dependencies());
+        self.settle_query_prerequisites();
         self.evaluation_effects
-            .depend_on(&self.state.ledger_dependencies);
+            .depend_on(&self.state.world.prerequisites);
         (
             self.state.0.expect("the completed transfer owns its state"),
             self.observations,
@@ -2681,16 +2519,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// transfers, plus queries used by the current target selection. This is
     /// a conservative prerequisite set, never operation coverage evidence.
     fn settled_prefix_dependencies(&self) -> ProofDependencies {
-        let mut dependencies = self.state.ledger_dependencies.clone();
+        let mut dependencies = self.state.world.prerequisites.clone();
         dependencies.extend(&self.queries.dependencies());
         dependencies
     }
 
     fn boxed_settled_prefix_dependencies(&self) -> Box<ProofDependencies> {
         let mut dependencies = Box::<ProofDependencies>::default();
-        dependencies.extend(&self.state.ledger_dependencies);
+        dependencies.extend(&self.state.world.prerequisites);
         self.queries.extend_dependencies(&mut dependencies);
         dependencies
+    }
+
+    /// Fold the queries' prerequisites into the world's snapshot before the
+    /// state crosses a transfer boundary. Writes only on change, so an
+    /// unchanged shared world is not copied.
+    fn settle_query_prerequisites(&mut self) {
+        let mut prerequisites = self.state.world.prerequisites.clone();
+        prerequisites.extend(&self.queries.dependencies());
+        if prerequisites != self.state.world.prerequisites {
+            self.state.world_mut().prerequisites = prerequisites;
+        }
     }
 
     fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
@@ -2709,9 +2558,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operation: RuntimeOperation,
         assumption: Option<AssumedEffectReason>,
     ) -> (RuntimeValue, super::allocation_transfer::AllocationJudgment) {
-        self.state
-            .ledger_dependencies
-            .extend(&self.queries.dependencies());
+        self.settle_query_prerequisites();
         let state = self
             .state
             .0
@@ -2770,7 +2617,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .extend(&self.evaluation_effects);
         memo.effects
             .evaluation_effects
-            .depend_on(&self.state.ledger_dependencies);
+            .depend_on(&self.state.world.prerequisites);
         memo.effects
             .evaluation_effects
             .depend_on(&self.queries.dependencies());
@@ -4418,7 +4265,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             || !self.state.world.object_properties_are_settled(*object)
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => {
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
                         self.state.world.native.tainted_functions.contains(key)
                     }
                     AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
@@ -4434,7 +4281,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let callback = self.evaluate(&proof.callback, env, captures);
         let (key, captured) = match callback.iter().collect::<Vec<_>>().as_slice() {
             [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => (*key, None),
-            [AbstractValue::Closure(key, captured)] => (*key, Some(captured.clone())),
+            [AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)] => {
+                (*key, Some(captured.clone()))
+            }
             _ => return None,
         };
         let callable = self.inputs.index.callables.get(&key)?;
@@ -4622,7 +4471,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 DenseArrayIterationTransfer::Yielded { source: current_object, slots }
                     if current_object == source && slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.world.object_properties_are_settled(*object)))
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.world.native.tainted_functions.contains(key)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) if self.state.world.native.tainted_functions.contains(key)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed) if self.class_may_run_on_borrowed_receiver(*key)));
             let valid = valid
                 && (row.result != IterationResult::Mapped
@@ -5036,7 +4885,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let helper_key = match helper.first() {
             Some(AbstractValue::Value(Value::Alloc(Kind::Function, key))) => *key,
-            Some(AbstractValue::Closure(key, captured)) if captured.values.is_empty() => *key,
+            Some(AbstractValue::Closure(HeapAddress { callable: key, .. }, captured))
+                if captured.values.is_empty() =>
+            {
+                *key
+            }
             _ => return None,
         };
         let Some(AbstractValue::Value(Value::Alloc(Kind::Class, target_key))) = target.first()
@@ -6155,7 +6008,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 values.len() == 1
                     && values.iter().all(|value| {
                         matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, function))
-                        | AbstractValue::Closure(function, _) if *function == key)
+                        | AbstractValue::Closure(HeapAddress { callable: function, .. }, _) if *function == key)
                     })
             })
     }
@@ -6374,7 +6227,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // either class are separate operations, not prerequisites of this read.
         Some(NonInvokingClassHeritageRead {
             binding: base,
-            dependencies: self.state.ledger_dependencies.clone(),
+            dependencies: self.state.world.prerequisites.clone(),
         })
     }
 
@@ -7314,7 +7167,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if values.is_empty()
                     || !values.iter().all(|value| match value {
                         AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                        | AbstractValue::Closure(key, _) => {
+                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
                             self.inputs.index.callables.contains_key(key)
                                 && !self.state.world.native.tainted_functions.contains(key)
                         }
@@ -7338,7 +7191,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .filter_map(|value| match value {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => Some(*key),
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => Some(*key),
                     _ => None,
                 })
                 .collect();
@@ -8014,7 +7867,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .contains(value)
                 && match value {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => {
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
                         !self.state.world.native.tainted_functions.contains(key)
                     }
                     AbstractValue::AuditedRetainedResult(_, nested) => !self
@@ -8087,7 +7940,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invalidate_writable_object(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => {
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
                     if let Some(callable) = self.inputs.index.callables.get(key) {
                         pending.extend(
                             callable
@@ -8156,7 +8009,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.world_mut().native.tainted_functions.insert(*key);
                 }
-                AbstractValue::Closure(key, captured) => {
+                AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
                     let cells: Vec<_> = captured.values.cells.values().copied().collect();
                     self.havoc_cells(cells);
                     self.state.world_mut().native.tainted_functions.insert(*key);
@@ -8529,7 +8382,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return global(GlobalReachCause::TaintedInput);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => {
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
                     if self.state.world.native.tainted_functions.contains(key) {
                         return global(GlobalReachCause::TaintedInput);
                     }
@@ -8703,7 +8556,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     None
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => self
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => self
                     .inputs
                     .index
                     .callables
@@ -8800,7 +8653,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for callback in self.callback_values(captured) {
             let key = match callback {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => key,
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => key,
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
                     continue;
@@ -8848,7 +8701,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .filter(|callback| {
                 match callback {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => self
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => self
                         .inputs
                         .index
                         .callables
@@ -9000,7 +8853,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     continue;
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, function)) => (function, None),
-                AbstractValue::Closure(function, captured) => (function, Some(captured)),
+                AbstractValue::Closure(
+                    HeapAddress {
+                        callable: function, ..
+                    },
+                    captured,
+                ) => (function, Some(captured)),
                 value
                     if value.is_primitive()
                         || matches!(value, AbstractValue::Value(Value::Unavailable)) =>
@@ -9035,57 +8893,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
-        let Some(callable) = self.inputs.index.callables.get(&key) else {
-            return self.intern_captures(LexicalCaptures::default());
-        };
-        // This canonical census also contains nested closures' references.
-        // An intermediate closure must retain cells needed by its children.
-        let reads = self
-            .inputs
-            .index
-            .prototype_callable_reads
-            .get(&key)
-            .unwrap_or(&callable.reads);
-        let free_bindings = reads.iter().chain(callable.rebinds.iter());
-        let mut captured = LexicalCaptures {
-            home_object: self.inputs.index.callable_home_object(key),
-            ..Default::default()
-        };
-        for id in free_bindings {
-            if self.inputs.top_bindings.contains(id)
-                || callable.declared_locals.contains(id)
-                || callable.local_functions.contains_key(id)
-                || callable
-                    .params
-                    .iter()
-                    .any(|parameter| parameter.binding.as_ref() == Some(id))
-            {
-                continue;
-            }
-            if let Some(cell) = self.state.world.active_cells.get(id) {
-                captured.cells.insert(id.clone(), *cell);
-                continue;
-            }
-            if let Some(values) = captures.get(id) {
-                captured.snapshots.insert(
-                    id.clone(),
-                    if self.inputs.mutable_captures.contains(id)
-                        || captured.snapshots.len() + captured.cells.len() >= 64
-                    {
-                        unknown()
-                    } else if !callable.reads.contains(id) && !callable.rebinds.contains(id) {
-                        // A source-summary activation supplied a descendant-only
-                        // value snapshot, not a live binding proof. Retain
-                        // its capabilities while forfeiting its exact value.
-                        let mut possible = values.clone();
-                        possible.insert(AbstractValue::Value(Value::Top));
-                        possible
-                    } else {
-                        values.clone()
-                    },
-                );
-            }
-        }
+        let captured = lexical_captures(
+            self.inputs.index,
+            &self.state.world.active_cells,
+            captures,
+            key,
+            self.inputs.capture_policy(),
+        );
         self.intern_captures(captured)
     }
 
@@ -9338,7 +9152,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let reentrant_pool = callbacks.iter().any(|callback| {
             let key = match callback {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => *key,
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => *key,
                 _ => return false,
             };
             self.state.active.contains(&ActiveInvocation {
@@ -9415,7 +9229,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     Some(self.invoke(key, args_for(key, self.inputs.index), None, false))
                 }
-                AbstractValue::Closure(key, captured) => {
+                AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
                     Some(self.invoke(key, args_for(key, self.inputs.index), Some(captured), false))
                 }
                 _ => None,
@@ -9647,7 +9461,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for callback in &callbacks {
             let key = match callback {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => Some(*key),
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => Some(*key),
                 _ => None,
             };
             if let Some(callback_owner) =
@@ -10144,7 +9958,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let key = match targets.first()? {
             AbstractValue::Value(Value::Alloc(Kind::Function, key))
-            | AbstractValue::Closure(key, _) => key,
+            | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => key,
             _ => return None,
         };
         self.inputs
@@ -10477,7 +10291,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         match expr {
             ValueExpr::Binding(_) => unreachable!("the shared transfer resolves bindings"),
             ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
-                *key,
+                HeapAddress {
+                    scope: self.state.world.scope,
+                    callable: *key,
+                },
                 self.closure_captures(*key, captures),
             )]),
             ValueExpr::Alloc(kind, site) => {
@@ -10903,7 +10720,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                             returns.extend(self.invoke(key, args.clone(), None, false).returns);
                         }
-                        AbstractValue::Closure(key, captured) => {
+                        AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
                             returns.extend(
                                 self.invoke(key, args.clone(), Some(captured), false)
                                     .returns,
@@ -11859,7 +11676,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && targets.iter().all(|target| {
                 let key = match target {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => key,
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => key,
                     _ => return false,
                 };
                 self.inputs.index.callables.get(key).is_some_and(|body| {
@@ -11921,7 +11738,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 (ValueExpr::Alloc(Kind::Function, source), EvaluatedCallee::Direct(selected)) => {
                     selected.values.len() == 1
                         && matches!(selected.values.first(),
-                            Some(AbstractValue::Closure(actual, _)) if actual == source)
+                            Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if actual == source)
                 }
                 (
                     ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
@@ -12559,7 +12376,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && values.iter().all(|value| matches!(
                 value,
                     AbstractValue::Value(Value::Alloc(Kind::Function, actual))
-                        | AbstractValue::Closure(actual, _)
+                        | AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)
                         if actual == source
             )))
         {
@@ -13007,7 +12824,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
-                AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
+                AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)
+                    if call.kind == CallKind::Call =>
+                {
                     let mut nested = self.invoke_selected(
                         key,
                         args.clone(),
@@ -14063,7 +13882,6 @@ pub(crate) fn annotate_synchronous_calls(
         .collect();
     let state = ExecutionState {
         world: Arc::new(world),
-        ledger_dependencies: ProofDependencies::default(),
         native_point_effects: index.initial_native_point_effects.clone(),
         activated_native_effects: BTreeSet::new(),
         author_host_contract_uses: Vec::new(),
@@ -15084,7 +14902,7 @@ impl Executor<'_, '_> {
         outcome
             .effects
             .evaluation_effects
-            .depend_on(&self.state.ledger_dependencies);
+            .depend_on(&self.state.world.prerequisites);
         outcome
             .effects
             .evaluation_effects

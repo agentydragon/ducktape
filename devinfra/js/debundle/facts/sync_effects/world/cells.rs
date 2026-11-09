@@ -5,6 +5,7 @@
 
 use super::super::local_operations::LocalBinding;
 use super::super::value_model::{AbstractValue, Captured, LexicalCellId, Values};
+use crate::facts::abstract_domain::value::Value;
 use rustc_hash::FxHashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,60 @@ impl LexicalCells {
         self.slots.push(Some(Box::new(cell)));
         self.occupied.push(id);
         id
+    }
+
+    pub(in crate::facts::sync_effects) fn get(&self, id: LexicalCellId) -> Option<&LexicalCell> {
+        self.slots.get(id.0)?.as_deref()
+    }
+
+    fn get_mut(&mut self, id: LexicalCellId) -> Option<&mut LexicalCell> {
+        self.slots.get_mut(id.0)?.as_deref_mut()
+    }
+
+    /// A store through a captured reference. The call that performs it may
+    /// be skipped on another path, so the cell joins the stored values with
+    /// its old contents. Returns the assignment's result, with `Unavailable`
+    /// for the abrupt alternative of a const, a named self binding or a cell
+    /// that may still be in TDZ, and whether the contents changed; `None` for
+    /// a retired cell.
+    pub(in crate::facts::sync_effects) fn store_captured(
+        &mut self,
+        id: LexicalCellId,
+        values: &Values,
+    ) -> Option<(Values, bool)> {
+        let cell = self.get_mut(id)?;
+        if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
+            || cell.initialization == CellInitialization::Uninitialized
+        {
+            return Some((
+                Values::from([AbstractValue::Value(Value::Unavailable)]),
+                false,
+            ));
+        }
+        let mut result = values.clone();
+        if cell.initialization == CellInitialization::MaybeInitialized {
+            result.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        let before = cell.values.len();
+        cell.values.extend(values.iter().cloned());
+        Some((result, cell.values.len() != before))
+    }
+
+    /// The declaring activation's own store or initialization: it replaces
+    /// the contents and leaves TDZ. Returns whether the cell changed.
+    pub(in crate::facts::sync_effects) fn store_declared(
+        &mut self,
+        id: LexicalCellId,
+        values: &Values,
+    ) -> bool {
+        let Some(cell) = self.get_mut(id) else {
+            return false;
+        };
+        let changed =
+            cell.values != *values || cell.initialization != CellInitialization::Initialized;
+        cell.values = values.clone();
+        cell.initialization = CellInitialization::Initialized;
+        changed
     }
 
     pub(in crate::facts::sync_effects) fn collection_due(&self, last_owner: bool) -> bool {
@@ -162,5 +217,77 @@ impl<'a> CellTrace<'a> {
             }
         }
         (self.cells, self.work)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CellInitialization, LexicalCell, LexicalCells};
+    use crate::facts::abstract_domain::value::{Kind, Value};
+    use crate::facts::sync_effects::local_operations::LocalBinding;
+    use crate::facts::sync_effects::value_model::{AbstractValue, Values};
+
+    const UNAVAILABLE: AbstractValue = AbstractValue::Value(Value::Unavailable);
+
+    fn object(allocation: u32) -> AbstractValue {
+        AbstractValue::Value(Value::Alloc(Kind::Object, allocation))
+    }
+
+    fn cells_with(kind: LocalBinding, initialization: CellInitialization) -> LexicalCells {
+        let mut cells = LexicalCells::default();
+        cells.insert(LexicalCell {
+            values: Values::from([object(1)]),
+            kind,
+            initialization,
+        });
+        cells
+    }
+
+    #[test]
+    fn captured_store_in_tdz_is_abrupt_and_stores_nothing() {
+        for (kind, initialization) in [
+            (LocalBinding::Let, CellInitialization::Uninitialized),
+            (LocalBinding::Const, CellInitialization::Initialized),
+            (LocalBinding::NamedSelf(0), CellInitialization::Initialized),
+        ] {
+            let mut cells = cells_with(kind, initialization);
+            let id = cells.occupied[0];
+
+            let stored = cells.store_captured(id, &Values::from([object(2)]));
+
+            assert_eq!(stored, Some((Values::from([UNAVAILABLE]), false)));
+            assert_eq!(cells[id.0].values, Values::from([object(1)]));
+        }
+    }
+
+    #[test]
+    fn captured_store_joins_and_maybe_initialized_keeps_the_abrupt_alternative() {
+        for (initialization, result) in [
+            (CellInitialization::Initialized, Values::from([object(2)])),
+            (
+                CellInitialization::MaybeInitialized,
+                Values::from([object(2), UNAVAILABLE]),
+            ),
+        ] {
+            let mut cells = cells_with(LocalBinding::Let, initialization);
+            let id = cells.occupied[0];
+
+            let stored = cells.store_captured(id, &Values::from([object(2)]));
+
+            assert_eq!(stored, Some((result, true)));
+            assert_eq!(cells[id.0].values, Values::from([object(1), object(2)]));
+        }
+    }
+
+    #[test]
+    fn declared_store_replaces_and_leaves_tdz() {
+        let mut cells = cells_with(LocalBinding::Let, CellInitialization::Uninitialized);
+        let id = cells.occupied[0];
+
+        assert!(cells.store_declared(id, &Values::from([object(2)])));
+        assert!(!cells.store_declared(id, &Values::from([object(2)])));
+
+        assert_eq!(cells[id.0].values, Values::from([object(2)]));
+        assert_eq!(cells[id.0].initialization, CellInitialization::Initialized);
     }
 }

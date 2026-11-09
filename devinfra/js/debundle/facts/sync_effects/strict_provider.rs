@@ -1,9 +1,12 @@
 //! The allocation-only provider consumer of the shared value transfers.
 
 use super::allocation_transfer::{self, AllocationJudgment, AllocationValue};
+use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::ExecutionIndex;
+use super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::kernel::context::{
-    BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    NativeContext, Unproved,
 };
 use super::kernel::continuation::{self, LocalContinuation};
 use super::kernel::driver;
@@ -13,28 +16,33 @@ use super::kernel::frame::{
 use super::local_operations::DeferredCallableCreation;
 use super::own_data_transfer::OwnDataContext;
 use super::value_model::{
-    AbstractValue, CallSite, Context, OwnPropertyShape, ProviderInput, ProviderScopeId,
-    SymbolicInputId, ValueExpr, Values,
+    AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
+    OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
 };
 use super::world::{World, WorldScope};
-use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
+use crate::analysis_inputs::{
+    ForeignInvocation, ForeignReturn, NativeIntrinsic, ProofDependencies,
+};
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::integrity::Integrity;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_common::Span;
 use swc_ecma_ast::Id;
 
 struct ProviderContext<'a> {
     index: &'a ExecutionIndex,
     bindings: Context,
+    /// Every closure retains all arguments: the walk does not prove which
+    /// argument a closure body can reach.
     argument_values: Values,
-    closure_captures: BTreeMap<u32, Values>,
-    closure_local_reads: BTreeMap<u32, BTreeSet<Id>>,
-    closure_provider_reads: BTreeMap<u32, BTreeSet<Id>>,
+    /// Outer locals some closure reads; they get cells.
+    captured_locals: FxHashSet<Id>,
+    capture_contexts: CaptureInterner<LexicalCaptures>,
+    /// Closures whose capture this query cannot represent; retaining one
+    /// refuses the summary.
     unsupported_closures: BTreeSet<u32>,
-    final_environment: Option<Context>,
     class_mode: bool,
     local_bindings: BTreeSet<Id>,
     shadowed: BTreeSet<&'static str>,
@@ -115,17 +123,16 @@ impl HeapContext for ProviderContext<'_> {
     fn world_mut(&mut self) -> &mut World {
         &mut self.world
     }
-    fn closure(
+    fn current_prerequisites(&self) -> Box<ProofDependencies> {
+        Box::new(self.world.prerequisites.clone())
+    }
+    fn admit_closure(
         &mut self,
-        frame: &mut LocalFrame,
+        frame: &LocalFrame,
         creation: DeferredCallableCreation,
-    ) -> Result<LocalValueResult, RemainderDisposition> {
+        _captures: &LexicalCaptures,
+    ) -> Result<ClosureAdmission, RemainderDisposition> {
         let callable = creation.callable();
-        assert_eq!(
-            self.index.callable_creation(callable),
-            Some(creation),
-            "canonical callable creation kind/home-object association"
-        );
         let Some(body) = self.index.callables.get(&callable) else {
             return Err(RemainderDisposition::NeedsSummary);
         };
@@ -166,39 +173,25 @@ impl HeapContext for ProviderContext<'_> {
         {
             self.unsupported_closures.insert(callable);
         }
-        let mut captures = self.argument_values.clone();
         if body.implicit_capture && self.class_mode {
             // Method/accessor receivers are dynamic, not the constructor's
-            // lexical receiver. Keep class-mode admission conservative.
-            if creation.home_object().is_some() {
+            // lexical receiver. Keep class-mode admission conservative. The
+            // lexical receiver is the constructed instance, the retention
+            // walk's root.
+            if creation.home_object().is_some() || frame.this_values.is_none() {
                 return Err(RemainderDisposition::NeedsSummary);
             }
-            let Some(this_values) = frame.this_values.as_ref() else {
-                return Err(RemainderDisposition::NeedsSummary);
-            };
-            captures.extend(this_values.iter().cloned());
         } else if body.implicit_capture && matches!(creation, DeferredCallableCreation::Arrow(_)) {
             self.unsupported_closures.insert(callable);
         }
-        if let Some(home_object) = creation.home_object() {
-            captures.insert(AbstractValue::Value(Value::Alloc(
-                Kind::Object,
-                home_object,
-            )));
-        }
-        self.closure_captures.insert(callable, captures);
-        Ok(LocalValueResult {
-            allocation: AllocationValue {
-                values: Values::from([AbstractValue::Value(Value::Alloc(
-                    Kind::Function,
-                    callable,
-                ))]),
-                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-            },
+        Ok(ClosureAdmission {
             // Provider queries have no application call/execution receipt.
-            effects: Default::default(),
-            selection: None,
+            effects: EffectCoverageFragment::default(),
+            judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
         })
+    }
+    fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
+        self.capture_contexts.intern(captures)
     }
 }
 
@@ -222,15 +215,19 @@ impl BindingContext for ProviderContext<'_> {
             selection: None,
         })
     }
-    fn assign_capture(
-        &mut self,
-        _frame: &mut LocalFrame,
-        _binding: &Id,
-        _values: &Values,
-        _span: Span,
-    ) -> Result<AllocationValue, RemainderDisposition> {
-        // A captured store publishes outside the query's fresh heap.
-        Err(RemainderDisposition::NeedsSummary)
+    fn cell_policy(&self) -> CellPolicy<'_> {
+        // A returned closure retains the final contents of the locals it
+        // reads; a captured store would publish outside the query's heap.
+        CellPolicy {
+            captured: &self.captured_locals,
+        }
+    }
+    fn capture_policy(&self) -> CapturePolicy<'_> {
+        CapturePolicy::Exact
+    }
+    fn cell_effect(&self) -> EffectCoverageFragment {
+        // Provider queries have no application execution receipt.
+        EffectCoverageFragment::default()
     }
 }
 
@@ -360,29 +357,38 @@ fn retain_provider_values(
                     );
                 }
             }
-            AbstractValue::Value(Value::Alloc(Kind::Function, callable)) => {
-                if !visited_closures.insert(callable) {
+            AbstractValue::Closure(address, captured) => {
+                if !visited_closures.insert((address.callable, captured.cache_identity())) {
                     continue;
                 }
-                if context.unsupported_closures.contains(&callable) {
+                if context.unsupported_closures.contains(&address.callable) {
                     return None;
                 }
-                pending.extend(context.closure_captures.get(&callable)?.iter().cloned());
-                let environment = context.final_environment.as_ref()?;
-                for binding in context
-                    .closure_local_reads
-                    .get(&callable)
-                    .into_iter()
-                    .flatten()
-                    .chain(
-                        context
-                            .closure_provider_reads
-                            .get(&callable)
-                            .into_iter()
-                            .flatten(),
-                    )
-                {
-                    pending.extend(environment.get(binding)?.iter().cloned());
+                pending.extend(context.argument_values.iter().cloned());
+                if let Some(home_object) = captured.values.home_object {
+                    pending.push(AbstractValue::Value(Value::Alloc(
+                        Kind::Object,
+                        home_object,
+                    )));
+                }
+                let body = context.index.callables.get(&address.callable)?;
+                let reads = context
+                    .index
+                    .prototype_callable_reads
+                    .get(&address.callable)
+                    .unwrap_or(&body.reads);
+                for binding in reads {
+                    if let Some(cell) = captured.values.cells.get(binding) {
+                        // A cell holds the local's final contents.
+                        pending.extend(context.world.cells.get(*cell)?.values.iter().cloned());
+                    } else if let Some(values) = captured.values.snapshots.get(binding) {
+                        pending.extend(values.iter().cloned());
+                    } else if context.local_bindings.contains(binding) || captures.contains(binding)
+                    {
+                        // Creation captured nothing for an enclosing value
+                        // the closure reads; its contents are unknown.
+                        return None;
+                    }
                 }
             }
             AbstractValue::Value(Value::Alloc(kind, _))
@@ -477,17 +483,12 @@ pub(super) fn derive(
         index,
         bindings,
         argument_values,
-        closure_captures: BTreeMap::new(),
-        closure_local_reads: closure_projection
+        captured_locals: closure_projection
             .as_ref()
-            .map(|projection| projection.local_reads.clone())
+            .map(|projection| projection.local_reads.values().flatten().cloned().collect())
             .unwrap_or_default(),
-        closure_provider_reads: closure_projection
-            .as_ref()
-            .map(|projection| projection.provider_reads.clone())
-            .unwrap_or_default(),
+        capture_contexts: CaptureInterner::default(),
         unsupported_closures: BTreeSet::new(),
-        final_environment: None,
         class_mode: false,
         local_bindings: body
             .body_facts
@@ -510,7 +511,6 @@ pub(super) fn derive(
         let LocalExecutionAttempt::Completed(result) = attempt else {
             return None;
         };
-        context.final_environment = Some(frame.environment.clone());
         AllocationValue {
             values: frame.returns(),
             judgment: result.ledger.allocation,
@@ -525,8 +525,8 @@ pub(super) fn derive(
     let mut retained_arguments = BTreeSet::new();
     let mut retained_provider_captures = BTreeSet::new();
     let closure = match result.values.iter().collect::<Vec<_>>().as_slice() {
-        [AbstractValue::Value(Value::Alloc(Kind::Function, callable))] => {
-            let span = index.callable_spans.get(callable)?;
+        [AbstractValue::Closure(address, _)] => {
+            let span = index.callable_spans.get(&address.callable)?;
             Some(span.lo.0..span.hi.0)
         }
         _ => None,
@@ -577,13 +577,13 @@ pub(super) fn derive(
                     &mut retained_provider_captures,
                 )?;
             }
-            AbstractValue::Value(Value::Alloc(Kind::Function, callable)) => {
+            closure @ AbstractValue::Closure(..) => {
                 returns.insert(ForeignReturn::FreshAllocation);
                 retain_provider_values(
                     &context,
                     scope,
                     &captures,
-                    [AbstractValue::Value(Value::Alloc(Kind::Function, callable))],
+                    [closure],
                     &mut retained_arguments,
                     &mut retained_provider_captures,
                 )?;
@@ -636,11 +636,9 @@ pub(super) fn derive_class(
         index,
         bindings,
         argument_values,
-        closure_captures: BTreeMap::new(),
-        closure_local_reads: BTreeMap::new(),
-        closure_provider_reads: BTreeMap::new(),
+        captured_locals: FxHashSet::default(),
+        capture_contexts: CaptureInterner::default(),
         unsupported_closures: BTreeSet::new(),
-        final_environment: None,
         class_mode: true,
         local_bindings: body.bindings.keys().cloned().collect(),
         shadowed: shadowed.clone(),
@@ -686,9 +684,11 @@ pub(super) fn derive_class(
                     pending_values.extend(properties.values().flatten().cloned());
                 }
             }
-            AbstractValue::Value(Value::Alloc(Kind::Function, callable)) => {
-                if visited_closures.insert(callable) {
-                    pending_values.extend(context.closure_captures.get(&callable)?.iter().cloned());
+            AbstractValue::Closure(address, captured) => {
+                // A constructor closure's lexical receiver is the instance,
+                // this walk's root; it retains every argument.
+                if visited_closures.insert((address.callable, captured.cache_identity())) {
+                    pending_values.extend(context.argument_values.iter().cloned());
                 }
             }
             // The shared keyed-collection constructor transfer admits only
