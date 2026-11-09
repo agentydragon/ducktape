@@ -61,8 +61,8 @@
       "sha256": "ScYL50jt+e5dPPtbXCPi+/IrDw5dLaVxzwXcM/Zydq0="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-02595eab1e1b/debundle",
-      "sha256": "Alleqx4bTAJ3h0gsexhrrzuXAhV03EPgi+GRAurfmZQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-34587819594d/debundle",
+      "sha256": "NFh4GVlN8petBoF6gZ2CErO0vfgEmmhAnA8gtDXbbug="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
@@ -225,8 +225,8 @@
       "sha256": "oafEbvVhizs90iOC6SXiVX4M+FRvWkDaimjt4iYLJGI="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-6b12667a49e5/ci_latency.skill",
-      "sha256": "axJmeknlDV1m6IBbVajEn6uDgxhJ8CBsBBNIyUsYWzE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-363f52a32ec8/ci_latency.skill",
+      "sha256": "Nj9Soy7Id4uZro3/u36JTrfoAXywiuv7elA1Ka0dhzs="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
@@ -257,8 +257,8 @@
       "sha256": "+Qob+nQ6T+Tmk1+dj/FAVMEldb5wjR9m7q6fBaZZ+8w="
     },
     "skill-ci_reliability": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-1558add12165/ci_reliability.skill",
-      "sha256": "FVit0SFlikesHMHN+POfvj5EJhSBDrTPoQB2P+/CHsc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-42b07dbc5e45/ci_reliability.skill",
+      "sha256": "QrB9vF5FYrdctWmcsqJMl8rFAhSZiDbfqphWd2XnVWo="
     },
     "cpap-gateway-health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/cpap-gateway-health-58d73b1a77dc/cpap_gateway_health-0.1.0-py3-none-any.whl",
