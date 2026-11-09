@@ -132,7 +132,6 @@ def chart(app: App) -> Chart:
             "cli-proxy-api",
             "cpap-sync",
             "flux-system",
-            "github-api-proxy",
             "google-mcp",
             "grocy-sf",
             "grocy-vallejo",

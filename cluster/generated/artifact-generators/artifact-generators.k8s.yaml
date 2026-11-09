@@ -591,11 +591,6 @@ spec:
       name: gatus
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/"
-      name: github-api-proxy
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/github-tf/**"
           to: "@artifact/cluster/generated/github-tf/"
       name: github-tf

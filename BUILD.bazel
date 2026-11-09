@@ -44,7 +44,7 @@
 # reason skills/BUILD.bazel pins its generated spec modules.
 # gazelle:resolve py agentplane.app.frontend.serving.testing.image //agentplane/app/frontend/serving/testing:image
 # gazelle:resolve py devinfra.claude.claude_hook.container_e2e.e2e_container_descriptor //devinfra/claude/claude_hook/container_e2e:e2e_container_descriptor
-# gazelle:resolve py devinfra.github_proxy.central.github_api_proxy_image //devinfra/github_proxy/central:github_api_proxy_image
+# gazelle:resolve py devinfra.x.github_proxy.central.github_api_proxy_image //devinfra/x/github_proxy/central:github_api_proxy_image
 # gazelle:resolve py gnome.test_image.gnome_shell_test //gnome/test_image:gnome_shell_test
 # gazelle:resolve py haku.console.static_test_image //haku/console:static_test_image
 # gazelle:resolve py loom.wayback.proxy.wayback_proxy_image //loom/wayback/proxy:wayback_proxy_image

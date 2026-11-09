@@ -70,7 +70,6 @@ IMAGES = (
     "cpap-sync",
     "environment-tools",
     "forgejo-token-rotation",
-    "github-api-proxy",
     "github-graphql-rate-exporter",
     "google-mcp",
     "grocy-mcp-oidc-server",
