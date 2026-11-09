@@ -266,18 +266,17 @@ impl fmt::Display for GraphMismatch {
                 "graph compatibility mismatch: {reason:?}; regenerate with "
             )?,
         }
+        // Arguments come from argv and paths, which cannot hold the NUL byte that
+        // is the only input `shlex` refuses to quote.
         if let Some(cwd) = &self.regenerate_cwd {
-            write!(formatter, "cd {} && ", shell_quote(&cwd.to_string_lossy()))?;
+            let cwd = shlex::try_quote(&cwd.to_string_lossy())
+                .map_err(|_| fmt::Error)?
+                .into_owned();
+            write!(formatter, "cd {cwd} && ")?;
         }
-        write!(
-            formatter,
-            "{}",
-            self.regenerate_command
-                .iter()
-                .map(|arg| shell_quote(arg))
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
+        let command = shlex::try_join(self.regenerate_command.iter().map(String::as_str))
+            .map_err(|_| fmt::Error)?;
+        write!(formatter, "{command}")
     }
 }
 
@@ -1079,17 +1078,6 @@ pub fn validate_relative_path(path: &Path) -> Result<()> {
         path.display()
     );
     Ok(())
-}
-
-fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "_./:=+-".contains(c))
-    {
-        value.to_string()
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
 }
 
 pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
