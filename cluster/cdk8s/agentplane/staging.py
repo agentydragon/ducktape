@@ -676,8 +676,19 @@ ENV = Environment(
 
 
 def environment(*, identity_catalog: bool) -> Environment:
-    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes."""
-    return replace(ENV, identity_catalog=identity_catalog, app_config=_app_config(identity_catalog=identity_catalog))
+    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes. In
+    the identity catalog every launch also holds the shared diagnostics account's use set, the reach
+    `basic` gave it through the Sandbox's own ServiceAccount; Flux bindings name it only explicitly."""
+    return replace(
+        ENV,
+        identity_catalog=identity_catalog,
+        app_config=_app_config(identity_catalog=identity_catalog),
+        default_policy_sets=(
+            ENV.default_policy_sets | {shared_diagnostics(ENV.namespace).credential_name}
+            if identity_catalog
+            else ENV.default_policy_sets
+        ),
+    )
 
 
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
@@ -976,13 +987,13 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
         )
 
 
-def delivery_chart(app: App) -> Chart:
+def delivery_chart(app: App, env: Environment = ENV) -> Chart:
     return runner_gateway_workload.serving_chart(
         app,
-        env=ENV,
+        env=env,
         operator_callers={
-            ServiceAccountRef(namespace=ENV.namespace, name=app_component.NAME): app_component.service(
-                ENV.namespace
+            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(
+                env.namespace
             ).pods
         },
         extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),

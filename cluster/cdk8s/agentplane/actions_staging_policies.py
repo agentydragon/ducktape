@@ -143,9 +143,8 @@ _HAKU_CLAUDE_BASE_POLICIES = (
 
 def caller_role_sets() -> list[str]:
     """In the identity catalog, the role sets granted to `claude-ai`'s and `haku-agent`'s own Kubernetes
-    accounts: those their bindings grant today, plus cluster diagnostics, as a preset's account has."""
-    sets = [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
-    return list(dict.fromkeys([*sets, access.CLUSTER_DIAGNOSTICS_POLICY]))
+    accounts: exactly those their bindings grant today, so the switch widens neither caller."""
+    return [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
 
 
 def _kubernetes_account_use(caller: StandingCaller, *, identity_catalog: bool) -> list[str]:

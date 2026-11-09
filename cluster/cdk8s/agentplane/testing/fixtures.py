@@ -15,7 +15,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 def _synth(env: Environment, scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     # Two apps: both production chart functions name their chart "agentplane" (its manifest file).
     return cast(list[dict[str, Any]], Testing.synth(staging.chart(scratch_app_factory(), env))) + cast(
-        list[dict[str, Any]], Testing.synth(staging.delivery_chart(scratch_app_factory()))
+        list[dict[str, Any]], Testing.synth(staging.delivery_chart(scratch_app_factory(), env))
     )
 
 

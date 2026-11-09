@@ -213,8 +213,8 @@ class Environment:
     # PolicySets applied by EnvironmentService to every new Sandbox.
     default_policy_sets: frozenset[str] = frozenset()
     # Whether the policy catalog renders in the identity shapes: every Flux `PolicyBinding` names an
-    # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and `basic` reaches the API server as the
-    # shared diagnostics account (kubernetes_account_ref.py) instead of the Sandbox's own ServiceAccount.
+    # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and agents reach the API server only as
+    # accounts (kubernetes_account_ref.py), not as the Sandbox's own ServiceAccount through `basic`.
     identity_catalog: bool = False
     # None keeps the central code-mode service, its route, and its cross-service grants absent.
     central_sampler: CentralSamplerProps | None = None

@@ -43,6 +43,7 @@ from cluster.cdk8s.agentplane.egress import (
     admin,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
+from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
@@ -174,7 +175,9 @@ def test_app_projects_egress_admin_audience(catalog_manifests: list[dict[str, An
 
 def test_environment_default_policy_sets_are_canonical(catalog_manifests: list[dict[str, Any]]) -> None:
     app_defaults = _environment_default_policies(catalog_manifests)
-    assert app_defaults == sorted(DEFAULT_POLICIES)
+    assert set(DEFAULT_POLICIES) <= set(app_defaults)
+    # The identity catalog adds the shared diagnostics account's use set, and nothing else.
+    assert set(app_defaults) - set(DEFAULT_POLICIES) <= {shared_diagnostics(staging.ENV.namespace).credential_name}
     assert PUBLIC_INTERNET_POLICY not in app_defaults
 
 
