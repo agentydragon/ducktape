@@ -1,12 +1,13 @@
 //! Parse emitted JavaScript and assert on AST structure, not printer whitespace.
 
+use binding_targets::binding_name_strings;
 use std::fs;
 use std::path::Path;
 use swc_common::FileName;
 use swc_common::sync::Lrc;
 use swc_ecma_ast::{
-    Decl, ExportSpecifier, Expr, Lit, Module, ModuleDecl, ModuleExportName, ModuleItem,
-    ObjectPatProp, Pat, Stmt, VarDeclKind,
+    Decl, ExportSpecifier, Expr, Lit, Module, ModuleDecl, ModuleExportName, ModuleItem, Stmt,
+    VarDeclKind,
 };
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
@@ -61,7 +62,7 @@ pub fn assert_module_variable_declarators(
         };
         for declarator in &declaration.decls {
             let mut bindings = Vec::new();
-            collect_declared_bindings_from_pat(&declarator.name, &mut bindings);
+            bindings.extend(binding_name_strings(&declarator.name));
             actual.push((
                 kind,
                 bindings,
@@ -155,37 +156,10 @@ fn collect_declared_bindings_from_decl(decl: &Decl, names: &mut Vec<String>) {
         Decl::Fn(function) => names.push(function.ident.sym.to_string()),
         Decl::Var(var) => {
             for declarator in &var.decls {
-                collect_declared_bindings_from_pat(&declarator.name, names);
+                names.extend(binding_name_strings(&declarator.name));
             }
         }
         _ => {}
-    }
-}
-
-fn collect_declared_bindings_from_pat(pat: &Pat, names: &mut Vec<String>) {
-    match pat {
-        Pat::Ident(ident) => names.push(ident.id.sym.to_string()),
-        Pat::Array(array) => {
-            for elem in array.elems.iter().flatten() {
-                collect_declared_bindings_from_pat(elem, names);
-            }
-        }
-        Pat::Rest(rest) => collect_declared_bindings_from_pat(&rest.arg, names),
-        Pat::Object(object) => {
-            for prop in &object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => {
-                        collect_declared_bindings_from_pat(&kv.value, names)
-                    }
-                    ObjectPatProp::Assign(assign) => names.push(assign.key.sym.to_string()),
-                    ObjectPatProp::Rest(rest) => {
-                        collect_declared_bindings_from_pat(&rest.arg, names)
-                    }
-                }
-            }
-        }
-        Pat::Assign(assign) => collect_declared_bindings_from_pat(&assign.left, names),
-        Pat::Expr(_) | Pat::Invalid(_) => {}
     }
 }
 

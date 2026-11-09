@@ -284,33 +284,9 @@ impl binding_targets::TargetAccessRecorder for ReferencedSymCollector {
 /// Binding-identifier syms a parameter pattern introduces, used to shadow
 /// references inside the owning function/arrow body.
 fn param_pat_syms(pat: &Pat) -> Vec<Atom> {
-    let mut collector = PatBindingCollector::default();
-    pat.visit_with(&mut collector);
-    collector.syms
-}
-
-#[derive(Default)]
-struct PatBindingCollector {
-    syms: Vec<Atom>,
-}
-
-impl Visit for PatBindingCollector {
-    fn visit_binding_ident(&mut self, node: &BindingIdent) {
-        self.syms.push(node.id.sym.clone());
-    }
-
-    // `const { a: b }` binds `b`, not `a`; a computed key (`{ [k]: v }`) is an
-    // expression, not a binding, so don't descend into key positions.
-    fn visit_key_value_pat_prop(&mut self, node: &KeyValuePatProp) {
-        node.value.visit_with(self);
-    }
-
-    // Default-value expressions (`(a = expr) => …`) are evaluated in the outer
-    // scope and may reference imports, but they are not binding sites; only the
-    // bound name matters for shadowing, so skip the initializer.
-    fn visit_assign_pat(&mut self, node: &AssignPat) {
-        node.left.visit_with(self);
-    }
+    binding_targets::binding_names(pat)
+        .map(|(sym, _)| sym)
+        .collect()
 }
 
 #[cfg(test)]
