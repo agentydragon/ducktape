@@ -11,6 +11,7 @@ use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
 use super::super::own_data_transfer::OwnDataContext;
+use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
 use super::super::value_model::{CallSite, ValueExpr, Values};
 use super::super::world::World;
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
@@ -106,6 +107,19 @@ pub(in crate::facts::sync_effects) trait HeapContext:
 }
 
 pub(in crate::facts::sync_effects) trait NativeContext {
+    /// The native iterator protocol over an already evaluated operand, as a
+    /// receipt the adapter proves from its prefix (intact Array intrinsics,
+    /// settled dense slots or a primitive-array premise). The kernel's
+    /// `IterateSpread` rule consumes it; `None` is a typed refusal through
+    /// `ControlContext::unproved`. The strict provider has no prefix to prove
+    /// it from.
+    fn native_iterable(
+        &mut self,
+        _operation: NativeIterableUse,
+        _operand: &Values,
+    ) -> Option<NativeIterableReceipt> {
+        None
+    }
     /// Select `Array.prototype.push` on this receiver before arguments run.
     fn array_method_callee(
         &mut self,
@@ -159,6 +173,9 @@ pub(in crate::facts::sync_effects) enum Unproved<'a> {
     /// Both operands completed, but at least one may be an object or unknown
     /// value whose coercion can execute user code.
     Operator { operands: &'a Values, span: Span },
+    /// The spread operand completed, but no native iterator receipt covers
+    /// it: the protocol may run user code.
+    IterateSpread { operand: &'a Values, span: Span },
 }
 
 pub(in crate::facts::sync_effects) enum Disposition {

@@ -4,8 +4,10 @@
 //! Lowered values alone can have erased calls, writes or coercions.
 
 use super::effect_coverage::EffectCoverageFragment;
+use super::runtime_heap::{NativeIterableReceipt, NativeIterableYields};
 use super::value_model::{
-    AbstractValue, CallSite, DenseArray, LiteralPropertyKind, PropertyDefinition, ValueExpr, Values,
+    AbstractValue, ArrayElement, CallSite, DenseArray, LiteralPropertyKind, PropertyDefinition,
+    ValueExpr, Values,
 };
 use super::world::object_surface::ObjectSurfaceStore;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
@@ -18,6 +20,7 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
 
 #[derive(Clone)]
@@ -54,7 +57,7 @@ impl AllocationValue {
 
 pub(super) enum LiteralLayout {
     Record,
-    DenseArray(Vec<ValueExpr>),
+    Array(Vec<Option<ArrayElement>>),
     Unsupported,
 }
 
@@ -77,7 +80,16 @@ pub(super) trait AllocationContext {
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
-    fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
+    /// `tainted`: a hole or an unproved or non-primitive spread leaves the
+    /// literal without a settled own layout.
+    fn array_created(&mut self, _allocation: u32, _tainted: bool) {}
+    /// The native Array iterator protocol over an already evaluated spread
+    /// operand, as a receipt the adapter proves. `None` is an unproved
+    /// spread; the shared transfer taints the literal and the context decides
+    /// whether execution continues.
+    fn array_spread(&mut self, _span: Span, _operand: &Values) -> Option<NativeIterableReceipt> {
+        None
+    }
     fn heap(&mut self) -> LiteralHeap<'_>;
     /// The adapter proves original constructor identity for this canonical New
     /// expression. The operation's row and result semantics are shared.
@@ -197,6 +209,10 @@ pub(super) fn keyed_collection_new(
 pub(super) struct LiteralHeap<'a> {
     pub(super) surface: &'a mut ObjectSurfaceStore,
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
+    /// Arrays whose contents are known only to be primitive, with the
+    /// iterator-protocol premises that established them. Never a slot,
+    /// cardinality or order claim.
+    pub(super) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
     pub(super) revision: &'a mut u64,
     /// Only application execution follows a literal's writability; provider
     /// queries never prove a normally completing write.
@@ -329,6 +345,21 @@ impl LiteralHeap<'_> {
 
     pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
         if self.arrays.remove(&allocation).is_some() {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// One source origin may represent several allocations. Drop exact
+    /// slots but retain the reachability properties; qualitative contents
+    /// make ordinary property projection refuse this origin.
+    pub(super) fn primitive_array(&mut self, allocation: u32, dependencies: ProofDependencies) {
+        self.arrays.remove(&allocation);
+        self.primitive_arrays.insert(allocation, dependencies);
+        *self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub(super) fn invalidate_primitive_array(&mut self, allocation: u32) {
+        if self.primitive_arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -519,11 +550,13 @@ pub(super) fn transfer(
                         |context, expression| context.child(expression),
                     );
                 }
-                LiteralLayout::DenseArray(elements) => {
+                LiteralLayout::Array(elements) => {
                     return array(
                         context,
                         *allocation,
-                        elements.iter().map(Some),
+                        elements
+                            .iter()
+                            .map(|element| ArrayOperand::from_element(element.as_ref())),
                         judgment,
                         |context, expression| context.child(expression),
                     );
@@ -750,33 +783,56 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     Some(transfer.finish(context))
 }
 
-/// One no-spread array literal in progress. Holes are absent own properties,
-/// and never acquire a dense-array proof.
+/// One array literal in progress. Holes are absent own properties and never
+/// acquire a dense-array proof. A spread expands the native iterator receipt
+/// the context proves: exact slots keep the literal dense, primitive-only
+/// yields leave a primitive array with no slot or length claim, and an
+/// unproved or non-primitive spread taints the literal.
 pub(super) struct ArrayTransfer {
     allocation: u32,
+    has_spread: bool,
     properties: BTreeMap<Option<String>, Values>,
     dense: Vec<Values>,
-    index: usize,
+    /// Absent once a qualitative spread made later positions unknown.
+    next_index: Option<usize>,
     has_hole: bool,
+    primitive_only: bool,
+    qualitative_spread: bool,
+    unproved_spread: bool,
+    /// Protocol premises of every expanded spread; the premises a later
+    /// spread of this array inherits.
+    iterable_dependencies: ProofDependencies,
     may_throw: bool,
     can_complete: bool,
     judgment: AllocationJudgment,
 }
 
 impl ArrayTransfer {
+    /// A literal with a spread has no exact `ArrayCreate` length, so it
+    /// never seeds a writable-prefix proof.
     pub(super) fn begin(
         context: &mut impl AllocationContext,
         allocation: u32,
+        has_spread: bool,
         judgment: AllocationJudgment,
     ) -> Self {
-        context.unmodeled_effect_operation();
-        context.heap().begin_literal(allocation);
+        // `ArrayCreate` and `CreateDataProperty` on the fresh array run no
+        // user code; each element and spread supplies its own evidence.
+        context.noninvoking_operation();
+        if !has_spread {
+            context.heap().begin_literal(allocation);
+        }
         Self {
             allocation,
+            has_spread,
             properties: BTreeMap::new(),
             dense: Vec::new(),
-            index: 0,
+            next_index: Some(0),
             has_hole: false,
+            primitive_only: true,
+            qualitative_spread: false,
+            unproved_spread: false,
+            iterable_dependencies: ProofDependencies::default(),
             may_throw: false,
             can_complete: true,
             judgment,
@@ -789,7 +845,22 @@ impl ArrayTransfer {
 
     pub(super) fn hole(&mut self) {
         self.has_hole = true;
-        self.index += 1;
+        self.primitive_only = false;
+        self.next_index = self.next_index.map(|index| index + 1);
+    }
+
+    fn slot(&mut self, values: Values) {
+        self.primitive_only &= values.iter().all(AbstractValue::is_primitive);
+        self.properties
+            .entry(None)
+            .or_default()
+            .extend(values.iter().cloned());
+        if let Some(index) = self.next_index {
+            self.properties
+                .insert(Some(index.to_string()), values.clone());
+            self.next_index = Some(index + 1);
+        }
+        self.dense.push(values);
     }
 
     pub(super) fn child(&mut self, evaluated: AllocationValue) {
@@ -797,45 +868,102 @@ impl ArrayTransfer {
         let mut values = evaluated.values;
         self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
         self.can_complete &= !values.is_empty();
+        self.slot(values);
+    }
+
+    /// Expand one spread whose operand has already been evaluated. The
+    /// operand stays reachable from the literal whatever the protocol yields.
+    /// Reading another object's contents is not an allocation-only operation.
+    pub(super) fn spread(
+        &mut self,
+        context: &mut impl AllocationContext,
+        span: Span,
+        operand: AllocationValue,
+    ) {
+        self.judgment = AllocationJudgment::Opaque;
+        let mut values = operand.values;
+        self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        self.can_complete &= !values.is_empty();
+        if !self.can_complete {
+            return;
+        }
         self.properties
             .entry(None)
             .or_default()
             .extend(values.iter().cloned());
-        self.properties
-            .insert(Some(self.index.to_string()), values.clone());
-        self.dense.push(values);
-        self.index += 1;
+        let Some(receipt) = context.array_spread(span, &values) else {
+            self.unproved_spread = true;
+            return;
+        };
+        self.iterable_dependencies.extend(
+            &receipt
+                .coverage
+                .normal_dependencies()
+                .expect("a yielded native protocol receipt is normal"),
+        );
+        match receipt.yields {
+            NativeIterableYields::ExactSlots(slots) => {
+                for slot in slots {
+                    self.slot(slot);
+                }
+            }
+            NativeIterableYields::PrimitiveOnly => {
+                self.qualitative_spread = true;
+                self.next_index = None;
+            }
+        }
     }
 
     pub(super) fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
         let Self {
             allocation,
+            has_spread,
             mut properties,
             dense,
             has_hole,
+            primitive_only,
+            qualitative_spread,
+            unproved_spread,
+            iterable_dependencies,
             may_throw,
             can_complete,
             mut judgment,
             ..
         } = self;
         if can_complete {
+            let exact_slots = !qualitative_spread && !unproved_spread;
+            if has_spread && !exact_slots {
+                // Only reachability survives: the slots and length of a
+                // qualitative or tainted literal are unknown.
+                properties.retain(|property, _| property.is_none());
+            }
             properties.entry(None).or_default();
-            properties.insert(
-                Some("length".into()),
-                Values::from([AbstractValue::PRIMITIVE]),
-            );
+            if exact_slots {
+                properties.insert(
+                    Some("length".into()),
+                    Values::from([AbstractValue::PRIMITIVE]),
+                );
+            }
             let mut heap = context.heap();
             heap.record(allocation, properties);
-            if !has_hole {
+            let tainted = has_hole || unproved_spread || (qualitative_spread && !primitive_only);
+            if tainted {
+                heap.invalidate_writable(allocation);
+                heap.invalidate_dense_array(allocation);
+                heap.invalidate_primitive_array(allocation);
+            } else if qualitative_spread {
+                heap.invalidate_writable(allocation);
+                heap.primitive_array(allocation, iterable_dependencies);
+            } else if has_spread {
+                heap.invalidate_writable(allocation);
+                heap.dense_array(allocation, dense);
+            } else {
                 // This ordered literal has no spread operands, so dense.len() is
                 // the exact ArrayCreate length for its first uninterrupted run.
                 heap.complete_array(allocation, dense.len());
                 heap.dense_array(allocation, dense);
-            } else {
-                heap.invalidate_writable(allocation);
-                heap.invalidate_dense_array(allocation);
             }
-            context.array_created(allocation, has_hole);
+            context.array_created(allocation, tainted);
         }
         let mut values = Values::new();
         if can_complete {
@@ -849,22 +977,52 @@ impl ArrayTransfer {
     }
 }
 
-/// No-spread array creation shares ordered child transfer with local execution.
+pub(super) enum ArrayOperand<'a, E> {
+    Hole,
+    Value(&'a E),
+    Spread(&'a E, Span),
+}
+
+impl<'a> ArrayOperand<'a, ValueExpr> {
+    pub(super) fn from_element(element: Option<&'a ArrayElement>) -> Self {
+        match element {
+            None => Self::Hole,
+            Some(ArrayElement {
+                spread: None,
+                value,
+            }) => Self::Value(value),
+            Some(ArrayElement {
+                spread: Some(span),
+                value,
+            }) => Self::Spread(value, *span),
+        }
+    }
+}
+
+/// Array creation shares ordered child transfer with local execution.
 pub(super) fn array<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
-    elements: impl IntoIterator<Item = Option<&'a E>>,
+    elements: impl IntoIterator<Item = ArrayOperand<'a, E>>,
     judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    let mut transfer = ArrayTransfer::begin(context, allocation, judgment);
+    let elements: Vec<_> = elements.into_iter().collect();
+    let has_spread = elements
+        .iter()
+        .any(|element| matches!(element, ArrayOperand::Spread(..)));
+    let mut transfer = ArrayTransfer::begin(context, allocation, has_spread, judgment);
     for element in elements {
         if !transfer.can_complete() {
             break;
         }
         match element {
-            None => transfer.hole(),
-            Some(element) => transfer.child(child(context, element)?),
+            ArrayOperand::Hole => transfer.hole(),
+            ArrayOperand::Value(element) => transfer.child(child(context, element)?),
+            ArrayOperand::Spread(element, span) => {
+                let operand = child(context, element)?;
+                transfer.spread(context, span, operand);
+            }
         }
     }
     Some(transfer.finish(context))
@@ -878,6 +1036,7 @@ mod tests {
     fn repeated_pooled_literal_site_cannot_restore_writable_prefix() {
         let mut surface = ObjectSurfaceStore::default();
         let mut arrays = OrdMap::new();
+        let mut primitive_arrays = OrdMap::new();
         let mut revision = 0;
         let allocation = 7;
         let stored = BTreeMap::from([(
@@ -889,6 +1048,7 @@ mod tests {
             let mut heap = LiteralHeap {
                 surface: &mut surface,
                 arrays: &mut arrays,
+                primitive_arrays: &mut primitive_arrays,
                 revision: &mut revision,
                 track_writable_prefix: true,
             };
@@ -912,6 +1072,7 @@ mod tests {
             let mut heap = LiteralHeap {
                 surface: &mut surface,
                 arrays: &mut arrays,
+                primitive_arrays: &mut primitive_arrays,
                 revision: &mut revision,
                 track_writable_prefix: true,
             };

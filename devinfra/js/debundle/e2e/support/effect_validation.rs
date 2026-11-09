@@ -55,6 +55,35 @@ pub fn assert_inline_operation_receipt(
     );
 }
 
+/// The xfail form of a positive: a split whose Node parity the caller has
+/// already asserted, but whose root binding the effect verdict cannot certify
+/// yet. Today's refusal must be the typed `unsupported_operation` loss
+/// `operation`; once the kernel covers `capability`, this fails so the test
+/// is converted into a positive.
+pub fn assert_effect_coverage_pending(
+    fixture: &Fixture,
+    binding: &str,
+    operation: &str,
+    capability: &str,
+) {
+    let execution = binding_execution_report(fixture, binding);
+    let authority = &execution["binding_effect_authority"]["authority"];
+    assert_ne!(
+        authority, "operation_receipt",
+        "capability landed ({capability}): convert this xfail into a positive: {execution:#}"
+    );
+    let losses = execution["precision_losses"]
+        .as_array()
+        .expect("precision losses");
+    assert!(
+        losses.iter().any(|loss| {
+            loss["reason"]["code"] == "unsupported_operation"
+                && loss["reason"]["operation"] == operation
+        }),
+        "{capability}: today's refusal must be the typed {operation} loss: {execution:#}"
+    );
+}
+
 pub fn examples(report: &Value) -> &[Value] {
     report["examples"]
         .as_array()

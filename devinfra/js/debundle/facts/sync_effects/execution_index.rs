@@ -6579,14 +6579,7 @@ impl ExecutionIndex {
             return LiteralLayout::Unsupported;
         }
         if let Some(elements) = self.array_elements.get(&allocation) {
-            return elements
-                .iter()
-                .map(|element| {
-                    let element = element.as_ref()?;
-                    element.spread.is_none().then(|| element.value.clone())
-                })
-                .collect::<Option<Vec<_>>>()
-                .map_or(LiteralLayout::Unsupported, LiteralLayout::DenseArray);
+            return LiteralLayout::Array(elements.clone());
         }
         LiteralLayout::Record
     }

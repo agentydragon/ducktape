@@ -261,7 +261,10 @@ impl StatementFacts {
             }
             effects.incomplete_execution = !calls.complete;
             effects.execution_losses = &calls.precision_losses;
-            effects.opaque_heap |= calls.heap_contents.opaque;
+            // Like the owner's own cells: a whole-owner coverage proof names
+            // every heap effect the executed callees had, so the syntactic
+            // callee summary's opacity is superseded by its recorded cells.
+            effects.opaque_heap |= calls.heap_contents.opaque && completed.is_none();
             effects
                 .allocates
                 .extend(calls.heap_contents.allocations.iter().cloned());

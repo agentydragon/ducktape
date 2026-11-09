@@ -12,6 +12,7 @@ use super::super::property_inference::{
 };
 use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
 use super::object_surface::ObjectSurfaceStore;
+use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
@@ -106,6 +107,7 @@ pub(in crate::facts::sync_effects) struct DescriptorHeap<'a> {
     pub(in crate::facts::sync_effects) maps: &'a mut OrdMap<CallSite, OwnDescriptorMapState>,
     pub(in crate::facts::sync_effects) surface: &'a mut ObjectSurfaceStore,
     pub(in crate::facts::sync_effects) arrays: &'a mut OrdMap<u32, DenseArray>,
+    pub(in crate::facts::sync_effects) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
     pub(in crate::facts::sync_effects) revision: &'a mut u64,
     pub(in crate::facts::sync_effects) track_writable_prefix: bool,
 }
@@ -116,6 +118,7 @@ impl<'a> DescriptorHeap<'a> {
         LiteralHeap {
             surface: self.surface,
             arrays: self.arrays,
+            primitive_arrays: self.primitive_arrays,
             revision: self.revision,
             track_writable_prefix: self.track_writable_prefix,
         }
@@ -125,6 +128,7 @@ impl<'a> DescriptorHeap<'a> {
         LiteralHeap {
             surface: self.surface,
             arrays: self.arrays,
+            primitive_arrays: self.primitive_arrays,
             revision: self.revision,
             track_writable_prefix: self.track_writable_prefix,
         }

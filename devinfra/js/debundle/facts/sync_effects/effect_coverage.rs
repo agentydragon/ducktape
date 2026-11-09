@@ -424,9 +424,17 @@ impl EffectCoverageFragment {
 
     /// Actual ordinary native iteration over a proved primitive source.
     /// Its protocol/contents reads and fresh internal allocation are modeled;
-    /// this is body coverage, not completion of operand evaluation.
+    /// this is body coverage, not completion of operand evaluation. The
+    /// intact protocol reads and rebinds no lexical cell, under the same
+    /// intrinsic premises; the operand's own reads are the caller's.
     pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
-        Self::native_operation(dependencies)
+        let mut fragment = Self::native_operation(dependencies);
+        fragment.lexical = Some(Box::new(LexicalEffectCoverage {
+            reads: DomainCoverage::Covered(Box::new(dependencies.clone())),
+            rebinds: DomainCoverage::Covered(Box::new(dependencies.clone())),
+            calls: BTreeMap::new(),
+        }));
+        fragment
     }
 
     /// A top-level module-cell read has no global/heap/host effect, and its

@@ -120,7 +120,7 @@ pub(super) enum LocalExpression {
     },
     Array {
         allocation: u32,
-        elements: Arc<[Option<Self>]>,
+        elements: Arc<[LocalArrayElement]>,
     },
     Assign {
         binding: Id,
@@ -158,6 +158,27 @@ pub(super) enum LocalExpression {
         property: String,
         value: Arc<Self>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum LocalArrayElement {
+    Hole,
+    Value(LocalExpression),
+    /// The operand runs once at its position; the kernel's `IterateSpread`
+    /// rule then consumes the native iterator protocol at `span`.
+    Spread {
+        value: LocalExpression,
+        span: Span,
+    },
+}
+
+impl LocalArrayElement {
+    fn value(&self) -> Option<&LocalExpression> {
+        match self {
+            Self::Hole => None,
+            Self::Value(value) | Self::Spread { value, .. } => Some(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -419,12 +440,16 @@ impl LocalExpression {
                 elements: array
                     .elems
                     .iter()
-                    .map(|element| match element {
-                        None => Some(None),
-                        Some(element) if element.spread.is_none() => Some(Some(
-                            Self::lower_with_binary(&element.expr, class_template, allow_binary)?,
-                        )),
-                        _ => None,
+                    .map(|element| {
+                        let Some(element) = element else {
+                            return Some(LocalArrayElement::Hole);
+                        };
+                        let value =
+                            Self::lower_with_binary(&element.expr, class_template, allow_binary)?;
+                        Some(match element.spread {
+                            None => LocalArrayElement::Value(value),
+                            Some(span) => LocalArrayElement::Spread { value, span },
+                        })
                     })
                     .collect::<Option<Arc<[_]>>>()?,
             }),
@@ -583,7 +608,7 @@ impl LocalExpression {
                 }
             }
             Self::Array { elements, .. } => {
-                for element in elements.iter().flatten() {
+                for element in elements.iter().filter_map(LocalArrayElement::value) {
                     element.reads(reads);
                 }
             }
@@ -667,10 +692,19 @@ impl LocalExpression {
             }
             Self::Array { elements, .. } => {
                 let (mut allocation_only, mut closure_allowed) = (true, true);
-                for element in elements.iter().flatten() {
-                    let (allocation, closure) = element.allocation_syntax(bindings, closure_sites);
+                for element in elements.iter() {
+                    let Some(value) = element.value() else {
+                        continue;
+                    };
+                    let (allocation, closure) = value.allocation_syntax(bindings, closure_sites);
                     allocation_only &= allocation;
                     closure_allowed &= closure;
+                    // The iterator protocol may run user code: a spread is a
+                    // call, not an allocation.
+                    if matches!(element, LocalArrayElement::Spread { .. }) {
+                        allocation_only = false;
+                        closure_allowed = false;
+                    }
                 }
                 (allocation_only, closure_allowed)
             }
@@ -718,7 +752,7 @@ impl LocalExpression {
                 .any(|property| property.value().requires_keyed_collection_new()),
             Self::Array { elements, .. } => elements
                 .iter()
-                .flatten()
+                .filter_map(LocalArrayElement::value)
                 .any(Self::requires_keyed_collection_new),
             Self::Sequence(expressions)
             | Self::Template {
@@ -758,7 +792,7 @@ impl LocalExpression {
                 writes.insert(binding.clone());
             }
             Self::Array { elements, .. } => {
-                for element in elements.iter().flatten() {
+                for element in elements.iter().filter_map(LocalArrayElement::value) {
                     element.writes(writes);
                 }
             }

@@ -1289,8 +1289,8 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
 }
 
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
-    fn array_created(&mut self, allocation: u32, sparse: bool) {
-        if sparse {
+    fn array_created(&mut self, allocation: u32, tainted: bool) {
+        if tainted {
             self.executor
                 .state
                 .world_mut()
@@ -1298,6 +1298,12 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
                 .tainted_objects
                 .insert(allocation);
         }
+    }
+    fn array_spread(&mut self, span: Span, operand: &Values) -> Option<NativeIterableReceipt> {
+        // The flattened call pass records this protocol's effects at its
+        // `CallKind::ArraySpread` record; here only the yields are consumed.
+        self.executor
+            .native_iterable(NativeIterableUse::ArraySpread(span), operand)
     }
     fn source_covered(&self) -> bool {
         self.executor.source_covered
@@ -2381,6 +2387,13 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl NativeContext for LocalExecutionContext<'_, '_, '_> {
+    fn native_iterable(
+        &mut self,
+        operation: NativeIterableUse,
+        operand: &Values,
+    ) -> Option<NativeIterableReceipt> {
+        self.executor.native_iterable(operation, operand)
+    }
     fn array_method_callee(
         &mut self,
         receivers: &Values,
@@ -2579,6 +2592,21 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                     operands.clone(),
                     ExecutionPrecisionLossReason::UnsupportedOperation {
                         operation: ExecutionOperation::ImplicitCoercion,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+                Disposition::Summarized
+            }
+            Unproved::IterateSpread { operand, span } => {
+                // Consuming an unproved iterator can execute deferred bodies;
+                // the operand and everything it reaches are summarized.
+                self.fallback(
+                    frame,
+                    operand.clone(),
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::ArraySpread,
                         ordered_field_read_refusal: None,
                         ordered_call_admission_refusal: None,
                     },
@@ -4348,111 +4376,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn literal_heap(&mut self) -> super::allocation_transfer::LiteralHeap<'_> {
         self.state.world_mut().literal_heap()
-    }
-
-    fn evaluate_array(&mut self, object: u32, env: &Context, captures: &Context) -> Values {
-        // Legacy value projection does not execute a generation-tracked
-        // ArrayCreate. It cannot preserve an earlier ordered descriptor proof.
-        self.invalidate_writable_object(object);
-        let elements = self.inputs.index.array_elements[&object].clone();
-        let mut slots = Vec::new();
-        let mut containment = Values::new();
-        let mut dense = true;
-        let mut primitive_only = true;
-        let mut iterable_dependencies = ProofDependencies::default();
-        let mut may_throw = false;
-        let mut can_complete = true;
-        for element in elements {
-            if !can_complete {
-                break;
-            }
-            let Some(element) = element else {
-                dense = false;
-                primitive_only = false;
-                continue;
-            };
-            let mut values = self.evaluate(&element.value, env, captures);
-            may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-            if values.is_empty() {
-                can_complete = false;
-                continue;
-            }
-            containment.extend(values.iter().cloned());
-            if let Some(span) = element.spread {
-                match self.native_iterable(NativeIterableUse::ArraySpread(span), &values) {
-                    Some(receipt) => {
-                        iterable_dependencies.extend(
-                            &receipt
-                                .coverage
-                                .normal_dependencies()
-                                .expect("a yielded native protocol receipt is normal"),
-                        );
-                        match receipt.yields {
-                            NativeIterableYields::ExactSlots(source_slots) => {
-                                primitive_only &= source_slots
-                                    .iter()
-                                    .flatten()
-                                    .all(AbstractValue::is_primitive);
-                                slots.extend(source_slots);
-                            }
-                            NativeIterableYields::PrimitiveOnly => dense = false,
-                        }
-                    }
-                    None => {
-                        dense = false;
-                        primitive_only = false;
-                    }
-                }
-            } else {
-                primitive_only &= values.iter().all(AbstractValue::is_primitive);
-                slots.push(values);
-            }
-        }
-        if !can_complete {
-            // Do not publish this array origin or its retained callbacks when
-            // evaluation can only throw before the literal is constructed.
-            return if may_throw {
-                Values::from([AbstractValue::Value(Value::Unavailable)])
-            } else {
-                Values::new()
-            };
-        }
-        self.state
-            .world_mut()
-            .surface
-            .prefix_object_properties
-            .entry(object)
-            .or_default()
-            .entry(None)
-            .or_default()
-            .extend(containment);
-        if dense {
-            self.retain_dense_array(object, slots);
-        } else if primitive_only {
-            // One source origin may represent several allocations. Drop exact
-            // slots but retain the reachability properties; qualitative
-            // contents make ordinary property projection refuse this origin.
-            self.state.world_mut().arrays.dense.remove(&object);
-            self.state
-                .world_mut()
-                .arrays
-                .primitive
-                .insert(object, iterable_dependencies);
-            self.state.world_mut().revision.bump_prefix();
-        } else {
-            self.state.world_mut().arrays.primitive.remove(&object);
-            self.literal_heap().invalidate_dense_array(object);
-            self.state
-                .world_mut()
-                .surface
-                .tainted_objects
-                .insert(object);
-        }
-        let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
-        if may_throw {
-            result.insert(AbstractValue::Value(Value::Unavailable));
-        }
-        result
     }
 
     fn array_iteration_plan(
@@ -10615,9 +10538,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.state.array_iteration_unsupported = true;
                     }
                 }
-                if self.inputs.index.array_elements.contains_key(key) {
-                    return self.evaluate_array(*key, env, captures);
-                }
                 let definitions = properties
                     .iter()
                     .enumerate()
@@ -14698,6 +14618,12 @@ impl Executor<'_, '_> {
                         })
                     || checked_split_binding_copy
                     || selected_audited_initializer.is_some()
+                    // A spread's iterator protocol runs only through the
+                    // kernel's `IterateSpread` rule; the flattened lane has
+                    // no receipt for it.
+                    || calls.iter().any(|call| {
+                        call.kind == CallKind::ArraySpread && call.caller.is_none()
+                    })
                     || calls.iter().any(|call| {
                         call.kind == CallKind::LocalMemberRead
                             && call.owner == owner
