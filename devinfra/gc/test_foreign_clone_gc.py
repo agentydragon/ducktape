@@ -7,6 +7,7 @@ import pytest_bazel
 from devinfra.gc import foreign_clone_gc as fcg, worktree_gc
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.removal import Removed
 
 _ORIGIN = "https://github.com/acme/widgets"
 _OTHER_ORIGIN = "https://github.com/acme/gadgets"
@@ -156,7 +157,7 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
 
     outcome = fcg.prune_foreign_clone(result.clone)
 
-    assert outcome == fcg.PrunedForeignClone(foreign.path)
+    assert outcome == Removed(foreign.path)
     assert not nested_wt.path.exists()
     assert not foreign.path.exists()
 

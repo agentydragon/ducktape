@@ -37,6 +37,7 @@ import pygit2
 from devinfra.gc import git_repo
 from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
 
@@ -201,27 +202,7 @@ def _classify_branch(
     return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
 
 
-@dataclass(frozen=True, slots=True)
-class RemovedBranch:
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedBranch:
-    name: str
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedBranch:
-    name: str
-    error: str
-
-
-type BranchRemovalResult = RemovedBranch | SkippedBranch | FailedBranch
-
-
-def delete_branch(repo: Path, name: str, *, expected_tip: str) -> BranchRemovalResult:
+def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
     """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges),
     unless it no longer points at `expected_tip`, the commit proven to be in main.
 
@@ -232,12 +213,12 @@ def delete_branch(repo: Path, name: str, *, expected_tip: str) -> BranchRemovalR
     try:
         tip = git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
         if tip.returncode != 0:
-            return SkippedBranch(name, "branch no longer exists")
+            return Skipped(name, "branch no longer exists")
         if tip.stdout.strip() != expected_tip:
-            return SkippedBranch(name, "branch moved since the scan")
+            return Skipped(name, "branch moved since the scan")
         outcome = git_repo.git(repo, "branch", "-D", name, check=False)
     except (OSError, subprocess.SubprocessError) as error:
-        return FailedBranch(name, str(error))
+        return Failed(name, str(error))
     if outcome.returncode == 0:
-        return RemovedBranch(name)
-    return FailedBranch(name, outcome.stderr.strip() or "git branch -D failed")
+        return Removed(name)
+    return Failed(name, outcome.stderr.strip() or "git branch -D failed")

@@ -32,6 +32,7 @@ import pygit2
 
 from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
 
 logger = logging.getLogger(__name__)
@@ -266,27 +267,7 @@ def _classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-@dataclass(frozen=True, slots=True)
-class RemovedWorktree:
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedWorktree:
-    path: Path
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedWorktree:
-    path: Path
-    error: str
-
-
-type RemovalResult = RemovedWorktree | SkippedWorktree | FailedWorktree
-
-
-def remove_worktree(repo: Path, path: Path) -> RemovalResult:
+def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
     git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
@@ -298,10 +279,10 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult:
     try:
         outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
     except (OSError, subprocess.SubprocessError) as error:
-        return FailedWorktree(path, str(error))
+        return Failed(path, str(error))
     if outcome.returncode == 0:
-        return RemovedWorktree(path)
-    return FailedWorktree(path, outcome.stderr.strip() or "git worktree remove failed")
+        return Removed(path)
+    return Failed(path, outcome.stderr.strip() or "git worktree remove failed")
 
 
 def remove_if_still_prunable(
@@ -313,7 +294,7 @@ def remove_if_still_prunable(
     main_path: Path,
     active_path: Path | None,
     live_pids: list[int],
-) -> RemovalResult:
+) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
     The scan that found it may be seconds old: a process may have entered the tree, or a
@@ -323,5 +304,5 @@ def remove_if_still_prunable(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
     )
     if not isinstance(fresh, PrunableWorktree):
-        return SkippedWorktree(worktree.path, describe_reason(fresh))
+        return Skipped(worktree.path, describe_reason(fresh))
     return remove_worktree(repo, worktree.path)

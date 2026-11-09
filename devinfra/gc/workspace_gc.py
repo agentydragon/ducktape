@@ -61,28 +61,17 @@ from devinfra.gc import (
     workspace_scan,
     worktree_gc,
 )
-from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RemovedBranch, RetainedBranch, SkippedBranch
-from devinfra.gc.foreign_clone_gc import (
-    ForeignCloneClassification,
-    PrunableForeignClone,
-    PrunedForeignClone,
-    RetainedForeignClone,
-)
+from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RetainedBranch
+from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, PrunableForeignClone, RetainedForeignClone
 from devinfra.gc.git_repo import GitError
-from devinfra.gc.output_base_gc import DeletedBase, FailedBase, PrunableBase, SkippedBase, default_output_user_root
+from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo
-from devinfra.gc.repo_contents_cache_gc import DeletedEntry, EntryInspection, FailedEntry, PrunableEntry, SkippedEntry
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.repo_contents_cache_gc import EntryInspection, PrunableEntry
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
 from devinfra.gc.verdict import verdict_of
 from devinfra.gc.workspace_scan import WorkspaceScan
-from devinfra.gc.worktree_gc import (
-    Classification,
-    PrunableWorktree,
-    RemovedWorktree,
-    RetainedWorktree,
-    ReviewWorktree,
-    SkippedWorktree,
-)
+from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
 
 logger = logging.getLogger(__name__)
 
@@ -285,19 +274,85 @@ async def _run_bounded[T, R](items: Sequence[T], function: Callable[[T], R], *, 
     return list(await asyncio.gather(*(run_one(item) for item in items)))
 
 
+@dataclass(frozen=True, slots=True)
+class _RemovalLabels[S]:
+    """How one domain's removal results read in the report."""
+
+    noun: str  # "worktree": "REMOVED worktree <subject>"
+    plural: str  # "worktrees": the collapsed "SKIPPED 3 worktrees: <reason>"
+    summary: str  # "Worktrees": heads the summary line
+    verb: str  # "removed" or "deleted"
+    subject: Callable[[S], str]
+    leftover: str | None = None  # names `Failed.leftover` in the line, e.g. "quarantine"
+
+
+@dataclass(frozen=True, slots=True)
+class _RemovalOutcome[S]:
+    removed: frozenset[S]
+    ok: bool
+
+
+_WORKTREE_LABELS = _RemovalLabels("worktree", "worktrees", "Worktrees", "removed", _short)
+_BRANCH_LABELS = _RemovalLabels("branch", "branches", "Branches", "deleted", str)
+_BASE_LABELS = _RemovalLabels("base", "bases", "Bases", "deleted", _short, leftover="quarantine")
+_FOREIGN_CLONE_LABELS = _RemovalLabels("foreign clone", "foreign clones", "Foreign clones", "removed", _short)
+
+
+def _nothing_to_remove[S]() -> _RemovalOutcome[S]:
+    return _RemovalOutcome(frozenset(), ok=True)
+
+
+def _report_removals[S](
+    results: Sequence[RemovalResult[S]], labels: _RemovalLabels[S], *, itemize: bool = True, summary_suffix: str = ""
+) -> _RemovalOutcome[S]:
+    """Print one removal step's results and its summary line.
+
+    Failures always print. With `itemize` off, removals are silent and skips collapse to one
+    line per distinct reason.
+    """
+    removed: set[S] = set()
+    skip_reasons: Counter[str] = Counter()
+    failed = 0
+    for result in results:
+        name = labels.subject(result.subject)
+        match result:
+            case Removed():
+                removed.add(result.subject)
+                if itemize:
+                    print(f"{labels.verb.upper()} {labels.noun} {name}")
+            case Skipped():
+                skip_reasons[result.reason] += 1
+                if itemize:
+                    print(f"SKIPPED {labels.noun} {name}: {result.reason}", file=sys.stderr)
+            case Failed():
+                failed += 1
+                leftover = (
+                    f"; {labels.leftover}={result.leftover}"
+                    if labels.leftover is not None and result.leftover is not None
+                    else ""
+                )
+                print(f"FAILED {labels.noun} {name}: {result.error}{leftover}", file=sys.stderr)
+    if not itemize:
+        for reason, count in skip_reasons.items():
+            print(f"SKIPPED {count} {labels.plural}: {reason}", file=sys.stderr)
+    skipped = skip_reasons.total()
+    print(f"{labels.summary}: {len(removed)} {labels.verb}, {skipped} skipped, {failed} failed{summary_suffix}")
+    return _RemovalOutcome(frozenset(removed), ok=skipped == 0 and failed == 0)
+
+
 async def _apply_worktree_removals(
     repo: Path, worktrees: list[Classification], *, prs: dict[str, PrInfo], workers: int
-) -> bool:
-    """Remove every prunable worktree that is still prunable now; returns whether all succeeded."""
+) -> _RemovalOutcome[Path]:
+    """Remove every prunable worktree that is still prunable now."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
-        return True
+        return _nothing_to_remove()
     logger.info("Removing %d worktrees", len(candidates))
     main_path = git_repo.main_worktree(repo)
     active_path = _active_worktree(repo)
     live = worktree_gc.processes_by_worktree(item.worktree.path for item in candidates)
 
-    def remove_one(item: PrunableWorktree) -> worktree_gc.RemovalResult:
+    def remove_one(item: PrunableWorktree) -> RemovalResult[Path]:
         logger.info("Removing worktree %s", item.worktree.path)
         return worktree_gc.remove_if_still_prunable(
             repo,
@@ -309,80 +364,34 @@ async def _apply_worktree_removals(
             live_pids=live.get(item.worktree.path, []),
         )
 
-    results = await _run_bounded(candidates, remove_one, workers=workers)
-    for result in results:
-        if isinstance(result, RemovedWorktree):
-            print(f"REMOVED worktree {_short(result.path)}")
-        elif isinstance(result, SkippedWorktree):
-            print(f"SKIPPED worktree {_short(result.path)}: {result.reason}", file=sys.stderr)
-        else:
-            print(f"FAILED worktree {_short(result.path)}: {result.error}", file=sys.stderr)
-    removed = sum(isinstance(result, RemovedWorktree) for result in results)
-    skipped = sum(isinstance(result, SkippedWorktree) for result in results)
-    failed = len(results) - removed - skipped
-    print(f"Worktrees: {removed} removed, {skipped} skipped, {failed} failed")
-    return skipped == 0 and failed == 0
+    return _report_removals(await _run_bounded(candidates, remove_one, workers=workers), _WORKTREE_LABELS)
 
 
-def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> bool:
-    """Delete every prunable branch that has not moved since it was classified; returns whether
-    all of them succeeded."""
+def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
+    """Delete every prunable branch that has not moved since it was classified."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
-        return True
+        return _nothing_to_remove()
     logger.info("Deleting %d branches", len(candidates))
     results = []
     for index, item in enumerate(candidates, start=1):
         logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
         results.append(branch_gc.delete_branch(repo, item.branch.name, expected_tip=item.tip))
-    for result in results:
-        if isinstance(result, RemovedBranch):
-            print(f"DELETED branch {result.name}")
-        elif isinstance(result, SkippedBranch):
-            print(f"SKIPPED branch {result.name}: {result.reason}", file=sys.stderr)
-        else:
-            print(f"FAILED branch {result.name}: {result.error}", file=sys.stderr)
-    deleted = sum(isinstance(result, RemovedBranch) for result in results)
-    skipped = sum(isinstance(result, SkippedBranch) for result in results)
-    failed = len(results) - deleted - skipped
-    print(f"Branches: {deleted} deleted, {skipped} skipped, {failed} failed")
-    return skipped == 0 and failed == 0
-
-
-@dataclass(frozen=True, slots=True)
-class _BaseDeletions:
-    ok: bool
-    deleted: frozenset[Path]
+    return _report_removals(results, _BRANCH_LABELS)
 
 
 async def _apply_base_deletions(
     candidates: Sequence[PrunableBase], *, output_user_root: Path, workers: int
-) -> _BaseDeletions:
+) -> _RemovalOutcome[Path]:
     """Delete the given prunable output bases; `delete_prunable_bases` revalidates each one under
     its Bazel lock, so the caller's scan needs no refresh beyond what it already knows."""
     if not candidates:
-        return _BaseDeletions(ok=True, deleted=frozenset())
+        return _nothing_to_remove()
     free_before = shutil.disk_usage(output_user_root).free
     results = await _run_bounded(candidates, output_base_gc.delete_prunable_base, workers=workers)
     free_change = shutil.disk_usage(output_user_root).free - free_before
-    for result in results:
-        if isinstance(result, DeletedBase):
-            print(f"DELETED base {_short(result.path)}")
-        elif isinstance(result, SkippedBase):
-            print(f"SKIPPED base {_short(result.path)}: {result.reason}", file=sys.stderr)
-        else:
-            quarantine = f"; quarantine={result.quarantine}" if result.quarantine is not None else ""
-            print(f"FAILED base {_short(result.path)}: {result.error}{quarantine}", file=sys.stderr)
-    deleted = sum(isinstance(result, DeletedBase) for result in results)
-    skipped = sum(isinstance(result, SkippedBase) for result in results)
-    failed = sum(isinstance(result, FailedBase) for result in results)
-    print(
-        f"Bases: {deleted} deleted, {skipped} skipped, {failed} failed; "
-        f"free-space change {humanize.naturalsize(free_change, binary=True)}"
-    )
-    return _BaseDeletions(
-        ok=skipped == 0 and failed == 0,
-        deleted=frozenset(result.path for result in results if isinstance(result, DeletedBase)),
+    return _report_removals(
+        results, _BASE_LABELS, summary_suffix=f"; free-space change {humanize.naturalsize(free_change, binary=True)}"
     )
 
 
@@ -393,14 +402,14 @@ async def _apply_repo_cache_deletions(
     session_bases: Sequence[Path],
     verbose: bool,
     workers: int,
-) -> bool:
-    """Delete the given unreferenced repo-cache entries; returns whether all of them succeeded.
+) -> _RemovalOutcome[Path]:
+    """Delete the given unreferenced repo-cache entries.
 
     `delete_prunable_entries` revalidates each entry under Bazel's cache lock against a fresh
     link pass, so the caller's classification needs no refresh.
     """
     if not candidates:
-        return True
+        return _nothing_to_remove()
     contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
     free_before = shutil.disk_usage(contents).free
     trashed = await asyncio.to_thread(
@@ -415,36 +424,26 @@ async def _apply_repo_cache_deletions(
         *await _run_bounded(trashed.trashed, lambda item: repo_contents_cache_gc.empty_trash(*item), workers=workers),
     ]
     free_change = shutil.disk_usage(contents).free - free_before
-    skip_reasons: Counter[str] = Counter()
-    for result in results:
-        name = _relative_to(result.path, contents)
-        if isinstance(result, DeletedEntry):
-            if verbose:
-                print(f"DELETED repo-cache entry {name}")
-        elif isinstance(result, SkippedEntry):
-            skip_reasons[result.reason] += 1
-            if verbose:
-                print(f"SKIPPED repo-cache entry {name}: {result.reason}", file=sys.stderr)
-        else:
-            trash = f"; trash={result.trash}" if result.trash is not None else ""
-            print(f"FAILED repo-cache entry {name}: {result.error}{trash}", file=sys.stderr)
-    if not verbose:
-        for reason, count in skip_reasons.items():
-            print(f"SKIPPED {count} repo-cache entries: {reason}", file=sys.stderr)
-    deleted = sum(isinstance(result, DeletedEntry) for result in results)
-    skipped = sum(isinstance(result, SkippedEntry) for result in results)
-    failed = sum(isinstance(result, FailedEntry) for result in results)
-    print(
-        f"Repo cache: {deleted} deleted, {skipped} skipped, {failed} failed; "
-        f"free-space change {humanize.naturalsize(free_change, binary=True)}"
+    labels: _RemovalLabels[Path] = _RemovalLabels(
+        "repo-cache entry",
+        "repo-cache entries",
+        "Repo cache",
+        "deleted",
+        lambda path: _relative_to(path, contents),
+        leftover="trash",
     )
-    return skipped == 0 and failed == 0
+    return _report_removals(
+        results,
+        labels,
+        itemize=verbose,
+        summary_suffix=f"; free-space change {humanize.naturalsize(free_change, binary=True)}",
+    )
 
 
 async def _apply_foreign_clone_deletions(
     repo: Path, output_user_root: Path, session_bases: Sequence[Path], prs: dict[str, PrInfo], workers: int
-) -> bool:
-    """Remove every prunable foreign clone; returns whether all of them succeeded.
+) -> _RemovalOutcome[Path]:
+    """Remove every prunable foreign clone.
 
     Fresh discovery + classification right here is the revalidation: nothing computed before
     this call is reused, so a clone that turned dirty (or gained an open PR) in the meantime is
@@ -468,18 +467,11 @@ async def _apply_foreign_clone_deletions(
     )
     candidates = [item.clone for item in classifications if isinstance(item, PrunableForeignClone)]
     if not candidates:
-        return True
+        return _nothing_to_remove()
     logger.info("Removing %d foreign clones", len(candidates))
-    results = await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=workers)
-    for result in results:
-        if isinstance(result, PrunedForeignClone):
-            print(f"REMOVED foreign clone {_short(result.root)}")
-        else:
-            print(f"FAILED foreign clone {_short(result.root)}: {result.error}", file=sys.stderr)
-    removed = sum(isinstance(result, PrunedForeignClone) for result in results)
-    failed = len(results) - removed
-    print(f"Foreign clones: {removed} removed, {failed} failed")
-    return failed == 0
+    return _report_removals(
+        await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=workers), _FOREIGN_CLONE_LABELS
+    )
 
 
 async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
@@ -496,7 +488,7 @@ async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool
         if any(isinstance(item, PrunableWorktree) for item in scan.worktrees):
             print("Dry run only; pass --prune to remove the prunable worktrees.")
         return
-    if not await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers):
+    if not (await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)).ok:
         raise SystemExit(1)
 
 
@@ -563,9 +555,10 @@ async def run_repo_cache(
             print("Dry run only; pass --delete to remove the unreferenced entries.")
         return
     candidates = [item for item in entries if isinstance(item, PrunableEntry)]
-    if not await _apply_repo_cache_deletions(
+    outcome = await _apply_repo_cache_deletions(
         candidates, output_user_root=output_user_root, session_bases=session_bases, verbose=verbose, workers=workers
-    ):
+    )
+    if not outcome.ok:
         raise SystemExit(1)
 
 
@@ -658,8 +651,8 @@ async def run_all(
     # are re-classified because the removals change who holds them. Every step runs regardless
     # of an earlier one's failures — each domain is independent — and the combined outcome
     # decides the process exit status once, at the end.
-    worktrees_ok = await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)
-    branches_ok = _apply_branch_deletions(repo, rescan_branches())
+    worktrees = await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)
+    branches = _apply_branch_deletions(repo, rescan_branches())
     # Bases are rescanned because removing worktrees orphans bases the first scan kept. Cache
     # entries need no rescan: one is newly unreferenced exactly when every base linking to it
     # was just deleted.
@@ -668,21 +661,20 @@ async def run_all(
         for item in output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
         if isinstance(item, PrunableBase)
     ]
-    base_deletions = await _apply_base_deletions(base_candidates, output_user_root=output_user_root, workers=workers)
-    repo_cache_ok = await _apply_repo_cache_deletions(
-        repo_contents_cache_gc.unreferenced_after_deleting(entries, base_deletions.deleted),
+    bases = await _apply_base_deletions(base_candidates, output_user_root=output_user_root, workers=workers)
+    repo_cache = await _apply_repo_cache_deletions(
+        repo_contents_cache_gc.unreferenced_after_deleting(entries, bases.removed),
         output_user_root=output_user_root,
         session_bases=session_bases,
         verbose=verbose,
         workers=workers,
     )
-    bases_ok = base_deletions.ok
-    foreign_ok = True
+    oks = [worktrees.ok, branches.ok, bases.ok, repo_cache.ok]
     if delete_foreign_clones:
-        foreign_ok = await _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)
+        oks.append((await _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)).ok)
     elif foreign_prunable:
         print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
-    if not (worktrees_ok and branches_ok and bases_ok and repo_cache_ok and foreign_ok):
+    if not all(oks):
         raise SystemExit(1)
 
 
