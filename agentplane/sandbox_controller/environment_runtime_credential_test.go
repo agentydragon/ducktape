@@ -237,6 +237,10 @@ func TestPodRunnerTLSVolumeUsesCredentialSpecificSecret(t *testing.T) {
 	if got := volume.Projected.Sources[1].ConfigMap.Items[0].Path; got != "ca.crt" {
 		t.Fatalf("trust bundle path = %q, want ca.crt", got)
 	}
+	// The Gateway's client SVID is verified against the workload CA alone, beside the cluster bundle.
+	if got := volume.Projected.Sources[2].ConfigMap; got == nil || got.Name != RunnerWorkloadTrustBundleName || len(got.Items) != 1 || got.Items[0].Path != RunnerWorkloadTrustFile {
+		t.Fatalf("workload trust projection = %#v, want %s as %s", got, RunnerWorkloadTrustBundleName, RunnerWorkloadTrustFile)
+	}
 	if len(podSpec.Containers[0].VolumeMounts) != 1 || podSpec.Containers[0].VolumeMounts[0].Name != volume.Name {
 		t.Fatalf("runtime did not receive exactly the runner TLS mount: %#v", podSpec.Containers[0].VolumeMounts)
 	}

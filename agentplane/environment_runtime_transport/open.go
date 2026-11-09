@@ -28,6 +28,8 @@ type credentialSource interface {
 type OpenedSecurity struct {
 	security Security
 	source   credentialSource
+	// clients verifies the client certificates of peers this side serves.
+	clients  x509bundle.Source
 	identity spiffeid.ID
 	cancel   context.CancelFunc
 	closeFn  func() error
@@ -60,6 +62,10 @@ func (s Security) Open(ctx context.Context) (*OpenedSecurity, error) {
 	}
 	if err != nil {
 		cancel()
+		return nil, err
+	}
+	if opened.clients, err = s.TLS.clientBundles(opened.source); err != nil {
+		_ = opened.Close()
 		return nil, err
 	}
 	svid, err := opened.source.GetX509SVID()
@@ -159,7 +165,7 @@ func (s *OpenedSecurity) ServerCredentials(expectedPeerURI string) (credentials.
 	if err != nil {
 		return nil, err
 	}
-	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, s.clients, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
 }
 
 // AuthorizePeer checks the authenticated peer against the exact configured

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -265,6 +266,13 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		bound = *current.Status.RunnerCredential
 		return bound.PodUID == string(pod.UID)
 	})
+	// The apiserver keeps both trust sources: the cluster bundle and the workload CA alone.
+	tlsVolume := slices.IndexFunc(pod.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == EnvironmentRuntimeTLSVolumeName })
+	if tlsVolume < 0 || pod.Spec.Volumes[tlsVolume].Projected == nil || !slices.ContainsFunc(pod.Spec.Volumes[tlsVolume].Projected.Sources, func(source corev1.VolumeProjection) bool {
+		return source.ConfigMap != nil && source.ConfigMap.Name == RunnerWorkloadTrustBundleName && slices.Equal(source.ConfigMap.Items, []corev1.KeyToPath{{Key: RunnerTrustBundleKey, Path: RunnerWorkloadTrustFile}})
+	}) {
+		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, RunnerWorkloadTrustFile)
+	}
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
 		"metadata": {"annotations": {"agentplane.allegedly.works/environment-runtime-credential": "`+otherID+`"}},

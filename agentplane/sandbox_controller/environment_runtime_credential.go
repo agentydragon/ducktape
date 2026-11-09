@@ -30,6 +30,13 @@ const (
 	RunnerTrustBundleName             = "cluster-internal-ca-bundle"
 	RunnerTrustBundleKey              = "ca-certificates.crt"
 
+	// The workload CA alone, which verifies the Gateway's client SVID at the runner's control
+	// listener; the cluster bundle above keeps verifying the local chain and the servers a runner
+	// dials. A Pod gets it as RunnerWorkloadTrustFile beside ca.crt, a VM as its own filesystem.
+	EnvironmentRuntimeWorkloadTrustVolumeName = "agentplane-environment-runtime-workload-trust"
+	RunnerWorkloadTrustBundleName             = "agentplane-workload-ca-bundle"
+	RunnerWorkloadTrustFile                   = "workload-ca.crt"
+
 	// A VM's active credential and the VMI accepted for it. The Sandbox's binding is in
 	// status.runnerCredential.
 	RunnerCredentialIDAnnotation         = "agentplane.allegedly.works/environment-runtime-credential"
@@ -694,6 +701,10 @@ func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemp
 					LocalObjectReference: corev1.LocalObjectReference{Name: RunnerTrustBundleName},
 					Items:                []corev1.KeyToPath{{Key: RunnerTrustBundleKey, Path: "ca.crt"}},
 				}},
+				{ConfigMap: &corev1.ConfigMapProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: RunnerWorkloadTrustBundleName},
+					Items:                []corev1.KeyToPath{{Key: RunnerTrustBundleKey, Path: RunnerWorkloadTrustFile}},
+				}},
 			},
 		}},
 	})
@@ -714,10 +725,11 @@ func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemp
 }
 
 func withRunnerTLSDisk(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, instance *kubevirtv1.VirtualMachineInstanceSpec, credentialID string) *unready {
+	reserved := []string{EnvironmentRuntimeTLSVolumeName, EnvironmentRuntimeTrustVolumeName, EnvironmentRuntimeWorkloadTrustVolumeName}
 	if slices.ContainsFunc(instance.Volumes, func(volume kubevirtv1.Volume) bool {
-		return volume.Name == EnvironmentRuntimeTLSVolumeName || volume.Name == EnvironmentRuntimeTrustVolumeName
+		return slices.Contains(reserved, volume.Name)
 	}) || slices.ContainsFunc(instance.Domain.Devices.Filesystems, func(filesystem kubevirtv1.Filesystem) bool {
-		return filesystem.Name == EnvironmentRuntimeTLSVolumeName || filesystem.Name == EnvironmentRuntimeTrustVolumeName
+		return slices.Contains(reserved, filesystem.Name)
 	}) {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved runner TLS volume", template.Name)}
 	}
@@ -736,8 +748,17 @@ func withRunnerTLSDisk(sandbox *sandboxapi.Sandbox, template *sandboxapi.Sandbox
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: EnvironmentRuntimeTLSVolumeName, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 	})
+	instance.Volumes = append(instance.Volumes, kubevirtv1.Volume{
+		Name: EnvironmentRuntimeWorkloadTrustVolumeName,
+		VolumeSource: kubevirtv1.VolumeSource{ConfigMap: &kubevirtv1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: RunnerWorkloadTrustBundleName},
+		}},
+	})
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: EnvironmentRuntimeTrustVolumeName, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
+	})
+	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
+		Name: EnvironmentRuntimeWorkloadTrustVolumeName, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 	})
 	return nil
 }

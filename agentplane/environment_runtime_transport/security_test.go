@@ -39,6 +39,16 @@ func TestSecurityValidateRejectsMissingAndContradictoryTLS(t *testing.T) {
 			KeyFile:  "/etc/runner/tls.key",
 			CAFile:   "ca.pem",
 		}},
+		"relative client CA path": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+			CertFile:     "/etc/runner/tls.crt",
+			KeyFile:      "/etc/runner/tls.key",
+			CAFile:       "/etc/runner/ca.pem",
+			ClientCAFile: "client-ca.pem",
+		}},
+		"client CA with Workload API": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+			WorkloadAPISocket: "unix:///run/agentplane/workload.sock",
+			ClientCAFile:      "/etc/runner/client-ca.pem",
+		}},
 		"insecure with TLS": {Mode: environment_runtime_transport.Insecure, TLS: &environment_runtime_transport.Config{}},
 	}
 	for name, security := range cases {

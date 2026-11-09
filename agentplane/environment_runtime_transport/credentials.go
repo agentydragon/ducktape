@@ -60,10 +60,15 @@ var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names either the projected certificate, private key, and trust roots,
 // or the local SPIFFE Workload API Unix socket.
+//
+// CAFile verifies the local certificate chain and every peer. ClientCAFile, when
+// set, replaces it for peers this side serves: a server then verifies client
+// certificates against ClientCAFile alone and keeps CAFile for the servers it dials.
 type Config struct {
 	CertFile          string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
 	KeyFile           string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
 	CAFile            string `json:"ca_file,omitempty" yaml:"ca_file,omitempty" mapstructure:"ca_file,omitempty"`
+	ClientCAFile      string `json:"client_ca_file,omitempty" yaml:"client_ca_file,omitempty" mapstructure:"client_ca_file,omitempty"`
 	WorkloadAPISocket string `json:"workload_api_socket,omitempty" yaml:"workload_api_socket,omitempty" mapstructure:"workload_api_socket,omitempty"`
 }
 
@@ -74,10 +79,13 @@ func (c Config) Validate() error {
 		if _, err := parseWorkloadAPISocket(c.WorkloadAPISocket); err != nil {
 			return err
 		}
-		if c.CertFile != "" || c.KeyFile != "" || c.CAFile != "" {
-			return errors.New("TLS workload_api_socket cannot be combined with cert_file, key_file, or ca_file")
+		if c.CertFile != "" || c.KeyFile != "" || c.CAFile != "" || c.ClientCAFile != "" {
+			return errors.New("TLS workload_api_socket cannot be combined with cert_file, key_file, ca_file, or client_ca_file")
 		}
 		return nil
+	}
+	if c.ClientCAFile != "" && !filepath.IsAbs(c.ClientCAFile) {
+		return errors.New("TLS client_ca_file must be an absolute path")
 	}
 	for _, file := range []struct{ name, path string }{
 		{name: "cert_file", path: c.CertFile},
@@ -250,7 +258,11 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
+	clients, err := c.clientBundles(source)
+	if err != nil {
+		return nil, err
+	}
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, clients, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
 }
 
 // WorkloadServerCredentials creates mTLS server credentials for the fixed
@@ -331,7 +343,11 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 		}
 		return nil
 	}
-	config := tlsconfig.MTLSServerConfig(source, source, authorizeRuntime)
+	clients, err := c.clientBundles(source)
+	if err != nil {
+		return nil, err
+	}
+	config := tlsconfig.MTLSServerConfig(source, clients, authorizeRuntime)
 	if allowBearer {
 		config.ClientAuth = tls.RequestClientCert
 		verify := config.VerifyPeerCertificate
@@ -349,7 +365,7 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 // Its certificate reloads with the same identity and server EKU checks as mTLS.
 // A client presenting a certificate is refused because that method is disabled.
 func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
-	if c.CAFile != "" || c.WorkloadAPISocket != "" || !filepath.IsAbs(c.CertFile) || !filepath.IsAbs(c.KeyFile) {
+	if c.CAFile != "" || c.ClientCAFile != "" || c.WorkloadAPISocket != "" || !filepath.IsAbs(c.CertFile) || !filepath.IsAbs(c.KeyFile) {
 		return nil, errors.New("bearer TLS requires absolute cert_file and key_file paths only")
 	}
 	svid, err := loadSVID(c, x509.ExtKeyUsageServerAuth)
@@ -514,6 +530,15 @@ func (s *fileSource) GetX509SVID() (*x509svid.SVID, error) {
 
 func (s *fileSource) GetX509BundleForTrustDomain(td spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
 	return s.bundles.GetX509BundleForTrustDomain(td)
+}
+
+// clientBundles is the trust a server verifies client certificates against:
+// ClientCAFile when set, otherwise the local source's CAFile.
+func (c Config) clientBundles(local x509bundle.Source) (x509bundle.Source, error) {
+	if c.ClientCAFile == "" {
+		return local, nil
+	}
+	return newFileBundleSource(c.ClientCAFile)
 }
 
 // fileBundleSource loads and reloads only the mounted trust bundle. Bearer

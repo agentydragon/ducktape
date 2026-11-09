@@ -18,11 +18,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 )
 
-// CA is a test certificate authority whose root is written to RootFile.
+// CA is a test certificate authority whose own certificate is written to RootFile.
 type CA struct {
 	certificate *x509.Certificate
 	privateKey  *ecdsa.PrivateKey
-	RootFile    string
+	// chain is appended to every leaf's tls.crt: the intermediates up to, not including, the root.
+	chain    []byte
+	RootFile string
 }
 
 // NewCA creates an ephemeral ECDSA root CA for one test.
@@ -36,6 +38,20 @@ func NewCA(t *testing.T) *CA {
 // It supports expiration checks without making the normal fixture time-sensitive.
 func NewCAWithValidity(t *testing.T, notBefore, notAfter time.Time) *CA {
 	t.Helper()
+	return newCA(t, nil, notBefore, notAfter)
+}
+
+// Intermediate creates a CA that ca signs. Its leaves carry the intermediate in
+// tls.crt, as cert-manager writes them, so they verify against either ca's
+// RootFile or the intermediate's own RootFile alone.
+func (ca *CA) Intermediate(t *testing.T) *CA {
+	t.Helper()
+	now := time.Now().UTC()
+	return newCA(t, ca, now.Add(-time.Minute), now.Add(24*time.Hour))
+}
+
+func newCA(t *testing.T, parent *CA, notBefore, notAfter time.Time) *CA {
+	t.Helper()
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate test CA key: %v", err)
@@ -44,16 +60,24 @@ func NewCAWithValidity(t *testing.T, notBefore, notAfter time.Time) *CA {
 	if err != nil {
 		t.Fatalf("generate test CA serial: %v", err)
 	}
+	name := "runner transport test CA"
+	if parent != nil {
+		name = "runner transport test intermediate CA"
+	}
 	template := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "runner transport test CA"},
+		Subject:               pkix.Name{CommonName: name},
 		NotBefore:             notBefore,
 		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	issuer, signer := template, privateKey
+	if parent != nil {
+		issuer, signer = parent.certificate, parent.privateKey
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, issuer, &privateKey.PublicKey, signer)
 	if err != nil {
 		t.Fatalf("create test CA certificate: %v", err)
 	}
@@ -61,9 +85,14 @@ func NewCAWithValidity(t *testing.T, notBefore, notAfter time.Time) *CA {
 	if err != nil {
 		t.Fatalf("parse test CA certificate: %v", err)
 	}
+	encoded := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	rootFile := filepath.Join(t.TempDir(), "ca.pem")
-	writeFile(t, rootFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
-	return &CA{certificate: certificate, privateKey: privateKey, RootFile: rootFile}
+	writeFile(t, rootFile, encoded, 0o644)
+	ca := &CA{certificate: certificate, privateKey: privateKey, RootFile: rootFile}
+	if parent != nil {
+		ca.chain = append(append([]byte(nil), encoded...), parent.chain...)
+	}
+	return ca
 }
 
 // Issue creates a dual-use client/server certificate for uri and returns the
@@ -123,7 +152,7 @@ func (ca *CA) IssueWithValidity(
 	directory := t.TempDir()
 	certFile := filepath.Join(directory, "tls.crt")
 	keyFile := filepath.Join(directory, "tls.key")
-	writeFile(t, certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
+	writeFile(t, certFile, append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), ca.chain...), 0o644)
 	writeFile(t, keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600)
 	return environment_runtime_transport.Config{CertFile: certFile, KeyFile: keyFile, CAFile: ca.RootFile}
 }

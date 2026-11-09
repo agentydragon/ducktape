@@ -50,6 +50,7 @@ let
   runtimeConfigFile = "${configDir}/${guestContract.files.runtime_config}";
   runtimeTLS = guestContract.environment_runtime_tls;
   runtimeTrust = guestContract.environment_runtime_trust;
+  runtimeWorkloadTrust = guestContract.environment_runtime_workload_trust;
   # ConfigMap-backed disks carry immutable Runtime configuration, launch identity and egress trust.
   kubeVirtSeedDisks = {
     config = guestContract.disks.config;
@@ -82,6 +83,9 @@ let
     && fileSystemMatches environmentDir (diskDevice runtimeDisk) runtimeDisk.filesystem
     && fileSystemMatches runtimeTLS.private_mount runtimeTLS.volume_name runtimeTLS.filesystem
     && fileSystemMatches runtimeTrust.mount runtimeTrust.volume_name runtimeTrust.filesystem
+    &&
+      fileSystemMatches runtimeWorkloadTrust.mount runtimeWorkloadTrust.volume_name
+        runtimeWorkloadTrust.filesystem
     && lib.all (disk: fileSystemMatches disk.mount (diskDevice disk) disk.filesystem) (
       builtins.attrValues kubeVirtSeedDisks
     )
@@ -384,6 +388,21 @@ in
             "x-systemd.requires=systemd-tmpfiles-setup.service"
           ];
         };
+        # The workload CA alone, which verifies the Gateway's client certificate. `nofail` also
+        # covers a Sandbox Controller that does not attach it yet.
+        ${runtimeWorkloadTrust.mount} = {
+          device = runtimeWorkloadTrust.volume_name;
+          fsType = runtimeWorkloadTrust.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+            "noexec"
+            "nofail"
+            "x-systemd.requires=systemd-tmpfiles-setup.service"
+          ];
+        };
       }
       // lib.mapAttrs' (
         _: disk:
@@ -413,6 +432,7 @@ in
     "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -"
     "d ${runtimeTLS.private_mount} 0700 root root -"
     "d ${runtimeTrust.mount} 0755 root root -"
+    "d ${runtimeWorkloadTrust.mount} 0755 root root -"
     "d ${runtimeDir}/execution-service 0700 root root -"
     "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}"
   ];
