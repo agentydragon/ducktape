@@ -1,0 +1,25 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+config_setting(
+    name = "cpu4",
+    define_values = {"kvm-canary-20261109": "4"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "cpu8",
+    define_values = {"kvm-canary-20261109": "8"},
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "render_bin",
+    main_module = "devinfra.buildbuddy.kvm.x.canary.render",
+    deps = [":render"],
+)
+
+py_library(
+    name = "render",
+    srcs = ["render.py"],
+    deps = ["@pypi//pyyaml"],
+)
