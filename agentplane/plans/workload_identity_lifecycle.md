@@ -190,10 +190,12 @@ spec: # the requester's
   subject: { serviceAccount: agent-123 } # { identity: { name, uid } } after IDENTITY_CUTOVER
   binding: { podUID: <pod-uid> } # or { vmiUID: <vmi-uid> }
 status: # the Policy Controller's only
+  observedGeneration: 2 # a requester reads the rest only for its current spec
   credentialID: 9f2c...
   uri: spiffe://agentplane/agentplane-staging/agent-123/9f2c...
   secretName: svid-agent-123-9f2c...
-  acceptedBinding: { podUID: <pod-uid> } # copied once the Certificate for credentialID is Ready
+  acceptedBinding: { podUID: <pod-uid> } # the first binding seen for credentialID
+  conditions: [{ type: Ready, status: "True" }] # the Certificate for credentialID is Ready
 ---
 metadata:
   name: sandbox-agent-123-scratch # the box Pod's name
@@ -246,7 +248,8 @@ record, and the record names the subject.
    the `WorkloadCredential`.
 4. The resolver makes one uncached GET of that record. A missing or deleting record is refused.
 5. `status.credentialID` must equal the URI's last segment, and `status.uri` the whole URI. A
-   record owned by a Sandbox or a Pod also needs `status.acceptedBinding`.
+   record with a controller owner or a binding also needs `spec.binding` to equal
+   `status.acceptedBinding`, so clearing or replacing the binding revokes before the ID rotates.
 6. `spec.subject` is the subject. Until `IDENTITY_CUTOVER` it is a ServiceAccount, whose UID the
    resolver reads. After that it is an `Identity` name and UID, which the shared policy reader must
    find live with that UID. `spec.subject.identity` names an `Identity` in the policy namespace,

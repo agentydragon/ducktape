@@ -73,5 +73,32 @@ def test_controller_may_apply_the_status_it_reports(staging_manifests: list[dict
     assert policy_namespace in _allowed(staging_manifests, _GROUP, status, {"patch"})
 
 
+def test_only_the_policy_controller_writes_workload_credential_status(staging_manifests: list[dict[str, Any]]) -> None:
+    """Requesters write a record's spec; the status verifiers trust is the issuer's alone. Roles staging
+    does not render, the API server's own, grant nothing on Agentplane kinds."""
+    roles = {
+        (doc["kind"], doc["metadata"]["name"], doc["metadata"].get("namespace")): doc
+        for doc in staging_manifests
+        if doc["kind"] in {"Role", "ClusterRole"}
+    }
+    writers = set()
+    for binding in staging_manifests:
+        if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
+            continue
+        ref = binding["roleRef"]
+        role = roles.get(
+            (ref["kind"], ref["name"], binding["metadata"].get("namespace") if ref["kind"] == "Role" else None)
+        )
+        if role is None or not any(
+            set(rule.get("apiGroups", [])) & {_GROUP, "*"}
+            and set(rule["resources"]) & {"workloadcredentials/status", "*"}
+            and set(rule["verbs"]) & {"update", "patch", "*"}
+            for rule in role.get("rules", [])
+        ):
+            continue
+        writers |= {(s["kind"], s["name"], s.get("namespace")) for s in binding.get("subjects", [])}
+    assert writers == {("ServiceAccount", policy_controller.NAME, STAGING_NAMESPACE)}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -8998,8 +8998,8 @@ spec:
       message: Only cert-manager creates CertificateRequests for the Agentplane workload issuer.
     - expression: "!object.spec.?isCA.orValue(false) && !object.spec.?usages.orValue([]).exists(u, u in ['cert sign', 'crl sign'])"
       message: The Agentplane workload issuer signs no CA.
-    - expression: "!variables.certificate || (size(variables.uris) > 0 && ((request.userInfo.username == 'system:serviceaccount:agentplane-staging:sandbox-controller' && request.namespace == 'agentplane-staging' && variables.uris.all(u, u.matches('^spiffe://agentplane/environment-runtime/agentplane-staging/[^/]+/[^/]+$'))) || (request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/[a-z0-9-]+$')))))"
-      message: Only a Sandbox Controller (Runtime URIs in its namespace) and the manifest applier (one-segment service URIs) request certificates from the Agentplane workload issuer.
+    - expression: "!variables.certificate || (size(variables.uris) > 0 && ((request.userInfo.username == 'system:serviceaccount:agentplane-staging:sandbox-controller' && request.namespace == 'agentplane-staging' && variables.uris.all(u, u.matches('^spiffe://agentplane/environment-runtime/agentplane-staging/[^/]+/[^/]+$'))) || (request.userInfo.username == 'system:serviceaccount:agentplane-staging:policy-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/' + request.namespace + '/[a-z0-9]([a-z0-9.-]*[a-z0-9])?/[0-9a-f]{32}$'))) || (request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/[a-z0-9-]+$')))))"
+      message: Only a Sandbox Controller (Runtime URIs in its namespace), the WorkloadCredential issuer (record URIs in the Certificate's namespace) and the manifest applier (one-segment service URIs) request certificates from the Agentplane workload issuer.
   variables:
     - expression: request.resource.resource == 'certificates'
       name: certificate
@@ -10171,6 +10171,67 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: policy-controller-accounts
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/status
+    verbs:
+      - update
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: policy-controller-workload-credentials
 subjects:
   - apiGroup: ""
     kind: ServiceAccount

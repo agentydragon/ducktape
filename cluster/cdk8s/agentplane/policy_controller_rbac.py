@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from typing import cast
 
 from cdk8s import ApiObjectMetadata
@@ -30,6 +30,7 @@ class PolicyControllerRbac(Construct):
         account: ServiceAccount,
         assignable_grants: Sequence[KubernetesGrant],
         accounts_namespace: str,
+        workload_namespaces: Set[str],
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -117,6 +118,39 @@ class PolicyControllerRbac(Construct):
             metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
             role=accounts_role,
         ).add_subjects(account)
+        # The workload-identity issuer: it alone writes WorkloadCredential status and workload
+        # Certificates, and deletes the Secrets cert-manager issued for superseded generations.
+        for workload_namespace in sorted(workload_namespaces):
+            issuer_role = Role(
+                self,
+                f"workload-credentials-role-{workload_namespace}",
+                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                rules=[
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials")], verbs=["get", "list", "watch"]
+                    ),
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials/status")], verbs=["update", "patch"]
+                    ),
+                    # Its Certificates block their record's deletion until they are gone.
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials/finalizers")], verbs=["update"]
+                    ),
+                    RolePolicyRule(
+                        resources=[custom_resource("cert-manager.io", "certificates")],
+                        verbs=["create", "get", "list", "watch", "delete"],
+                    ),
+                    RolePolicyRule(
+                        resources=[cast(IApiResource, ApiResource.SECRETS)], verbs=["get", "list", "delete"]
+                    ),
+                ],
+            )
+            RoleBinding(
+                self,
+                f"workload-credentials-role-binding-{workload_namespace}",
+                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                role=issuer_role,
+            ).add_subjects(account)
         cluster_role_name = f"{namespace}-policy-controller"
         k8s.KubeClusterRole(
             self,

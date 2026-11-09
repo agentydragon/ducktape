@@ -101,6 +101,25 @@ precondition prevents deleting a binding edited or replaced after its read.
   needs no ServiceAccount object. The native bindings are the authority, which is why they go in
   the same pass; a grant whose ServiceAccount is missing keeps none (`SubjectMissing`).
 
+## Workload credentials
+
+With `workload_issuer` and `workload_namespaces` set, the controller hosts the
+[workload-identity issuer](../workload_identity/README.md) for the `WorkloadCredential`s of those
+namespaces. It is their status's only writer, and the only creator of Certificates for
+three-segment workload URIs:
+
+- A record gets a credential ID, the URI `spiffe://agentplane/<namespace>/<name>/<id>` and a
+  Secret name in status before its Certificate exists.
+- The first binding the controller sees for an ID becomes `status.acceptedBinding`. When
+  `spec.binding` later differs from it, cleared or replaced, a fresh ID is minted; nothing else
+  rotates an ID.
+- A record with a controller owner or a binding gets one Secret per ID, `svid-<name>-<id>`. A
+  standing record, with neither, keeps `svid-<name>`.
+- `Ready` turns True once the Certificate for the current ID is Ready and its Secret holds the key
+  pair. Superseded generations' Certificates are then deleted, and their Secrets once those
+  Certificates are gone. A deleted record's Secrets go once the garbage collector removes its
+  Certificates.
+
 ## Revocation timing
 
 Expiry takes effect when the controller deletes the `PolicyBinding` or grant, and deletion when it
