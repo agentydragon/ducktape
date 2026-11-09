@@ -192,42 +192,92 @@ performance pass on representative inputs (<analysis_performance.md>).
 
 ## Test debt
 
-Tests present on `devel` and absent from `ee4eb4ab`, grouped by the slice that
-restores or justifies them:
+`ee4eb4ab` re-baselines `devel`'s expectations in both directions. Of the 50+
+devel test functions that no longer exist under their name, about nine are
+renames or splits with equal or stronger expectations, and the rest fall into
+the groups below. Each group names the slice that restores the devel
+expectation or proves the change.
 
-- Conservative-stance tests rewritten as acceptances without any relocation
-  (restore, or add the relocation plus Node parity):
+**Devel refusals that became expected acceptances (~17).** A slice may keep
+such a flip only with a relocation (`swapped_pairs > 0`) and Node parity, or by
+showing the candidate order equals source order and the refusal signal is
+retained in a typed field:
+
+- Host-timing contracts in `reentry_free_operations_test.rs`: every exact Bun
+  host-contract requirement around `AsyncLocalStorage` and `Promise.resolve`
+  became "opt-in evidence"; several of the new acceptances reorder. One case's
+  soundness rests on the pinned Node build not reading a getter argument. Wave 3
+  host/reentry slice restores the requirements or proves each reorder.
+- `native_slot_integrity_test.rs`: the eight `assert_refused` cases now accept
+  under `no_reordering`; the refusal kind is asserted nowhere. Keep the
+  no-reordering acceptance only beside a typed incomplete-native field.
+- `finalization_registry_guards_keep_unsupported_calls_conservative`: the
+  replacement accepts either gate outcome. Restore one explicit refusal per
+  shadowed or aliased form.
+- `export_availability_test.rs` (`namespace_import_stays_conservative`,
+  `unproved_initializers_keep_conservative_callback_dependencies`): accepted
+  with reordering while execution is incomplete. Needs a source-grounded proof
+  or the refusal returns.
+- Single-module authority gains without any relocation:
   `imported_primitive_return_does_not_inherit_local_operation_authority`,
   `local_declaration_receipts_refuse_captured_cells_and_rebinding`,
-  `numeric_local_updates_refuse_bigint_coercion_and_captured_cells` (Wave 3).
-- Acceptance rewritten as an expected `blocked_by_effect`:
-  `inferred_and_selected_set_spread_bindings_survive_saved_analysis` (Wave 3,
-  array/Set family; the original acceptance stands until a Node divergence is
-  shown).
-- Refusal-to-acceptance by capability add, needs its positive kept:
-  `modules_refine_assessment_refuses_scoped_tree_before_writes`,
-  `modules_apply_assessment_refuses_stale_partial_scoped_and_non_dry_inputs_before_writes`
-  (L1g / Wave 4).
-- Deleted structural controls to restore as-is: `direct_callee_heap_contents_win_over_assumed_path_in_both_orders`,
-  `borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier`,
-  `borrowed_and_static_member_sets_keep_their_existing_frontier`,
-  `compound_call_root_keeps_its_unexecuted_remainder_fallback`,
-  `unproved_initializers_keep_conservative_callback_dependencies`,
-  `namespace_import_stays_conservative`, `ownership_subset_still_rejects_catchall_file`,
-  `strict_signatures_leave_asymmetric_lazy_eager_shape_for_final_gate`,
-  `empty_chunk_options_keep_their_analysis_projection_key`,
-  `early_destructuring_split_refusal_matches_with_saved_facts`,
-  `early_nested_var_split_refusal_matches_with_saved_facts`,
-  `atom_split_reports_both_destinations_and_writes_the_same_artifact`,
-  `an_initializer_export_gets_no_call_or_record_summary`.
-- Renamed with tightened internal pins (keep the behavior, drop the pins):
-  `hoisted_functions_have_no_evaluation_write_but_function_expressions_do`,
-  `local_declaration_operations_cover_private_cells_and_compose_receipts`,
-  `bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows`.
+  `numeric_local_updates_refuse_bigint_coercion_and_captured_cells`. Wave 3
+  adds the relocation or restores the refusal.
+- `without_the_premise_or_naming_another_family_map_stays_unknown`,
+  `compound_call_root_keeps_its_unexecuted_remainder_fallback`: narrowed
+  conservatism with parity kept; acceptable if the typed loss stays asserted.
 
-Missing positive class: no test shows `legacy_gate_accepts == false` together
-with an accepted effect verdict and Node parity. Each Wave 3 slice that claims
-recovered acceptance adds one.
+**Devel Node-verified acceptances that became expected refusals (7).** Each is
+either a deliberate stricter policy that needs a design-doc entry and a
+`cross_destination_rebinds`-style typed reason, or a coverage regression:
+
+- Deliberate, keep: automatic co-location of rebinding methods
+  (`peeled_method_reassigning_top_level_let_executes_under_node`) and
+  rebind-only atomic folding
+  (`folds_unclaimed_assigner_with_extracted_mutable_binding`), both landing
+  with L1c and documented in `docs/design.md`.
+- Regressions until proved otherwise: `descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source`,
+  `selected_original_object_read_removes_the_heap_frontier_cycle`,
+  `intact_object_read_has_an_independent_source_certificate`,
+  `resolved_member_certifies_only_the_selected_relational_alias`,
+  `inferred_and_selected_set_spread_bindings_survive_saved_analysis`. The devel
+  acceptance stands until a Node divergence is shown (Wave 3 descriptor, native
+  read and Set-spread slices).
+
+**Deleted CLI-contract coverage.** `cli_mutation_outcome_test.rs` lost
+`atom_split_reports_both_destinations_and_writes_the_same_artifact`,
+`atom_split_also_writes_current_cycles_for_gate_queries`,
+`completed_edit_results_replace_both_rejection_artifacts` and
+`merge_cycle_report_drives_gate_list_then_a_passing_edit_clears_it`; the
+replacements only assert that `cycles.json` and `atomic_group_conflicts.json`
+are no longer written, so the rejection JSON contract (`rejection.kind`,
+`blocking_sccs`, `cut`, `gate list` clearing) has no e2e coverage. L1g keeps
+these tests until the flip PR deliberately retires that contract. The
+graph-only `modules_*`/`bindings_*` acceptances that became
+`needs_full_assessment` refusals are part of the flip, not L1g.
+
+**Deleted structural controls to restore as-is:**
+`direct_callee_heap_contents_win_over_assumed_path_in_both_orders`,
+`borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier`,
+`borrowed_and_static_member_sets_keep_their_existing_frontier`,
+`ownership_subset_still_rejects_catchall_file`,
+`strict_signatures_leave_asymmetric_lazy_eager_shape_for_final_gate`,
+`empty_chunk_options_keep_their_analysis_projection_key`,
+`early_destructuring_split_refusal_matches_with_saved_facts`,
+`early_nested_var_split_refusal_matches_with_saved_facts`,
+`an_initializer_export_gets_no_call_or_record_summary`.
+
+**Renamed with tightened internal pins** (keep the behavior, drop the pins):
+`hoisted_functions_have_no_evaluation_write_but_function_expressions_do`,
+`local_declaration_operations_cover_private_cells_and_compose_receipts`,
+`bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows`, and the
+`assert_candidate_schedule` exact `emitted_order` pins in the reentry tests.
+
+**Headline witnesses.** Only two tests show `legacy_gate_accepts == false`
+together with an accepted effect verdict and Node parity
+(`translation_validation_differential_test.rs` error-preserving swap,
+`native_operation_input_test.rs` seven-swap case). Each Wave 3 slice that
+claims recovered acceptance adds one such witness for its family.
 
 ## Exit gates
 
