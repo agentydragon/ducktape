@@ -22,6 +22,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.vm import boot_rcu
 from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -39,6 +40,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
     """Own every Sandbox created in this scope, including one that never becomes ready."""
     async with AsyncExitStack() as cleanup:
         owned: list[tuple[str, str]] = []
+        failed_vm_readiness: dict[str, tuple[environment_service_pb2.EnvironmentDescriptor, SandboxNotReadyError]] = {}
 
         async def release_owned(
             _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
@@ -46,10 +48,20 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             if not owned:
                 return False
 
+            async def release_one(name: str, uid: str) -> None:
+                failed_readiness = failed_vm_readiness.get(uid)
+                if failed_readiness is not None:
+                    view, readiness_error = failed_readiness
+                    try:
+                        path = boot_rcu.capture_readiness_failure(view, undeclared_outputs_dir() / "vm-artifacts")
+                        readiness_error.add_note(f"Passive host QEMU readiness snapshot: {path}")
+                    except Exception as diagnostic_error:
+                        readiness_error.add_note(f"Passive host QEMU readiness snapshot failed: {diagnostic_error!r}")
+                await suspend_and_delete(cluster, client, name, uid)
+
             async def release_all() -> None:
                 results = await asyncio.gather(
-                    *(suspend_and_delete(cluster, client, name, uid) for name, uid in reversed(owned)),
-                    return_exceptions=True,
+                    *(release_one(name, uid) for name, uid in reversed(owned)), return_exceptions=True
                 )
                 failures = [result for result in results if isinstance(result, BaseException)]
                 if len(failures) == 1:
@@ -117,7 +129,19 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 created = await client.create_sandbox(request)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
-            view = await wait_until_running(client, created)
+            try:
+                view = await wait_until_running(client, created)
+            except SandboxNotReadyError as error:
+                failed_view = error.last_view
+                if (
+                    is_vm_template(template)
+                    and failed_view is not None
+                    and failed_view.target.namespace == created.namespace
+                    and failed_view.target.name == created.name
+                    and failed_view.target.uid == created.uid
+                ):
+                    failed_vm_readiness[created.uid] = (failed_view, error)
+                raise
             if is_vm_template(template):
                 if not view.kubernetes_diagnostics.HasField("pod"):
                     raise SandboxNotReadyError(
@@ -169,6 +193,10 @@ def _nanoseconds(timestamp: str) -> int:
 class SandboxNotReadyError(Exception):
     """A lifecycle wait ended before the expected Sandbox state was observed."""
 
+    def __init__(self, message: str, *, last_view: environment_service_pb2.EnvironmentDescriptor | None = None) -> None:
+        super().__init__(message)
+        self.last_view = last_view
+
 
 async def wait_until_running(
     client: Client, target: identity_pb2.EnvironmentTarget
@@ -184,6 +212,7 @@ async def wait_until_running(
     ) as ready_span:
         deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
         last_status: dict[str, object] | None = None
+        last_view: environment_service_pb2.EnvironmentDescriptor | None = None
         try:
             async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
@@ -197,10 +226,12 @@ async def wait_until_running(
                         if candidates:
                             raise SandboxNotReadyError(
                                 f"{name} has been replaced: expected {expected_uid}, "
-                                f"observed {', '.join(row.target.uid for row in candidates)}"
+                                f"observed {', '.join(row.target.uid for row in candidates)}",
+                                last_view=last_view,
                             )
                         continue
                     view = observed
+                    last_view = view
                     last_status = (
                         MessageToDict(view.kubernetes_diagnostics.sandbox_status)
                         if view.kubernetes_diagnostics.HasField("sandbox_status")
@@ -213,12 +244,14 @@ async def wait_until_running(
                     ):
                         record_launch_transitions(ready_span, view)
                         return view
-                raise SandboxNotReadyError(f"{name}'s Sandbox inventory stream ended before observing Ready")
+                raise SandboxNotReadyError(
+                    f"{name}'s Sandbox inventory stream ended before observing Ready", last_view=last_view
+                )
         except TimeoutError as error:
             if not deadline.expired():
                 raise
             raise SandboxNotReadyError(
-                f"{name} did not reach Ready within {SANDBOX_READY_SECONDS}s: {last_status}"
+                f"{name} did not reach Ready within {SANDBOX_READY_SECONDS}s: {last_status}", last_view=last_view
             ) from error
 
 

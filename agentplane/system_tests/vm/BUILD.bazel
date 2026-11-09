@@ -287,7 +287,11 @@ k3s_tcg_vm_image_manifest(
 py_library(
     name = "boot_rcu",
     srcs = ["boot_rcu.py"],
-    deps = [":host_qemu"],
+    deps = [
+        ":host_qemu",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//protobuf",
+    ],
 )
 
 py_test(
@@ -304,7 +308,10 @@ py_test(
     deps = [
         ":boot_rcu",
         "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],

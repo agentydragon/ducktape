@@ -15,7 +15,79 @@ from typing import Any
 import pytest_bazel
 from python.runfiles import Runfiles
 
+# gazelle:include_dep @pypi//protobuf
+from agentplane.environments.v1 import environment_service_pb2
+from agentplane.proto import identity_pb2
 from agentplane.system_tests.vm import boot_rcu
+
+
+def _readiness_view(*, pod_namespace: str = "scope") -> environment_service_pb2.EnvironmentDescriptor:
+    return environment_service_pb2.EnvironmentDescriptor(
+        target=identity_pb2.EnvironmentTarget(namespace="scope", name="sandbox", uid="sandbox-uid"),
+        kubernetes_diagnostics=environment_service_pb2.KubernetesDiagnostics(
+            pod=environment_service_pb2.SandboxPod(
+                name="virt-launcher-sandbox", namespace=pod_namespace, uid="launcher-pod-uid"
+            )
+        ),
+    )
+
+
+def test_readiness_failure_snapshot_uses_exact_launcher_uid(tmp_path: Path, monkeypatch) -> None:
+    view = _readiness_view()
+    sampled: list[tuple[Path, str]] = []
+
+    def sample(proc_root: Path, pod_uid: str) -> dict[str, object]:
+        sampled.append((proc_root, pod_uid))
+        return {"matching_qemu_processes": 1, "pid": 123, "threads": [{"tid": 123, "state": "S"}]}
+
+    monkeypatch.setattr(boot_rcu, "_sample_qemu", sample)
+    path = boot_rcu.capture_readiness_failure(view, tmp_path)
+
+    record = json.loads(path.read_text())
+    assert sampled == [(Path("/proc"), "launcher-pod-uid")]
+    assert record["capture_status"] == "sampled"
+    assert record["sandbox"] == {"namespace": "scope", "name": "sandbox", "uid": "sandbox-uid"}
+    assert record["launcher_pod"] == {"namespace": "scope", "name": "virt-launcher-sandbox", "uid": "launcher-pod-uid"}
+    assert record["host_qemu"]["pid"] == 123
+
+
+def test_readiness_failure_snapshot_rejects_replacement_namespace(tmp_path: Path, monkeypatch) -> None:
+    def unexpected_sample(_proc_root: Path, _pod_uid: str) -> dict[str, object]:
+        raise AssertionError("must not sample a Pod from a different namespace")
+
+    monkeypatch.setattr(boot_rcu, "_sample_qemu", unexpected_sample)
+    path = boot_rcu.capture_readiness_failure(_readiness_view(pod_namespace="replacement"), tmp_path)
+    record = json.loads(path.read_text())
+
+    assert record["capture_status"] == "skipped_pod_identity_mismatch"
+    assert record["host_qemu"]["not_sampled"]
+
+
+def test_readiness_failure_snapshot_preserves_zero_qemu_matches(tmp_path: Path, monkeypatch) -> None:
+    sampled: list[str] = []
+
+    def no_matching_qemu(_proc_root: Path, pod_uid: str) -> dict[str, object]:
+        sampled.append(pod_uid)
+        return {"matching_qemu_processes": 0, "process_scan_truncated": False, "process_scan_incomplete": False}
+
+    monkeypatch.setattr(boot_rcu, "_sample_qemu", no_matching_qemu)
+    path = boot_rcu.capture_readiness_failure(_readiness_view(), tmp_path)
+    record = json.loads(path.read_text())
+
+    assert sampled == ["launcher-pod-uid"]
+    assert record["capture_status"] == "sampled"
+    assert record["host_qemu"]["matching_qemu_processes"] == 0
+
+
+def test_readiness_failure_snapshot_records_collector_error(tmp_path: Path, monkeypatch) -> None:
+    def failed_sample(_proc_root: Path, _pod_uid: str) -> dict[str, object]:
+        raise PermissionError("host proc denied")
+
+    monkeypatch.setattr(boot_rcu, "_sample_qemu", failed_sample)
+    record = json.loads(boot_rcu.capture_readiness_failure(_readiness_view(), tmp_path).read_text())
+
+    assert record["capture_status"] == "collector_error"
+    assert record["host_qemu"] == {"capture_error": "PermissionError", "message": "host proc denied"}
 
 
 def test_launcher_selection_requires_exact_vmi_owner_uid() -> None:
