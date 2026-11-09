@@ -135,7 +135,6 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/environments/v1:environment_service_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -373,7 +372,6 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/environments/v1:environment_service_pb",
-        "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],

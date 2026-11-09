@@ -11,7 +11,6 @@ go_library(
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/decision",
-        "//agentplane/environment_runtime_transport",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/listener",
         "//agentplane/workload_identity/resolver",
