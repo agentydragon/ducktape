@@ -10,6 +10,7 @@ from agentplane.history_service.testing.protojson import (
     thread_entity_state_json,
     thread_entity_variant,
 )
+from agentplane.proto import command_pb2
 
 _UINT64_MAX = (1 << 64) - 1
 _REFERENCE = {
@@ -38,7 +39,7 @@ _REFERENCE = {
             "command",
             "command",
             {
-                "operation": "submit_input",
+                "operation": "OPERATION_SUBMIT_INPUT",
                 "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
                 "outcomeCursor": str(_UINT64_MAX - 4),
                 "inputRef": _REFERENCE,
@@ -80,13 +81,13 @@ def test_stored_protojson_may_be_a_json_string() -> None:
         "entity_index": "0",
         "cursor": "1",
         "revision_cursor": "1",
-        "state": '{"operation":"interrupt_turn","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}',
+        "state": '{"operation":"OPERATION_INTERRUPT_TURN","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}',
     }
 
     entity = thread_entity_from_record(record)
 
     assert entity.WhichOneof("entity") == "command"
-    assert entity.command.operation == "interrupt_turn"
+    assert entity.command.operation == command_pb2.OPERATION_INTERRUPT_TURN
     assert entity.command.outcome == history_service_pb2.THREAD_COMMAND_OUTCOME_PENDING
 
 

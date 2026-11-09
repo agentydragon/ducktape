@@ -29,7 +29,6 @@ from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
@@ -143,7 +142,7 @@ async def _submit(
         answer = await dispatcher.submit_input(
             str(thread_id), command.command_id, view.target.name, str(view.target.uid), command.submit_input.text
         )
-    assert (answer.command_id, answer.operation) == (command.command_id, session_dispatcher_pb2.OPERATION_SUBMIT_INPUT)
+    assert (answer.command_id, answer.operation) == (command.command_id, command_pb2.OPERATION_SUBMIT_INPUT)
 
 
 async def _turn_status(client: Client, thread_id: UUID, status: str) -> None:

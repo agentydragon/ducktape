@@ -11,6 +11,7 @@ import { create, fromJson, toJson, type JsonValue, type MessageInitShape } from 
 
 import { createElectricThreadSync, electricThreadSync } from "./electric_sync";
 import { electricEntityVariant } from "./testing/electric_entity";
+import { Operation } from "../../../proto/command_pb";
 import { ItemKind } from "../../../proto/event_pb";
 import { type ThreadSync, type ThreadWindow } from "./thread_sync";
 import {
@@ -145,7 +146,7 @@ function viewState(through: string, epoch = "epoch-1"): Json {
 
 function command(id: string, index: number, init: MessageInitShape<typeof ThreadCommandSchema> = {}): Json {
   const state = create(ThreadCommandSchema, {
-    operation: "submit_input",
+    operation: Operation.SUBMIT_INPUT,
     outcome: ThreadCommandOutcome.FAILED,
     outcomeCursor: BigInt(index),
     ...init,
@@ -621,7 +622,7 @@ it("rejects a payload reference beyond PostgreSQL BIGINT", async () => {
 it("keeps a failed settings command in the shared window after a different browser sent it", async () => {
   const sync = stubSync();
   const failed = command("model-from-another-browser", 2, {
-    operation: "change_model",
+    operation: Operation.CHANGE_MODEL,
     outcome: ThreadCommandOutcome.FAILED,
     outcomeCursor: 3n,
     outcomeReason: "Model unavailable",

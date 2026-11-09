@@ -112,7 +112,7 @@ import {
   WatchSubscriptionsResponseSchema,
 } from "../../../notification_service/notifications_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } from "../../../proto/event_pb";
-import { CommandSchema } from "../../../proto/command_pb";
+import { CommandSchema, Operation } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
   AttachedSchema,
@@ -1674,7 +1674,7 @@ function item(
 function command(
   cursor: number,
   id: string,
-  operation: string,
+  operation: Operation,
   outcome: ThreadCommandOutcome,
   options: { reason?: string; text?: string; requestedValue?: string } = {}
 ): Record<string, unknown> {
@@ -1866,18 +1866,18 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
 
 /** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
 function commandProgressRows(threadId: string): Record<string, unknown>[] {
-  const model = command(2, "progress-model", "change_model", ThreadCommandOutcome.PENDING, {
+  const model = command(2, "progress-model", Operation.CHANGE_MODEL, ThreadCommandOutcome.PENDING, {
     requestedValue: "test-model-next",
   });
-  const effort = command(3, "progress-effort", "change_reasoning_effort", ThreadCommandOutcome.FAILED, {
+  const effort = command(3, "progress-effort", Operation.CHANGE_REASONING_EFFORT, ThreadCommandOutcome.FAILED, {
     reason: "Not supported by harness",
     requestedValue: "high",
   });
-  const noop = command(4, "progress-noop", "change_model", ThreadCommandOutcome.NOOP, {
+  const noop = command(4, "progress-noop", Operation.CHANGE_MODEL, ThreadCommandOutcome.NOOP, {
     reason: "Model already selected",
     requestedValue: "current-model",
   });
-  const effected = command(5, "progress-effected", "change_model", ThreadCommandOutcome.EFFECTED, {
+  const effected = command(5, "progress-effected", Operation.CHANGE_MODEL, ThreadCommandOutcome.EFFECTED, {
     requestedValue: "applied-model",
   });
   return [
@@ -1886,9 +1886,13 @@ function commandProgressRows(threadId: string): Record<string, unknown>[] {
     effort,
     noop,
     effected,
-    command(9, "progress-applied-input", "submit_input", ThreadCommandOutcome.EFFECTED, { text: "Applied input." }),
-    command(6, "progress-input", "submit_input", ThreadCommandOutcome.PENDING, { text: "Please review this change." }),
-    command(7, "progress-noop-input", "submit_input", ThreadCommandOutcome.NOOP, {
+    command(9, "progress-applied-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.EFFECTED, {
+      text: "Applied input.",
+    }),
+    command(6, "progress-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+      text: "Please review this change.",
+    }),
+    command(7, "progress-noop-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.NOOP, {
       reason: "Nothing to do",
       text: "Already handled.",
     }),
@@ -1897,10 +1901,10 @@ function commandProgressRows(threadId: string): Record<string, unknown>[] {
 
 /** Local and remote pending inputs whose payload references are present but bodies are withheld. */
 function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
-  const local = command(15, "locally-retained", "submit_input", ThreadCommandOutcome.PENDING, {
+  const local = command(15, "locally-retained", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
     text: "This browser already knows the text it sent.",
   });
-  const remote = command(16, "remote-pending", "submit_input", ThreadCommandOutcome.PENDING, {
+  const remote = command(16, "remote-pending", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
     text: "This text is still unknown here.",
   });
   payloadBodies.delete(payloadKey("locally-retained", ThreadPayloadField.COMMAND_INPUT, "15"));
@@ -1940,26 +1944,32 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(24, "queued-model", "change_model", outcomes ? ThreadCommandOutcome.FAILED : ThreadCommandOutcome.PENDING, {
-      reason: outcomes ? "Model unavailable" : undefined,
-    }),
+    command(
+      24,
+      "queued-model",
+      Operation.CHANGE_MODEL,
+      outcomes ? ThreadCommandOutcome.FAILED : ThreadCommandOutcome.PENDING,
+      {
+        reason: outcomes ? "Model unavailable" : undefined,
+      }
+    ),
     command(
       25,
       "queued-interrupt",
-      "interrupt_turn",
+      Operation.INTERRUPT_TURN,
       outcomes ? ThreadCommandOutcome.NOOP : ThreadCommandOutcome.PENDING,
       { reason: outcomes ? "Target turn already ended" : undefined }
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
-    command(26, "queued-submit", "submit_input", ThreadCommandOutcome.PENDING, {
+    command(26, "queued-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
       text: "Continue past the failing test once it lands.",
     }),
-    command(27, "failed-submit", "submit_input", ThreadCommandOutcome.FAILED, {
+    command(27, "failed-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.FAILED, {
       reason: "Runner could not start this turn.",
       text: "Run the rejected input.",
     }),
-    command(28, "noop-submit", "submit_input", ThreadCommandOutcome.NOOP, {
+    command(28, "noop-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.NOOP, {
       reason: "The harness was already stopping.",
       text: "Run the input that was not applied.",
     }),
@@ -3263,8 +3273,8 @@ const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
 };
 
 const OBSERVATIONS = [
-  { cursor: "31", kind: "harness_stderr" },
-  { cursor: "34", kind: "item_completed" },
+  { cursor: "31", kind: "EVENT_KIND_HARNESS_STDERR" },
+  { cursor: "34", kind: "EVENT_KIND_ITEM_COMPLETED" },
 ] as const;
 const SETTLED_RANGES = [
   { first: 1n, last: 30n },

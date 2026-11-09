@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/session_client",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -33,6 +34,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

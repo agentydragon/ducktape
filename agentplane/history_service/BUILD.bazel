@@ -204,6 +204,7 @@ proto_library(
     srcs = ["history_service.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_proto",
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:event_proto",
         "//agentplane/proto:session_proto",
@@ -253,6 +254,7 @@ go_proto_library(
     proto = ":history_service_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -267,6 +269,7 @@ ts_proto_library(
     proto = ":history_service_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:session_pb",

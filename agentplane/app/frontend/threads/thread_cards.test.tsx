@@ -12,6 +12,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Operation } from "../../../proto/command_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { EntityCard } from "./thread_cards";
@@ -627,7 +628,7 @@ describe("EntityCard", () => {
       entity({
         case: "command",
         value: {
-          operation: "submit_input",
+          operation: Operation.SUBMIT_INPUT,
           outcome: ThreadCommandOutcome.PENDING,
           outcomeCursor: undefined,
           outcomeReason: undefined,

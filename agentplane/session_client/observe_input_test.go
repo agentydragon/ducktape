@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -133,13 +134,13 @@ func TestObserveInputCorrelatesCommandWithCompletedTurn(t *testing.T) {
 func TestObserveInputReturnsWakeDenialFromQueuedWatchUpdate(t *testing.T) {
 	initial := &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,
-		Operation:      dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation:      commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:          dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		WakeAssessment: &environmentlifecyclepb.WakeAssessment{State: environmentlifecyclepb.WakeState_WAKE_STATE_NOT_EVALUATED},
 	}
 	updated := &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,
-		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		DeliveryBlocker: &environmentlifecyclepb.DeliveryBlocker{
 			Kind: environmentlifecyclepb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED,
@@ -283,7 +284,7 @@ func TestObserveInputStopsWatchingWhenDispatcherCancelsQueuedCommand(t *testing.
 	dispatcher := &dispatcherStub{
 		dispatch: &dispatcherpb.Dispatch{
 			CommandId: testCommandID, SessionId: testSessionID,
-			Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+			Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 			State:     dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		},
 		watch: &dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{
@@ -315,7 +316,7 @@ func TestObserveInputStopsWatchingWhenDispatcherCancelsQueuedCommand(t *testing.
 func TestObserveInputDoesNotInferHistoryCommandOutcomeFromDispatcherState(t *testing.T) {
 	dispatch := &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,
-		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP,
 		Reason:    new("dispatcher did not enqueue input"),
 	}
@@ -352,7 +353,7 @@ func TestObserveInputStillReadsHistoryWhenTerminalDispatchHasAdmission(t *testin
 func admittedDispatch(cursor uint64) *dispatcherpb.Dispatch {
 	return &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,
-		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
 		Admission: &eventlogpb.EventEntry{Cursor: cursor},
 	}

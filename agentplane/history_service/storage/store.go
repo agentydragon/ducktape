@@ -108,7 +108,7 @@ type RecordedSession struct {
 
 type Observation struct {
 	Cursor uint64
-	Kind   string
+	Kind   historypb.EventKind
 }
 
 type CursorRange struct{ First, Last uint64 }
@@ -920,18 +920,9 @@ func readObservations(ctx context.Context, tx *sql.Tx, query string, args ...any
 		if err := proto.Unmarshal(payload, &entry); err != nil {
 			return nil, err
 		}
-		observations = append(observations, Observation{Cursor: cursor, Kind: observationKind(&entry)})
+		observations = append(observations, Observation{Cursor: cursor, Kind: historypb.EventKind(observationNumber(&entry))})
 	}
 	return observations, rows.Err()
-}
-
-// observationKind names the Event's observation, or is empty when it carries none.
-func observationKind(entry *eventlogpb.EventEntry) string {
-	event := entry.GetEvent().ProtoReflect()
-	if field := event.WhichOneof(event.Descriptor().Oneofs().ByName("observation")); field != nil {
-		return string(field.Name())
-	}
-	return ""
 }
 
 // observationNumber stores the Event.observation field number for FollowSession's indexed reads.

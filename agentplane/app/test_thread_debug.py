@@ -167,7 +167,11 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         await history.record(thread, source.entries[-3:])
         debug_tail = await client.get(chronological, params={"limit": "3"}, headers=agent_auth)
         rows = debug_tail.json()["observations"]
-        assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
+        assert [history_service_pb2.EventKind.Value(row["kind"]) for row in rows] == [
+            history_service_pb2.EVENT_KIND_NATIVE,
+            history_service_pb2.EVENT_KIND_HARNESS_STDERR,
+            history_service_pb2.EVENT_KIND_DEBUG_CHECKPOINT,
+        ]
         assert [row["cursor"] for row in rows] == ["10", "11", "12"]
         assert stderr not in debug_tail.text
         entries = []
