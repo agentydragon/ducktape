@@ -65,6 +65,9 @@ message Decision {
   optional string address = 11;
   // Stable event identity, unique across proxy replicas.
   string event_id = 12;
+  // The ServiceAccount the proxy acted as on the API server by impersonation, when it did. The API
+  // server's audit log names the proxy as the original user.
+  agentplane.proto.ServiceAccount impersonated = 13;
 }
 
 message ListDecisionsRequest {

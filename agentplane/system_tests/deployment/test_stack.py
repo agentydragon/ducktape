@@ -10,6 +10,7 @@ import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
+from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE, CREDENTIALS_NAMESPACE, NAMESPACE
 
 
 @pytest.fixture
@@ -17,12 +18,13 @@ def fixture() -> rendered_fixture.RenderedFixture:
     return rendered_fixture.RenderedFixture(
         backend=rendered_fixture.Backend.LOCAL_MODEL,
         vm_sandboxes=False,
-        namespace="systest",
+        namespace=NAMESPACE,
         app_origin="http://app.test.invalid",
         browser_services=[],
         mcp_fixtures=None,
         objects=[
-            {"kind": "Namespace", "metadata": {"name": name}} for name in ("systest", "systest-egress-credentials")
+            {"kind": "Namespace", "metadata": {"name": name}}
+            for name in (NAMESPACE, CREDENTIALS_NAMESPACE, ACCOUNTS_NAMESPACE)
         ],
     )
 

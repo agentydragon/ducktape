@@ -48,6 +48,7 @@ func fullyPopulated(subject *decision.Subject, at time.Time) decision.Record {
 	deny := decision.NoRule
 	record.SourcePodUID, record.Binding, record.Policy, record.Address, record.Rule = &pod, &binding, &policy, &address, &rule
 	record.Outcome, record.Reason, record.Substituted = decision.Deny, &deny, true
+	record.Impersonated = &decision.Subject{Namespace: "test-accounts", Name: "test-account"}
 	return record
 }
 
@@ -99,7 +100,9 @@ func TestSharedHistorySurvivesReplacementAndSeparatesSubjects(t *testing.T) {
 	// Every field survives the round trip.
 	if got[0].Subject == nil || *got[0].Subject != *subject || *got[0].Address != "203.0.113.7" || *got[0].Rule != 3 ||
 		*got[0].Reason != decision.NoRule || !got[0].Substituted || *got[0].SourcePodUID != "test-pod-uid" ||
-		*got[0].Binding != "test-binding" || *got[0].Policy != "test-policy" || got[1].Reason != nil || got[1].Address != nil {
+		*got[0].Binding != "test-binding" || *got[0].Policy != "test-policy" ||
+		got[0].Impersonated == nil || *got[0].Impersonated != *a.Impersonated ||
+		got[1].Reason != nil || got[1].Address != nil || got[1].Impersonated != nil {
 		t.Fatalf("record did not round-trip: %+v", got[0])
 	}
 	if absent, err := replacement.Recent(ctx, &decision.Subject{Namespace: subject.Namespace, Name: "absent"}); err != nil || len(absent) != 0 {

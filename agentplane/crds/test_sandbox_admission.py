@@ -245,12 +245,12 @@ async def test_egress_credential_source_and_target_validation() -> None:
         await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
         api = k8s_client.CustomObjectsApi(server.api)
 
-        async def create(name: str, source: dict[str, Any], target: dict[str, str], valid: bool) -> None:
+        async def create(name: str, source: dict[str, Any], targets: list[dict[str, str]], valid: bool) -> None:
             body = {
                 "apiVersion": f"{GROUP}/{VERSION}",
                 "kind": "EgressCredential",
                 "metadata": {"name": name},
-                "spec": {"description": "API token", "source": source, "targets": [target]},
+                "spec": {"description": "API token", "source": source, "targets": targets},
             }
             if not valid:
                 with pytest.raises(ApiException) as rejected:
@@ -289,9 +289,37 @@ async def test_egress_credential_source_and_target_validation() -> None:
         ]
         secret = {"secretRef": {"name": "api-token", "key": "token"}}
         for index, (source, valid) in enumerate(source_cases):
-            await create(f"source-{index}", source, {"method": "wholeValue", "header": "Authorization"}, valid)
+            await create(f"source-{index}", source, [{"method": "wholeValue", "header": "Authorization"}], valid)
         for index, (target, valid) in enumerate(target_cases):
-            await create(f"target-{index}", secret, target, valid)
+            await create(f"target-{index}", secret, [target], valid)
+
+        # The account source substitutes the proxy's own bearer, so it admits that one target only.
+        # Which API server names the proxy supports is the proxy's check, not admission's.
+        account = {"apiServer": "local", "namespace": "accounts", "name": "shared-diagnostics"}
+        bearer = {"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"}
+        account_cases: list[tuple[dict[str, Any], list[dict[str, str]], bool]] = [
+            ({"kubernetesServiceAccount": account}, [bearer], True),
+            (
+                {"kubernetesServiceAccount": account},
+                [{"method": "schemeToken", "header": "authorization", "scheme": "bearer"}],
+                True,
+            ),
+            ({"kubernetesServiceAccount": {**account, "apiServer": "remote-cluster"}}, [bearer], True),
+            ({"kubernetesServiceAccount": account}, [{"method": "wholeValue", "header": "Authorization"}], False),
+            ({"kubernetesServiceAccount": account}, [{"method": "jsonField", "field": "token"}], False),
+            (
+                {"kubernetesServiceAccount": account},
+                [{"method": "schemeToken", "header": "X-Token", "scheme": "Bearer"}],
+                False,
+            ),
+            ({"kubernetesServiceAccount": account}, [bearer, bearer], False),
+            ({"kubernetesServiceAccount": {**account, "namespace": "Accounts"}}, [bearer], False),
+            ({"kubernetesServiceAccount": {**account, "name": "a:b"}}, [bearer], False),
+            ({"kubernetesServiceAccount": {"apiServer": "local", "namespace": "accounts"}}, [bearer], False),
+            ({"kubernetesServiceAccount": account, **secret}, [bearer], False),
+        ]
+        for index, (source, targets, valid) in enumerate(account_cases):
+            await create(f"account-{index}", source, targets, valid)
 
 
 if __name__ == "__main__":

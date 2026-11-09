@@ -97,6 +97,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
+from cluster.cdk8s.agentplane.kubernetes_accounts import STAGING_ACCOUNTS_NAMESPACE, KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
@@ -855,6 +856,9 @@ def chart(app: App) -> Chart:
     add_staging_action_policies(chart)
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
+    )
+    KubernetesAccounts(
+        chart, "kubernetes-accounts", namespace=STAGING_ACCOUNTS_NAMESPACE, proxy_namespace=ENV.namespace
     )
     add_staging_egress_credentials(
         chart, namespace=ENV.namespace, credentials_namespace=ENV.egress.credentials_namespace

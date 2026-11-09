@@ -45,7 +45,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
+from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE, CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
@@ -89,6 +89,7 @@ from cluster.cdk8s.agentplane.environment import (
     OrchestrationProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
@@ -476,6 +477,7 @@ def build_chart(
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
+        act_as_kubernetes_accounts=True,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -692,6 +694,7 @@ def build_chart(
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
     )
+    KubernetesAccounts(chart, "kubernetes-accounts", namespace=ACCOUNTS_NAMESPACE, proxy_namespace=NAMESPACE)
     if isinstance(models, PublicLiteLLM):
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)

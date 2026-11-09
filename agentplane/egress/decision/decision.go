@@ -22,9 +22,12 @@ const (
 	InvalidBody           Reason = "invalid-body"
 	PlaceholderUnresolved Reason = "placeholder-unresolved"
 	CredentialUnavailable Reason = "credential-unavailable"
-	AddressForbidden      Reason = "address-forbidden"
-	HostUnresolved        Reason = "host-unresolved"
-	Unavailable           Reason = "unavailable"
+	// ImpersonationForbidden is a request decided by a kubernetesServiceAccount credential that
+	// carried impersonation headers of its own.
+	ImpersonationForbidden Reason = "impersonation-forbidden"
+	AddressForbidden       Reason = "address-forbidden"
+	HostUnresolved         Reason = "host-unresolved"
+	Unavailable            Reason = "unavailable"
 )
 
 type Outcome string
@@ -41,7 +44,8 @@ const (
 	HTTPRequest Phase = "http_request"
 )
 
-// Subject is the ServiceAccount a token proved.
+// Subject is a namespaced ServiceAccount: the one a request authenticated as, or the one the proxy
+// impersonated for it.
 type Subject struct {
 	Namespace string
 	Name      string
@@ -73,6 +77,9 @@ type Record struct {
 	Rule    *int
 	// Substituted is whether a credential replaced a placeholder.
 	Substituted bool
+	// Impersonated is the ServiceAccount the proxy acted as on the API server, beside its own
+	// identity, which the API server records as the original user.
+	Impersonated *Subject
 	// Address is the address the host was pinned to, when admitted.
 	Address *string
 }
@@ -89,6 +96,9 @@ func (r Record) LogValue() slog.Value {
 	}
 	if r.Subject != nil {
 		attrs = append(attrs, slog.String("subject", r.Subject.Namespace+"/"+r.Subject.Name))
+	}
+	if r.Impersonated != nil {
+		attrs = append(attrs, slog.String("impersonated", r.Impersonated.Namespace+"/"+r.Impersonated.Name))
 	}
 	return slog.GroupValue(attrs...)
 }

@@ -224,6 +224,11 @@ async def a_non_sandbox_command_box_keeps_its_bearer_egress(resources: Resources
         await egress.a_non_sandbox_command_box_keeps_its_bearer_egress(resources.cluster, caller)
 
 
+async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources: Resources) -> None:
+    async with resources.open() as (client, sandboxes):
+        await egress.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources.cluster, client, sandboxes)
+
+
 SCENARIOS = (
     # CaseBatch runs storage exclusively first, then starts this first remaining case.
     pytest.param(
@@ -231,6 +236,7 @@ SCENARIOS = (
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
     pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
+    pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),

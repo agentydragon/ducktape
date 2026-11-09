@@ -141,6 +141,22 @@ class ProjectedWorkloadTokenSource(_Wire):
     )
 
 
+class KubernetesServiceAccountSource(_Wire):
+    """A ServiceAccount the proxy acts as on a named API server, by impersonation.
+
+    The proxy presents its own bearer with `Impersonate-User` naming this account; no token for the
+    account is minted or held.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    api_server: str = Field(
+        min_length=1, description="The API server by its settings name; the proxy supports only `local`."
+    )
+    namespace: str = Field(min_length=1, description="Namespace of the impersonated ServiceAccount.")
+    name: str = Field(min_length=1, description="Name of the impersonated ServiceAccount.")
+
+
 class CredentialSource(_Wire):
     """Exactly one tagged source for the value substituted at a declared target."""
 
@@ -148,12 +164,15 @@ class CredentialSource(_Wire):
 
     secret_ref: SecretKeyRef | None = None
     projected_workload_token: ProjectedWorkloadTokenSource | None = None
+    kubernetes_service_account: KubernetesServiceAccountSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        sources = (self.secret_ref, self.projected_workload_token)
+        sources = (self.secret_ref, self.projected_workload_token, self.kubernetes_service_account)
         if sum(source is not None for source in sources) != 1:
-            raise ValueError("source must set exactly one of secretRef or projectedWorkloadToken")
+            raise ValueError(
+                "source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount"
+            )
         return self
 
 

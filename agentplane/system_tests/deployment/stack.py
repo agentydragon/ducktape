@@ -38,6 +38,7 @@ from agentplane.system_tests.driver.port_forward import PortForward
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import baseline, pki_infrastructure
 from agentplane.system_tests.k3s.baseline import K3s, run
+from agentplane.system_tests.k3s.namespaces import ACCOUNTS_NAMESPACE, CREDENTIALS_NAMESPACE
 from agentplane.testing import tls
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -249,7 +250,7 @@ def _baseline_evidence(
 def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
     """Wait for fixture-owned resources to vanish, leaving only the infrastructure baseline."""
     namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
-    if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
+    if set(namespaces) != {fixture.namespace, CREDENTIALS_NAMESPACE, ACCOUNTS_NAMESPACE}:
         raise RuntimeError(f"unexpected fixture namespaces: {namespaces}")
     sandboxes = json.loads(k3s.kubectl("get", "sandboxes", "-n", fixture.namespace, "-o", "json"))["items"]
     if sandboxes:

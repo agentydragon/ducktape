@@ -258,3 +258,38 @@ func TestForwardListenerAuthenticationRequiresOnlyItsVariantFields(t *testing.T)
 		})
 	}
 }
+
+func TestLocalAPIServerLoadsWholeOrNotAtAll(t *testing.T) {
+	settings := func(server string) []string {
+		return []string{
+			settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
+			settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key", databaseURLEnv,
+			settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
+forward:
+  listen_address: 0.0.0.0:8888
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+`+server),
+		}
+	}
+	c, err := configtest.Load(t, settingPrefix, loadConfig, settings(
+		"local_api_server: {host: kubernetes.default.svc.test, port: 443, token_file: /token}\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LocalAPIServer == nil || *c.LocalAPIServer != (apiServerConfig{Host: "kubernetes.default.svc.test", Port: 443, TokenFile: "/token"}) {
+		t.Fatalf("local_api_server %+v", c.LocalAPIServer)
+	}
+	for _, partial := range []string{
+		"local_api_server: {host: kubernetes.default.svc.test, port: 443}\n",
+		"local_api_server: {port: 443, token_file: /token}\n",
+		"local_api_server: {host: kubernetes.default.svc.test, token_file: /token}\n",
+	} {
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, settings(partial)); err == nil {
+			t.Errorf("%q accepted", partial)
+		}
+	}
+}

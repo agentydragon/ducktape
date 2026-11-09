@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -555,5 +556,115 @@ func TestAllowedCarriesTheDecidingRulesClusterInternal(t *testing.T) {
 			index := standardIndex([]*policyapi.PolicySet{policySet("p", c.rules...)}, binding("b", "p"))
 			assertDecision(t, index.Evaluate(caller, c.request, nil), c.want)
 		})
+	}
+}
+
+const apiServerHost = "kubernetes.test.invalid"
+
+var accountCredential = resources.Credential{
+	Name:    "k8s-account-diagnostics",
+	Source:  resources.KubernetesServiceAccount{APIServer: resources.LocalAPIServer, Namespace: "accounts", Name: "diagnostics"},
+	Targets: []resources.Target{bearer},
+}
+
+// accountIndex binds the caller to act as the account on the local API server, with token as the
+// proxy's own bearer.
+func accountIndex(token func() (string, error)) *Index {
+	rule := egress([]string{apiServerHost, "elsewhere.test.invalid"}, nil, nil, accountCredential.Name)
+	index := newIndex(
+		[]*policyapi.PolicySet{policySet("account", rule)}, []*policyapi.PolicyBinding{binding("b", "account")},
+		[]resources.Credential{accountCredential},
+	)
+	index.LocalAPIServer = &APIServer{Host: apiServerHost, Port: 443, Token: token}
+	return index
+}
+
+func toAPIServer(options ...func(*Request)) Request {
+	request := Request{
+		Method: "GET", Host: apiServerHost, Port: 443, TLS: true, Path: "/api/v1/namespaces",
+		Headers: http.Header{authorization: {"Bearer " + accountCredential.Placeholder()}},
+	}
+	for _, option := range options {
+		option(&request)
+	}
+	return request
+}
+
+func proxyToken() (string, error) { return "proxy-own-token", nil }
+
+func TestAKubernetesServiceAccountCredentialSendsTheProxysBearerAndNamesTheAccount(t *testing.T) {
+	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer(), nil), Allowed{
+		Binding: "b", Policy: "account",
+		Rewrites: []presentation.HeaderRewrite{
+			{Header: authorization, Values: []string{"Bearer proxy-own-token"}},
+			{Header: ImpersonateUserHeader, Values: []string{"system:serviceaccount:accounts:diagnostics"}},
+		},
+		Impersonated: &policyapi.ServiceAccountRef{Namespace: "accounts", Name: "diagnostics"},
+	})
+}
+
+func TestTheProxysBearerIsReadForEveryRequest(t *testing.T) {
+	token := "first-token"
+	index := accountIndex(func() (string, error) { return token, nil })
+	first := index.Evaluate(caller, toAPIServer(), nil).(Allowed)
+	token = "rotated-token"
+	second := index.Evaluate(caller, toAPIServer(), nil).(Allowed)
+	if first.Rewrites[0].Values[0] != "Bearer first-token" || second.Rewrites[0].Values[0] != "Bearer rotated-token" {
+		t.Errorf("Authorization %q then %q, want each request to read the token file", first.Rewrites[0].Values, second.Rewrites[0].Values)
+	}
+}
+
+func TestACallersOwnImpersonationHeadersRefuseTheRequest(t *testing.T) {
+	for _, supplied := range []string{"Impersonate-User", "impersonate-group", "Impersonate-Uid", "Impersonate-Extra-Scopes"} {
+		t.Run(supplied, func(t *testing.T) {
+			request := toAPIServer(func(r *Request) { r.Headers[supplied] = []string{"system:masters"} })
+			assertDecision(t, accountIndex(proxyToken).Evaluate(caller, request, nil), Denied{decision.ImpersonationForbidden})
+		})
+	}
+	// Another credential is the caller's own business: its impersonation runs on its own rights.
+	projected := resources.Credential{
+		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},
+	}
+	request := outbound(header(authorization, "Bearer "+projected.Placeholder()), header("Impersonate-User", "someone"))
+	workload := &WorkloadContext{Caller: caller, Projected: map[string]string{audience: "own-token"}}
+	if _, ok := scopedIndex(projected).Evaluate(caller, request, workload).(Allowed); !ok {
+		t.Error("a projected credential refused a request carrying Impersonate-User")
+	}
+}
+
+func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
+	for name, c := range map[string]struct {
+		request Request
+		token   func() (string, error)
+		server  bool
+	}{
+		"plaintext":             {toAPIServer(func(r *Request) { r.TLS = false }), proxyToken, true},
+		"another admitted host": {toAPIServer(host("elsewhere.test.invalid")), proxyToken, true},
+		"another port":          {toAPIServer(func(r *Request) { r.Port = 6443 }), proxyToken, true},
+		"no local API server":   {toAPIServer(), proxyToken, false},
+		"unreadable token":      {toAPIServer(), func() (string, error) { return "", errors.New("test: no token file") }, true},
+		"empty token":           {toAPIServer(), func() (string, error) { return "", nil }, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			index := accountIndex(c.token)
+			if !c.server {
+				index.LocalAPIServer = nil
+			}
+			assertDecision(t, index.Evaluate(caller, c.request, nil), Denied{decision.CredentialUnavailable})
+		})
+	}
+}
+
+func TestLosingTheUseRuleStopsImpersonationOnTheNextRequest(t *testing.T) {
+	index := accountIndex(proxyToken)
+	other := policyapi.ServiceAccountRef{Namespace: namespace, Name: "other-sandbox"}
+	index.Rules.PutBinding(bindingFor(other, "other", "account"))
+	if _, ok := index.Evaluate(caller, toAPIServer(), nil).(Allowed); !ok {
+		t.Fatal("the bound caller was refused")
+	}
+	index.Rules.DeleteBinding("b")
+	assertDecision(t, index.Evaluate(caller, toAPIServer(), nil), Denied{decision.NoBinding})
+	if _, ok := index.Evaluate(other, toAPIServer(), nil).(Allowed); !ok {
+		t.Error("another subject acting as the same account lost it with the first's binding")
 	}
 }

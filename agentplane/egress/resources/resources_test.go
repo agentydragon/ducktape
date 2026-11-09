@@ -23,6 +23,12 @@ var (
 	projected    = egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}}
 )
 
+func accountSource(apiServer, namespace, name string) egressapi.CredentialSource {
+	return egressapi.CredentialSource{KubernetesServiceAccount: &egressapi.KubernetesServiceAccountSource{
+		APIServer: apiServer, Namespace: namespace, Name: name,
+	}}
+}
+
 func TestCredentialFromAPISources(t *testing.T) {
 	for name, tc := range map[string]struct {
 		source egressapi.CredentialSource
@@ -30,6 +36,10 @@ func TestCredentialFromAPISources(t *testing.T) {
 	}{
 		"secret":    {secretSource, SecretKey{Name: "pat", Key: "token"}},
 		"projected": {projected, ProjectedWorkloadToken{Audience: "https://k8s.test"}},
+		"account": {
+			accountSource("local", "accounts", "shared.diagnostics"),
+			KubernetesServiceAccount{APIServer: "local", Namespace: "accounts", Name: "shared.diagnostics"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := CredentialFromAPI(credential(tc.source, bearer))
@@ -87,15 +97,32 @@ func TestCredentialFromAPIRefusesWhatItDoesNotUnderstand(t *testing.T) {
 			egressapi.Target{Method: egressapi.JSONField, Header: "X", Field: "password"}),
 		"field on a header target": credential(projected,
 			egressapi.Target{Method: egressapi.WholeValue, Header: "X", Field: "password"}),
-		"json target without a field": credential(projected, egressapi.Target{Method: egressapi.JSONField}),
-		"unknown method":              credential(projected, egressapi.Target{Method: "bearer", Header: "X"}),
-		"no header":                   credential(projected, egressapi.Target{Method: egressapi.WholeValue}),
+		"json target without a field":     credential(projected, egressapi.Target{Method: egressapi.JSONField}),
+		"unknown method":                  credential(projected, egressapi.Target{Method: "bearer", Header: "X"}),
+		"no header":                       credential(projected, egressapi.Target{Method: egressapi.WholeValue}),
+		"account on a remote API server":  credential(accountSource("remote", "accounts", "diagnostics"), bearer),
+		"account in an invalid namespace": credential(accountSource("local", "Accounts", "diagnostics"), bearer),
+		"account name with a colon":       credential(accountSource("local", "accounts", "a:b"), bearer),
+		"account in a json field": credential(accountSource("local", "accounts", "diagnostics"),
+			egressapi.Target{Method: egressapi.JSONField, Field: "token"}),
+		"account in another header": credential(accountSource("local", "accounts", "diagnostics"),
+			egressapi.Target{Method: egressapi.SchemeToken, Header: "X-Token", Scheme: "Bearer"}),
+		"account in two targets": credential(accountSource("local", "accounts", "diagnostics"), bearer,
+			egressapi.Target{Method: egressapi.BasicPassword, Header: "Authorization"}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := CredentialFromAPI(credential); err == nil {
 				t.Fatal("converted")
 			}
 		})
+	}
+}
+
+// The API server fixes this form: it is what `impersonate` on `serviceaccounts` authorizes.
+func TestKubernetesServiceAccountUsernameIsTheAPIServersServiceAccountForm(t *testing.T) {
+	account := KubernetesServiceAccount{APIServer: LocalAPIServer, Namespace: "accounts", Name: "diagnostics"}
+	if got := account.Username(); got != "system:serviceaccount:accounts:diagnostics" {
+		t.Errorf("Username() = %q", got)
 	}
 }
 
