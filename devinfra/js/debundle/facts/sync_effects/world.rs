@@ -6,9 +6,6 @@
 
 pub(super) mod cells;
 pub(super) mod descriptor_heap;
-// Staged for the conditional/logical IR slice (first fork producer): devel
-// has no fork yet, so nothing joins worlds in production.
-#[allow(dead_code)]
 pub(super) mod join;
 pub(super) mod object_surface;
 

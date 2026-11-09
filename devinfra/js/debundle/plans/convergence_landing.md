@@ -117,7 +117,6 @@ when their disposition has landed on `devel`.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Evaluator count            | The shared kernel is added beside every path it should replace: `evaluate_legacy_compat` (devel's `evaluate_transfer` tail, grown), the flat callable lane `invoke_with_cells`, row-driven `execute_native_call_transfer`, string-matched `private_frozen_namespace` (deleted by Wave 3 slice 1).                  | Each Wave 2/3 slice deletes the path it covers; `legacy/` tombstones name the last caller.                                                                                |
 | Giant dual-mode functions  | `execute_call_transfer_inner` (1,458 lines, operands-supplied and self-evaluating modes), `execute_owner` (1,206 lines), `LocalContinuation::step` (1,520 lines).                                                                                                                                                  | Redo: split by mode and by phase; functions under ~300 lines.                                                                                                             |
-| Joins                      | Seven join implementations (`transfer_alternatives`, `conservative_world_join`, `EffectCoverageFragment::join_alternatives`, `execution_index`, own-property receipts, attributes, callback fallback), copy-pasted helpers; strict join refusal **panics**.                                                        | Redo: one `World::join` with strict fast path and conservative fallback; refusal yields a `Havoc` outcome, never a panic.                                                 |
 | Coverage notions           | `Outcome` carries an optimistic `complete: true` beside the pessimistic coverage ledger; forgetting `lose_precision` certifies.                                                                                                                                                                                    | Redo with the flip (L4d): delete `complete`; the ledger is the only coverage authority (AR1).                                                                             |
 | Heap models                | New may-state `ObjectSurfaceStore` plus the old literal heap (`mark_unknown_enumerability`); `DefineProperties` commit invalidates different attributes in application and strict provider.                                                                                                                        | Keep `object_surface` + `descriptor_transfer` + `native_operation`; delete the literal-heap flags; one commit.                                                            |
 | Provider execution         | Three provider mechanisms (`provider_activation`, strict `private_heap`, summary replay in `provider_transfer`/`provider_graph`) plus the flat lane.                                                                                                                                                               | Keep summary replay as substitution; one provider executor (kernel + provider adapter).                                                                                   |
@@ -141,8 +140,8 @@ when their disposition has landed on `devel`.
 | Module                                | Owns                                                                                                                        |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `kernel/{continuation,completion}.rs` | `LocalContinuation`, `Step`, `Completion`, `TransferLedger`; the five narrow context traits.                                |
+| `alternatives/`                       | `Family`, the leaves of a forked body, and the join of their path states; refusal is a conservative outcome.                |
 | `world/`                              | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.           |
-| `alternatives/`                       | `TransferAlternatives`, `RuntimeTransferFamily`, lineage; refusal is a conservative outcome.                                |
 | `adapters/{application,provider}.rs`  | The two execution modes, implementing only the narrow traits; strict-provider private heap is the provider adapter's world. |
 | `native/`                             | Builtin table rows → one `plan`/`commit` path.                                                                              |
 | `roots/`                              | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
@@ -171,9 +170,9 @@ Cleanups landed alongside: #15055,
 #15056, #15058, #15060, #15061, #15062, #15063, #15066, #15071, #15074.
 
 **Wave 2: the kernel.** Large by nature. Its landed contracts (five context
-traits, returned observations, one `World`) are in <../docs/design.md> § The
-synchronous execution kernel; forks, `alternatives/` and the provider adapter
-remain in <kernel_design.md>.
+traits, returned observations, one `World`, forks and their join) are in
+<../docs/design.md> § The synchronous execution kernel; what the fork leaves
+out and the provider adapter remain in <kernel_design.md>.
 `World` is the per-prefix execution state the interpreter already carries
 (today one 44-field struct plus the strict provider's private copy), not a
 new analysis; precision stays bounded by the existing finite-height widening
@@ -191,13 +190,13 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   closure creation, the effect sink; gated on L2c, now on L4e: `AllocationContext` and the
   value bridge; the `invoke_with_cells` flat lane with its four gates
   (`requires_keyed_collection_new` needs an application keyed-collection lane).
-  Devel's IR had no fork producer, so `Fork`/`ForkPolicy` wait for the first
-  conditional-IR slice (§ IR growth).
+  `Fork`/`ForkPolicy` landed with the conditional/logical IR slice (§ IR
+  growth).
 - L2b. **PR 1 landed as #15090**: `world/` (one `World` for both adapters,
   no `Deref`, copy-on-write), the `RefCell` ledgers as the threaded
   `Observations` struct, the L2a sink methods deleted. `World::join` landed
-  staged as #15091; it and `alternatives/` get their first caller in the
-  conditional/logical IR slice (§ IR growth). PR 2 closes L2a's L2b-gated
+  staged as #15091; `alternatives/` calls it since the conditional/logical
+  IR slice (§ IR growth). PR 2 closes L2a's L2b-gated
   tombstones: lexical cells and closure creation are kernel rules
   (`kernel/{cells,closure}.rs`; adapters supply `cell_policy`/`cell_effect`,
   `capture_policy` and `admit_closure`), closures are
@@ -218,16 +217,19 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
 reference's (no regions, `if`/`try`/`catch` bindings, argument spread,
-optional calls, conditional and logical operators, class definitions and
-their static members, `new` outside a root initializer, or
-`Function.prototype.call`/`apply`). Several kernel rules in <kernel_design.md>
-(regions, catch cells, forks) have nothing to apply to until
+optional calls, class definitions and their static members, `new` outside a
+root initializer, or `Function.prototype.call`/`apply`). Several kernel rules
+in <kernel_design.md> (regions, catch cells) have nothing to apply to until
 the construct is lowered. Each construct family lands as its own slice inside
 Wave 3, ordered with the coverage producer that needs it: lowering in
 `local_operations.rs`, the kernel rule, the e2e positive with Node parity, and
 the deletion of whatever recognizer or flat-lane gate the construct retires.
-`Fork`/`ForkPolicy` appear with the first construct that produces a fork (the
-conditional/logical slice), not before.
+
+Landed: conditional (`?:`) and logical (`&&`, `||`, `??`) operators, the
+first fork producer, with `ForkPolicy`, `LocalSuspension::Fork` and
+`alternatives/`; the flat value lane's result-only conditional arm
+(`allocation_transfer`) is deleted. What the fork still leaves out is in
+<kernel_design.md> § Forks and joins: what is left.
 
 **Wave 3: coverage producers.** Each one capability, each deleting its
 recognizer, each with a positive relocation, its opposing controls and the
@@ -420,8 +422,9 @@ The refactor is done when all of these hold on `devel`:
   Each dispatch names the immutable `devel` base, the #14552 source files, the
   path to delete, the test targets, the oracle check and the stop condition
   ("stop if the deletion needs a second evaluator; report instead").
-- The first `alternatives/` caller, L4c and L4d carry subtle invariants (join
-  soundness, completion partitions, discrepancy classification): a stronger
-  tier, and the orchestrator reviews the join and completion code line by line.
+- L4c and L4d, and any slice that changes a join in `alternatives/`, carry
+  subtle invariants (join soundness, completion partitions, discrepancy
+  classification): a stronger tier, and the orchestrator reviews the join and
+  completion code line by line.
 - One worker per slice in an isolated worktree; no shared branch; no squashing
   across slices.

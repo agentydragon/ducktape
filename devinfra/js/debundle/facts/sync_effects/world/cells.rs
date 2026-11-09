@@ -49,6 +49,19 @@ impl LexicalCells {
         id
     }
 
+    /// Ids handed out so far, retired ones included.
+    pub(in crate::facts::sync_effects) fn identities(&self) -> usize {
+        self.slots.len()
+    }
+
+    /// Skip ids up to `identities` so that the next cell cannot share an id
+    /// with one a sibling fork leaf instantiated.
+    pub(in crate::facts::sync_effects) fn reserve_identities(&mut self, identities: usize) {
+        if self.slots.len() < identities {
+            self.slots.resize_with(identities, || None);
+        }
+    }
+
     pub(in crate::facts::sync_effects) fn get(&self, id: LexicalCellId) -> Option<&LexicalCell> {
         self.slots.get(id.0)?.as_deref()
     }
