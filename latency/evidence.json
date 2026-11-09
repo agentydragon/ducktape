@@ -43878,7 +43878,784 @@
         "Latest inspected 17:41 green VM summary was cached; it is not fresh guest execution proof.",
         "Two-cycle PKI regression has no application workloads or VM boot. No measured full-CI speedup, staging change or cause for the original early-kernel stop."
       ],
-      "repair_pr_state": "OPEN; focused and real two-cycle checks passed; hosted full-suite CI pending"
+      "repair_pr_state": "MERGED2026-11-09T19:04:13Z; real PKI two-cycle and full VM passed. Broader tested CI failed Pod admission and MCP executor transport; last evidence-only PR head was cancelled after merge.",
+      "repair_merge_commit": "1371e88ac93bcd67d9755138dc3511047f6178c7",
+      "repair_merged_at_utc": "2026-11-09T19:04:13Z"
+    },
+    "fresh_vm_validation": {
+      "originating_invocation": "aed9b899-fa04-5901-8bdd-68f5b8d00b69",
+      "originating_source": "9758d0a54b141afcf38e1ba727b3fdc629b6a1ee",
+      "receiving_invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "receiving_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+      "receiving_pr_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "input_proof": "Originating invocation has link type NEW=1; receiving invocation reused the same physical execution ID and action digest (type 2). It is one fresh physical run, not two or an old cached duration.",
+      "action_digest": {
+        "hash": "ee6fdbbf273713138616808fde52685e22306954c0cc12403a7226287aee4d5f",
+        "sizeBytes": "1850"
+      },
+      "result": "PASSED: all three VM scenarios and cleanup completed",
+      "start_utc": "2026-11-09T18:24:24.696022Z",
+      "end_utc": "2026-11-09T18:31:27.838550Z",
+      "action_seconds": 423.142528,
+      "pytest_seconds": 380.54,
+      "phases": [
+        {
+          "phase": "Stack setup",
+          "seconds": 127.44116
+        },
+        {
+          "phase": "Scenarios",
+          "seconds": 216.689288
+        },
+        {
+          "phase": "Cleanup",
+          "seconds": 29.930315
+        },
+        {
+          "phase": "Other action",
+          "seconds": 49.08176500000002
+        }
+      ],
+      "readiness_seconds": [84.88434, 88.266122, 116.21973],
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/33f11dc38abc7eb870d8d0470fccaf4a9d51dec0d347c3464e7fa1d01aa2168e/4537",
+      "test_xml_uri": "bytestream://remote.buildbuddy.io/blobs/4af696c982c08524f8a5559e26198261606e18a7decec64a93ddcb91b36ca28a/354",
+      "spans_uri": "bytestream://remote.buildbuddy.io/blobs/024538b9b44b817e4ba0e4f28fc18f3ac117f7a7b16d313a5930a4467d1f7e1f/93333",
+      "limits": [
+        "One fresh passing execution does not diagnose or establish a repair for the earlier intermittent early-kernel stop.",
+        "Selected top-level phases are disjoint; Other action is elapsed action time outside those spans. Nested readiness and baseline-clean spans are not added.",
+        "Even removing all 127.44 seconds of setup leaves about 295.70 action seconds. This conditional bound holds all other work fixed; it is not an observed optimization.",
+        "Broader CI failed Pod memory admission and MCP delegation after bootstrap; full CI is not green."
+      ],
+      "input_fetch_seconds": 3.228992
+    },
+    "vm_hardware_trial": {
+      "invocation": "2d631f92-b683-44de-a13b-59a3b7afdae2",
+      "effective_local_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+      "remote_base_before_worktree_patch": "51d28cd3c1a272468189d5ae1367c391c0fa41b7",
+      "target": "//agentplane/system_tests/suites:test_vm_kvm",
+      "command": "direnv exec . bbr test //agentplane/system_tests/suites:test_vm_kvm --config=ci --test_tag_filters=manual --nocache_test_results --flaky_test_attempts=1",
+      "result": "PASSED: same three scenarios and cleanup",
+      "action_digest": {
+        "hash": "70bab662fdb0c0c8707f9b7c6992a313bca3ac2ee4f1ed5971fbfe023c4d10d1",
+        "sizeBytes": "552"
+      },
+      "start_utc": "2026-11-09T18:37:28.980204Z",
+      "end_utc": "2026-11-09T18:41:16.107552Z",
+      "action_seconds": 227.127348,
+      "bazel_invocation_seconds": 278.444,
+      "pytest_seconds": 220.52,
+      "readiness_seconds": [39.978778, 41.707294, 45.35106],
+      "phases": {
+        "Setup": 117.795441,
+        "Scenarios": 91.765949,
+        "Other": 17.565957999999995
+      },
+      "acceleration_proof": "All three per-Pod QEMU shutdown snapshots contain -accel kvm.",
+      "native_artifacts": {
+        "test.log": "bytestream://remote.buildbuddy.io/blobs/30a157d1fb407b47a8324cbca78effc3d0d9fde8df23a8888747c0dcf0359e41/4879",
+        "test.xml": "bytestream://remote.buildbuddy.io/blobs/0ef526a8536f7096eb45aff549e7dd7d20c95ed761a4e69daed37c7299b2d00d/353",
+        "test.outputs/test-spans.jsonl": "bytestream://remote.buildbuddy.io/blobs/45224ff9c773a6e4c9e00115c9842d4f9ce880d9d040022bd71296dec54459bc/86482"
+      },
+      "limits": [
+        "One ordered architectural comparison; different workers, CPU allocation, storage, runner isolation, baseline lifecycle and cache history. Does not isolate KVM causal savings or establish a mean.",
+        "KVM target uses existing user-owned pool, four compute units, fresh Docker action with recycling/snapshots disabled. Hosted TCG target used eight estimated compute units and the managed baseline lifecycle.",
+        "KVM Bazel invocation is 278.444 seconds before outer runner admission; complete CI below four minutes is not demonstrated.",
+        "Queue timestamps are inverted by about 1.15 seconds; no valid queue duration is reported.",
+        "Initial attempt4e05c978 excluded the manual target through CI filtering and was cancelled; it is not a measured arm. Corrected invocation explicitly included manual.",
+        "Debian mirror 404 warnings were nonterminal; dependency loading recovered and the target executed successfully."
+      ],
+      "source_comparison": {
+        "command": "git diff --name-only 9758d0a54b141afcf38e1ba727b3fdc629b6a1ee fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+        "changed_paths": [
+          "agentplane/system_tests/deployment/debug/fixture_ca_reuse.json",
+          "agentplane/system_tests/deployment/debug/fixture_ca_reuse.md"
+        ],
+        "meaning": "Only investigation notes differ; same implementation and image pins. Distinct target/configuration and execution architecture still prevent a matched hardware-only comparison."
+      },
+      "input_fetch_seconds": 8.225643
+    },
+    "broader_ci": {
+      "invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "tested_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "result": "FAILED",
+      "test_invocation_seconds": 620.247,
+      "limits": "Invocation reused actions already in flight from previous head. Its elapsed time is not a full new-head feedback measurement.",
+      "failures": {
+        "pod": {
+          "result": "19/20 passed; messaging Sandbox Unschedulable/Insufficient memory,300-second readiness deadline",
+          "physical_action_seconds": 749.180919,
+          "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/c65a45da132b0a0e626c0ceaec870bea06afc3435fb15e02e28e589e8bd98a7a/20478",
+          "admission_ledger": {
+            "allocatable_mib": 9724.5625,
+            "steady_service_requests_mib": 1734,
+            "runner_requests_mib": 1568,
+            "runner_components_mib": {
+              "environment_runtime": 1024,
+              "isolated_codex_executor": 512,
+              "native_init_egress": 32
+            },
+            "max_admitted_runners": 5,
+            "two_retained_plus_messaging_runners": 6,
+            "worst_requested_runners": 10,
+            "worst_requested_total_mib": 17414,
+            "source_meaning": "Two retained pool pairs plus messaging4 plus other fresh2; CASE_LIMIT1 alone still allows retained2+fresh4 and does not fit.",
+            "resource_trial_invocation": "0dd1527b-587c-4fe0-ad81-a79308654721",
+            "resource_trial_command": "bbr test //agentplane/system_tests/suites:test_pod --config=ci --remote_default_exec_properties=test.EstimatedComputeUnits=8 --nocache_test_results --flaky_test_attempts=1",
+            "resource_trial_status": "INVALID resource arm: native Action and Command remained EstimatedComputeUnits=4. CLI defaults did not override the explicit rule property. Cancelled; excluded from larger-shape comparison.",
+            "native_evidence": {
+              "k3s-retained.log": "bytestream://remote.buildbuddy.io/blobs/ffb5f9edf7a554b9b2666b83db826ca835b0d40062033e299ea21043d58b12f7/1201590",
+              "persistence-suite.json": "bytestream://remote.buildbuddy.io/blobs/14df139ed3a51538a04392669b5f5cdc37cc1f70fabc631ae4430b81fee10c61/1129",
+              "test-spans.jsonl": "bytestream://remote.buildbuddy.io/blobs/1f393334fe9d2bb9717e92ef9e9ba98acc7fb0a880d8d86f801daf62512fde3d/325509",
+              "baseline-resources.yaml": "bytestream://remote.buildbuddy.io/blobs/822756374d818922a73a236ffa4a7793601686a8a26ddaa9d8efbf01c7ef034c/12477",
+              "kubelet-config.json": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434",
+              "final-resources.yaml": "bytestream://remote.buildbuddy.io/blobs/b7d0cdfa8807927503e71eb237bef898076a9703652869c5bb03f8864125b852/1335512",
+              "final-memory-summary.json": "bytestream://remote.buildbuddy.io/blobs/69760a09cd775cfa4dfb3d4ed4857eb385acc002181042c22cd5d3754e36684d/83039"
+            },
+            "allocatable_cpu_millicores": 7000,
+            "worst_requested_cpu_millicores": 8240,
+            "resource_trial_native_compute_units": "4",
+            "corrected_trial": "Frozen source plus one rule-property edit4\u21928. First corrected attempt failed dependency loading; identical retry passed and capacity exceeds the intended request envelope.",
+            "corrected_trial_patch_sha256": "25f8581bca2c5bf01a93df1080da15359c7292e30863fc1177bfe05604759083",
+            "corrected_trial_invocation": "32024606-3f48-4754-a486-137cb15be2b2",
+            "corrected_trial_status": "No TestRunner: external Go proxy INTERNAL_ERROR during dependency loading; not a resource measurement.",
+            "corrected_trial_retry_invocation": "8cf5c916-cbfe-4593-8e91-48fad41bbfb1",
+            "corrected_trial_retry_status": "PASSED20/20; nativeCU8; Node19543.824MiB/11CPU, complete cleanup. See pod_resource_trial for exact native receipts."
+          }
+        },
+        "mcp": {
+          "result": "environments/get shell call lost exec-server session during codex-executor liveness restart, then receipt parser found zero JSON lines. Underlying health-loss cause unresolved.",
+          "physical_action_seconds": 444.604741,
+          "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/16900e01534d61a30ec30ae47e7874d1f764127f4af524fbc6a85a1ddbb74700/39403",
+          "native_session_uri": "bytestream://remote.buildbuddy.io/blobs/e82bf67fb95431f00ccbac5e4ca8b28695567301cf3bad86bda5e0382f1a80a2/120838",
+          "containerd_lifecycle_uri": "bytestream://remote.buildbuddy.io/blobs/5fcf5607985259e2a757da47cccb8c51581b6e3028631f8c8ad0c6d0211933bd/224305",
+          "health_loss_followup": {
+            "conclusion": "The directly evidenced boundary is a shared K3s/Kine API and kubelet/containerd responsiveness stall at approximately 18:30:23-18:30:34Z. API handlers and lease requests time out while Kine reports 1.79-2.05s SQL operations; a kubelet ExecSync probe exceeds its 5s deadline and kubelet housekeeping takes 12.342s. The codex-executor is then killed after a liveness failure, and the ShellCall loses its exec-server WebSocket session. Three controller containers exit with status 1 amid lease request timeouts and are restarted. Sampled CPU, memory and I/O pressure are zero after the event, with several GiB available; retained evidence does not support OOM or sustained resource exhaustion. The underlying reason for the API/runtime stall, and the controllers\u2019 exact status-1 exit paths, is not captured.",
+            "event_timeline_utc": [
+              {
+                "time": "18:30:23.872-18:30:24.459",
+                "evidence": "containerd logs Get-state deadline exceeded for two containers and ExecSync deadline exceeded for history-service container ba5141b8...; the ExecSync operation had a 5s timeout."
+              },
+              {
+                "time": "18:30:25.277-18:30:29.490",
+                "evidence": "K3s API server reports timed-out policy-controller lease PUT, HTTP Handler timeouts, Kine slow SQL (AfterAllOldVal 1.789761772s and GetSingleVal 2.047832998s), and timed-out lease GET/PUT requests for trust-manager and sandbox-controller."
+              },
+              {
+                "time": "18:30:29.386-18:30:32.688",
+                "evidence": "containerd records policy-controller, sandbox-controller, and trust-manager containers exiting with status 1; the K3s log also reports 12.342s kubelet housekeeping at 18:30:30.484891."
+              },
+              {
+                "time": "18:30:31.612-18:30:33.294",
+                "evidence": "Kubelet stops the old codex-executor after the test event says its liveness probe failed; containerd records a terminated signal and no exit_status for that executor container."
+              },
+              {
+                "time": "18:30:32.797-18:30:34.519",
+                "evidence": "Native ShellCall for environments/get starts, then returns exec-server WebSocket reset / unknown session id; its completed native event is 18:30:34.519503668Z. The test subsequently fails in _receipt because no JSON line was returned."
+              },
+              {
+                "time": "18:30:33.483-18:30:34.884",
+                "evidence": "Kubernetes recreates policy-controller, trust-manager, and sandbox-controller. The captured trust-manager log shows it reacquiring its leader lease at 18:30:34.571Z."
+              }
+            ],
+            "resource_pressure_check": {
+              "before_import_node_sample_utc": "2026-11-09T18:25:31Z",
+              "before_import": {
+                "available_bytes": 6924480512,
+                "usage_bytes": 3667316736,
+                "working_set_bytes": 3272462336,
+                "rss_bytes": 483905536,
+                "cpu_psi_some_full": 0,
+                "memory_psi_some_full": 0,
+                "io_psi_some_full": 0,
+                "pods_present": 0
+              },
+              "final_node_sample_utc": "2026-11-09T18:30:53Z",
+              "final": {
+                "available_bytes": 4771364864,
+                "usage_bytes": 9269469184,
+                "working_set_bytes": 5425577984,
+                "rss_bytes": 1437646848,
+                "usage_nano_cores": 2034485783,
+                "cpu_psi_some_full": 0,
+                "memory_psi_some_full": 0,
+                "io_psi_some_full": 0,
+                "filesystem_available_bytes": 47980916736,
+                "filesystem_capacity_bytes": 54957867008,
+                "pods_present": 21,
+                "pod_working_set_total_bytes": 575705088,
+                "largest_pod_working_set": {
+                  "pod": "systest/postgres-678b844849-5xltl",
+                  "bytes": 146624512
+                }
+              },
+              "final_kubelet_runtime_counters": {
+                "exec_sync_count": 88,
+                "exec_sync_errors": 9,
+                "exec_sync_duration_sum_seconds": 160.590128298,
+                "exec_sync_calls_over_7_629_seconds": 10
+              },
+              "interpretation": "No MemoryPressure, OOMKilled, or eviction marker appeared in the searched retained K3s/test log evidence. Relevant controller exits are status 1, not 137. There are separate sandbox exits with status 137 at 18:29:51 during helper-pod/PVC teardown; they precede the failure window and do not establish OOM. The final node and pod samples and cumulative kubelet histogram are not time series, and no cgroup memory.events or container termination.reason is retained, so they cannot rule out a short-lived pressure spike at 18:30:23-18:30:34."
+            },
+            "controller_restart_boundary": {
+              "policy_controller": {
+                "container_id": "e53807eb5366440481a0a92741ee864e0480e906fce7d08efee9a4a31c366c65",
+                "exit_utc": "2026-11-09T18:30:29.386486379Z",
+                "exit_status": 1,
+                "nearby_api_evidence": "agentplane-policy-controller Lease PUT timed out in K3s at 18:30:25-25.773Z"
+              },
+              "sandbox_controller": {
+                "container_id": "82c074f190834f90e2a20f831b92d00ffdb6168cf6eeec8d3e98cffeee37ed6a",
+                "exit_utc": "2026-11-09T18:30:29.991747557Z",
+                "exit_status": 1,
+                "nearby_api_evidence": "agentplane-sandbox-controller Lease PUT/GET timeouts in K3s at 18:30:29.434-29.490Z"
+              },
+              "trust_manager": {
+                "container_id": "a79e804d4f05b46226d2be11f96e63ec02949768fae0923759e6e3072e75afd7",
+                "exit_utc": "2026-11-09T18:30:32.688671423Z",
+                "exit_status": 1,
+                "nearby_api_evidence": "trust-manager Lease GET/PUT timed out in K3s at 18:30:29.058-29.378Z; the restarted process reacquired the lease at 18:30:34.571Z"
+              },
+              "limit": "The artifacts do not include the old containers\u2019 stdout/stderr or termination reasons. The shared API/lease outage is temporally supported as the common failure context, but status 1 alone does not prove each process exited specifically because of lease loss rather than another application failure."
+            },
+            "native_artifacts": [
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/e82bf67fb95431f00ccbac5e4ca8b28695567301cf3bad86bda5e0382f1a80a2/120838",
+                "sha256": "e82bf67fb95431f00ccbac5e4ca8b28695567301cf3bad86bda5e0382f1a80a2",
+                "bytes": 120838,
+                "role": "native session; ShellCall transport reset and timestamps"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/16900e01534d61a30ec30ae47e7874d1f764127f4af524fbc6a85a1ddbb74700/39403",
+                "sha256": "16900e01534d61a30ec30ae47e7874d1f764127f4af524fbc6a85a1ddbb74700",
+                "bytes": 39403,
+                "role": "pytest traceback, pod status and liveness/readiness events"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/5fcf5607985259e2a757da47cccb8c51581b6e3028631f8c8ad0c6d0211933bd/224305",
+                "sha256": "5fcf5607985259e2a757da47cccb8c51581b6e3028631f8c8ad0c6d0211933bd",
+                "bytes": 224305,
+                "role": "ExecSync deadline, controller exits, executor liveness restart and container creation events"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/f9c385932bfbdb0b936d8612563cb0a26411d9e4fa349fbc5e9961000230798d/384833",
+                "sha256": "f9c385932bfbdb0b936d8612563cb0a26411d9e4fa349fbc5e9961000230798d",
+                "bytes": 384833,
+                "role": "Kine slow SQL, API handler/lease timeouts and kubelet housekeeping delays"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/82721403269c6e16a3443176dda5b9067ec308593d31231bdeccfd6930e14cad/2492771",
+                "sha256": "82721403269c6e16a3443176dda5b9067ec308593d31231bdeccfd6930e14cad",
+                "bytes": 2492771,
+                "role": "initial Prometheus metrics snapshot"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/e437cff85ad30af0d3e097fc38c619f0b306878667f680a5585bd84021ce47e3/4911",
+                "sha256": "e437cff85ad30af0d3e097fc38c619f0b306878667f680a5585bd84021ce47e3",
+                "bytes": 4911,
+                "role": "initial node resource snapshot"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/bbd9c22de5fdac7c95963a1a15622cd0f2c5ae5f9ce0eed6c5967ab031b82e7e/5737824",
+                "sha256": "bbd9c22de5fdac7c95963a1a15622cd0f2c5ae5f9ce0eed6c5967ab031b82e7e",
+                "bytes": 5737824,
+                "role": "final Prometheus metrics snapshot including cumulative kubelet exec_sync histogram"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/3bd45af23601fd3cf356f0d79db91b1af928fcfa6aab41ce62b82c0698fdbe70/100638",
+                "sha256": "3bd45af23601fd3cf356f0d79db91b1af928fcfa6aab41ce62b82c0698fdbe70",
+                "bytes": 100638,
+                "role": "final node and per-pod resource snapshot"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/d2563d326a9574f6ede73ff58d4c6abe104c72d7565de53933f65b223e6d3f27/1579058",
+                "sha256": "d2563d326a9574f6ede73ff58d4c6abe104c72d7565de53933f65b223e6d3f27",
+                "bytes": 1579058,
+                "role": "application spans with status-error controller HTTP calls and otherwise live service traffic"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/10f0ba56b0ab4cbafdb3f55bac83828aebbb0a950ec7866a0c8b1916f537555e/69768",
+                "sha256": "10f0ba56b0ab4cbafdb3f55bac83828aebbb0a950ec7866a0c8b1916f537555e",
+                "bytes": 69768,
+                "role": "system-test setup/scenario timing"
+              },
+              {
+                "uri": "bytestream://remote.buildbuddy.io/blobs/f7cb89d29c4fbdb28c5c8c091bf72d8d6d7693c41f490d05f8f941a7ef75d410/2658",
+                "sha256": "f7cb89d29c4fbdb28c5c8c091bf72d8d6d7693c41f490d05f8f941a7ef75d410",
+                "bytes": 2658,
+                "role": "cleanup/reset markers; same boot id before and after cleanup"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "latest_validation_recorded_at_utc": "2026-11-09T18:51:07.628765+00:00",
+    "pod_resource_trial": {
+      "invocation": "8cf5c916-cbfe-4593-8e91-48fad41bbfb1",
+      "url": "https://app.buildbuddy.io/invocation/8cf5c916-cbfe-4593-8e91-48fad41bbfb1",
+      "target": "//agentplane/system_tests/suites:test_pod",
+      "scope": "One source-frozen ordered resource trial; read-only collection. No implementation, rerun or performance causal claim.",
+      "emitted_action": {
+        "estimated_compute_units": "8",
+        "action_digest": {
+          "hash": "2b9896caf134f705908f0840cbb9b1ae9cd0478bf4bca058f1d5486f9ebdd431",
+          "sizeBytes": "1218"
+        },
+        "command_digest": {
+          "hash": "a70ab8163a45a3b361823c6fb9291c02434ae3e16a7450eec6914063bee90dfa",
+          "sizeBytes": "4719"
+        },
+        "input_root_digest": {
+          "hash": "10997eab186ae412b80975d477c8d547d0f01abd7941fd8621dbbcfd793d6096",
+          "sizeBytes": "165"
+        },
+        "do_not_cache": true,
+        "provenance": "Raw Action/Command CAS bytes hash-verified; Action decoded again using pinned native bb CLI and exactly equals parent decode."
+      },
+      "control_identity": {
+        "control_invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+        "frozen_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+        "patch_sha256": "25f8581bca2c5bf01a93df1080da15359c7292e30863fc1177bfe05604759083",
+        "same_input_root": true,
+        "same_arguments": true,
+        "same_environment": true,
+        "only_property_difference": {
+          "EstimatedComputeUnits": {
+            "old": "4",
+            "new": "8"
+          }
+        },
+        "provenance": "Parent-owned native Action/Command comparison in pod-rule-retry-input-proof.json; local trial Action/input root cross-checked."
+      },
+      "capacity": {
+        "allocatable_memory_ki": 20012876,
+        "allocatable_memory_mib": 19543.82421875,
+        "allocatable_cpu_millicores": 11000,
+        "before_final_equal": true,
+        "required_memory_mib": 17414,
+        "required_cpu_millicores": 8240,
+        "spare_request_memory_mib": 2129.82421875,
+        "spare_request_cpu_millicores": 2760,
+        "request_capacity_acceptance": "PASS",
+        "envelope": "1734MiB/640m fixture +10 runners at1568MiB/760m each =17414MiB/8240m. Intended ownership with successful cleanup, not an RSS guarantee."
+      },
+      "results": {
+        "native_status": "PASSED",
+        "run_count": 1,
+        "attempt_count": 1,
+        "tests": 20,
+        "passed": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "case_spans": [
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:01.653365Z",
+            "end_time": "2026-11-09T19:15:29.256067Z",
+            "seconds": 27.602702,
+            "case": "test_fresh_workspace_storage_survives_replacement",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:29.256570Z",
+            "end_time": "2026-11-09T19:16:52.017097Z",
+            "seconds": 82.760527,
+            "case": "test_agent_resumes_an_idle_suspended_pod_with_its_execution_account",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:29.288773Z",
+            "end_time": "2026-11-09T19:15:50.644914Z",
+            "seconds": 21.356141,
+            "case": "test_a_non_sandbox_command_box_keeps_its_bearer_egress",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:50.645435Z",
+            "end_time": "2026-11-09T19:16:09.863799Z",
+            "seconds": 19.218364,
+            "case": "test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:09.864085Z",
+            "end_time": "2026-11-09T19:16:27.500438Z",
+            "seconds": 17.636353,
+            "case": "test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:27.500869Z",
+            "end_time": "2026-11-09T19:16:31.131621Z",
+            "seconds": 3.630752,
+            "case": "test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:31.132073Z",
+            "end_time": "2026-11-09T19:18:12.615341Z",
+            "seconds": 101.483268,
+            "case": "test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:52.017813Z",
+            "end_time": "2026-11-09T19:17:22.921561Z",
+            "seconds": 30.903748,
+            "case": "test_an_agent_messages_another_which_reads_and_acknowledges_it",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:17:22.921722Z",
+            "end_time": "2026-11-09T19:17:43.997451Z",
+            "seconds": 21.075729,
+            "case": "test_a_policy_granted_after_the_sandbox_is_running_takes_effect",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:17:43.997655Z",
+            "end_time": "2026-11-09T19:18:01.539729Z",
+            "seconds": 17.542074,
+            "case": "test_the_model_call_itself_goes_through_the_proxy",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:01.539976Z",
+            "end_time": "2026-11-09T19:18:16.712874Z",
+            "seconds": 15.172898,
+            "case": "test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:12.615728Z",
+            "end_time": "2026-11-09T19:18:37.164815Z",
+            "seconds": 24.549087,
+            "case": "test_a_preset_launches_an_initialized_editable_codex_thread",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:16.713158Z",
+            "end_time": "2026-11-09T19:18:18.016834Z",
+            "seconds": 1.303676,
+            "case": "test_cert_manager_reissues_a_deleted_tls_secret",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:18.017190Z",
+            "end_time": "2026-11-09T19:18:48.362905Z",
+            "seconds": 30.345715,
+            "case": "test_pod_mtls_session_survives_replacement_and_keeps_history",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:37.165250Z",
+            "end_time": "2026-11-09T19:18:45.120077Z",
+            "seconds": 7.954827,
+            "case": "test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:45.120376Z",
+            "end_time": "2026-11-09T19:19:08.640269Z",
+            "seconds": 23.519893,
+            "case": "test_codex_standing_instructions_after_suspend_and_compact",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:48.363230Z",
+            "end_time": "2026-11-09T19:19:14.697505Z",
+            "seconds": 26.334275,
+            "case": "test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:19:08.640548Z",
+            "end_time": "2026-11-09T19:19:08.656263Z",
+            "seconds": 0.015715,
+            "case": "test_an_unknown_thread_is_not_found",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:19:08.656488Z",
+            "end_time": "2026-11-09T19:19:13.575683Z",
+            "seconds": 4.919195,
+            "case": "test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event",
+            "status": "UNSET"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:19:13.575986Z",
+            "end_time": "2026-11-09T19:19:19.051175Z",
+            "seconds": 5.475189,
+            "case": "test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn",
+            "status": "UNSET"
+          }
+        ]
+      },
+      "admission_memory_markers": {
+        "events_checked": 1532,
+        "failed_scheduling_events": 0,
+        "insufficient_memory_or_oom_or_eviction_event_matches": 0,
+        "test_and_k3s_log_failure_marker_matches": 0,
+        "final_pod_oom_or_evicted_termination_states": 0,
+        "final_node_memory_pressure": "False",
+        "scope_limit": "Retained Events, final Pod states, test.log and K3s log; no full kernel history or peak resident-memory proof. Startup eviction-manager messages exist but report no Pod eviction."
+      },
+      "reuse_cleanup": {
+        "pool_pairs_created": 2,
+        "pool_runners_created": 4,
+        "pool_runner_cleanup_successful": 4,
+        "protocol_pod_scheduled_events": 4,
+        "distinct_protocol_pod_uids": 4,
+        "identity_assertion": "All seven shared scenario bindings pass. Every successful borrow checks same Sandbox UID and Pod UID in pod_runners._Slot.verify_identity before yielding; native Events show one Scheduled UID per pooled Pod. No dedicated per-borrow identity receipt is emitted.",
+        "final_bound_service_pods": 17,
+        "final_test_runner_or_command_pods": 0,
+        "persistence_outcome": "cold",
+        "suite_cleanup": "complete",
+        "workspace_loop_devices_released": 0
+      },
+      "timings": {
+        "physical_action": {
+          "start": "2026-11-09T19:10:57.433975Z",
+          "end": "2026-11-09T19:20:12.782177Z",
+          "seconds": 555.348202
+        },
+        "queue_seconds": 0.062074,
+        "input_fetch": {
+          "start": "2026-11-09T19:10:56.409903Z",
+          "end": "2026-11-09T19:10:57.433974Z",
+          "seconds": 1.024071
+        },
+        "output_upload_seconds": 1.6,
+        "pytest": {
+          "start": "2026-11-09T19:11:16.053663+00:00",
+          "end_derived": "2026-11-09T19:20:08.236663+00:00",
+          "seconds": 532.183
+        },
+        "bes_test_summary": {
+          "start": "2026-11-09T19:10:55.044Z",
+          "end": "2026-11-09T19:20:10.392Z",
+          "duration_seconds": 555.348
+        },
+        "setup": {
+          "name": "system_test.stack.setup",
+          "start_time": "2026-11-09T19:11:16.440496Z",
+          "end_time": "2026-11-09T19:14:57.566830Z",
+          "seconds": 221.126334
+        },
+        "case_wall_envelope": {
+          "start": "2026-11-09T19:15:01.653365Z",
+          "end": "2026-11-09T19:19:19.051175Z",
+          "seconds": 257.39781,
+          "note": "Cases overlap under CASE_LIMIT2; this is first case start to last case end, not a sum."
+        },
+        "pool_cleanup_envelope": {
+          "start": "2026-11-09T19:19:19.052820Z",
+          "end": "2026-11-09T19:19:23.995476Z",
+          "seconds": 4.942656
+        },
+        "diagnostics": {
+          "name": "system_test.stack.diagnostics",
+          "start_time": "2026-11-09T19:19:24.027050Z",
+          "end_time": "2026-11-09T19:19:29.714417Z",
+          "seconds": 5.687367
+        },
+        "stack_cleanup": {
+          "name": "system_test.stack.cleanup",
+          "start_time": "2026-11-09T19:19:29.715751Z",
+          "end_time": "2026-11-09T19:20:08.212351Z",
+          "seconds": 38.4966
+        },
+        "top_five_cases": [
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:31.132073Z",
+            "end_time": "2026-11-09T19:18:12.615341Z",
+            "seconds": 101.483268,
+            "case": "test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:29.256570Z",
+            "end_time": "2026-11-09T19:16:52.017097Z",
+            "seconds": 82.760527,
+            "case": "test_agent_resumes_an_idle_suspended_pod_with_its_execution_account"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:16:52.017813Z",
+            "end_time": "2026-11-09T19:17:22.921561Z",
+            "seconds": 30.903748,
+            "case": "test_an_agent_messages_another_which_reads_and_acknowledges_it"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:18:18.017190Z",
+            "end_time": "2026-11-09T19:18:48.362905Z",
+            "seconds": 30.345715,
+            "case": "test_pod_mtls_session_survives_replacement_and_keeps_history"
+          },
+          {
+            "name": "system_test.case",
+            "start_time": "2026-11-09T19:15:01.653365Z",
+            "end_time": "2026-11-09T19:15:29.256067Z",
+            "seconds": 27.602702,
+            "case": "test_fresh_workspace_storage_survives_replacement"
+          }
+        ],
+        "top_five_direct_setup_children": [
+          {
+            "name": "system_test.image.import",
+            "start_time": "2026-11-09T19:13:12.563524Z",
+            "end_time": "2026-11-09T19:14:19.533503Z",
+            "seconds": 66.969979
+          },
+          {
+            "name": "system_test.k3s.start",
+            "start_time": "2026-11-09T19:11:18.719820Z",
+            "end_time": "2026-11-09T19:11:42.360686Z",
+            "seconds": 23.640866
+          },
+          {
+            "name": "system_test.pki.controllers",
+            "start_time": "2026-11-09T19:12:02.861233Z",
+            "end_time": "2026-11-09T19:12:25.201724Z",
+            "seconds": 22.340491
+          },
+          {
+            "name": "system_test.deployment.ready",
+            "start_time": "2026-11-09T19:14:38.665513Z",
+            "end_time": "2026-11-09T19:14:52.362787Z",
+            "seconds": 13.697274
+          },
+          {
+            "name": "system_test.image.import",
+            "start_time": "2026-11-09T19:12:51.563588Z",
+            "end_time": "2026-11-09T19:13:01.472465Z",
+            "seconds": 9.908877
+          }
+        ],
+        "caveat": "XML testcase308.729s for first collected item includes shared fixture setup; use system_test.case spans for individual scenario durations. BES and physical clocks are reported separately."
+      },
+      "memory_summary_final_snapshot": {
+        "time": "2026-11-09T19:19:27Z",
+        "availableBytes": 16067076096,
+        "usageBytes": 8914485248,
+        "workingSetBytes": 4426108928,
+        "rssBytes": 1391390720
+      },
+      "memory_summary_limit": "Snapshot at19:19:27 after pool cleanup; not peak workload demand.",
+      "expected_error_span": "One system_test.turn.wait ERROR is the explicit-resume negative scripted-upstream502 case; the case and all20tests pass. No case span has ERROR status.",
+      "watch_limit": "Watcher persisted success/completed then exited1 on event-log ResourceExhausted: Log index limit exceeded. Direct native artifacts and completed execution independently provide result.",
+      "native_artifacts": [
+        {
+          "file": "test.log",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/25ff784f71c5ee9d3133a1d0ed743964e6552d7c8739ea878567cd69a6d9363b/7861",
+          "bytes": 7861,
+          "sha256": "25ff784f71c5ee9d3133a1d0ed743964e6552d7c8739ea878567cd69a6d9363b",
+          "verified": true
+        },
+        {
+          "file": "test.xml",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/dd78dbcd8c5551334c8ff4141d6b80cbe663e247de56ef9a99fed8d48d69f8f4/3602",
+          "bytes": 3602,
+          "sha256": "dd78dbcd8c5551334c8ff4141d6b80cbe663e247de56ef9a99fed8d48d69f8f4",
+          "verified": true
+        },
+        {
+          "file": "k3s-retained.log",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/400ba8c78f7a2b53a18c18ca3ff15867ec743912e18470a91f6d5091bb14faaf/1382484",
+          "bytes": 1382484,
+          "sha256": "400ba8c78f7a2b53a18c18ca3ff15867ec743912e18470a91f6d5091bb14faaf",
+          "verified": true
+        },
+        {
+          "file": "persistence-suite.json",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/6f08094e3d93b9ba05890ff2d2bf5fa9e5a7c2ac8a93bb4e0889fa7fb42ff523/1125",
+          "bytes": 1125,
+          "sha256": "6f08094e3d93b9ba05890ff2d2bf5fa9e5a7c2ac8a93bb4e0889fa7fb42ff523",
+          "verified": true
+        },
+        {
+          "file": "test-spans.jsonl",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/151ac6215b7ff65b5ef501975bfc0e07927df48c6647b66c28fe616f7ddde7b4/303370",
+          "bytes": 303370,
+          "sha256": "151ac6215b7ff65b5ef501975bfc0e07927df48c6647b66c28fe616f7ddde7b4",
+          "verified": true
+        },
+        {
+          "file": "before-resources.yaml",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/e5e527b814fe980b0c2a86b2ba64fab714f19eaa441ef38cfaac3c916169ddd6/36275",
+          "bytes": 36275,
+          "sha256": "e5e527b814fe980b0c2a86b2ba64fab714f19eaa441ef38cfaac3c916169ddd6",
+          "verified": true
+        },
+        {
+          "file": "before-summary.json",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/5066d487262596581387609e9504a3e17f6acabb449bdf614ad8d0cfa31c1162/4737",
+          "bytes": 4737,
+          "sha256": "5066d487262596581387609e9504a3e17f6acabb449bdf614ad8d0cfa31c1162",
+          "verified": true
+        },
+        {
+          "file": "kubelet-config.json",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434",
+          "bytes": 13434,
+          "sha256": "2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab",
+          "verified": true
+        },
+        {
+          "file": "final-resources.yaml",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/9a76f352588ab2b95d662fc3001ea6bed0dd9a0110396212d249a90e7b1156d1/1424190",
+          "bytes": 1424190,
+          "sha256": "9a76f352588ab2b95d662fc3001ea6bed0dd9a0110396212d249a90e7b1156d1",
+          "verified": true
+        },
+        {
+          "file": "final-summary.json",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/82ab790d5623437b4d499d142d48122e69edc8c35639a791482883c29cbcc23f/83069",
+          "bytes": 83069,
+          "sha256": "82ab790d5623437b4d499d142d48122e69edc8c35639a791482883c29cbcc23f",
+          "verified": true
+        },
+        {
+          "file": "action.pb",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/2b9896caf134f705908f0840cbb9b1ae9cd0478bf4bca058f1d5486f9ebdd431/1218",
+          "bytes": 1218,
+          "sha256": "2b9896caf134f705908f0840cbb9b1ae9cd0478bf4bca058f1d5486f9ebdd431",
+          "verified": true
+        },
+        {
+          "file": "command.pb",
+          "uri": "bytestream://remote.buildbuddy.io/blobs/a70ab8163a45a3b361823c6fb9291c02434ae3e16a7450eec6914063bee90dfa/4719",
+          "bytes": 4719,
+          "sha256": "a70ab8163a45a3b361823c6fb9291c02434ae3e16a7450eec6914063bee90dfa",
+          "verified": true
+        }
+      ],
+      "checks": "All12 downloaded native files match actual URI SHA256 and length. Equal before/final capacity; XML20/0/0/0;20 passing case spans;4 pool create/cleanup names equal; no admission/OOM/eviction markers in stated scope. Collector exits0.",
+      "source_pr": "https://github.com/agentydragon/ducktape/pull/15212",
+      "source_pr_state": "OPEN; current-head CI pending, no auto-merge",
+      "implementation_scope": "Per-target macro passthrough and8units only for test_pod, independent of the frozen global-default resource experiment; all scenarios and assertions retained.",
+      "action_seconds": 555.348202
     }
   }
 }

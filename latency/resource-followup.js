@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Anchor,
+  Accordion,
   Blockquote,
   NativeSelect,
   Paper,
@@ -16,7 +17,7 @@ import { html } from "../report.js";
 const invocation = (id) => `https://app.buildbuddy.io/invocation/${id}`;
 const fixed = (value, digits = 2) => Number(value).toFixed(digits);
 
-function ResourceContent({ snapshot }) {
+function ResourceContent({ snapshot, readiness }) {
   const [window, setWindow] = useState("runs");
   const timeline = snapshot.timeline
     .filter(
@@ -68,6 +69,22 @@ function ResourceContent({ snapshot }) {
   ];
   const pair = snapshot.fixture_pair;
   const cpu = snapshot.cpu_experiment;
+  const vm = readiness.fresh_vm_validation;
+  const hardware = readiness.vm_hardware_trial;
+  const pod = readiness.pod_resource_trial;
+  const vmPhases = [
+    { phase: "Setup", TCG: vm.phases[0].seconds, KVM: hardware.phases.Setup },
+    {
+      phase: "Scenarios",
+      TCG: vm.phases[1].seconds,
+      KVM: hardware.phases.Scenarios,
+    },
+    {
+      phase: "Other",
+      TCG: vm.phases[2].seconds + vm.phases[3].seconds,
+      KVM: hardware.phases.Other,
+    },
+  ];
   const cpuPairs = cpu.pairs.map((pair) => ({
     state: pair.pair === 1 ? "Cold" : `Warm ${pair.pair - 1}`,
     "4 CPUs": pair.cpu4_s,
@@ -85,6 +102,269 @@ function ResourceContent({ snapshot }) {
     "Warm control": pair.warm_baseline_control[field],
   }));
   return html`<${Stack} gap="md">
+    <${Title} order=${3} id="vm-fresh-proof"
+      >VM acceleration trial: 423 → 227 action seconds<//
+    >
+    <${Text}
+      >One${" "}
+      <${Anchor} href=${invocation(vm.originating_invocation)}
+        >fresh physical execution<//
+      >${" "}passed all three VM scenarios and cleanup at source${" "}
+      ${vm.originating_source.slice(0, 10)}. Action time was${" "}
+      ${fixed(vm.action_seconds, 3)} s; pytest reported 380.54 s. The next PR
+      head reused that same in-flight action, so it counts once. The three
+      concurrent readiness waits were 84.9, 88.3 and 116.2 s. This run passed
+      service PKI bootstrap and guest boot; it does not establish a repair for
+      the earlier intermittent early-kernel stop.<//
+    >
+    <${Paper} withBorder p="md" radius="md" data-chart="fresh-vm-phases">
+      <${Title} order=${4} mb="md"
+        >One passing run per architecture: phase seconds<//
+      >
+      <${BarChart}
+        h=${260}
+        data=${vmPhases}
+        dataKey="phase"
+        withLegend
+        series=${[
+          { name: "TCG", color: "blue.6" },
+          { name: "KVM", color: "orange.6" },
+        ]}
+        valueFormatter=${(value) => `${fixed(value, 1)} s`}
+        xAxisProps=${{ interval: 0, tickMargin: 8 }}
+        yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
+      />
+    <//>
+    <${Text} size="sm" c="dimmed"
+      >TCG: setup 127.44 s · scenarios 216.69 s · other 79.01 s. KVM: setup
+      117.80 s · scenarios 91.77 s · other 17.57 s. Other includes cleanup,
+      startup and gaps outside the selected setup/case spans. Readiness is
+      inside the scenarios and is not added again. These are native execution
+      clocks and existing OTel spans, not new benchmark instrumentation.<//
+    >
+    <${Blockquote}
+      >Even removing all observed setup would leave 295.70 action seconds,
+      holding everything else fixed. Fixture cleanup alone cannot meet four
+      minutes on this TCG run. The${" "}
+      <${Anchor} href=${invocation(hardware.invocation)}>existing KVM suite<//
+      >${" "}then passed the same three scenarios and cleanup in${" "}
+      ${fixed(hardware.action_seconds, 3)} action seconds. Its readiness waits
+      were 40.0, 41.7 and 45.4 s; all three QEMU snapshots confirm -accel kvm.
+      The two source trees differ only in investigation notes. This supports a
+      capacity-backed KVM routing trial, while worker placement, CPU budget,
+      isolation, baseline lifecycle and cache history still confound the
+      observed 196-second difference.<//
+    >
+    <${Text}
+      >The KVM Bazel invocation took 278.44 s before outer runner admission; a
+      single action below four minutes is not mean complete CI below four
+      minutes. The existing four-CPU KVM pool also serves Firecracker, so
+      routing routine VM CI there needs capacity and queue measurements first.
+      Retain a TCG lane if its distinct emulation coverage is required. No
+      scheduling policy or worker configuration was changed. Dependency loading
+      emitted Debian mirror 404 warnings but recovered; the test did execute.<//
+    >
+    <${Title} order=${3} id="pod-admission-proof"
+      >Pod admission: eight-unit trial passed all 20 cases<//
+    >
+    <${Text}
+      >Native admission snapshots show 9,724.56 MiB and 7 CPUs allocatable.
+      Services request 1,734 MiB; each runner requests 1,568 MiB, so only five
+      runners fit. Two retained runners plus four fresh messaging runners
+      already exceed capacity. The source envelope can request ten runners:
+      17,414 MiB and 8.24 CPUs including services. Merely setting CASE_LIMIT=1
+      would leave the retained pair alive and still fail the six-runner
+      demand.<//
+    >
+    <${Blockquote} color="teal"
+      >The${" "}<${Anchor} href=${invocation(pod.invocation)}
+        >eight-unit trial passed all 20 cases<//
+      >${" "}with complete cleanup and no FailedScheduling events. Native Node
+      snapshots agree on 19,543.82 MiB and 11 CPUs allocatable, exceeding the
+      intended request envelope by 2,129.82 MiB and 2.76 CPUs. The test input
+      root, arguments and environment match the failed control; only the native
+      EstimatedComputeUnits property changes from four to eight.<//
+    >
+    <${Table.ScrollContainer} minWidth=${460}>
+      <${Table} striped withTableBorder data-pod-budget="true">
+        <${Table.Thead}
+          ><${Table.Tr}>
+            <${Table.Th}>Allocatable<//><${Table.Th}>Four units<//>
+            <${Table.Th}>Eight units<//><${Table.Th}>Request envelope<//>
+          <//><//
+        >
+        <${Table.Tbody}>
+          <${Table.Tr}
+            ><${Table.Td}>Memory (MiB)<//><${Table.Td}>9,724.56<//>
+            <${Table.Td}>19,543.82<//><${Table.Td}>17,414<//><//
+          >
+          <${Table.Tr}
+            ><${Table.Td}>CPU (cores)<//><${Table.Td}>7<//> <${Table.Td}>11<//
+            ><${Table.Td}>8.24<//><//
+          >
+        <//>
+      <//>
+    <//>
+    <${Text}
+      >The passing action took 555.348 s versus the failed control's 749.181 s.
+      Setup took 221.126 s, the concurrent case window 257.398 s and stack
+      cleanup 38.497 s. Input fetch took 1.024 s. The doubled reservation fixes
+      the demonstrated admission deficit; different baseline/cache histories and
+      outcomes prevent a causal speedup or cost estimate. This is one passing
+      trial, with no complete-CI mean or optimal sizing established.
+      The${" "}<${Anchor} href=${pod.source_pr}>Pod reservation PR<//>${" "}
+      applies eight units only to test_pod and retains every case and
+      assertion.<//
+    >
+    <${Text}
+      >The earlier hosted head also failed MCP delegation: a shared K3s/Kine API
+      and kubelet/containerd stall preceded the executor's liveness restart,
+      lost exec-server session and empty receipt. Retained logs show slow SQL,
+      lease timeouts and 12.342 s housekeeping. The post-event sample has
+      available memory and zero pressure; the underlying stall remains
+      unexplained. That is separate from the Pod request-admission deficit.<//
+    >
+    <${Title} order=${3}>Current decisions<//>
+    <${Text}
+      >Retain 4 vCPU / 16 GiB and one action per guest for the self-hosted
+      Firecracker worker after the completed CPU trials. Validate the Pod-only
+      reservation on current-head CI, investigate its remaining setup/scenario
+      work and the MCP stall, measure capacity for a KVM routing trial, and
+      measure matched post-merge complete-CI heads before claiming the fixture
+      trim meets the feedback objective. Keep KEDA scale-in behind tested
+      admission/drain ownership. The fresh input-fetch stages were only 3.23 s
+      for TCG and 8.23 s for KVM. A cache proxy does not address the dominant
+      setup, scenario or Pod admission work.<//
+    >
+    <${Text}
+      ><${Anchor} href=${snapshot.import_batching.pr}>Image-import PR #15126<//
+      >${" "} remains draft with auto-merge disabled pending measured benefit.
+      Its 132 → 46 s preliminary import-span difference used different VMs. The
+      eight-image/256 MiB policy was not empirically justified; a controlled
+      comparison is still pending. Serial and bulk alternatives are prepared,
+      but VM startup failures prevented a valid fixture-level comparison. Keep
+      the simplest measured design. Loading all groups first can sacrifice
+      existing readiness overlap, and streaming means the byte cap does not
+      directly bound resident blob memory.<//
+    >
+    <${Accordion} variant="contained" id="vm-startup-history">
+      <${Accordion.Item} value="startup">
+        <${Accordion.Control}
+          >Earlier VM startup evidence and completed repairs<//
+        >
+        <${Accordion.Panel}>
+          <${Stack} gap="md">
+            <${Title} order=${3} id="vm-readiness-followup"
+              >VM readiness: early boot stop remains unresolved<//
+            >
+            <${Text}
+              >In${" "}
+              <${Anchor}
+                href=${invocation("46993f63-7c5b-5685-a009-4664f7c8318f")}
+                >failed child 46993f63<//
+              >${" "} at PR #15126 source a099f643, VM2 console and raw serial
+              both stop at Linux guest uptime 5.157459 s during early PCI/ACPI
+              boot, before systemd or the runner. The default lane used QEMU
+              10.1 TCG without /dev/kvm, 2 guest vCPUs and 1.5 GiB.
+              ConnectionPending at 300 s is a downstream symptom. The QEMU host
+              snapshot at 09:57:08 UTC followed destruction at 09:56:56 UTC,
+              leaving root cause unresolved. Failure-time passive capture merged
+              at 11:45 UTC in${" "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15142"
+                >PR #15142<//
+              >.<//
+            >
+            <${Title} order=${4} id="vm-tag-limit-followup"
+              >Separate startup defect: virtiofs tag limit<//
+            >
+            <${Text}
+              >The${" "}
+              <${Anchor}
+                href=${invocation("cb469644-f04f-4844-9021-f3a425dce6ef")}
+                >current-source observer attempt<//
+              >${" "} failed before Linux: QEMU rejected the new 45-byte
+              workload-trust virtiofs tag, whose limit is 36 bytes. That is a
+              separate deterministic startup regression.${" "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15144"
+                >PR #15144<//
+              >${" "} merged at 11:33 UTC: it shortens the tag, documents the
+              36-byte limit and validates every final virtiofs name before VM
+              creation. It also adds the missing workload-trust mount in the
+              full Debian guest. Controller and guest-layout tests passed. Full
+              guest verification was blocked by the independent PKI failure
+              below. The repaired branch subsequently passed the real VM suite;
+              the original intermittent stop remains unresolved.<//
+            >
+            <${Title} order=${3} id="vm-pki-followup"
+              >Fixture CA reuse: root cause reproduced<//
+            >
+            <${Text}
+              >The${" "}
+              <${Anchor}
+                href=${invocation("e77e85c9-4306-4e40-8593-6b5e0cb3a54c")}
+                >uncached VM follow-up<//
+              >${" "}failed during service bootstrap with certificate-chain
+              rejection, before any VM scenario. Cleanup recreated only the root
+              CA; the workload intermediate and its Secret survived in the
+              retained cert-manager namespace. Its request was created at
+              11:16:21 UTC, while the replacement root's request was created at
+              11:30:42 UTC. All five failed service chains verify through the
+              captured previous root and fail through the new root. Ready
+              Certificates and Synced Bundles did not prove a coherent chain.<//
+            >
+            <${Blockquote}
+              >The${" "}
+              <${Anchor}
+                href=${invocation("b232674e-e454-4d58-b798-50592d74348e")}
+                >real two-cycle control<//
+              >${" "}passed its first issuance and cleanup, then failed with
+              InvalidSignature on its second issuance. It retains the same real
+              K3s/cert-manager/trust-manager controllers and uses the fixture's
+              actual CA hierarchy, without application workloads.<//
+            >
+            <${Blockquote} color="teal"
+              >With the repair, the${" "}
+              <${Anchor}
+                href=${invocation("84b1a207-dcb2-4adc-8061-8fd3c73628b7")}
+                >same uncached regression passed both cycles<//
+              >: root and intermediate Certificate identities changed, both
+              chains verified, and retained controller Deployment identities
+              stayed unchanged. This verifies cleanup across the real controller
+              boundary. Different cold-start/cache conditions prevent a latency
+              comparison.<//
+            >
+            <${Text}
+              ><${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15193"
+                >PR #15193<//
+              >${" "}merged at 19:04 UTC. It derives retained-namespace
+              Certificates from the rendered fixture, deletes their UID-owned
+              requests and declared Secrets, and verifies absence while
+              preserving unrelated controller credentials. The cleanup helper
+              participates in baseline fingerprinting, rejecting snapshots
+              previously certified by the incomplete cleanup. Focused tests and
+              the real two-cycle regression passed. The full VM suite also
+              passed; broader CI failed Pod memory admission and MCP delegation;
+              their causes and repairs are tracked separately from the CA
+              regression.<//
+            >
+            <${Text} size="sm" c="dimmed"
+              >Public CertificateRequest chains prove the old mismatch; the
+              retained artifact does not independently expose live Secret or
+              target ConfigMap bytes. Current devel trusts the intermediate
+              directly, which may mask the old service symptom but does not make
+              per-action identity reuse correct. The fresh VM execution above
+              establishes guest boot for that run; it does not diagnose the
+              original intermittent stall. No CI speedup is measured by this
+              repair.<//
+            >
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Title} order=${3}>Earlier resource telemetry and CPU trials<//>
     <${Text}
       >Historical Mimir window: ${snapshot.window.start_utc} →
       ${snapshot.window.end_utc}. Each selected series has 1,441 one-minute
@@ -432,114 +712,6 @@ function ResourceContent({ snapshot }) {
       are retained separately from the historical telemetry. CAS follows its
       normal retention policy; compact measurements remain committed.<//
     >
-    <${Title} order=${3} id="vm-readiness-followup"
-      >VM readiness: early boot stop remains unresolved<//
-    >
-    <${Text}
-      >In${" "}
-      <${Anchor} href=${invocation("46993f63-7c5b-5685-a009-4664f7c8318f")}
-        >failed child 46993f63<//
-      >${" "} at PR #15126 source a099f643, VM2 console and raw serial both stop
-      at Linux guest uptime 5.157459 s during early PCI/ACPI boot, before
-      systemd or the runner. The default lane used QEMU 10.1 TCG without
-      /dev/kvm, 2 guest vCPUs and 1.5 GiB. ConnectionPending at 300 s is a
-      downstream symptom. The QEMU host snapshot at 09:57:08 UTC followed
-      destruction at 09:56:56 UTC, leaving root cause unresolved. Failure-time
-      passive capture merged at 11:45 UTC in${" "}
-      <${Anchor} href="https://github.com/agentydragon/ducktape/pull/15142"
-        >PR #15142<//
-      >.<//
-    >
-    <${Title} order=${4} id="vm-tag-limit-followup"
-      >Separate startup defect: virtiofs tag limit<//
-    >
-    <${Text}
-      >The${" "}
-      <${Anchor} href=${invocation("cb469644-f04f-4844-9021-f3a425dce6ef")}
-        >current-source observer attempt<//
-      >${" "} failed before Linux: QEMU rejected the new 45-byte workload-trust
-      virtiofs tag, whose limit is 36 bytes. That is a separate deterministic
-      startup regression.${" "}
-      <${Anchor} href="https://github.com/agentydragon/ducktape/pull/15144"
-        >PR #15144<//
-      >${" "} merged at 11:33 UTC: it shortens the tag, documents the 36-byte
-      limit and validates every final virtiofs name before VM creation. It also
-      adds the missing workload-trust mount in the full Debian guest. Controller
-      and guest-layout tests passed. Full guest verification was blocked by the
-      independent PKI failure below; the original early-kernel stop remains
-      unresolved.<//
-    >
-    <${Title} order=${3} id="vm-pki-followup"
-      >Fixture CA reuse: root cause reproduced<//
-    >
-    <${Text}
-      >The${" "}
-      <${Anchor} href=${invocation("e77e85c9-4306-4e40-8593-6b5e0cb3a54c")}
-        >uncached VM follow-up<//
-      >${" "}failed during service bootstrap with certificate-chain rejection,
-      before any VM scenario. Cleanup recreated only the root CA; the workload
-      intermediate and its Secret survived in the retained cert-manager
-      namespace. Its request was created at 11:16:21 UTC, while the replacement
-      root's request was created at 11:30:42 UTC. All five failed service chains
-      verify through the captured previous root and fail through the new root.
-      Ready Certificates and Synced Bundles did not prove a coherent chain.<//
-    >
-    <${Blockquote}
-      >The${" "}
-      <${Anchor} href=${invocation("b232674e-e454-4d58-b798-50592d74348e")}
-        >real two-cycle control<//
-      >${" "}passed its first issuance and cleanup, then failed with
-      InvalidSignature on its second issuance. It retains the same real
-      K3s/cert-manager/trust-manager controllers and uses the fixture's actual
-      CA hierarchy, without application workloads.<//
-    >
-    <${Blockquote} color="teal"
-      >With the repair, the${" "}
-      <${Anchor} href=${invocation("84b1a207-dcb2-4adc-8061-8fd3c73628b7")}
-        >same uncached regression passed both cycles<//
-      >: root and intermediate Certificate identities changed, both chains
-      verified, and retained controller Deployment identities stayed unchanged.
-      This verifies cleanup across the real controller boundary. Different
-      cold-start/cache conditions prevent a latency comparison.<//
-    >
-    <${Text}
-      ><${Anchor} href="https://github.com/agentydragon/ducktape/pull/15193"
-        >PR #15193<//
-      >${" "}derives retained-namespace Certificates from the rendered fixture,
-      deletes their UID-owned requests and declared Secrets, and verifies
-      absence while preserving unrelated controller credentials. The cleanup
-      helper participates in baseline fingerprinting, rejecting snapshots
-      previously certified by the incomplete cleanup. Focused tests and the real
-      two-cycle regression passed; hosted full-suite CI is pending.<//
-    >
-    <${Text} size="sm" c="dimmed"
-      >Public CertificateRequest chains prove the old mismatch; the retained
-      artifact does not independently expose live Secret or target ConfigMap
-      bytes. Current devel trusts the intermediate directly, which may mask the
-      old service symptom but does not make per-action identity reuse correct.
-      The latest inspected green VM result was cached. Fresh full guest boot
-      remains unproven, and no CI speedup is measured by this repair.<//
-    >
-    <${Title} order=${3}>Current decisions<//>
-    <${Text}
-      >Retain 4 vCPU / 16 GiB and one action per guest after the completed CPU
-      trials. Validate the CA repair and fresh VM readiness, then measure
-      matched post-merge complete-CI heads before claiming the fixture trim
-      meets the feedback objective. Keep KEDA scale-in behind tested
-      admission/drain ownership; defer a cache proxy given the historical
-      1.6-second input-fetch stage.<//
-    >
-    <${Text}
-      ><${Anchor} href=${snapshot.import_batching.pr}>Image-import PR #15126<//
-      >${" "} remains draft with auto-merge disabled pending measured benefit.
-      Its 132 → 46 s preliminary import-span difference used different VMs. The
-      eight-image/256 MiB policy was not empirically justified; a controlled
-      comparison is still pending. Serial and bulk alternatives are prepared,
-      but VM startup failures prevented a valid fixture-level comparison. Keep
-      the simplest measured design. Loading all groups first can sacrifice
-      existing readiness overlap, and streaming means the byte cap does not
-      directly bound resident blob memory.<//
-    >
     <${Text} size="sm" c="dimmed"
       >Full UTC samples, PromQL, sources, physical clocks, experiment commands
       and limitations are in
@@ -565,7 +737,13 @@ export function ResourceFollowup() {
       .then((evidence) => {
         if (!evidence.resource_telemetry_followup)
           throw new Error("Resource evidence missing");
-        setSnapshot(evidence.resource_telemetry_followup);
+        if (
+          !evidence.vm_readiness_followup?.fresh_vm_validation ||
+          !evidence.vm_readiness_followup?.vm_hardware_trial ||
+          !evidence.vm_readiness_followup?.pod_resource_trial
+        )
+          throw new Error("VM trial evidence missing");
+        setSnapshot(evidence);
       })
       .catch((reason) => {
         if (reason.name !== "AbortError") setError(reason.message);
@@ -578,7 +756,7 @@ export function ResourceFollowup() {
     my="xl"
     gap="md"
   >
-    <${Title} order=${2}>Resource telemetry and new real-KVM evidence<//>
-    ${error ? html`<${Text} c="red">Resource evidence could not load: ${error}<//>` : snapshot ? html`<${ResourceContent} snapshot=${snapshot} />` : html`<${Text}>Loading resource evidence…<//>`}
+    <${Title} order=${2}>Current interventions and measured resources<//>
+    ${error ? html`<${Text} c="red">Resource evidence could not load: ${error}<//>` : snapshot ? html`<${ResourceContent} snapshot=${snapshot.resource_telemetry_followup} readiness=${snapshot.vm_readiness_followup} />` : html`<${Text}>Loading resource evidence…<//>`}
   <//>`;
 }
