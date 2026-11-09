@@ -99,7 +99,7 @@
               ${". The earlier telemetry window correlates two physical wyrm2 runs with modest CPU use and busy storage. The completed unpinned HIL experiment passed all three matched-state 4/8-CPU pairs: warm action means were 251.1s and 268.0s. Extra CPUs did not shorten the measured critical path. The fixture candidate separately passed in 214s; none of these action times establishes mean complete CI below four minutes. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is fully drained and deleted; production workers and scalers are unchanged. The early-boot VM readiness failure remains unresolved and its follow-up attempt is underway. Historical resource telemetry, host paging snapshots and the original CI cohort retain their own windows. "}
+              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is fully drained and deleted; production workers and scalers are unchanged. The early-kernel VM stop remains unresolved. Its follow-up exposed a separate overlong virtiofs tag that prevents QEMU startup; the focused fix and generation-time validation merged in PR #15144, while full VM validation was blocked by service certificate-chain rejection before any VM scenario. Historical resource telemetry, host paging snapshots and the original CI cohort retain their own windows. "}
             <//>
             <${SimpleGrid}
               component=${"div"}
