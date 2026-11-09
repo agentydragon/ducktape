@@ -86,7 +86,9 @@ mount it, which is the reach the `haku-ui` ServiceAccount already gives. The inc
 record itself. Every replica presents the same SVID, and no Pod is proven, so the proxy drops any
 Pod token such a caller forwards ([egress SPEC](../egress/SPEC.md)). Neither sidecar forwards one:
 the hop projection is their only token. Revocation is deleting the record, which Flux recreates with
-a fresh ID, or a Flux prune.
+a fresh ID, or a Flux prune. A running sidecar refuses a reloaded SVID with a different URI
+(`environment_runtime_transport` pins the first), so after a recreate the workload regains egress
+only on a rollout restart.
 
 Neither workload may lose egress, so step 4 lands in this order:
 
