@@ -1,225 +1,109 @@
 # Dispatcher and Gateway as one service
 
-> **Historical proposal:** on 2026-11-02 the operator selected a mandatory Dispatcher database
-> and queue. Interrupts now also use that queue; the immediate-interrupt descriptions below are
-> historical. All queue-off alternatives and rollout steps below are superseded, including the
-> assumption that a database-free K3s tier can include Dispatcher admission. Gateway now restricts
-> Runtime Session mutations to the Gateway/Dispatcher workload; see its [authorization contract](../runner_gateway/gateway/SPEC.md).
-> Service topology,
-> delivery ownership and an immediate-or-fail request option remain separate decisions; this
-> document does not authorize implementing its former proposal. See the
-> [current Session/environment model](session_environment_model.md) and
-> [delivery decision](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology).
+Status: **proposal awaiting
+[`DISPATCHER_PERSISTENCE_MODEL_DESIGN`](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology);
+not an implementation authorization.** On 2026-11-02 the operator made the Dispatcher database and
+queue mandatory, so the proposal's queue-off mode and its rollout steps are gone. Two parts remain
+candidates for that decision: one public service and audience in place of `SessionDispatcher` plus the
+caller-visible Runtime proxy, and holder-owned delivery. An explicit immediate-or-fail send within the
+mandatory queue is a separate open option.
 
-Historical status at `devel` dd032c46: the operator requested this proposal and favored holder-owned
-delivery for its combined-service shape on 2026-10-20. That preference does not settle the later
-service-topology or delivery-ownership review. Current decisions and independent work are tracked in
-`DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the [task DAG](task_dag.md); the superseded queue-off
-steps below are not an implementation queue.
-
-## Later topology decision
-
-Operator clarification, 2026-10-31 UTC: Session dispatch and Environment dispatch are distinct
-responsibilities because a Session need not live under an environment. They may share a binary or
-have separate binaries; leave this particular merge/reshuffle for later. The single-service shape
-and audience unification below remain proposals. The earlier holder-owned delivery preference was
-scoped to that combined shape; revisit it when choosing a topology. The current [Runtime and Execution boundaries](../env/README.md) do not wait for this
-decision. Retain existing dispatch ownership/fencing until a reviewed change replaces it.
-
-## Proposal
-
-Operator, 2026-10-20 07:13 UTC:
-
-> dispatcher basically started like a queue on top of gateway. I think we should merge the grpc services into
-> one, and make it operate in one of two configured modes - queue on (in postgres) or off. Off means that if
-> your message/command cannot immediately go to the runner, you get an error. And I guess wake-on-message as
-> a feature would require the queue.
-
-This design takes that as the shape: keep the queue, and add the direct mode as a setting of the same service. The
-direct mode is not a second contract. It is the same service with the queue off, refusing where the queue would
-wait.
+Operator, 2026-10-31 UTC: Session dispatch and Environment dispatch are distinct responsibilities,
+because a Session need not live under an environment; they may share a binary or not, and this
+merge is left for later. The operator's 2026-10-20 preference for holder-owned delivery was scoped to
+the combined-service shape; revisit it with the topology. Existing dispatch ownership and fencing
+stay until a reviewed change replaces them. The current queue contract is the
+[Dispatcher README](../runner_gateway/dispatcher/README.md); the Gateway's Runtime proxy restriction is
+its [authorization contract](../runner_gateway/gateway/SPEC.md).
 
 ## Today
 
-One binary and Deployment serve the Dispatcher, per-Sandbox Runner proxy and executor gateway.
-The Gateway dials private runner mTLS gRPC servers and observes `Runner.WatchState` under each
-Sandbox's `<sandbox>-runner` Lease. The Dispatcher separately uses `dispatcher-<uid>` plus its
-Postgres `sandbox_ownership` fence. Dispatcher callers use `session-dispatcher`; proxy callers use
-`agentplane-runner-gateway`. The runner connection uses certificate identities rather than those
-public caller tokens.
+One binary and Deployment serve the Dispatcher, the per-Sandbox Runtime proxy and
+`EnvironmentService`. The Gateway dials private Runtime mTLS gRPC servers and observes their state
+under each Sandbox's `<sandbox>-runner` Lease. The Dispatcher separately uses a `dispatcher-<uid>`
+Lease plus its Postgres `sandbox_ownership` fence. Dispatcher callers use the `dispatcher_audience`;
+proxy callers use the Gateway's audience.
 
-The Dispatcher delivers by dialing `<sandbox>-control` with the Gateway's own token (`ProxyRunner`,
-`dispatcher/runner_client.go:19`, wired at `main.go:237`), because the replica owning a Sandbox's queue is
-often not the replica holding its runner. That self-call costs a token check, a network hop and a third caller
-account. The ADR row "The Dispatcher is its own service, not part of the gateway or the controller" (2026-10-14,
-`docs/adr_sandbox_session_control.md:608`) no longer matches the code.
+The Dispatcher delivers by dialing `<sandbox>-control` (`ProxyRunner`, `dispatcher/runner_client.go`),
+because the replica owning a Sandbox's queue is often not the replica holding its Runtime connection.
+That self-call costs a token check, a network hop and a third caller identity. The ADR row "The
+Dispatcher is its own service, not part of the gateway or the controller"
+([ADR](../docs/adr_sandbox_session_control.md)) no longer matches the packaging.
 
 ## One service
 
-`RunnerGateway`, in package `agentplane.runner_gateway`, replaces `SessionDispatcher` and the caller-visible
-`Runner` proxy. The private runner mTLS connection stays separate from public caller authentication.
+`RunnerGateway` would replace `SessionDispatcher` and the caller-visible Runtime proxy. The private
+Runtime mTLS connection stays separate from public caller authentication.
 
-| RPC                                                                                       | Caller                  | Queue on                                                                     | Queue off                                |
-| ----------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
-| `OpenSession`                                                                             | app                     | stored; delivered once the Sandbox is `Ready`, before the Session's commands | the runner's `OpenSession` now           |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`                                     | app, Notification       | stored, in order per Session; may wake                                       | delivered now                            |
-| `InterruptTurn`                                                                           | app                     | not queued: delivered at once to a `Ready` Sandbox, else `NO_OP`             | the same                                 |
-| `GetSessionOpening`, `GetDispatch`, `ListDispatches`, `WatchDispatches`, `CancelDispatch` | app, Notification       | read or change the stored rows                                               | `FAILED_PRECONDITION`: nothing is stored |
-| `ListSessions`, `GetStatus`                                                               | app, Notification       | live read by the replica holding the runner                                  | the same                                 |
-| `Quiesce`                                                                                 | Sandbox Controller only | the same                                                                     | the same                                 |
+| RPC                                                                                       | Caller                  | Behavior                                                |
+| ----------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `OpenSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`     | app, Notification       | the Dispatcher's queue, unchanged                       |
+| `GetSessionOpening`, `GetDispatch`, `ListDispatches`, `WatchDispatches`, `CancelDispatch` | app, Notification       | read or change the stored rows                          |
+| `ListSessions`, `GetStatus`                                                               | app, Notification       | live read by the replica holding the Runtime connection |
+| `Quiesce`                                                                                 | Sandbox Controller only | the same                                                |
 
-- **Messages.** Command and state RPCs keep the Dispatcher's messages, `Dispatch` and `DeliveryState` with their
-  decided names, so the app's stream and Notification's receipts keep working. The live reads and `Quiesce` keep
-  the runner's messages. The Dispatcher stays the name of the queue role inside the Gateway.
-- **Addresses.** As today, by what a call needs and not by mode: commands and state go to the stable Service (any
-  replica); `ListSessions`, `GetStatus` and `Quiesce` go to `<sandbox>-control` (the holder; ADR D1, unchanged).
-- **One audience, per-RPC authorization.** `agentplane-runner-gateway` replaces `session-dispatcher`, and one
-  caller list replaces `dispatcher_callers` and `gateway_callers`. Commands, state and live reads admit the app and
-  Notification. Waking admits `wake_callers`, which must be a subset of them. `Quiesce` admits only the Sandbox
-  Controller, as `gateway/proxy.go:91` does. The Gateway's own account leaves the list once delivery is in
-  process. The app and Notification already hold a token for this audience, so no new grant is needed first.
-- **Proxy.** This proposal would remove the command methods from the caller-visible proxy and have
-  delivery call the held connection in process. The implemented proxy restriction keeps the methods
-  for Gateway/Dispatcher workload credentials across replicas.
+- **Messages.** Command and state RPCs keep the Dispatcher's messages (`Dispatch`, `DeliveryState`),
+  so the app's stream and Notification's receipts keep working; live reads and `Quiesce` keep the
+  Runtime's. "Dispatcher" stays the name of the queue role inside the Gateway.
+- **Addresses** follow what a call needs: commands and state go to the stable Service (any replica);
+  `ListSessions`, `GetStatus` and `Quiesce` go to `<sandbox>-control` (the holder; ADR D1).
+- **One audience, per-RPC authorization.** One audience and one caller list replace
+  `dispatcher_audience`/`dispatcher_callers` and the Gateway's. Commands, state and live reads admit
+  the app and Notification; waking admits `wake_callers`, a subset of them; `Quiesce` admits only the
+  Sandbox Controller. The Gateway's own identity leaves the list once delivery is in process.
+- **Proxy.** Delivery would call the held connection in process, so the command methods could leave
+  the caller-visible proxy; today's restriction keeps them for Gateway/Dispatcher workload credentials
+  across replicas.
 - **HTTP facade.** One facade for the one service, routes unchanged.
-- **Naming the Sandbox** in a request is unchanged; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` still decides it, and
-  this service carries whatever it decides.
+- **Naming the Sandbox** in a request is unchanged; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` decides it.
 
-## Two modes
+## Immediate-or-fail option
 
-The queue is on exactly when its database URL is set. There is no separate flag, and the other queue settings (the
-per-Session cap, `wake_callers`) are rejected at startup when set without the URL, so a deployment cannot say
-"off" and also configure a wake.
-
-|                     | Queue on                                                                          | Queue off                                                                                |
-| ------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Accepting a command | stores it in Postgres, then answers                                               | delivers it to the connected runner, then answers                                        |
-| Runner unavailable  | waits as `QUEUED_IN_DISPATCHER`, with a `reason`                                  | refused at once, with the same `reason`                                                  |
-| Wake-on-send        | yes, with `spec.wakeOnSend` and a wake caller                                     | no, whatever `spec.wakeOnSend` says                                                      |
-| Database            | `session_dispatcher`, the embedded Goose startup migration, a `LISTEN` connection | none                                                                                     |
-| Replicas            | any number                                                                        | one in practice: a command landing on a replica that does not hold the runner is refused |
-
-**Immediately** means the Sandbox exists, is `Ready` (the controller's condition) and the receiving replica
-holds its runner connection. Anything else is refused with the queue's own reason vocabulary: a missing Sandbox is
-`NOT_FOUND`; `sandbox_suspended` is `FAILED_PRECONDITION`; `sandbox_not_ready` (starting, draining, runner not
-connected or held by another replica) is `UNAVAILABLE`. The runner's own statuses pass through as the proxy passes
-them today. A call lost mid-flight is `UNAVAILABLE` or `DEADLINE_EXCEEDED` with the outcome unknown; the caller
-retries the same `command_id`, which the runner deduplicates while its journal is retained.
-
-**Wake-on-send needs the queue** for two reasons. A suspended Sandbox has no runner, so nothing can be delivered
-immediately. And a wake takes an image pull and a boot, so the sender must be able to leave and the command must
-survive a restart in between, which only a stored command does. With the queue off a send to a suspended
-Sandbox answers `sandbox_suspended`, and `spec.wakeOnSend` stays a Sandbox property that does nothing.
-
-With the queue on, the complete destination (Sandbox and Session), the `command_id` and the payload are stored
-before the answer and before any wake request, and that receipt is not a runner admission. Runner-local
-persistence is no substitute for the queue: it protects work only after the runner has committed its admission,
-and it accepts nothing while the runner is absent.
-
-**Queue off runs one replica** because the alternatives were already rejected: a replica forwarding to the holder
-adds the hop and trust that ADR D1 declined, and dialing `<sandbox>-control` for commands makes callers depend on
-the mode.
-
-## Command states
-
-| State                     | Queue on                                                                                                                                                                                                                               | Queue off                                                              |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `QUEUED_IN_DISPATCHER`    | awaiting delivery or same-ID reconciliation; `reason` says what it waits for (`sandbox_suspended`, `sandbox_resuming`, `sandbox_not_ready`, `wake_on_send_disabled`, `wake_rate_limited`, `runner_refused_work`, `runner_unreachable`) | never returned                                                         |
-| `DELIVERING_TO_RUNNER`    | a call to the runner is in flight; if the owner dies the next owner requeues it under the same `command_id`                                                                                                                            | never returned: the call in flight is the RPC the caller is waiting on |
-| `RUNNER_ADMITTED`         | the runner journaled it (`admission`)                                                                                                                                                                                                  | the answer to the call, with `admission`                               |
-| `HARNESS_CONFIRMED`       | no writer today                                                                                                                                                                                                                        | the same                                                               |
-| `NO_OP`                   | `InterruptTurn` on a Sandbox that is not `Ready`                                                                                                                                                                                       | the same                                                               |
-| `FAILED`                  | terminal: a runner status retry cannot fix, a wake not completed in ten minutes, a Sandbox deleted while queued                                                                                                                        | never stored; the same causes are errors with the runner's own code    |
-| `CANCELLED_IN_DISPATCHER` | `CancelDispatch` while queued                                                                                                                                                                                                          | never returned; nothing is stored to cancel                            |
-| `UNKNOWN`                 | the Sandbox was deleted while delivering or admitted                                                                                                                                                                                   | never returned                                                         |
-
-In both modes the durable record of what the runner admitted is its journal and the History Service, not the
-Gateway.
-
-| Concern             | Queue on                                                                                                     | Queue off                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Per-Session order   | first in, first out; an opening before its commands                                                          | none added: calls forward as they arrive, so a sender that needs order awaits each admission |
-| Cancellation        | `CancelDispatch` until delivery begins; after that the outcome is the runner's                               | nothing to cancel; a cancelled RPC after the call left has an unknown outcome                |
-| Duplicate opens     | `session_id` is the key: the same Sandbox and request return the stored opening, another is `ALREADY_EXISTS` | the runner's `OpenSession` is idempotent on `session_id` by the same rule                    |
-| Sender fails        | the stored command still delivers                                                                            | the sender retries the same `command_id`                                                     |
-| Replica fails       | the next holder requeues that Sandbox's in-flight rows and redelivers                                        | in-flight calls fail `UNAVAILABLE`; the outcome is unknown, retry                            |
-| Runner storage lost | terminal for runner-owned state; nothing is rebuilt from the queue or History                                | the same                                                                                     |
+If a send may ask not to wait, **immediately** means the Sandbox exists, is `Ready` and the receiving
+replica holds its Runtime connection. Anything else is refused with the queue's reason vocabulary: a
+missing Sandbox is `NOT_FOUND`; `sandbox_suspended` is `FAILED_PRECONDITION`; `sandbox_not_ready`
+(starting, draining, Runtime not connected or held by another replica) is `UNAVAILABLE`. A call lost
+mid-flight has an unknown outcome; the caller retries the same `command_id`. Only the holder can
+answer immediately, so with several replicas such a request either lands on the holder or forwards to
+it, which is the hop and trust ADR D1 declined. Wake-on-send cannot be immediate: a wake needs a
+stored command that survives the boot.
 
 ## One owner per Sandbox
 
-Queue off needs no owner: nothing is stored, and only the replica holding the runner can act.
+Holder-owned delivery, **chosen by the operator for the combined shape, 2026-10-20 07:34 UTC:** the
+owner of a Sandbox's queue is the replica holding its Runtime connection.
 
-Queue on, **chosen by the operator, 2026-10-20 07:34 UTC:** the owner of a Sandbox's queue is the replica holding
-its runner connection.
+- `<sandbox>-runner` stays. It names the holder, carries the connection epoch (its
+  `leaseTransitions`) and the Runtime's facts, and the controller reads it for
+  `EnvironmentRuntimeConnected`.
+- `dispatcher-<uid>` goes. Its expiry exists to pick one live replica, and the Runtime's stream
+  already does: the replica that accepts the connection holds it, and a newer epoch supersedes a
+  stale holder.
+- The Postgres `sandbox_ownership` fence stays and advances with the connection epoch, so a replica
+  that lost the connection cannot settle rows.
+- Delivery is a call on the held connection: no `<sandbox>-control` hop and no third caller identity.
+  Replicas stop contending for every Sandbox with pending work; each looks only at the Sandboxes it
+  holds.
+- With no connection (suspended, booting) there is no owner and no delivery; work waits in Postgres.
+  Any replica may request the wake; the conditional Sandbox patch on UID and resourceVersion and the
+  wake budget keyed by caller, Sandbox UID and target wake generation make concurrent requests one
+  resume and one charge. When the Runtime connects, the accepting replica becomes the owner, requeues
+  that Sandbox's in-flight rows and delivers.
+- A rollout that briefly runs both owners (an old replica by Lease, a new one by connection) can
+  deliver a row twice. The Runtime deduplicates on `command_id`, the at-least-once the Dispatcher
+  already promises.
 
-- `<sandbox>-runner` stays. It names the holder, carries the connection epoch (its `leaseTransitions`,
-  `gateway/records.go:134`) and the runner's facts, and the controller reads it for `EnvironmentRuntimeConnected`.
-- `dispatcher-<uid>` goes. Its 30 s expiry exists to pick one live replica, and the runner's stream already does:
-  the replica that accepts the connection holds it, and a newer epoch supersedes a stale holder.
-- The Postgres `sandbox_ownership` fence stays and advances with the connection epoch, so a replica that lost the
-  connection cannot settle rows.
-- Delivery is a call on the held connection. No `<sandbox>-control` hop, no Gateway token for the Gateway itself,
-  and no third caller account. The other replicas stop contending for every Sandbox with pending work every ten
-  seconds; each looks only at the Sandboxes it holds.
-- With no connection (suspended, booting) there is no owner and no delivery; work waits in Postgres. Any replica
-  may request the wake, and concurrent requests make one resume and one charge: the patch is conditional on the
-  Sandbox's UID and resourceVersion (`dispatcher/sandbox_kubernetes.go:177`), the budget row is keyed by caller,
-  Sandbox UID and target wake generation (`dispatcher/wake.go:10`), and the wake time is recorded once. When the
-  runner connects, the accepting replica becomes the owner, requeues that Sandbox's in-flight rows and delivers.
-- A rollout that briefly runs both owners (an old replica by Lease, a new one by connection) can deliver a row
-  twice. The runner deduplicates on `command_id`, the same at-least-once the Dispatcher already promises.
-
-Rejected: keeping `dispatcher-<uid>` and delivering in process only when owner and holder coincide. With N replicas
-they coincide one time in N, so the self-call stays and two ownership mechanisms stay with it.
+Rejected: keeping `dispatcher-<uid>` and delivering in process only when owner and holder coincide.
+With N replicas they coincide one time in N, so the self-call and both ownership mechanisms stay.
 
 Rejected: moving the Lease's job into Postgres alone (an `expires_at` heartbeat on the fence row, or a
-session-level advisory lock). The fence has no expiry, so it stops stale writers but cannot choose a live owner;
-here the connection chooses the live owner, so neither the Lease nor a Postgres liveness mechanism is needed.
+session-level advisory lock). The fence has no expiry, so it stops stale writers but cannot choose a
+live owner; here the connection chooses it, so neither the Lease nor a Postgres liveness mechanism is
+needed.
 
-## What queue off removes
+## On approval
 
-It removes the Gateway's database, not CNPG. The shared cluster's logical databases are `app`, `sandbox_service`
-(History), `actions`, `egress`, `mcp_edge`, `notifications`, `session_dispatcher` and, where enabled,
-`central_sampler` (`cluster/cdk8s/agentplane/database.py:34`), and Indexing has its own. A deployment is
-database-free only if it also omits every other consumer, as the tier in `CNPG_FREE_K3S_INTEGRATION_TIER` does for
-Notifications, History and Electric. The Gateway sheds the `session_dispatcher` database and Secret, its embedded queue migration path,
-the `LISTEN` connection, the delivery worker and the wake budget. That
-node's earlier edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is superseded; its independently scoped database-free flows remain to be specified.
-
-## What callers see
-
-- **App.** One client, one audience. With the queue on nothing changes. With it off, a send to a Sandbox that is
-  not `Ready` fails at once with the reason, and the thread shows "suspended" or "runner not connected" in place of
-  a queued state. The app follows the state stream only for a command whose response is `QUEUED_IN_DISPATCHER` or
-  `DELIVERING_TO_RUNNER`, so it needs no mode setting.
-- **Notification.** It stores the notice and its command ID before calling. Queue on: as today, a queued answer
-  means the Gateway owns the retry. Queue off: a refusal is an error that Notification already treats as a failure of
-  something it calls, which a later claim retries (`worker/destination.go:37`). A notice for a suspended Sandbox
-  waits until the Sandbox runs, with no wake.
-- **`agentplane` CLI.** It has no Gateway command today. A command for sending to a Session would use the facade of
-  this service and see the same states, with a queue-off refusal as the facade's `google.rpc.Status` JSON.
-
-## Order of work
-
-Each step is its own PR or batch, and each that changes traffic updates the [system overview](../docs/system_overview.md#system-overview). Steps 4 and 5
-are independent once step 3 has landed.
-
-1. **Serve `RunnerGateway` beside the old services.** Gateway image only. It wraps the existing Dispatcher and
-   proxy implementations, so behavior is identical, and the facade switches to its routes, which equal the old
-   ones. Nothing changes for callers until the image is pinned.
-2. **Callers move**, after step 1 is pinned in both environments: the app, Notification, the acceptance suite and
-   the K3s fixture, one PR per caller. Their `session_dispatcher` settings go by the settings rule: stop setting,
-   then remove the field.
-3. **Remove the old surface**, after every caller's image is pinned: `SessionDispatcher` and its generated stubs,
-   the command methods on the caller-visible proxy, `dispatcher_audience`, `dispatcher_callers` and the
-   `session-dispatcher` Service. Manifests drop them first, the fields after the rollout. The Gateway's own
-   account stays in the caller list until step 4.
-4. **Holder-owned delivery.** A Postgres migration first and alone if the fence's columns change, then the code, as
-   in the Gateway README's schema steps. Afterwards the `dispatcher-<uid>` Lease RBAC rule and the Gateway's own
-   caller account are removed, once no replica of the old version runs.
-5. **Queue off.** Image first: the database URL becomes optional and the immediate path lands. Then a manifest
-   renders a Gateway without the queue database, Secret or embedded queue migration path, and the K3s fixture drops the Gateway's
-   PostgreSQL.
-
-On approval, the ADR row about the Dispatcher being its own service is replaced, the Gateway and Dispatcher
-READMEs describe the modes. The proxy restriction has since landed independently of this proposal.
+Replace the ADR row about the Dispatcher being its own service, update the Gateway and Dispatcher
+READMEs and the [system overview](../docs/system_overview.md#system-overview), and stage callers by
+the settings rule (stop setting the old audience, then remove the field). A fence-column change is a
+Postgres migration landing first and alone.

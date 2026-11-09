@@ -30,8 +30,8 @@ notifications and Sandbox deletion.
 
 ### `DISPATCHER_WATCH_VERSIONS`
 
-Blocked on the [merge design](dispatcher_gateway_merge.md). `WatchDispatches` ships deleted rows as
-base64 protobuf split into `pg_notify` parts (`dispatcher/terminal.go`), reassembled with a timeout
+Blocked on the [delivery ownership decision](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology).
+`WatchDispatches` ships deleted rows as base64 protobuf split into `pg_notify` parts (`dispatcher/terminal.go`), reassembled with a timeout
 and a pending cap, failing every stream on any malformed part, with no replay, through its own
 `pq.NewListener` rather than the shared `postgres/wakeups.Hub`; every stream re-lists its scope on
 any change. Use a version column bumped from a sequence on every write, short-lived tombstones keyed
