@@ -87,7 +87,6 @@ filegroup(
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:kubernetes_pb",
-        "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
     ],
 )

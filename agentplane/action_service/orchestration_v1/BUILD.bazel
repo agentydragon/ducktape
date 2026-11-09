@@ -25,7 +25,6 @@ go_library(
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
