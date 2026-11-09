@@ -21,11 +21,10 @@ spec:
         description: 'KubernetesRoleSet is a reusable, named set of Kubernetes RBAC
           rules that grants attach to ServiceAccounts.
 
-          A set names no apiserver by design: each grant''s ServiceAccount does, and
-          the Policy Controller resolves the
+          A set names no apiserver by design: the Policy Controller resolves its roles
+          where each grant''s ServiceAccount
 
-          set''s roles on that apiserver, reporting any that do not exist there as
-          missing.'
+          is, reporting any that do not exist there as missing.'
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation

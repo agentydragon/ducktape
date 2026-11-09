@@ -102,7 +102,7 @@ metadata: { name: k8s-account-shared-diagnostics }
 spec:
   description: Act as the shared read-only diagnostics account on the local apiserver.
   source:
-    kubernetesServiceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+    kubernetesServiceAccount: { namespace: agentplane-k8s-accounts, name: shared-diagnostics }
   targets: [{ header: Authorization, method: schemeToken, scheme: Bearer }]
 ```
 
@@ -110,7 +110,7 @@ spec:
 
 The two Kubernetes rule shapes move, unchanged, from `PolicySet` into a set of their own, so
 "cluster diagnostics" stays one reusable name. A grant attaches sets to one ServiceAccount, named by
-apiserver, namespace and name, with the binding's expiry and ownership semantics:
+namespace and name, with the binding's expiry and ownership semantics:
 
 ```yaml
 kind: KubernetesRoleSet
@@ -123,13 +123,13 @@ spec:
 kind: ServiceAccountGrant # Flux: standing roles on the shared account
 metadata: { name: shared-diagnostics }
 spec:
-  serviceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  serviceAccount: { namespace: agentplane-k8s-accounts, name: shared-diagnostics }
   roleSets: [cluster-diagnostics]
 ---
 kind: ServiceAccountGrant # app: every agent on the shared account gets more for an hour
 metadata: { name: shared-diagnostics-cnpg-read-20261105 }
 spec:
-  serviceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  serviceAccount: { namespace: agentplane-k8s-accounts, name: shared-diagnostics }
   roleSets: [cnpg-read]
   expiresAt: "2026-11-05T13:00:00Z"
 ```
@@ -145,9 +145,8 @@ Decided by the operator, 2026-11-09:
   `ManagedServiceAccount` and `source.kubernetesServiceAccount` already say ServiceAccount.
   `Kubernetes` stays only where it tells an Agentplane concept apart (`KubernetesRoleSet` beside
   `PolicySet`).
-- A `KubernetesRoleSet` names no apiserver. The grant's `serviceAccount.apiServer` does, and the
-  Policy Controller resolves a set's roles on that apiserver and reports the absent ones in
-  `missingRoles`.
+- A `KubernetesRoleSet` names no apiserver. The Policy Controller resolves a set's roles where the
+  grant's ServiceAccount is, and reports the absent ones in `missingRoles`.
 
 ### `ManagedServiceAccount`: optional, for accounts Agentplane creates
 
@@ -162,7 +161,6 @@ metadata:
   name: agent-123-extra
   ownerReferences: [{ kind: Identity, name: agent-123 }]
 spec:
-  apiServer: local
   expiresAt: "2026-11-05T12:34:00Z"
 status:
   serviceAccount: { namespace: agentplane-k8s-accounts, name: agent-123-extra, uid: ... }
@@ -311,15 +309,16 @@ controller's pass, the same as today.
 **Egress proxy, acting as the account: impersonation** (decided 2026-11-05). The proxy's own
 apiserver credential gets `impersonate` on `serviceaccounts` in the accounts namespace. Per request
 it replaces the placeholder with its own bearer and adds
-`Impersonate-User: system:serviceaccount:<ns>/<account>`; the apiserver adds the
+`Impersonate-User: system:serviceaccount:<ns>:<account>`; the apiserver adds the
 `system:serviceaccounts` groups itself. No token is minted or cached, revocation is the rule going,
 enforced on the next request, and the audit log records both the account and the proxy as original
 user. Impersonating ServiceAccounts rather than users keeps OIDC users bound by name out of reach.
 A TokenRequest source (`create serviceaccounts/token`, short TTL, cached) is not built; add it only
 when a remote apiserver refuses the proxy impersonation rights.
 
-A remote apiserver is a named target in both the controller's and the proxy's settings carrying its
-kubeconfig, the way tofu-controller holds Forgejo credentials.
+Only the local cluster is modelled (operator, 2026-11-09). Impersonation works only on the
+apiserver the proxy itself authenticates to, and nothing needs another one yet. A named remote
+target is an additive field when a use case appears.
 
 **What the agent sees.** No kubeconfig. Materializing one was a Kubernetes-specific convenience
 that does not generalize to any other external service an agent may be granted (operator,
@@ -452,8 +451,9 @@ cannot change in place, and the new launch writes the identity.
    replaced Sandbox fails the lookup with nothing to clean. That gives the proxy a Sandbox read it
    does not have today. `status.workloadCredentials` then holds only the SA-token entries for
    workloads without an SVID.
-4. **Impersonation: decided 2026-11-05.** Still open: which apiservers the proxy and controller
-   may reach, with what credential, and whether any of them refuses impersonation.
+4. **Impersonation: decided 2026-11-05.** Which apiservers, decided 2026-11-09: only the local
+   cluster, with the proxy's and controller's own in-cluster credentials. A named remote target is
+   additive later.
 5. **Credential descriptions as the only instructions.** With no kubeconfig, the `description`
    on each Kubernetes credential is what tells an agent the host, the account and the `kubectl`
    invocation; settle the convention for that prose, generated by cdk8s and the controller alike,
@@ -483,7 +483,8 @@ cannot change in place, and the new launch writes the identity.
     path. Decided by the operator, 2026-11-09: `Identity` carries no `expiresAt`. Bindings and grants
     expire, and an identity is ended by its creator or the finish dialog. Still open: what
     "referenced" means for a retired Sandbox that could still resume.
-13. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
+13. **Second control plane.** Only the local cluster is modelled (decided 2026-11-09; a named
+    remote target is additive later). Accounts live on that apiserver regardless of where Agentplane's
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
     `Identity`, grants and managed accounts move with the Sandbox family under D3.
 
