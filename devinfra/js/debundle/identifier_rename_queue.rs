@@ -43,11 +43,11 @@ use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::Result;
-use binding_targets::declaration_name_strings;
+use binding_targets::top_level_binding_name_strings;
 use serde::Serialize;
 use swc_ecma_ast::{
-    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, Ident, MemberExpr, MemberProp,
-    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Prop, PropName, Stmt,
+    BindingIdent, ExportSpecifier, Ident, MemberExpr, MemberProp, ModuleExportName, NamedExport,
+    Prop, PropName,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -302,7 +302,7 @@ fn unrenamed_top_level_sites(
 ) -> Vec<DeclSite> {
     let mut out = Vec::new();
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
-        for name in top_level_binding_names(item) {
+        for name in top_level_binding_name_strings(item) {
             if !input_names.contains(&name) {
                 continue;
             }
@@ -317,45 +317,6 @@ fn unrenamed_top_level_sites(
         }
     }
     out
-}
-
-/// Names bound at module top-level by `item`. Mirrors the surface
-/// `program_analysis::analyze_program_shallow` already classifies as
-/// "source_units" — function/class/var declarations, including the same
-/// shapes wrapped in `export`. Import locals also count: a minified
-/// import alias is a top-level binding that other modules see.
-fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_name_strings(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
-            declaration_name_strings(decl)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(ExportDefaultDecl {
-            decl, ..
-        })) => match decl {
-            swc_ecma_ast::DefaultDecl::Class(class) => class
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            swc_ecma_ast::DefaultDecl::Fn(function) => function
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            swc_ecma_ast::DefaultDecl::TsInterfaceDecl(_) => Vec::new(),
-        },
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-            .specifiers
-            .iter()
-            .map(|specifier| match specifier {
-                swc_ecma_ast::ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                swc_ecma_ast::ImportSpecifier::Namespace(ns) => ns.local.sym.to_string(),
-                swc_ecma_ast::ImportSpecifier::Named(named) => named.local.sym.to_string(),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
 }
 
 /// Visitor that counts references to identifiers in `of_interest`.

@@ -3,7 +3,8 @@
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
-use frontend_elaboration::chunk_ast::{binding_names, top_level_declaration_ids};
+use binding_targets::binding_name_strings;
+use frontend_elaboration::chunk_ast::top_level_declaration_ids;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -139,7 +140,7 @@ impl Visit for RefCollector {
         let shadowed = node
             .params
             .iter()
-            .flat_map(|param| binding_names(&param.pat))
+            .flat_map(|param| binding_name_strings(&param.pat))
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -148,7 +149,7 @@ impl Visit for RefCollector {
         let shadowed = node
             .params
             .iter()
-            .flat_map(binding_names)
+            .flat_map(binding_name_strings)
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
