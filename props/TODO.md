@@ -30,10 +30,10 @@
 - Make the trace-metadata injection in `llm_proxy/routes.py` (`_merge_props_metadata`)
   configurable, including whether it runs and which LiteLLM field carries it.
 - Get the props correlation keys into Langfuse again, then verify them on a live run.
-  Only LiteLLM's v1 `langfuse_otel` logger reads `trace_metadata`, and our LiteLLM uses the
-  generic `otel` callback. Candidates: carry the keys as LiteLLM `baggage_metadata_keys`,
-  as Agentplane attribution does in `cluster/cdk8s/litellm/config.py`, or fix the v2
-  `langfuse` mapper upstream. Details:
+  LiteLLM `trace_metadata` reaches Langfuse under neither the `otel` nor the `langfuse_otel`
+  callback (measured in `cluster/debug/litellm_langfuse_span_scope/`). LiteLLM
+  `baggage_metadata_keys` do arrive, which is how Agentplane attribution travels
+  (`cluster/cdk8s/litellm/config.py`). Details:
   `cluster/cdk8s/litellm/docs/langfuse_tracing.md` § Open: props correlation keys.
 
 ## Testing
