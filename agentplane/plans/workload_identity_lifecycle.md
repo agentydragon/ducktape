@@ -142,8 +142,9 @@ package requester
 type Requester interface {
 	// Ensure creates or updates the owner's WorkloadCredential and returns its current status:
 	// pending until cert-manager is Ready, then the credential ID, URI and Secret name to mount.
-	// A higher Request.Rotation rotates to a new credential ID; Binding names the incarnation
-	// (Pod or VMI UID) the owner accepts for the current ID, or none for a standing workload.
+	// Binding names the incarnation (Pod or VMI UID) the owner accepts, or none for a standing
+	// workload. A credential ID lives exactly as long as the binding it was accepted for: when
+	// Binding leaves it, the component mints a fresh ID, and never otherwise.
 	Ensure(ctx context.Context, request Request) (Credential, error)
 	// Revoke deletes the owner's WorkloadCredential; the next request presenting it fails.
 	Revoke(ctx context.Context, owner Owner) error
@@ -165,10 +166,9 @@ metadata:
 spec: # the requester's; admission pairs requester with kind
   kind: environment-runtime # environment-runtime | action-box | standing
   subject: { serviceAccount: <name> } # { identity: { name, uid } } after IDENTITY_CUTOVER
-  rotation: 3 # bump to rotate
   binding: { podUID: <uid> } # or { vmiUID: <uid> }; absent for standing
 status: # the component's only
-  credentialID: 9f2c... # fresh per generation
+  credentialID: 9f2c... # fresh whenever spec.binding leaves the accepted binding
   uri: spiffe://agentplane/environment-runtime/agentplane-staging/<sandbox-name>/9f2c...
   secretName: svid-<name>-9f2c... # svid-<name> for standing, which a Flux Deployment must name
   acceptedBinding: { podUID: <uid> } # copied once the Certificate for credentialID is Ready
@@ -207,15 +207,23 @@ record, and the record names the subject.
 7. The caller may also offer a Pod-bound token: the Kubernetes-audience token a sidecar forwards
    for `projectedWorkloadToken`. Its TokenReview Pod UID must then equal `status.acceptedBinding`.
 
-Each request, including one inherited through a tunnel, repeats steps 4 to 7. Until the cutover,
+Each request, including one inherited through a tunnel, repeats steps 4 to 7.
+
+**Credential IDs.** A credential ID lives exactly as long as the binding it was accepted for. The
+first binding after a fresh ID accepts that ID, because the incarnation was started with it. When
+`spec.binding` later leaves the accepted binding, the component mints a fresh ID: the binding is
+cleared, or replaced by another Pod or VMI UID. Nothing else rotates an ID. A standing workload
+has no binding, so its ID never changes, and cert-manager renews its key under the same ID.
+Emergency revocation of any record is deleting it. The resolver refuses the old ID on the next
+request, and the requester, or Flux, recreates the record with a fresh ID. Until the cutover,
 the resolver returns today's `Principal`, with the binding as the provenance Pod, so no service
 authorization changes.
 
 Sandbox semantics carry over. The request is owned by the Sandbox, so it outlives finalization
-while Runtime seals history, and it goes when the Sandbox does. A VMI replacement bumps `rotation`, which
-rotates the ID. Clearing `binding` revokes. The Sandbox Controller copies `spec.identity` into
-`spec.subject`. Because `spec.identity` changes only while nothing runs, no request in flight sees
-two subjects. Whether that change also rotates the credential is question 8. This replaces the
+while Runtime seals history, and it goes when the Sandbox does. A new Pod or a VMI replacement is a new
+binding, so it gets a fresh ID. Clearing `binding` revokes. The Sandbox Controller copies
+`spec.identity` into `spec.subject`. Because `spec.identity` changes only while nothing runs, no
+request in flight sees two subjects, and the next start rotates the credential (question 8). This replaces the
 identity plan's assumption that verifiers read `spec.identity` from the live Sandbox.
 
 ### Admission
@@ -236,8 +244,8 @@ cdk8s renders a `standing` request per Deployment into `haku-sandbox`. Haku's de
 write it. The component issues the Certificate with a stable Secret name, and Haku's Deployment
 mounts that Secret into its sidecar, as it mounts the token projection today. Any Pod Haku creates
 there could mount it, which is the reach the `haku-ui` ServiceAccount already gives. For a
-Deployment, the incarnation is the credential generation. Every replica presents the same SVID, and
-no Pod is proven. Revocation is a Flux prune. Rotation is a `rotation` bump in cdk8s.
+Deployment, the incarnation is the record itself. Every replica presents the same SVID, and no Pod
+is proven. Revocation is deleting the record, which Flux recreates with a fresh ID, or a Flux prune.
 
 ### What moves out of the Sandbox Controller
 
@@ -253,20 +261,20 @@ This is migration step 2 and the size of the reshuffle:
 | The `runner_certificate_issuer` setting; RBAC for Certificate create and delete and Secret delete                                                                                               | Policy Controller settings and RBAC         |
 | Verifier lookups: `sandboxreader.FindRunnerCredential` and `RunnerCredentialAccount`, and the Sandbox read in `workload_auth/auth/svid.go`                                                      | `resolver`; verifiers drop Sandbox reads    |
 
-What stays with the Sandbox Controller is deciding when an incarnation needs a new generation and
-which Pod or VMI it accepts. It also keeps labelling and mounting: `withRunnerTLS`,
+What stays with the Sandbox Controller is deciding which incarnation it accepts, and nothing more.
+It also keeps labelling and mounting: `withRunnerTLS`,
 `withRunnerTLSDisk`, the credential label and the VM annotations. The launcher relay's Kyverno
 admission reads the request's accepted binding instead of Sandbox status.
 
 ## Migration and rollback
 
-| Step                                                                                              | Mixed mode                | Proven in k3s before staging                                                                                                     | Rollback                                             |
-| ------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 1. The shared workload CA: ClusterIssuer, trust Bundle, Certificate admission policy              | Bearer still on           | Sandbox SVID route on the narrowed trust; a `cluster-internal-ca` leaf with a live Sandbox's URI is refused                      | Revert the pins                                      |
-| 2. CRD, `issuer` in the Policy Controller, `resolver`; the Sandbox Controller becomes a requester | as above                  | Sandbox SVID route on all three runtimes through the request; VMI replacement rotates; deleting a Sandbox after its seal revokes | Revert the pins                                      |
-| 3. Action boxes request `action-box`; the box sidecar selects SPIFFE                              | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B                          | Revert the Action Service image and templates        |
-| 4. `standing` requests; `haku-state` switches its sidecars                                        | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                             | Revert the `haku-state` commit; the request is inert |
-| 5. Remove the bearer hop                                                                          | none                      | Nothing projects the `agentplane-egress` hop audience                                                                            | Revert; no caller depends on it                      |
+| Step                                                                                              | Mixed mode                | Proven in k3s before staging                                                                                                               | Rollback                                             |
+| ------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| 1. The shared workload CA: ClusterIssuer, trust Bundle, Certificate admission policy              | Bearer still on           | Sandbox SVID route on the narrowed trust; a `cluster-internal-ca` leaf with a live Sandbox's URI is refused                                | Revert the pins                                      |
+| 2. CRD, `issuer` in the Policy Controller, `resolver`; the Sandbox Controller becomes a requester | as above                  | Sandbox SVID route on all three runtimes through the request; a VMI replacement gets a fresh ID; deleting a Sandbox after its seal revokes | Revert the pins                                      |
+| 3. Action boxes request `action-box`; the box sidecar selects SPIFFE                              | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B                                    | Revert the Action Service image and templates        |
+| 4. `standing` requests; `haku-state` switches its sidecars                                        | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                                       | Revert the `haku-state` commit; the request is inert |
+| 5. Remove the bearer hop                                                                          | none                      | Nothing projects the `agentplane-egress` hop audience                                                                                      | Revert; no caller depends on it                      |
 
 Steps 1 and 2 have one precondition: zero running Sandboxes. Both admission policies are
 `ValidatingAdmissionPolicy` objects, which envtest evaluates with the cert-manager CRDs installed.
@@ -313,17 +321,11 @@ and 5 may land on either side.
    Recommendation: `IDENTITY_KINDS` omits the field.
 7. **Off-cluster callers.** A Secret mount does not reach them. Recommendation: design delivery when
    one exists. The request and the resolver stay as here.
-8. **Re-owning a Sandbox: rotate or keep the certificate.** The subject lives in the record, so
-   re-owning a Sandbox is a `spec.subject` change, and the certificate could stay. The identity
-   plan's [§ Changing an environment's identity](identity_and_kubernetes_accounts.md#changing-an-environments-identity)
-   rotates the credential ID on the next start instead.
-   - **Rotate.** The boundary shows in audit logs as a new SPIFFE ID, at the cost of one reissue
-     per re-own.
-   - **Keep the certificate.** Simpler, but one SPIFFE ID then spans two identities in decision
-     history and service logs.
-
-   The in-flight hazards are covered either way, because the identity changes only while nothing
-   runs. Recommendation: rotate, by bumping `rotation` with the subject change. Operator to confirm.
+8. **Re-owning a Sandbox: decided 2026-11-09.** The identity changes only while nothing runs, and
+   the next start is a new incarnation. Its binding changes, so the credential rotates anyway, and
+   the audit boundary of the identity plan's
+   [§ Changing an environment's identity](identity_and_kubernetes_accounts.md#changing-an-environments-identity)
+   comes at no extra cost.
 
 When `WORKLOAD_AUTH_CUTOVER` lands, this content moves into `docs/workload_authentication.md` and
 the SPECs of the Policy Controller, Sandbox Controller, egress proxy and Action Service, and this
