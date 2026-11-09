@@ -241,7 +241,6 @@ slice may recover more or fewer cases than its row says.
 
 | Order | Slice                                                                                                                                                                                                    | Cases | Targets owned / touched | Needs                                         |
 | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------------- |
-|     0 | Commuting-premise validator plus three stale expectations (`repeated_var_loop_test`, `at_init_s_chain_dataflow_test`)                                                                                    |     4 |                   1 / 3 | none                                          |
 |     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                     |    38 |                 10 / 11 | L1b, L2a                                      |
 |     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`) |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
 |     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                              |    77 |                 11 / 16 | L2a, L2b, L2d                                 |
@@ -267,8 +266,7 @@ parity tests green.
   <../debug/2026_11_09_l4c_discrepancy_audit.md>. It found no unsafe legacy
   acceptance and no gate defect. Every legacy-accepted / effect-refused case
   is uncovered havoc. Rerun with `--test_env=DEBUNDLE_TV_AUDIT=1` after
-  each Wave 3 slice. Left: the premise-covered havoc policy (owned by L4d);
-  the full canonical conflict export; owners for anonymous-statement
+  each Wave 3 slice. Left: the full canonical conflict export; owners for anonymous-statement
   coverage, the completed call-initializer seal and non-invoking literal
   coverage, which no Wave 3 slice holds.
 - L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
@@ -287,6 +285,13 @@ parity tests green.
   | child completeness passed upward (`inherit_completeness` sites)                                    | `child.ledger.closed_effect_dependencies()`; parents already compose the child ledger                                      |
   | setters (`complete: true` literals, `lose_precision`)                                              | deleted; each site composes `EffectCoverageFragment::default()` where it does not already                                  |
   | export (`roots/body.rs`, `outcome.effects.complete = outcome.complete`)                            | the one writer of `SynchronousCalls.complete`, computed as `ledger.has_closed_effects()`, behind an engine-hash codec bump |
+
+  Premise policy (decided 2026-11-09): a `commuting_statements` premise is
+  an axiom. A swapped pair it covers is discharged even when either statement
+  is havoc, so the decision's `Incomplete { premise_covered: true }` arm
+  (`realizability/effect_translation_validation.rs`) becomes an acceptance
+  that keeps the premise in the audit list. Uncovered havoc pairs stay
+  `incomplete`.
 
   Two preconditions:
   - The terminal-call stop in the application adapter clears `complete`
