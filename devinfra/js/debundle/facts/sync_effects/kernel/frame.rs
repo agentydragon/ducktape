@@ -75,9 +75,9 @@ impl LocalFrame {
         self.ledger.completion = Completion::from_alternatives(None, abrupt, non_normal);
     }
 
-    pub(super) fn complete_throw(&mut self) {
+    pub(super) fn complete_throw(&mut self, values: Values) {
         let (_, mut abrupt, non_normal) = self.ledger.completion.clone().into_alternatives();
-        abrupt.push(AbruptAlternative::Exact(KnownThrow));
+        abrupt.push(AbruptAlternative::Exact(KnownThrow { values }));
         self.ledger.completion = Completion::from_alternatives(None, abrupt, non_normal);
         self.ledger.allocation = AllocationJudgment::Opaque;
     }
@@ -150,10 +150,12 @@ pub(in crate::facts::sync_effects) enum LocalNormal {
 }
 
 /// An exact source throw of this body, as opposed to an operand that may have
-/// thrown. The adapter publishes the thrown value at the throw; the payload
-/// joins this marker when a handler construct can consume it.
+/// thrown. The adopter publishes the thrown values; a handler construct can
+/// consume them once the IR lowers one.
 #[derive(Clone)]
-pub(in crate::facts::sync_effects) struct KnownThrow;
+pub(in crate::facts::sync_effects) struct KnownThrow {
+    pub(in crate::facts::sync_effects) values: Values,
+}
 
 /// Nonterminal provenance of an actually selected abstract callable. This
 /// proves neither fresh allocation nor complete invocation effects.

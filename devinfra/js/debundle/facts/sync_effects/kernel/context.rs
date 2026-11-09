@@ -1,21 +1,21 @@
 //! The five narrow adapter traits. An adapter supplies policy; the kernel owns
 //! operation order and semantics.
 //!
-//! Methods marked `CLEANUP` are kernel semantics in the target design that
-//! still need shared state devel does not have yet: lexical cells live in the
-//! application `ExecutionState`, not in a `World` both adapters share.
+//! Methods marked `CLEANUP` are kernel semantics in the target design whose
+//! two adapter implementations still differ; L2b's second PR moves them into
+//! the kernel over the shared `World`.
 
-use super::super::allocation_transfer::{AllocationValue, LiteralHeap};
+use super::super::allocation_transfer::AllocationValue;
 use super::super::array_transfer::ArrayPushSelection;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{CallSite, ValueExpr, Values};
+use super::super::world::World;
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::OrderedFieldReadRefusal;
-use crate::facts::EffectCell;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -32,9 +32,9 @@ pub(in crate::facts::sync_effects) trait BindingContext {
         false
     }
     // CLEANUP(added 2026-11-09): the five methods below become kernel cell
-    // semantics (`cell_policy`/`cell_effect` adapter policy) once L2b's
-    // `World.cells` exists; today the application adapter owns the cells in
-    // `ExecutionState` and the strict provider has none.
+    // semantics over `World.cells` with a `cell_policy`/`cell_effect` adapter
+    // policy in L2b's second PR; today the application adapter allocates the
+    // cells itself and the strict provider refuses captured stores.
     /// A store to a binding this body does not declare.
     fn assign_capture(
         &mut self,
@@ -83,18 +83,21 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     OwnDataContext
 {
     fn index(&self) -> &ExecutionIndex;
-    fn heap(&mut self) -> LiteralHeap<'_>;
-    // CLEANUP(added 2026-11-09): derive from `World.settled_dependencies`
-    // once L2b lands; the application snapshots its prefix prerequisites here
-    // and the strict provider has none.
+    /// The stores this body mutates in place. Observations never go here;
+    /// the kernel returns them in its ledger.
+    fn world(&self) -> &World;
+    fn world_mut(&mut self) -> &mut World;
+    // CLEANUP(added 2026-11-09): derive from the `World` in L2b's second PR;
+    // the application snapshots its prefix prerequisites here and the strict
+    // provider has none.
     /// Conditions under which the current settled prefix is valid.
     fn settled_dependencies(&self) -> Box<ProofDependencies> {
         Box::default()
     }
     // CLEANUP(added 2026-11-09): closure creation becomes one kernel rule
-    // (`AbstractValue::Closure(HeapAddress, LexicalCaptures)`) once L2b gives
-    // both adapters a shared `World` with lexical cells and qualified
-    // addresses; today the two adapters build different closure values.
+    // (`AbstractValue::Closure(HeapAddress, LexicalCaptures)`) in L2b's second
+    // PR, once addresses are qualified by `WorldScope`; today the two adapters
+    // build different closure values.
     fn closure(
         &mut self,
         frame: &mut LocalFrame,
@@ -181,10 +184,4 @@ impl<C: BindingContext + CallContext + HeapContext + NativeContext + ControlCont
 
 pub(in crate::facts::sync_effects) trait ControlContext {
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition;
-    fn publish_throw(&mut self, values: &Values);
-    // CLEANUP(added 2026-11-09): the effect sink moves to `World.scope` when
-    // L2b lands; an isolated provider scope then discards instead of
-    // overriding these.
-    fn record_property_read(&mut self, cell: EffectCell);
-    fn record_property_write(&mut self, cell: EffectCell);
 }

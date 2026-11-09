@@ -82,23 +82,38 @@ Two kinds of state cross the kernel boundary and they move differently:
 
 - **Stores** (heap, lexical cells, object surface, descriptors) are mutated in
   place through `&mut World`. A missed store write shows up as a wrong value.
-- **Observations** (effects, completion, proof dependencies, inference uses,
-  native integrity and prototype checks, operation-support receipts) are only
-  ever **returned** and composed, never recorded into a context. A missed
-  observation would silently claim purity, so the shape makes it a type error:
-  a branch with nothing to return does not compile, and a dropped value is a
-  `#[must_use]` error. `EffectCoverageFragment`, `TransferLedger`,
-  `Completion` and `Joined` carry `#[must_use]`.
+- **Observations** (effects, completion, heap cells touched, exact throws,
+  operation-support receipts) are only ever **returned** in the kernel's
+  `TransferLedger` and composed by the adopting scope, never recorded into a
+  context. A missed observation would silently claim purity, so the shape
+  makes it a type error: a branch with nothing to return does not compile,
+  and a dropped value is a `#[must_use]` error. `EffectCoverageFragment`,
+  `TransferLedger`, `Completion` and `Joined` carry `#[must_use]`.
 
-Consequences: `ControlContext::{record_property_read, record_property_write,
-publish_throw}` do not exist; `TransferLedger.dependencies` is kept and
-replaces the `proof_dependencies: RefCell` (L2a dropped it as reader-less; the
-`RefCell` is the reader). The nine `RefCell` ledgers in `ExecutionState`
-(`interpreter.rs`, `native_*_checks`, `*_uses`, `proof_dependencies`,
-`record_factory_prototype_premises`) become returned values that ride the
-ledger upward; they are not relocated as a struct of `RefCell`s. A join
-consumes the whole family of alternatives as one value (`Family` or `Vec`), so
-an alternative cannot be left out of a join by omission.
+Consequences (L2b): `ControlContext::{record_property_read,
+record_property_write, publish_throw}` do not exist. The kernel puts the
+cells a body reads or writes into `TransferLedger.heap_accesses` and the
+thrown values into `KnownThrow`; the application scope records them as the
+owner's effects and publications where it adopts the ledger, and the isolated
+provider scope leaves them private. Kernel prerequisites (module-prefix read
+selection, writable writes, closure selection) ride `TransferLedger.effects`
+through `EffectCoverageFragment::depend_on`; a separate
+`TransferLedger.dependencies` would have no reader on devel.
+
+**Run-level admission facts are threaded, not returned per operation.** The
+nine `RefCell` ledgers of `ExecutionState` (`native_*_checks`, `*_uses`,
+`proof_dependencies`, `record_factory_prototype_premises`) are one plain
+`Observations` struct with private fields and `&mut self` writers, so a fact
+enters only through a named admission predicate. They are not per-transfer
+effects: a predicate anywhere in the executor (native transfers, the legacy
+evaluator) may add one, and `dependencies` and the record-factory premises are
+read back mid-run as the conservative prerequisite set of later transfers, so
+a child must start from the parent's accumulated set. `Executor` owns them,
+hands them to a child executor with its `RuntimeRequest`, takes them back from
+the child's `#[must_use] RuntimeResult`, and `execute_owner` drains the
+report-only ones into the owner's `SynchronousCalls`. A join consumes the
+whole family of alternatives as one value (`Family` or `Vec`), so an
+alternative cannot be left out of a join by omission.
 
 `OwnDataContext` collapses into `HeapContext::world` plus `heap_resolver`;
 every other method is an inherent `World` query. `AllocationContext`,
@@ -353,19 +368,21 @@ driver loops, `invoke_with_cells` for ordered-plan bodies, the legacy
 `source_continuation_tests.rs` (moves with the continuation), strict-provider
 unit tests. About 4.5k moved, 1.5k edited, 1k deleted.
 
-**L2b — `world/` and `alternatives/`** (needs L2a). `SemanticWorldData`,
-`LexicalCell*`, `ReachabilityState`, `ObjectSurfaceStore`, `DescriptorHeap`
-→ `world/`; `conservative_world_join.rs` → `world/join.rs`;
-`transfer_alternatives.rs` → `alternatives/`. SP's private fields become a
-`World`. Deletes both `Deref` impls, the duplicate `join_callback_fallback`
-and `join_class_member_effects`, the two join panics. Replaces the `RefCell`
-ledgers in `ExecutionState` (`interpreter.rs:1796-1807`) with returned
-observations per § Observations are returned, restoring
-`TransferLedger.dependencies`; deletes the L2a sink methods
-`record_property_{read,write}`/`publish_throw` and closes L2a's L2b-gated
-tombstones in a stacked second PR. Audits interner ids. Tests:
-`source_continuation`, `optional_call_timing`, join unit tests per refusal
-variant. About 6k moved, 1.2k edited, 0.4k deleted.
+**L2b — `world/` and `alternatives/`** (needs L2a). PR 1 (in review):
+`SemanticWorldData`, `LexicalCell*`, `ReachabilityState` → `world/`, one
+`World` with twelve owners behind `Arc` + `make_mut` for both adapters (SP's
+private surface, arrays and revision are a `World { scope: IsolatedProvider }`),
+no `Deref`; the `RefCell` ledgers become the threaded `Observations` struct
+per § Observations are returned; `record_property_{read,write}`/`publish_throw`
+deleted. `World::join` in `world/join.rs` (strict fast path, one `Join` per
+owner, `Joined`/`JoinRefusal`, no panic, unit tests per refusal variant) is a
+stacked PR that lands with its first caller; `alternatives/` and
+`ExecutionState::join` wait for the same first fork producer (the
+conditional/logical IR slice): devel has no `Family`. Omitted
+owners with no devel reader: `fallback`, `native.prefix_native_retained_*`,
+`classes.active_construction`, `descriptors.{copy_results,private}`. PR 2
+(stacked) closes L2a's L2b-gated tombstones. Tests: `optional_call_timing`
+and the suite unchanged.
 
 **L2c — application adapter and `complete`** (needs L2b).
 `LocalExecutionContext` and helpers → `adapters/application.rs`;

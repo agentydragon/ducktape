@@ -1,6 +1,6 @@
 //! The allocation-only provider consumer of the shared value transfers.
 
-use super::allocation_transfer::{self, AllocationJudgment, AllocationValue, LiteralHeap};
+use super::allocation_transfer::{self, AllocationJudgment, AllocationValue};
 use super::execution_index::ExecutionIndex;
 use super::kernel::context::{
     BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
@@ -13,16 +13,15 @@ use super::kernel::frame::{
 use super::local_operations::DeferredCallableCreation;
 use super::own_data_transfer::OwnDataContext;
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
+    AbstractValue, CallSite, Context, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
 };
-use super::world::object_surface::ObjectSurfaceStore;
+use super::world::{World, WorldScope};
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::integrity::Integrity;
 use crate::facts::abstract_domain::value::{Kind, Value};
-use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
@@ -40,9 +39,9 @@ struct ProviderContext<'a> {
     local_bindings: BTreeSet<Id>,
     shadowed: BTreeSet<&'static str>,
     native_constructions: BTreeSet<NativeIntrinsic>,
-    surface: ObjectSurfaceStore,
-    arrays: OrdMap<u32, DenseArray>,
-    revision: u64,
+    /// The query's fresh heap: an isolated scope, so its cells never reach a
+    /// caller's effects and no literal writability is proven.
+    world: World,
 }
 
 impl ProviderContext<'_> {
@@ -94,10 +93,12 @@ impl OwnDataContext for ProviderContext<'_> {
         true
     }
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
-        self.surface.data_values(allocation, property)
+        self.world.surface.data_values(allocation, property)
     }
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
-        self.surface.has_accessor_property(allocation, property)
+        self.world
+            .surface
+            .has_accessor_property(allocation, property)
     }
     fn property_is_writable(&self, _allocation: u32, _property: &str) -> bool {
         false
@@ -108,13 +109,11 @@ impl HeapContext for ProviderContext<'_> {
     fn index(&self) -> &ExecutionIndex {
         self.index
     }
-    fn heap(&mut self) -> LiteralHeap<'_> {
-        LiteralHeap {
-            surface: &mut self.surface,
-            arrays: &mut self.arrays,
-            revision: &mut self.revision,
-            track_writable_prefix: false,
-        }
+    fn world(&self) -> &World {
+        &self.world
+    }
+    fn world_mut(&mut self) -> &mut World {
+        &mut self.world
     }
     fn closure(
         &mut self,
@@ -266,14 +265,6 @@ impl ControlContext for ProviderContext<'_> {
         // there is no application state to summarize into.
         Disposition::Refused
     }
-    fn publish_throw(&mut self, _values: &Values) {
-        // The shared abrupt result makes the allocation judgment opaque.
-    }
-    // These cells belong to the isolated fresh heap. The query declines any
-    // borrowed access or publication and separately traverses returned values
-    // for retention, so internal property accesses need no caller effect.
-    fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
-    fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
 }
 
 struct ClosureCaptureProjection {
@@ -360,6 +351,7 @@ fn retain_provider_values(
                 if visited_objects.insert(allocation) {
                     pending.extend(
                         context
+                            .world
                             .surface
                             .own_properties(allocation)?
                             .values()
@@ -504,9 +496,7 @@ pub(super) fn derive(
             .unwrap_or_default(),
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
-        surface: ObjectSurfaceStore::default(),
-        arrays: OrdMap::new(),
-        revision: 0,
+        world: World::new(WorldScope::IsolatedProvider),
     };
     let frame = LocalFrame::new(std::mem::take(&mut context.bindings));
     let result = if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
@@ -577,7 +567,7 @@ pub(super) fn derive(
             }
             AbstractValue::Value(Value::Alloc(Kind::Object, allocation)) => {
                 returns.insert(ForeignReturn::FreshAllocation);
-                let properties = context.surface.own_properties(allocation)?;
+                let properties = context.world.surface.own_properties(allocation)?;
                 retain_provider_values(
                     &context,
                     scope,
@@ -655,9 +645,7 @@ pub(super) fn derive_class(
         local_bindings: body.bindings.keys().cloned().collect(),
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
-        surface: ObjectSurfaceStore::default(),
-        arrays: OrdMap::new(),
-        revision: 0,
+        world: World::new(WorldScope::IsolatedProvider),
     };
     let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
     frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
@@ -694,7 +682,7 @@ pub(super) fn derive_class(
                 if !visited_objects.insert(allocation) {
                     continue;
                 }
-                if let Some(properties) = context.surface.own_properties(allocation) {
+                if let Some(properties) = context.world.surface.own_properties(allocation) {
                     pending_values.extend(properties.values().flatten().cloned());
                 }
             }

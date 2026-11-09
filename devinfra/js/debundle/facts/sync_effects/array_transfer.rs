@@ -12,7 +12,8 @@ pub(super) trait ArrayContext {
     /// and no own `push`. Reused allocation sites and descriptor changes lose
     /// this witness even if their pooled element values are still available.
     fn writable_array_length(&self, object: u32) -> Option<u32>;
-    fn array_prototypes_intact(&self) -> bool;
+    /// Records the prototype check it makes as an admission fact.
+    fn array_prototypes_intact(&mut self) -> bool;
     fn array_dependencies(&self) -> ProofDependencies;
     fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]);
 }
@@ -26,7 +27,7 @@ pub(super) struct ArrayPushSelection {
 }
 
 pub(super) fn select_push(
-    context: &impl ArrayContext,
+    context: &mut impl ArrayContext,
     receivers: &Values,
     property: &str,
 ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {

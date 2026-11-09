@@ -364,8 +364,7 @@ impl LocalContinuation {
             }
             Step::Throw => {
                 let selected = self.take_value();
-                context.publish_throw(&selected.values);
-                self.frame.complete_throw();
+                self.frame.complete_throw(selected.values);
             }
             Step::RecordNext {
                 aggregate,
@@ -405,7 +404,11 @@ impl LocalContinuation {
                 };
                 // A child can reenter this allocation site. Its resulting
                 // heap entry then also represents an older record.
-                *new_record &= context.heap().surface.own_properties(*allocation).is_none();
+                *new_record &= context
+                    .world()
+                    .surface
+                    .own_properties(*allocation)
+                    .is_none();
                 // The child's judgment was composed into the ledger as it ran.
                 transfer.child(
                     index,
@@ -792,7 +795,7 @@ impl LocalContinuation {
                 ) {
                     return Err(RemainderDisposition::NeedsSummary);
                 }
-                let new_record = context.heap().surface.own_properties(allocation).is_none();
+                let new_record = context.world().surface.own_properties(allocation).is_none();
                 let transfer = RecordTransfer::begin(
                     &mut LocalValueContext {
                         context,
@@ -1011,7 +1014,7 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
             // A hole has no own property, so later index reads see the
             // prototype; the object is no longer a settled literal.
             self.context
-                .heap()
+                .world_mut()
                 .surface
                 .tainted_objects
                 .insert(allocation);
@@ -1059,7 +1062,7 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
             .literal_property_kind(allocation, position)
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
-        self.context.heap()
+        self.context.world_mut().literal_heap()
     }
     fn keyed_collection_new(
         &mut self,
@@ -1083,7 +1086,7 @@ pub(in crate::facts::sync_effects) fn value_of(
     // domain cannot distinguish that generation from this invocation's record.
     let new_record = match expression {
         ValueExpr::ObjectLiteral(object, _) => {
-            context.heap().surface.own_properties(*object).is_none()
+            context.world().surface.own_properties(*object).is_none()
                 && !frame.borrowed_records.contains(object)
         }
         _ => false,
@@ -1249,7 +1252,7 @@ fn read_field(
             let read = slot.read(context);
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
-            context.record_property_read(read.cell);
+            frame.ledger.heap_accesses.reads.insert(read.cell);
             let mut effects = EffectCoverageFragment::lexical_operation();
             if module_prefix {
                 effects.depend_on(selection_dependencies.as_ref());
@@ -1338,10 +1341,12 @@ fn store_field(
     let write_dependencies = context
         .property_is_writable(slot.object, property)
         .then(|| context.settled_dependencies());
-    context.record_property_write(slot.cell());
-    context
-        .heap()
-        .write_property(slot.object, Some(property.to_owned()), values);
+    frame.ledger.heap_accesses.writes.insert(slot.cell());
+    context.world_mut().literal_heap().write_property(
+        slot.object,
+        Some(property.to_owned()),
+        values,
+    );
     let effects = match write_dependencies {
         Some(dependencies) => {
             let mut effects = EffectCoverageFragment::lexical_operation();
@@ -1377,7 +1382,8 @@ fn define_this_field(
     // the prerequisite for reads, so class slots never become
     // ordinary data fields by being recorded here.
     context
-        .heap()
+        .world_mut()
+        .literal_heap()
         .write_property(*object, Some(property.to_owned()), values);
     Ok(())
 }

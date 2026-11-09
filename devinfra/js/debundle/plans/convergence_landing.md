@@ -196,11 +196,13 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   (`requires_keyed_collection_new` needs an application keyed-collection lane).
   Devel's IR had no fork producer, so `Fork`/`ForkPolicy` wait for the first
   conditional-IR slice (§ IR growth).
-- L2b. `world/` (one `World` for both adapters, no `Deref`, copy-on-write) +
-  `alternatives/` + `World::join` (strict fast path, conservative fallback,
-  typed refusal, no panic); then closes L2a's L2b-gated tombstones in a
-  stacked second PR. needs L2a. Tests: `World::join` unit tests per refusal
-  variant, `source_continuation`, `optional_call_timing`.
+- L2b. **PR 1 in review**: `world/` (one `World` for both adapters, no
+  `Deref`, copy-on-write), the `RefCell` ledgers as the threaded
+  `Observations` struct, the L2a sink methods deleted. `World::join` (strict
+  fast path, conservative fallback, typed refusal, no panic; unit tests per
+  refusal variant) is a stacked PR that lands with its first caller, the
+  conditional/logical IR slice (§ IR growth), as does `alternatives/`. PR 2
+  (stacked) closes L2a's L2b-gated tombstones. needs L2a.
 - L2c. Application adapter: `execute_owner` → `roots/` phases;
   `execute_call_transfer_inner` split by mode; delete `complete: bool`. needs
   L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
