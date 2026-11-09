@@ -116,11 +116,12 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   preconditions rather than declaration-form shortcuts.
 
 - **AR4 — Give execution data, runtime state and orchestration separate owners.**
-  <facts/sync_effects/execution_index.rs> collects syntax and capabilities while
-  nesting the interpreter/runtime modules; <lowering/mod.rs> also prepares
-  whole-program summaries and loads analysis. Extract immutable execution
-  program/index interfaces and make the runtime, transfer kernel and provider
-  adapters peers. Put phase orchestration above those services; finish moving
+  The interpreter no longer nests under <facts/sync_effects/execution_index.rs>
+  (#15073), and the kernel, `world/` and both `adapters/` are peers, but
+  interpreter-read `ExecutionIndex` fields are `pub(super)` rather than an
+  interface. <lowering/mod.rs> also prepares whole-program summaries and loads
+  analysis. Extract immutable execution program/index interfaces. Put phase
+  orchestration above those services; finish moving
   semantic records still owned by `reports/schema.rs` to domain owners, retaining
   <execution_evidence.rs> and report projections. Close when real callers use
   those interfaces without reverse ownership, with unchanged semantic facts,
