@@ -319,7 +319,8 @@ def _merge_props_metadata(
     if access.parent_agent_run_id is not None:
         props_metadata["props.parent_agent_run_id"] = str(access.parent_agent_run_id)
 
-    # The langfuse_otel callback maps trace_metadata to Langfuse trace attributes.
+    # Only LiteLLM's v1 langfuse_otel logger reads trace_metadata; the proxy's generic otel
+    # callback may drop it (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
     body[field] = {**metadata, "trace_metadata": {**trace_metadata, **props_metadata}}
 
 
