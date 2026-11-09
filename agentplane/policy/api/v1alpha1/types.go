@@ -246,38 +246,17 @@ type IdentitySpec struct {
 	Description string `json:"description" proto:"1"`
 }
 
-// WorkloadCredential is one credential that authenticates a workload as the identity: a SPIFFE ID or, for a
-// workload with no SVID, a ServiceAccount.
-// +kubebuilder:validation:XValidation:rule="has(self.spiffeID) != has(self.serviceAccount)",message="Set exactly one of spiffeID and serviceAccount."
-type WorkloadCredential struct {
-	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:Pattern=`^spiffe://[^/]+(/.*)?$`
-	SpiffeID string `json:"spiffeID,omitempty" proto:"1"`
-	// ServiceAccount whose token authenticates a workload that has no SVID.
-	ServiceAccount *ServiceAccountRef `json:"serviceAccount,omitempty" proto:"2"`
-}
-
-// IdentityStatus is written by controllers, never by the identity's creator.
-type IdentityStatus struct {
-	// WorkloadCredentials lists what currently authenticates as this identity.
-	// +listType=atomic
-	// +kubebuilder:validation:MaxItems=256
-	WorkloadCredentials []WorkloadCredential `json:"workloadCredentials,omitempty" proto:"1"`
-}
-
 // Identity is who an agent is: the subject of PolicyBindings, independent of any environment it runs in.
 // Nothing in Kubernetes owns an identity; its creator deletes it.
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=identities,singular=identity
-// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Description",type=string,JSONPath=".spec.description"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type Identity struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              IdentitySpec   `json:"spec"`
-	Status            IdentityStatus `json:"status,omitempty"`
+	Spec              IdentitySpec `json:"spec"`
 }
 
 // +kubebuilder:object:root=true

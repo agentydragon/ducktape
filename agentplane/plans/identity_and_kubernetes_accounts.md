@@ -45,7 +45,7 @@ meet in exactly one place: an `EgressCredential` whose source names a ServiceAcc
 
 Namespaced in the policy namespace. The spec is a description; the identity is a subject and
 nothing else, and must not grow harness, model or environment fields
-([principles](../docs/principles.md) § no opaque bundles). Status is written by controllers:
+([principles](../docs/principles.md) § no opaque bundles). It has no status:
 
 ```yaml
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -56,10 +56,6 @@ metadata:
   # no ownerReference: an identity is never owned by an environment
 spec:
   description: Daily CI agent
-status:
-  workloadCredentials: # what authenticates as this identity; controller-written, never caller-supplied
-    - spiffeID: spiffe://agentplane/environment-runtime/agentplane-staging/<sandbox-uid>/<credential-id>
-    - serviceAccount: { namespace: agentplane-staging, name: openclaw } # workloads with no SVID only
 ```
 
 An identity is never owned by a Sandbox or any other environment (operator, 2026-11-05): a central
