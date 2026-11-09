@@ -22,16 +22,16 @@ which can be dispatched before the rest is accepted.
 
 ## Callers
 
-| Caller                     | Created by                                                                     | Proves its incarnation today                                                      | Policy subject today          | Its request under the recommendation                                                             |
-| -------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| Sandbox Pod                | Sandbox Controller                                                             | Runtime SVID; `status.runnerCredential` binds credential ID to Pod UID            | the Sandbox's own SA          | a `WorkloadCredential` from the Sandbox Controller, kind `environment-runtime`, bound to the Pod |
-| KubeVirt VM                | Sandbox Controller; the launcher relay gets the Secret after Kyverno admission | Runtime SVID; accepted VMI UID in status                                          | the Sandbox's own SA          | the same record, bound to the VMI                                                                |
-| Firecracker guest          | Sandbox Controller; the launcher serves the Workload API over vsock            | Runtime SVID; Pod UID in status                                                   | the Sandbox's own SA          | the same record, bound to the launcher Pod                                                       |
-| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA      | Pod-bound `agentplane-egress` bearer, TokenReview                                 | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, kind `action-box`, subject the caller            |
-| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux          | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, kind `standing`                                        |
-| Anki                       | as Haku UI                                                                     | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                                                       |
-| Central sampler            | Flux Deployment                                                                | Its own bearer; acts by [delegation](../docs/delegated_authorization.md), no SVID | the effective caller          | out of scope; delegation names the identity                                                      |
-| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | None: its Deployment is at 0/0, and its dead relay config selects plaintext       | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                 |
+| Caller                     | Created by                                                                     | Proves its incarnation today                                                | Policy subject today          | Its request under the recommendation                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Sandbox Pod                | Sandbox Controller                                                             | Runtime SVID; `status.runnerCredential` binds credential ID to Pod UID      | the Sandbox's own SA          | a `WorkloadCredential` named after the Sandbox, from the Sandbox Controller, kind `environment-runtime`, bound to the Pod |
+| KubeVirt VM                | Sandbox Controller; the launcher relay gets the Secret after Kyverno admission | Runtime SVID; accepted VMI UID in status                                    | the Sandbox's own SA          | the same record, bound to the VMI                                                                                         |
+| Firecracker guest          | Sandbox Controller; the launcher serves the Workload API over vsock            | Runtime SVID; Pod UID in status                                             | the Sandbox's own SA          | the same record, bound to the launcher Pod                                                                                |
+| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA      | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, kind `action-box`, subject the caller                                     |
+| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux          | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, kind `standing`                                                                 |
+| Anki                       | as Haku UI                                                                     | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                                                                                |
+| Central sampler            | Flux Deployment                                                                | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer)      |
+| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                          |
 
 ## Alternatives
 
@@ -159,7 +159,7 @@ type Requester interface {
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
-  name: <sandbox-uid> # Sandbox Controller; the box Pod name; the Deployment name
+  name: <sandbox-name> # the owner's name: Sandbox, box Pod or Deployment
   namespace: agentplane-staging
   ownerReferences: [{ kind: Sandbox, uid: <sandbox-uid>, controller: true }]
 spec: # the requester's; admission pairs requester with kind
@@ -169,17 +169,25 @@ spec: # the requester's; admission pairs requester with kind
   binding: { podUID: <uid> } # or { vmiUID: <uid> }; absent for standing
 status: # the component's only
   credentialID: 9f2c... # fresh per generation
-  uri: spiffe://agentplane/environment-runtime/agentplane-staging/<sandbox-uid>/9f2c...
+  uri: spiffe://agentplane/environment-runtime/agentplane-staging/<sandbox-name>/9f2c...
   secretName: svid-<name>-9f2c... # svid-<name> for standing, which a Flux Deployment must name
   acceptedBinding: { podUID: <uid> } # copied once the Certificate for credentialID is Ready
 ```
 
-The URI is `spiffe://agentplane/<kind>/<ns>/<name>/<credential-id>`. The Sandbox Controller names
-its request after the Sandbox UID, so Sandbox URIs keep today's form and the Runtime and Firecracker
-parsers are unchanged. The path never names where the subject lives. Under every
-[architecture direction](architecture_overview.md#four-directions), the request, its Certificate,
-its Secret and the workload stay in the workload cluster. Only the subject reference crosses to
-wherever `Identity` lives, resolved by name and UID through the shared reader.
+The URI is `spiffe://agentplane/<kind>/<ns>/<name>/<credential-id>`, where `<name>` is the owner's
+name for every kind: the Sandbox, the box Pod or the Deployment. The Sandbox URI's third segment
+used to be the Sandbox UID. The UID left because the credential ID already tells incarnations apart,
+and step 5 below refuses a stale certificate after the name is reused. The change costs nothing
+with no Sandboxes running. The consumers that switch from UID to name are:
+
+- the transport's URI builder and parser;
+- Runtime's self-check (`env/runtime`, `env/configuration`);
+- the Gateway's expected peer URI;
+- the egress SVID resolver;
+- the Firecracker Workload API server. The path never names where the subject lives. Under every
+  [architecture direction](architecture_overview.md#four-directions), the request, its Certificate,
+  its Secret and the workload stay in the workload cluster. Only the subject reference crosses to
+  wherever `Identity` lives, resolved by name and UID through the shared reader.
 
 **How a verifier resolves a peer.** The identity is never in the certificate. The URI names a
 record, and the record names the subject.
@@ -215,7 +223,7 @@ identity plan's assumption that verifiers read `spec.identity` from the live San
 On top of the shared CA step:
 
 - **Gates requests.** A `ValidatingAdmissionPolicy` shipped with the CRD pairs requester and kind.
-  The Sandbox Controller may write only `environment-runtime`, owned by a Sandbox whose UID is the
+  The Sandbox Controller may write only `environment-runtime`, owned by the Sandbox of that
   name. The Action Service may write only `action-box`, owned by a Pod of that name. Flux may write
   only `standing`. The status subresource belongs to the Policy Controller alone.
 - **Gates Certificates.** The shared step's Certificate policy swaps its Sandbox Controller entry
