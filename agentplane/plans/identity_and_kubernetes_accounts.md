@@ -1,7 +1,7 @@
 # Identities, workload authentication and Kubernetes accounts
 
 Status: **expand phase landed; cutover open, 2026-11-09.** Directions selected by the operator on
-2026-11-05 ([`NETWORK_WORKLOAD_IDENTITY`](task_dag.md#network_workload_identity--spiffe-as-the-one-way-agent-workloads-authenticate),
+2026-11-05 ([workload authentication](../docs/workload_authentication.md),
 [`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)):
 SVIDs, not ServiceAccount tokens, authenticate agent workloads; Agentplane owns agent identity and
 no agent gets a ServiceAccount by default; a Kubernetes account is a resource several identities

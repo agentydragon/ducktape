@@ -393,10 +393,6 @@ names remain set, changed, and cleared by operators.
 
 Transcript full-text search/lookup remains deferred; ordinary paginated Thread browsing is independent.
 
-### `ELEVATE` — agent-requested temporary permission
-
-Operator-reviewed temporary permission requests for ServiceAccount/Sandbox callers; preserve explicit authority, expiry and revocation.
-
 ### `ACCESS` — delegated versus brokered external access
 
 [External access design](external_access.md): delegated versus brokered credentials/grants, not decided by current egress wiring.
@@ -470,6 +466,8 @@ background work ([child evidence](../native/docs/child_sessions.md),
 manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
 TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). See the
 [idiom audit](standard_idioms.md).
+Partly done: Action request details and thread evidence readers use TanStack Query (#14884,
+#14887); the System page's `setInterval` poll and other effect fetches remain.
 
 ### `FRONTEND_CONNECT_ES` — typed streaming clients
 

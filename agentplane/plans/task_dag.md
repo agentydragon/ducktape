@@ -338,6 +338,7 @@ flowchart LR
     SUBSCRIPTION_AUTHORIZATION_DESIGN[Decision: Action approval vs direct subscription policy]
     SUBSCRIPTION_AUTHORIZATION[Blocked: enforce reviewed creation and continuing source grants]
     SUBSCRIPTION_AUTHORIZATION_DESIGN --> SUBSCRIPTION_AUTHORIZATION
+    GITHUB_MERGEABILITY_FRESHNESS[Ready: current mergeability after base-only changes]
 ```
 
 ### `SUBSCRIPTION_AUTHORIZATION_DESIGN` — auto-allow and operator-approved subscriptions
@@ -862,7 +863,8 @@ including failed/interrupted suspend and reconnect. This decision alone selects 
 it had, not a cold boot, so a quick resume loses no in-memory state. Find what KubeVirt offers (a
 memory dump or a snapshot with memory) and whether it works with the state volume (virtiofs today, block under `STATE_VOLUME_BLOCK`). The
 [VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
-RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
+RAM suspension nor live migration today; the opt-in [Firecracker backend](../docs/firecracker_sandboxes.md)
+preserves RAM within its retained launcher Pod. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
 (the current quiesce stops harnesses and seals journals). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
@@ -980,7 +982,7 @@ paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-base
 **Decided 2026-11-05: Agentplane-owned identity, no automatic ServiceAccount; implementation in
 [section 14](#14-identity-and-kubernetes-accounts-cutover).** An agent's permission subject is an Agentplane identity, not a Kubernetes
 ServiceAccount, and an agent workload gets no ServiceAccount unless a binding grants it Kubernetes
-access; `NETWORK_WORKLOAD_IDENTITY` supplies the workload authentication this needs. Kubernetes is
+access; [workload authentication](../docs/workload_authentication.md) supplies the SVIDs this needs. Kubernetes is
 a downstream system with its own grant kind: `PolicyBinding` binds Agentplane rules to an identity,
 a separate Kubernetes grant binds role sets to a ServiceAccount on a named apiserver, the Policy
 Controller keeps those RoleBindings and creates accounts only where Agentplane must own one, and
@@ -1042,8 +1044,9 @@ work; no identity service or broker is selected.
 
 **Decision, unscheduled; operator requested future design work, 2026-10-28 PDT.**
 The newer [Session/environment model and discussion](session_environment_model.md) records selected
-direction and remaining decisions; its [opening and recovery inventory](session_opening_recovery.md)
-traces current behavior. The earlier descriptions below are context where superseded by that direction.
+direction and remaining decisions; current opening and recovery behavior is in the
+[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md), [Runtime SPEC](../env/runtime/SPEC.md) and
+[central sampler SPEC](../central_sampler/SPEC.md). The earlier descriptions below are context where superseded by that direction.
 The [current component boundaries](session_runtime_model.md#role-boundaries-and-routing) inform this
 broader object/API decision without making it a prerequisite for selected execution or delegation work.
 Session/Environment dispatch roles are
@@ -1444,25 +1447,22 @@ observations. New database work follows the task-specific review and rollout req
 ```mermaid
 flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    POLICY_GRANTS[Section 14: grants and role sets] --> MANAGED_SA_RBAC
-    POLICY_GRANTS --> PC_KUBERNETES_POLICY_SET
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
     SANDBOX_RBAC[Deferred: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
-    NETWORK_WORKLOAD_IDENTITY[Selected: SPIFFE workload authentication]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one role set]
 ```
 
 ### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one role set
 
-**Unscheduled; operator, 2026-10-12 PDT: wants it eventually. Blocked on `POLICY_GRANTS`.** Move
+**Unscheduled; operator, 2026-10-12 PDT: wants it eventually.** The grant and role-set reconciler landed in #15076. Move
 public-coder-agent's whole set of RoleBindings and ClusterRoleBindings (logs, pods, node and
 cluster-metadata reads, VolSync status and the rest, in `cluster/cdk8s/public_coder/app.py` and its
 entries in `cluster/cdk8s/agent_access_profiles.py`) into one `KubernetesRoleSet` with a Flux-owned
 `ServiceAccountGrant` on its ServiceAccount
-([identity plan](identity_and_kubernetes_accounts.md#kubernetesroleset-and-serviceaccountgrant-the-provisioners-input)).
+([Policy Controller SPEC](../policy_controller/SPEC.md#serviceaccount-grants)).
 A grant names a ServiceAccount only, so the grants that name the `haku:access-profile:public-coder`
 Group either move to the agent's ServiceAccount or stay plain Flux RoleBindings.
 
@@ -1478,7 +1478,7 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 eventually.** A specific Action type for the request instead of the retired Kubernetes MCP grants
 escape hatch, with an approval view that shows the operator the account, the sets and the duration
 rather than a blob of Kubernetes YAML. It shares with the app's sandbox-page grants the one path
-that writes a `PolicyBinding` for the operator (`EgressAccess.grant`), so an approved request creates
+that writes a `PolicyBinding` for the operator (PolicyService grant, #14796), so an approved request creates
 the same kind of binding. How the request renders is the Action surfaces' decision: the approval
 view is one Action type described once there.
 
@@ -1494,7 +1494,7 @@ Kubernetes access beyond the caller's own account is the identity plan's mechani
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on the caller review and on `POLICY_GRANTS`.** The claude.ai caller's Kubernetes access
+**Blocked on the caller review** (the grant reconciler landed in #15076). The claude.ai caller's Kubernetes access
 becomes a Flux-owned `ServiceAccountGrant` on its ServiceAccount, referencing the
 `KubernetesRoleSet`s `CLAUDE_AI_SA` approves, replacing its remaining static per-namespace grants
 in `agent_access_profiles.py` (`STATIC_GRANTS["claude-ai"]`; the acceptance-testing RBAC already
@@ -1521,29 +1521,6 @@ that fails partway, which shows in the binding's `KubernetesReady` condition whi
 cover invalid signatures. Close the remaining route-wiring uncertainty with an unsigned webhook
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
-
-### `NETWORK_WORKLOAD_IDENTITY` — SPIFFE as the one way agent workloads authenticate
-
-**Selected direction; operator, 2026-11-05.** Agent workloads present SPIFFE X.509 SVIDs to the
-Runner Gateway and to the central egress proxy, not Kubernetes ServiceAccount tokens. The SVIDs are
-the cert-manager certificates the Sandbox Controller already requests per incarnation
-(`spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`), which Environment
-Runtime already presents on the control connection; Firecracker launcher delivery over the Workload
-API remains part of the launcher integration. No SPIRE install, Cilium mutual authentication or mesh is
-implied. The egress sidecar or relay presents the same SVID on its hop in place of the projected
-proxy-audience token; the proxy resolves the caller from the verified SPIFFE ID with the transport
-package the Gateway uses.
-Platform routes that substitute per-audience projected tokens today (Notification, Dispatcher,
-runner ingress) need a replacement the destination verifies itself, never a proxy-asserted caller;
-design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
-the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
-default. Costs that stand: a second authentication scheme in each agent-facing service during the
-migration. The Sandbox SVID hop and service boundaries are implemented and exercised in k3s;
-the Sandbox's own ServiceAccount remains the policy subject.
-`WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` and `WORKLOAD_AUTH_CUTOVER` in
-[section 14](#14-identity-and-kubernetes-accounts-cutover) own the shared identity/SVID solution.
-Action boxes and Haku retain explicit bearer authentication until that cutover. Stopped OpenClaw instances require
-no compatibility surface and do not block this flip. The Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -1789,7 +1766,7 @@ The disk split and Firecracker are not alternatives to each other: splitting dis
 runtime we have, and Firecracker is a new runtime added beside it.
 
 The [Firecracker primitive spike](../debug/2026_11_02_firecracker_spike.md) has since landed in
-#13957. The opt-in environment backend is under review in #14029; its
+#13957, and the opt-in environment backend in #14029; its
 [contract](../docs/firecracker_sandboxes.md) and
 [system-test scenario](../system_tests/scenarios/firecracker.py) define the checked same-Pod behavior.
 It reuses the separate runner disk and preserves RAM within the same retained launcher Pod.
@@ -1836,7 +1813,7 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**Paused (no worker since the runner disk landed, 2026-10-20); operator chose to split the disks on KubeVirt first (2026-10-20 PDT). A Firecracker backend is now under review in #14029; a runtime-class abstraction and whether harnesses become a separate disk stay open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
+**Paused (no worker since the runner disk landed, 2026-10-20); operator chose to split the disks on KubeVirt first (2026-10-20 PDT). The opt-in Firecracker backend landed in #14029; a runtime-class abstraction and whether harnesses become a separate disk stay open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
@@ -2404,7 +2381,7 @@ not block the focused Session identity work or authorize a blanket security chan
 **Decision; operator direction updated 2026-11-04, scoped 2026-11-05.** Use Kubernetes
 ServiceAccounts as agent identities initially; Session/Environment separation does not wait for an
 Agentplane-owned identity layer. Since 2026-11-05 this SA-based identity lasts until the one-shot
-cutover under `AGENT_PRINCIPAL_MODEL_DESIGN` and `NETWORK_WORKLOAD_IDENTITY`: keep the UID fencing,
+cutover under `AGENT_PRINCIPAL_MODEL_DESIGN` (section 14): keep the UID fencing,
 and add no new SA-keyed contract that cutover would have to undo. A Session's durable SA principal is its namespace and name, consistent with Kubernetes RBAC;
 multiple Sessions may share one account. A same-name replacement is the same named principal but a
 different object incarnation. Retain and verify SA UIDs for authentication, attribution and fencing
@@ -2468,8 +2445,9 @@ workspace or other state may contain sensitive data. SA object deletion must not
 a same-name replacement remains the same named principal with a different object incarnation.
 No workload may gain a default or unverified identity while a binding is pending.
 
-SPIFFE URI mTLS authenticates Environment Runtime control; outbound egress currently authenticates
-the Pod-bound SA token and substitutes the Pod's projected credentials. Binding before workload
+SPIFFE URI mTLS authenticates Environment Runtime control and Sandbox egress, both resolving to the
+incarnation's `WorkloadCredential` subject; `kubectl` substitution still forwards the Pod's
+Kubernetes-audience token. Binding before workload
 start can preserve that control scheme. Changing an already running workload's SA requires a
 replacement or a separately designed credential mechanism. Coordinate the implementation with
 `ENVIRONMENT_SHARED_ACCOUNT`, `SESSION_MANAGED_IDENTITY`, `SESSION_IDENTITY_ENFORCEMENT` and
@@ -2495,7 +2473,7 @@ the authority that retains their desired grants while an SA is absent. Avoid nee
 policy materialization while preserving unattended work and predictable readiness.
 
 Current delegated authentication requires a live SA and its current UID, and Environment egress
-uses Pod-projected SA tokens. Thus "only when Kubernetes API access is requested" is not sufficient
+resolves to the Sandbox's ServiceAccount. Thus "only when Kubernetes API access is requested" is not sufficient
 for every current Agentplane service call. Define which operations need materialization, how a
 trusted actor proves the effective caller, and what a reserved but absent SA authorizes; don't
 treat a caller-provided name as proof. Consider whether acting internally before the SA exists
@@ -2907,8 +2885,8 @@ Generate TypeScript request/response messages and codecs from the same protos; r
 OpenAPI-derived contracts, mirrored wire types and handwritten route implementations as callers move.
 UI-specific view models and adapters may remain.
 
-Remaining scope includes frontend configuration; Sandbox policy grant/revoke operations; system
-status; and the Sandbox console stream. Thread event stream retirement is tracked separately in
+Frontend configuration (#14786), system status (#14792) and Sandbox policy grant/revoke
+(#14796, #14800) have moved; the Sandbox console stream remains. Thread event stream retirement is tracked separately in
 `THREAD_EVENTS_SSE_RETIREMENT` (section 11). Inventory other remaining app-owned contracts and raw
 streams before converting them. Electric synchronization remains a
 protocol-specific transport for now.
@@ -3037,51 +3015,35 @@ the sidecar and the command-box templates keep a bearer hop, each marked `CLEANU
 
 ```mermaid
 flowchart LR
-    IDENTITY_KINDS --> POLICY_GRANTS[In review: grants, role sets, managed SAs]
-    IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
-    IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
-    IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
-    IDENTITY_KINDS --> IDENTITY_CATALOG[In review: catalog and RBAC in cdk8s]
-    IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
-    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
+    POLICY_GRANTS[Remaining: managed accounts' credential and use set]
+    EGRESS_IDENTITY_RULES[Candidate: identity rules at the proxy]
+    SERVICES_IDENTITY_PRINCIPAL[Candidate: services act and record by identity]
+    APP_IDENTITIES_UI[Candidate: identities in the app]
+    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle, steps 1-2 landed] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
-    IDENTITY_CATALOG --> IDENTITY_SYSTEM_TESTS
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
 ```
 
-### `IDENTITY_KINDS` — identity and grant kinds
-
-**In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
-`crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
-`Identity`, `KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount`, and an
-additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject (exactly one), so
-identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
-so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
-subject and `PolicySet`'s Kubernetes rule types; the `kubernetesServiceAccount` source on
-`EgressCredential` is added additively in its own change. Only `policy/reader`'s Identity lookup
-resolves an identity subject, and no enforcing service makes one yet (`EGRESS_IDENTITY_RULES`).
-**Exit:** the CRDs install on the envtest apiserver, admission accepts the plan's example objects
-and rejects malformed ones, and existing tests of untouched kinds still pass.
-
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
-**Draft under review, 2026-11-09:** [workload identity lifecycle](workload_identity_lifecycle.md).
+**Decision; draft merged (#15087).** [Workload identity lifecycle](workload_identity_lifecycle.md).
+Steps 1 and 2 of the recommendation landed on 2026-11-09 (workload CA; `WorkloadCredential` kind,
+issuer and resolver, with the Sandbox Controller as requester), under the operator's per-question
+decisions recorded in the plan; the plan still lists the overall pick as its question for review.
 Question for review: should one workload-identity component own SVID issuance and resolution for
 every caller (recommended)? Under it, the Sandbox Controller, the Action Service and Flux-rendered
 workloads only write `WorkloadCredential` requests. The component mints the credential ID and URI,
 requests the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and publishes
 the resolver every verifier links. It is the `agentplane/workload_identity` package hosted in the
 Policy Controller. The alternatives are each owner issuing for itself, an RPC issuing service,
-SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. Every alternative shares a first
-step that can be dispatched before the decision: a dedicated workload CA that only the issuer may
-request from, and that verifiers trust alone. Selecting the recommendation then moves issuance out
-of the Sandbox Controller. The Action-box step's edge to `SANDBOX_IDENTITY_SPEC` is recorded. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
+SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. The Action-box step's edge to
+`SANDBOX_IDENTITY_SPEC` is recorded. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
 boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
 dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
 picks an alternative and the open questions' recommendations.
@@ -3120,7 +3082,7 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**In review (PR #15076 from `claude/policy-grants` against `devel`, 2026-11-09).** The
+**Reconciler landed (#15076); emission remains.** The
 Policy Controller reads `ServiceAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
 Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
 and namespace through the same additive, pruned, never-adopt-on-name machinery. Expiry covers
@@ -3133,13 +3095,13 @@ binding on it in one pass. The controller's RBAC gains SA create, delete and rea
 namespace only, plus reads, expiry deletes and status patches on the new kinds. The test apiserver
 has no garbage collector, so owned grants and bindings going with their account is left to
 `IDENTITY_SYSTEM_TESTS`. **Remaining:** emitting each managed account's `EgressCredential` and
-one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount` credential source, not on
-devel at 2026-11-09, together with open question 11's admission rule. **Exit:** those two objects
+one-rule `PolicySet` owned by it. The `kubernetesServiceAccount` credential source is on devel
+(#15075); emission waits on open question 11's admission rule. **Exit:** those two objects
 are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Blocked on `IDENTITY_KINDS`** for what remains. The proxy's decision keys on the identity;
+**Candidate for what remains; the kinds landed in #15072.** The proxy's decision keys on the identity;
 decision history records the identity; the launch defaults carry the shared account's use set. The Kubernetes-audience projected token is
 removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken`
 source, so the source, the sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second
@@ -3152,9 +3114,9 @@ rule without the other noticing.
 same-named Identity's UID is a different subject. A ServiceAccount lookup never finds an
 identity-subject binding, nor the reverse. Egress, the Action Service and Notification watch
 Identities (Role rules added) but still look up by ServiceAccount, so no decision changed. The
-proxy keying its decision on the identity waits on the `WorkloadCredential` resolver
-(`plans/workload_identity_lifecycle.md` migration step 2), which yields the identity name and UID
-to look up.
+proxy's identity keying will read the subject the `WorkloadCredential` resolver yields (landed
+with lifecycle step 2); records name ServiceAccount subjects until `IDENTITY_CUTOVER` switches
+requesters to identities ([lifecycle](workload_identity_lifecycle.md#migration-and-rollback)).
 
 **Landed on ServiceAccount subjects (egress impersonation PR, 2026-11-08):** the
 `kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer
@@ -3166,13 +3128,13 @@ the decision history instead.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**Blocked on `IDENTITY_KINDS`.** History's execution principal, Dispatcher's Session rows,
+**Candidate; the kinds landed in #15072.** History's execution principal, Dispatcher's Session rows,
 Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
 identity reference plus the workload incarnation as provenance. The seam is `workload_auth/auth`'s
 `Principal`: `SVIDResolver` currently returns the same ServiceAccount-shaped value a TokenReview
-does, reading the Sandbox and its controller-owned ServiceAccount uncached per request, so no
+does, from the credential's `WorkloadCredential` subject read uncached per request, so no
 handler can tell the two apart; the SVID path yields the identity reference and incarnation
-directly and stops reading the ServiceAccount; `CreateSession` names an
+directly; `CreateSession` names an
 identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
 a Session whose identity differs from its environment's current one, so a bypassed identity change
 strands Sessions rather than re-attributing them. Migrations rewrite rows whose
@@ -3182,7 +3144,7 @@ reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**Blocked on `IDENTITY_KINDS` and on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
+**Blocked on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
 command/build boxes must authenticate by SVID first. Box creation reads the caller's own
 ServiceAccount, runs the box as it, and sets the box's owner reference to it
 (`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account.
@@ -3199,38 +3161,9 @@ the agent Kubernetes docs lose the kubeconfig and point at the rules endpoint. *
 tests for a Sandbox with and without a live identity, the rendered Pod has no token projection but
 the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the accounts namespace.
 
-### `IDENTITY_CATALOG` — the catalog and RBAC rendered in the new shapes
-
-**Landed behind the switch (#15118, #15121); follow-up in review from
-`claude/identity-catalog-shared-k8s-set`, 2026-11-09.** `Environment.identity_catalog` (off on
-staging; flipping it is `IDENTITY_CUTOVER`'s) renders `Identity` objects for the standing callers
-`claude-ai`, `haku-agent`, `haku-ui` and `public-coder-openclaw`, every Flux `PolicyBinding` on an
-identity, every assignable set's Kubernetes rules as a same-named `KubernetesRoleSet` (a `PolicySet`
-remains only where the set has other rules: `coinbase`, `plaid-diagnostics`), the proxy's Role
-reading identities, and launch presets binding only rendered `PolicySet`s; the controller's Roles
-for the new kinds landed unconditionally with `POLICY_GRANTS`. `basic` carries no Kubernetes rule
-there: agents reach the API server only as accounts in the accounts namespace, each with a grant,
-a credential and a one-rule use set. The `shared-diagnostics` account's use set is an environment
-launch default, standing in for what `basic` gave every launch through its own ServiceAccount. Each
-preset that grants roles (`haku`, `public-coder`, `finance-agent`) has an account granted its role
-sets plus `cluster-diagnostics`, bound by the preset; `claude-ai` and `haku-agent` each have one
-granted exactly the role sets their bindings hold today, bound by their Flux binding, which names no
-shared account (operator, 2026-11-09; plan open question 20). Controller `bind` derives from the same
-grants. Relation tests check the references, bindability, and that no holder loses a role binding on
-the switch; `cluster/cdk8s/test_agent_rbac.py` checks agent RBAC under both renderings and that no
-preset gains access. With the switch off the manifests are unchanged.
-
-Left for the cutover to decide or do: the caller ServiceAccounts and the static Flux RoleBindings
-naming the `claude-ai` ServiceAccount stay, since the MCP edge and the Action Service still
-authenticate them. The MCP edge parses and validates a `connection_identities` setting (policy
-namespace and Identity names, beside `mintable_accounts`) that no manifest sets and nothing reads;
-setting it and binding Connections to those Identities is `IDENTITY_CUTOVER`'s.
-**Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
-renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.
-
 ### `APP_IDENTITIES_UI` — identities in the app
 
-**Blocked on `IDENTITY_KINDS`; parallel with the service work.** The identities list with
+**Candidate; parallel with the service work.** The identities list with
 references, grants and last activity and an unreferenced filter; delete refused while referenced;
 the identity page re-anchoring "View grants"; the session form with placement and identity, the
 set selector hidden for an existing identity; the permission-request approval card with new
@@ -3247,7 +3180,8 @@ deleted.
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
 **Blocked on `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
-`SERVICES_IDENTITY_PRINCIPAL`, `SANDBOX_IDENTITY_SPEC` and `IDENTITY_CATALOG`.** k3s scenarios for
+`SERVICES_IDENTITY_PRINCIPAL` and `SANDBOX_IDENTITY_SPEC`; the identity catalog rendering landed
+behind `Environment.identity_catalog` (#15118, #15121).** k3s scenarios for
 the plan's exit checks: an SVID-authenticated egress hop and one platform route; a Sandbox with no
 Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy; two identities act
 as one shared account and one loses it alone; a temporary account expires and its SA, RoleBindings,
@@ -3258,12 +3192,14 @@ scenarios pass on the new rendering in CI; they are the gate the cutover PR cite
 ### `IDENTITY_CUTOVER` — the staging cutover
 
 **Blocked on `IDENTITY_SYSTEM_TESTS` and `APP_IDENTITIES_UI`.** One PR flips the staging rendering
-and settings, removes the ServiceAccount variant of `PolicyBinding.spec.subject` (admission rejects
+(`Environment.identity_catalog`) and settings, removes the ServiceAccount variant of `PolicyBinding.spec.subject` (admission rejects
 a binding with no identity and a Kubernetes rule in a `PolicySet`), deletes the old code paths (SA
 binding subject, Kubernetes rule types in `PolicySet`,
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
-the objects of the new kinds. The MCP edge's `connection_identities` setting is set and read here:
+the objects of the new kinds. The caller ServiceAccounts and the static Flux RoleBindings naming
+the `claude-ai` ServiceAccount stay until here, since the MCP edge and the Action Service still
+authenticate them. The MCP edge's `connection_identities` setting is set and read here:
 stored Connections move from their bound ServiceAccount to an Identity, consent offers those
 Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with how it then proves
 an Identity to the Action Service ([open question 21](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The
@@ -3313,12 +3249,11 @@ emulation, and point the k3s VM scenarios at that guest.
 
 From the 2026-10-30 idiom audit; problems, targets and exits are in
 [standard idioms](standard_idioms.md). Operator selection, 2026-10-30 PDT: all nodes below are
-accepted; `SAMPLER_JOURNAL_DIET` and `ACTION_SERVICE_PORT_SHARING` await the operator's view.
+accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    ACTION_SERVICE_PORT_SHARING[Decision: a simpler single Action Service address]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and topology] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
@@ -3327,19 +3262,6 @@ flowchart LR
 
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
-
-### `ACTION_SERVICE_PORT_SHARING` — a simpler single Action Service address
-
-**Decision; operator, 2026-10-31: the shared port is more complex than expected; look for a simpler
-approach, to be chosen.** Since #13138 the Action
-Service serves native gRPC and HTTP on one port through [`graceful.Shared`](../grpc/graceful/shared.go)
-(`soheilhy/cmux`, matching the HTTP/2 preface), so a Sandbox keeps the single `AGENTPLANE_ACTIONS_URL`
-that the CLI (gRPC) and the agent-facing documentation and facade (HTTP) share. Notifications and the
-MCP edge split gRPC and HTTP across two ports instead. Option the operator raised: stop serving
-agent-facing documentation over HTTP, so a Sandbox needs only the gRPC address and the Action Service
-can take the same two-port split (HTTP left for metrics, callbacks and operator routes). Exit: one
-agent-facing address with less moving machinery than the shared listener, both protocols drained on
-shutdown.
 
 ### Blocked
 
