@@ -2000,6 +2000,7 @@ flowchart TD
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
+    TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
 ```
 
 ### `SANDBOX_ENVIRONMENT_RENAME_DESIGN` — review a scoped Sandbox-to-Environment rename
@@ -2072,6 +2073,17 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
+
+### `TRANSPORT_PACKAGE_RENAME` — a shorter home for `environment_runtime_transport`
+
+**Unscheduled; operator, 2026-11-09: reorganize at some point.** `agentplane/environment_runtime_transport`
+is a long name at the top of `agentplane/`, and it no longer describes its job: it holds the shared
+SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
+first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
+short name and home that matches that job, and coordinate with the `agentplane/workload_identity`
+packages the [workload identity lifecycle](workload_identity_lifecycle.md) proposes, which may
+absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
+and doc link. Exit: no import of the old path remains.
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
