@@ -592,8 +592,16 @@ func toAPIServer(options ...func(*Request)) Request {
 
 func proxyToken() (string, error) { return "proxy-own-token", nil }
 
+// admit evaluates as the proxy does, with the API server token reader of this admission.
+func admit(index *Index, subject policyapi.ServiceAccountRef, request Request) Decision {
+	if index.LocalAPIServer != nil {
+		request.APIServerToken = index.LocalAPIServer.Token
+	}
+	return index.Evaluate(subject, request, nil)
+}
+
 func TestAKubernetesServiceAccountCredentialSendsTheProxysBearerAndNamesTheAccount(t *testing.T) {
-	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer(), nil), Allowed{
+	assertDecision(t, admit(accountIndex(proxyToken), caller, toAPIServer()), Allowed{
 		Binding: "b", Policy: "account",
 		Rewrites: []presentation.HeaderRewrite{
 			{Header: authorization, Values: []string{"Bearer proxy-own-token"}},
@@ -606,9 +614,9 @@ func TestAKubernetesServiceAccountCredentialSendsTheProxysBearerAndNamesTheAccou
 func TestTheProxysBearerIsReadForEveryRequest(t *testing.T) {
 	token := "first-token"
 	index := accountIndex(func() (string, error) { return token, nil })
-	first := index.Evaluate(caller, toAPIServer(), nil).(Allowed)
+	first := admit(index, caller, toAPIServer()).(Allowed)
 	token = "rotated-token"
-	second := index.Evaluate(caller, toAPIServer(), nil).(Allowed)
+	second := admit(index, caller, toAPIServer()).(Allowed)
 	if first.Rewrites[0].Values[0] != "Bearer first-token" || second.Rewrites[0].Values[0] != "Bearer rotated-token" {
 		t.Errorf("Authorization %q then %q, want each request to read the token file", first.Rewrites[0].Values, second.Rewrites[0].Values)
 	}
@@ -618,7 +626,7 @@ func TestACallersOwnImpersonationHeadersRefuseTheRequest(t *testing.T) {
 	for _, supplied := range []string{"Impersonate-User", "impersonate-group", "Impersonate-Uid", "Impersonate-Extra-Scopes"} {
 		t.Run(supplied, func(t *testing.T) {
 			request := toAPIServer(func(r *Request) { r.Headers[supplied] = []string{"system:masters"} })
-			assertDecision(t, accountIndex(proxyToken).Evaluate(caller, request, nil), Denied{decision.ImpersonationForbidden})
+			assertDecision(t, admit(accountIndex(proxyToken), caller, request), Denied{decision.ImpersonationForbidden})
 		})
 	}
 	// Another credential is the caller's own business: its impersonation runs on its own rights.
@@ -650,21 +658,23 @@ func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
 			if !c.server {
 				index.LocalAPIServer = nil
 			}
-			assertDecision(t, index.Evaluate(caller, c.request, nil), Denied{decision.CredentialUnavailable})
+			assertDecision(t, admit(index, caller, c.request), Denied{decision.CredentialUnavailable})
 		})
 	}
+	// Without this admission's token reader there is no bearer to send.
+	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer(), nil), Denied{decision.CredentialUnavailable})
 }
 
 func TestLosingTheUseRuleStopsImpersonationOnTheNextRequest(t *testing.T) {
 	index := accountIndex(proxyToken)
 	other := policyapi.ServiceAccountRef{Namespace: namespace, Name: "other-sandbox"}
 	index.Rules.PutBinding(bindingFor(other, "other", "account"))
-	if _, ok := index.Evaluate(caller, toAPIServer(), nil).(Allowed); !ok {
+	if _, ok := admit(index, caller, toAPIServer()).(Allowed); !ok {
 		t.Fatal("the bound caller was refused")
 	}
 	index.Rules.DeleteBinding("b")
-	assertDecision(t, index.Evaluate(caller, toAPIServer(), nil), Denied{decision.NoBinding})
-	if _, ok := index.Evaluate(other, toAPIServer(), nil).(Allowed); !ok {
+	assertDecision(t, admit(index, caller, toAPIServer()), Denied{decision.NoBinding})
+	if _, ok := admit(index, other, toAPIServer()).(Allowed); !ok {
 		t.Error("another subject acting as the same account lost it with the first's binding")
 	}
 }

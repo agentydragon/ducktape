@@ -89,9 +89,11 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   names a namespace and a ServiceAccount on the API server the proxy's own credential reaches. A
   named API server is the intended extension for remote clusters, not modelled for lack of a use
   case and additive when one appears. Its only target is `schemeToken` `Bearer` on
-  `Authorization`. A request it decides gets the
-  proxy's own bearer for that server in place of the placeholder, re-read from its token file on
-  every request, and `Impersonate-User: system:serviceaccount:<namespace>:<name>` beside it, in one
+  `Authorization`. Like a credential of any source the proxy cannot read, one
+  that breaks these rules is dropped from its index, so its placeholder is unknown and reaches the
+  API server inert. A request it decides gets the
+  proxy's own bearer for that server in place of the placeholder, read from its token file once
+  per request, and `Impersonate-User: system:serviceaccount:<namespace>:<name>` beside it, in one
   decision: the proxy's bearer is never forwarded without that header. The API server adds the
   ServiceAccount groups itself; the proxy never sends `Impersonate-Group`, `Impersonate-Uid` or
   `Impersonate-Extra-*`. A request decided by such a credential that carries any `Impersonate-*`

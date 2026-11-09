@@ -26,6 +26,9 @@ type Request struct {
 	Headers http.Header
 	// Body is the request body when a JSON credential could be presented in it, else nil.
 	Body []byte
+	// APIServerToken reads the proxy's own bearer for LocalAPIServer, once per admission so every
+	// evaluation of one request sees the same value; nil leaves that bearer unavailable.
+	APIServerToken func() (string, error)
 }
 
 func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
@@ -256,7 +259,10 @@ func (i *Index) credentialValue(
 		if server == nil || !request.TLS || request.Port != server.Port || !strings.EqualFold(request.Host, server.Host) {
 			return "", false
 		}
-		token, err := server.Token()
+		if request.APIServerToken == nil {
+			return "", false
+		}
+		token, err := request.APIServerToken()
 		if err != nil {
 			slog.Warn("API server token unreadable; refusing", "error", err)
 			return "", false

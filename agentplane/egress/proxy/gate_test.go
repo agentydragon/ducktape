@@ -826,6 +826,34 @@ func TestATunnelToTheAPIServerActsAsTheAccountUntilTheRuleGoes(t *testing.T) {
 	}
 }
 
+// The gate evaluates each request twice; a token file rotated between the two reads must not turn
+// into a refusal, and each request forwards the one token its admission read.
+func TestARotatedTokenFileStillForwardsOneTokenPerRequest(t *testing.T) {
+	l := newLab(t)
+	var authorization seen
+	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization.set(r.Header.Get("Authorization"))
+	}))
+	port, _ := strconv.Atoi(portOf(upstream))
+	account := actAsAccount(t, l, port)
+	var reads atomic.Int32
+	l.index.LocalAPIServer.Token = func() (string, error) { return fmt.Sprintf("token-%d", reads.Add(1)), nil }
+	_, client := l.tunnel(t, portOf(upstream), true)
+	for _, want := range []string{"Bearer token-1", "Bearer token-2"} {
+		req := request(bounded(t), portOf(upstream), "/api/v1/namespaces", true, nil)
+		req.Header.Del("x-api-key")
+		req.Header.Set("Authorization", "Bearer "+account.Placeholder())
+		response, err := client.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if got := authorization.take(); response.StatusCode != 200 || got != want {
+			t.Errorf("status %d, Authorization %q, want 200 with %q", response.StatusCode, got, want)
+		}
+	}
+}
+
 func TestTheAccountsBearerIsNotSentInPlaintext(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { t.Error("plaintext request reached the API server") })

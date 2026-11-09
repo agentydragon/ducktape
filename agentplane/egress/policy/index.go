@@ -25,8 +25,8 @@ const (
 type APIServer struct {
 	Host string
 	Port int
-	// Token reads the proxy's bearer; it is called for every request it is substituted into, so a
-	// rotated token file is used from the next request on.
+	// Token reads the proxy's bearer. The proxy reads it once per admitted request (Request's
+	// APIServerToken), so a rotated token file is used from the next request on.
 	Token func() (string, error)
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -92,6 +93,11 @@ func (p *Proxy) decide(
 	}
 	caller := policyapi.ServiceAccountRef{Namespace: who.principal.Account.Namespace, Name: who.principal.Account.Name}
 	request := policy.Request{Method: req.Method, Host: host, Port: port, Headers: req.Header, Body: body}
+	if server := p.options.Policy.LocalAPIServer; server != nil {
+		// Both evaluations below must see one token, or a rotation between them would read as a
+		// change of decision. Read lazily: most requests never substitute it.
+		request.APIServerToken = sync.OnceValues(server.Token)
+	}
 	if req.Method != http.MethodConnect {
 		request.Path = req.URL.RequestURI()
 		// relay dials https with UpstreamRoots verification; nothing else is TLS to the upstream.
