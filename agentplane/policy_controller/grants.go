@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -30,18 +31,24 @@ func (r *Reconciler) ReconcileGrant(ctx context.Context, req reconcile.Request) 
 		}
 		return ctrl.Result{}, err
 	}
-	requeue, expired, err := r.expire(ctx, &grant, grant.Spec.ExpiresAt)
-	if expired || err != nil {
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err == nil {
-			result.RequeueAfter = requeue
+	var e expansion
+	if conflictingExpiry(&grant, grant.Spec.ExpiresAt) {
+		e = conflictingExpiryExpansion()
+	} else {
+		var requeue time.Duration
+		var expired bool
+		// Assigns the named err, which the deferred requeue reads.
+		if requeue, expired, err = r.expire(ctx, &grant, grant.Spec.ExpiresAt); expired || err != nil {
+			return ctrl.Result{}, err
 		}
-	}()
-	e, err := r.expandGrant(ctx, &grant)
-	if err != nil {
-		return ctrl.Result{}, err
+		defer func() {
+			if err == nil {
+				result.RequeueAfter = requeue
+			}
+		}()
+		if e, err = r.expandGrant(ctx, &grant); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	if err := r.converge(ctx, grantOwner, grant.Name, e.desired); err != nil {
 		e.reason, e.message = "ApplyFailed", err.Error()

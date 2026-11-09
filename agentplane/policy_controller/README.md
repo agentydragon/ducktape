@@ -34,7 +34,7 @@ environment variables, named by the fields of [`settings.py`](settings.py). Loca
 ```bash
 AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE=agentplane-staging \
   AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES=agentplane-staging \
-  AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE=agentplane-k8s-accounts \
+  AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE=agentplane-staging-k8s-accounts \
   bb run //agentplane/policy_controller/cmd:policy-controller
 ```
 

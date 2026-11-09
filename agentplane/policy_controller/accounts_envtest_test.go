@@ -17,16 +17,20 @@ import (
 )
 
 // A temporary account, run by the controller's watches with no restart: it creates the
-// ServiceAccount and records it, a grant on it binds, a hand-deleted ServiceAccount is recreated,
-// and at expiresAt the account, its ServiceAccount and the grant's native bindings all go.
+// ServiceAccount and records it, a grant it owns binds, a hand-deleted ServiceAccount is recreated,
+// and the account's expiresAt alone, with none on the grant, removes the account, its ServiceAccount
+// and the grant's native bindings. The test apiserver runs no garbage collector, so the owned grant
+// object itself outlives the account here; deleting it is the collector's job.
 func TestManagedServiceAccountLifecycleThroughExpiry(t *testing.T) {
 	ctx := context.Background()
 	api, _, _ := startPolicyAPIServer(t, true)
 	setUpGrantCluster(t, api)
 	account := testManagedAccount("test-temporary-account")
 	set := testRoleSet("test-node-read", clusterRoleBindingRule(nodeReader))
+	create(t, api, account, set)
 	grant := testGrant("test-temporary-grant", accountsNamespace, account.Name, set.Name)
-	create(t, api, account, set, grant)
+	grant.OwnerReferences = []metav1.OwnerReference{ownedBy(account)}
+	create(t, api, grant)
 
 	first := waitForManagedServiceAccount(t, api, account, "")
 	eventually(t, "the grant's native binding on the created account", func() (bool, string) {
@@ -132,6 +136,57 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 	if err := api.Get(ctx, client.ObjectKeyFromObject(replaced), &corev1.ServiceAccount{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("the gone account's ServiceAccount survived: err=%v", err)
 	}
+}
+
+// A grant that a ManagedServiceAccount owns and that sets its own expiresAt grants nothing and is
+// not expired, until the conflict is removed.
+func TestOwnedGrantWithItsOwnExpiryConflicts(t *testing.T) {
+	ctx := context.Background()
+	api, _, _ := startPolicyAPIServer(t, true)
+	setUpGrantCluster(t, api)
+	account := testManagedAccount("test-conflict-account")
+	set := testRoleSet("test-node-read", clusterRoleBindingRule(nodeReader))
+	create(t, api, account, set)
+	grant := testGrant("test-conflicting-grant", accountsNamespace, account.Name, set.Name)
+	grant.OwnerReferences = []metav1.OwnerReference{ownedBy(account)}
+	grant.Spec.ExpiresAt = &metav1.Time{Time: time.Now().Add(-time.Minute)}
+	create(t, api, grant)
+	eventually(t, "the conflicting grant's condition", func() (bool, string) {
+		return grantReady(t, api, grant.Name, ConflictingExpiry), ""
+	})
+	// Still there despite its past expiresAt, and binding nothing, though its account exists.
+	waitForManagedServiceAccount(t, api, account, "")
+	if natives := grantNatives(t, api, grant.Name); len(natives) != 0 {
+		t.Fatalf("a grant with conflicting expiry bound: %s", describe(natives))
+	}
+
+	current := readGrant(t, api, grant.Name)
+	current.Spec.ExpiresAt = nil
+	if err := api.Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the grant to bind once the conflict is removed", func() (bool, string) {
+		natives := grantNatives(t, api, grant.Name)
+		return grantReady(t, api, grant.Name, "Applied") && len(natives) == 1, describe(natives)
+	})
+}
+
+func ownedBy(account *policyapi.ManagedServiceAccount) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: policyapi.SchemeGroupVersion.String(),
+		Kind:       "ManagedServiceAccount",
+		Name:       account.Name,
+		UID:        account.UID,
+	}
+}
+
+func readGrant(t *testing.T, api client.Client, name string) *policyapi.KubernetesAccountGrant {
+	t.Helper()
+	var grant policyapi.KubernetesAccountGrant
+	if err := api.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &grant); err != nil {
+		t.Fatal(err)
+	}
+	return &grant
 }
 
 func testManagedAccount(name string) *policyapi.ManagedServiceAccount {

@@ -101,20 +101,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 		}
 		return ctrl.Result{}, err
 	}
-	// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
-	// native bindings.
-	requeue, expired, err := r.expire(ctx, &binding, binding.Spec.ExpiresAt)
-	if expired || err != nil {
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err == nil {
-			result.RequeueAfter = requeue
+	var e expansion
+	if conflictingExpiry(&binding, binding.Spec.ExpiresAt) {
+		e = conflictingExpiryExpansion()
+	} else {
+		// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
+		// native bindings.
+		var requeue time.Duration
+		var expired bool
+		// Assigns the named err, which the deferred requeue reads.
+		if requeue, expired, err = r.expire(ctx, &binding, binding.Spec.ExpiresAt); expired || err != nil {
+			return ctrl.Result{}, err
 		}
-	}()
-	e, err := r.expand(ctx, &binding)
-	if err != nil {
-		return ctrl.Result{}, err
+		defer func() {
+			if err == nil {
+				result.RequeueAfter = requeue
+			}
+		}()
+		if e, err = r.expand(ctx, &binding); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	if err := r.converge(ctx, bindingOwner, binding.Name, e.desired); err != nil {
 		e.reason, e.message = "ApplyFailed", err.Error()
@@ -135,6 +141,29 @@ func (r *Reconciler) expire(ctx context.Context, obj client.Object, expiresAt *m
 	}
 	uid := obj.GetUID()
 	return 0, true, client.IgnoreNotFound(r.Delete(ctx, obj, client.Preconditions{UID: &uid}))
+}
+
+// ConflictingExpiry is the reason a binding's or grant's condition gives when it sets expiresAt while a
+// ManagedServiceAccount owns it: the account's clock is the only clock, so it grants nothing and is
+// not expired until one of the two goes.
+const ConflictingExpiry = "ConflictingExpiry"
+
+// conflictingExpiry reports whether obj sets expiresAt while a ManagedServiceAccount owns it. CEL
+// cannot see ownerReferences, so admission cannot reject this.
+func conflictingExpiry(obj metav1.Object, expiresAt *metav1.Time) bool {
+	if expiresAt == nil {
+		return false
+	}
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Kind == "ManagedServiceAccount" && strings.HasPrefix(ref.APIVersion, policyapi.SchemeGroupVersion.Group+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func conflictingExpiryExpansion() expansion {
+	return expansion{reason: ConflictingExpiry, message: "expiresAt is set while a ManagedServiceAccount owns this object; the account's expiry is the only one, so remove expiresAt"}
 }
 
 // expansion is what a binding or grant grants and what its status reports.

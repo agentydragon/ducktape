@@ -10,8 +10,13 @@ every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
 
 The controller deletes a `PolicyBinding`, `KubernetesAccountGrant` or `ManagedServiceAccount` once
 its `expiresAt` passes, so each grants by existing: a reader of any rule type honours the bindings
-that exist and needs no expiry handling of its own. An object that a GitOps tool owns must not set
-`expiresAt`, or the tool recreates it.
+that exist and needs no expiry handling of its own. These three kinds are the only ones with an
+expiry. An object that a GitOps tool owns must not set `expiresAt`, or the tool recreates it.
+
+An owner's clock is the only clock. A binding or grant that a `ManagedServiceAccount` owns goes with
+the account and must not set its own `expiresAt`. Admission cannot see ownerReferences, so the
+controller checks this instead. Such an object reports `KubernetesReady` `False` with reason
+`ConflictingExpiry`, keeps no native bindings and is not expired until the conflict is removed.
 
 ## Grants
 
@@ -69,8 +74,8 @@ precondition prevents deleting a binding edited or replaced after its read.
   the one the controller runs in, is reached; a grant naming another reports
   `APIServerNotConfigured` and keeps no native bindings.
 - Its status is a binding's: `KubernetesReady` with reasons `Applied`, `SubjectNotWatched`,
-  `SubjectMissing`, `RoleMissing`, `RoleSetUnavailable`, `APIServerNotConfigured` or
-  `ApplyFailed`, and `status.missingRoles`.
+  `SubjectMissing`, `RoleMissing`, `RoleSetUnavailable`, `APIServerNotConfigured`,
+  `ConflictingExpiry` or `ApplyFailed`, and `status.missingRoles`.
 
 ## Managed ServiceAccounts
 
@@ -99,7 +104,7 @@ granting; nothing in the API server expires them.
 
 Each `PolicyBinding` carries a `KubernetesReady` condition, applied under the controller's own field
 manager so other readers' conditions stay. It is `Applied`, or `False` with reason
-`SubjectNotWatched`, `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable` or `ApplyFailed` and a
+`SubjectNotWatched`, `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
 message naming what is wrong. Reasons are informational. With it the controller applies
 `status.missingRoles`: each Role (with its namespace) or ClusterRole the binding's rules name that does
 not exist. It is checked once the subject resolves and holds even when applying the rest fails

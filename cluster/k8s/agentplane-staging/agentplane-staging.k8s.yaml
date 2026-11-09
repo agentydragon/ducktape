@@ -9693,7 +9693,7 @@ spec:
             - name: AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE
-              value: agentplane-k8s-accounts
+              value: agentplane-staging-k8s-accounts
             - name: AGENTPLANE_POLICY_CONTROLLER_METRICS_BIND_ADDRESS
               value: :8080
             - name: AGENTPLANE_POLICY_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
@@ -10051,7 +10051,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: policy-controller-accounts
-  namespace: agentplane-k8s-accounts
+  namespace: agentplane-staging-k8s-accounts
 rules:
   - apiGroups:
       - ""
@@ -10068,7 +10068,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: policy-controller-accounts
-  namespace: agentplane-k8s-accounts
+  namespace: agentplane-staging-k8s-accounts
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

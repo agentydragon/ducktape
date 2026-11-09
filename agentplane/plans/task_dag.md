@@ -3115,11 +3115,13 @@ grants and managed accounts; `ManagedServiceAccount` creates the SA in the accou
 controller's `accounts_namespace` setting) with a UID label and prunes it on reconcile once the
 account is gone. Local apiserver only; remote targets are a settings entry added when one exists.
 Envtest covers a grant on a Flux SA, two grants on one account revoked independently, a temporary
-account's full lifecycle including expiry with no restart, and a same-name SA recreated while a
-grant is live. The controller's RBAC gains SA create, delete and reads in the accounts namespace
+account's full lifecycle including expiry with no restart, a same-name SA recreated while a
+grant is live, and an account-owned grant with its own `expiresAt` reporting `ConflictingExpiry`.
+The test apiserver has no garbage collector, so owned grants and bindings going with their account
+is left to `IDENTITY_SYSTEM_TESTS`. The controller's RBAC gains SA create, delete and reads in the accounts namespace
 only, plus reads, expiry deletes and status patches on the new kinds. **Merge hold:** the staging
-Role lives in `agentplane-k8s-accounts`, which the `claude/egress-k8s-impersonation` change
-renders; this merges after that namespace is on devel. **Remaining:** emitting each managed account's
+Role lives in `agentplane-staging-k8s-accounts`, which #15075 renders; this merges after that
+namespace is on devel. **Remaining:** emitting each managed account's
 `EgressCredential` and one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount`
 credential source, not on devel at 2026-11-08, together with open question 11's admission rule.
 **Exit:** those two objects are emitted, owned by the account.
