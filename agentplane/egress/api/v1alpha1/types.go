@@ -21,16 +21,10 @@ type ProjectedWorkloadTokenSource struct {
 	Audience string `json:"audience"`
 }
 
-// KubernetesServiceAccountSource names a ServiceAccount the proxy acts as on a named API server, by
-// impersonation: it presents its own bearer and asks the API server to treat the request as this
-// account's. No token for the account is minted or held.
+// KubernetesServiceAccountSource names a ServiceAccount the proxy acts as by impersonation on the API
+// server its own in-cluster credential reaches: it presents its own bearer and asks the API server to
+// treat the request as this account's. No token for the account is minted or held.
 type KubernetesServiceAccountSource struct {
-	// The API server, by the name the proxy's settings give it. Only `local`, the proxy's own
-	// in-cluster API server, is supported; the proxy refuses a credential naming any other.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	APIServer string `json:"apiServer"`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`

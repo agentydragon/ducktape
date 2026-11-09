@@ -563,7 +563,7 @@ const apiServerHost = "kubernetes.test.invalid"
 
 var accountCredential = resources.Credential{
 	Name:    "k8s-account-diagnostics",
-	Source:  resources.KubernetesServiceAccount{APIServer: resources.LocalAPIServer, Namespace: "accounts", Name: "diagnostics"},
+	Source:  resources.KubernetesServiceAccount{Namespace: "accounts", Name: "diagnostics"},
 	Targets: []resources.Target{bearer},
 }
 

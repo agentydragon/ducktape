@@ -385,8 +385,11 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
     suffix = secrets.token_hex(4)
     account, credential = f"shared-{suffix}", f"k8s-account-{suffix}"
     username = f"system:serviceaccount:{ACCOUNTS_NAMESPACE}:{account}"
+    # The later -n overrides the fixture namespace the driver passes.
     await cluster.kubectl(
         "create",
+        "-n",
+        ACCOUNTS_NAMESPACE,
         "-f",
         "-",
         body={
@@ -407,13 +410,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
                 "metadata": {"name": credential, "ownerReferences": owners},
                 "spec": {
                     "description": f"Act as {ACCOUNTS_NAMESPACE}/{account} on the local API server.",
-                    "source": {
-                        "kubernetesServiceAccount": {
-                            "apiServer": "local",
-                            "namespace": ACCOUNTS_NAMESPACE,
-                            "name": account,
-                        }
-                    },
+                    "source": {"kubernetesServiceAccount": {"namespace": ACCOUNTS_NAMESPACE, "name": account}},
                     "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
                 },
             },

@@ -3124,7 +3124,7 @@ it. **Exit:** the egress harness shows two identities acting as one account, one
 rule without the other noticing.
 
 **Landed on ServiceAccount subjects (egress impersonation PR, 2026-11-08):** the
-`kubernetesServiceAccount` source (local API server only), the proxy substituting its own bearer
+`kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer
 with `Impersonate-User`, refusing caller `Impersonate-*` headers, the accounts-namespace Role
 granting `impersonate` on `serviceaccounts`, and the impersonated account in decision history. The
 k3s Pod suite shows two Sandboxes acting as one account and one losing its rule. Staging renders

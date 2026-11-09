@@ -294,8 +294,7 @@ async def test_egress_credential_source_and_target_validation() -> None:
             await create(f"target-{index}", secret, [target], valid)
 
         # The account source substitutes the proxy's own bearer, so it admits that one target only.
-        # Which API server names the proxy supports is the proxy's check, not admission's.
-        account = {"apiServer": "local", "namespace": "accounts", "name": "shared-diagnostics"}
+        account = {"namespace": "accounts", "name": "shared-diagnostics"}
         bearer = {"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"}
         account_cases: list[tuple[dict[str, Any], list[dict[str, str]], bool]] = [
             ({"kubernetesServiceAccount": account}, [bearer], True),
@@ -304,7 +303,6 @@ async def test_egress_credential_source_and_target_validation() -> None:
                 [{"method": "schemeToken", "header": "authorization", "scheme": "bearer"}],
                 True,
             ),
-            ({"kubernetesServiceAccount": {**account, "apiServer": "remote-cluster"}}, [bearer], True),
             ({"kubernetesServiceAccount": account}, [{"method": "wholeValue", "header": "Authorization"}], False),
             ({"kubernetesServiceAccount": account}, [{"method": "jsonField", "field": "token"}], False),
             (
@@ -315,7 +313,7 @@ async def test_egress_credential_source_and_target_validation() -> None:
             ({"kubernetesServiceAccount": account}, [bearer, bearer], False),
             ({"kubernetesServiceAccount": {**account, "namespace": "Accounts"}}, [bearer], False),
             ({"kubernetesServiceAccount": {**account, "name": "a:b"}}, [bearer], False),
-            ({"kubernetesServiceAccount": {"apiServer": "local", "namespace": "accounts"}}, [bearer], False),
+            ({"kubernetesServiceAccount": {"namespace": "accounts"}}, [bearer], False),
             ({"kubernetesServiceAccount": account, **secret}, [bearer], False),
         ]
         for index, (source, targets, valid) in enumerate(account_cases):

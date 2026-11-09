@@ -251,7 +251,7 @@ func (i *Index) credentialValue(
 		token, ok := workload.Projected[source.Audience]
 		return token, ok
 	case resources.KubernetesServiceAccount:
-		// resources admits only the local API server, which LocalAPIServer configures.
+		// The proxy's own bearer is for the API server LocalAPIServer configures and nowhere else.
 		server := i.LocalAPIServer
 		if server == nil || !request.TLS || request.Port != server.Port || !strings.EqualFold(request.Host, server.Host) {
 			return "", false

@@ -83,12 +83,12 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   A rule names a credential; the credential names the targets. Its source is exactly one of
   `secretRef`, preserving the central-held Secret behavior; `projectedWorkloadToken`, naming the
   audience of a token the sidecar presented on the hop; or `kubernetesServiceAccount`, naming an
-  account the proxy acts as on an API server. Absent, stale or mismatched context refuses
+  account the proxy acts as on its own API server. Absent, stale or mismatched context refuses
   with `credential-unavailable`.
 - **A Kubernetes account is acted as by impersonation.** A `kubernetesServiceAccount` credential
-  names an API server, a namespace and a ServiceAccount. Its only target is `schemeToken` `Bearer`
-  on `Authorization`, and only `apiServer: local`, the proxy's own API server, is supported; the
-  proxy refuses any other credential of this source as unreadable. A request it decides gets the
+  names a namespace and a ServiceAccount on the API server the proxy's own in-cluster credential
+  reaches; no other API server is modelled. Its only target is `schemeToken` `Bearer` on
+  `Authorization`. A request it decides gets the
   proxy's own bearer for that server in place of the placeholder, re-read from its token file on
   every request, and `Impersonate-User: system:serviceaccount:<namespace>:<name>` beside it, in one
   decision: the proxy's bearer is never forwarded without that header. The API server adds the

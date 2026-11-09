@@ -22,9 +22,6 @@ const (
 	EgressRuleType = "egress"
 	// PlaceholderPrefix starts every placeholder; see Placeholder.
 	PlaceholderPrefix = "agentplane-credential-"
-	// LocalAPIServer names the proxy's own in-cluster API server, the only one a
-	// kubernetesServiceAccount credential may name so far.
-	LocalAPIServer = "local"
 
 	maxHostsPerRule = 256
 	maxHostLength   = 256
@@ -106,9 +103,9 @@ type SecretKey struct{ Name, Key string }
 // same Pod that authenticated the hop before substitution.
 type ProjectedWorkloadToken struct{ Audience string }
 
-// KubernetesServiceAccount is a ServiceAccount the proxy acts as on an API server by impersonation:
-// it presents its own bearer for that server with Impersonate-User naming the account.
-type KubernetesServiceAccount struct{ APIServer, Namespace, Name string }
+// KubernetesServiceAccount is a ServiceAccount the proxy acts as by impersonation on its own API
+// server: it presents its own bearer there with Impersonate-User naming the account.
+type KubernetesServiceAccount struct{ Namespace, Name string }
 
 // Username is the account as the API server names it, which is what Impersonate-User carries. A
 // ServiceAccount username is the one form `impersonate` on `serviceaccounts` authorizes.
@@ -200,9 +197,6 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 		parsed = append(parsed, ProjectedWorkloadToken{Audience: source.ProjectedWorkloadToken.Audience})
 	}
 	if account := source.KubernetesServiceAccount; account != nil {
-		if account.APIServer != LocalAPIServer {
-			return nil, fmt.Errorf("kubernetesServiceAccount.apiServer %q is not supported; only %q is", account.APIServer, LocalAPIServer)
-		}
 		// The API server builds the username from these, so a name it would not accept must not reach a header.
 		if problems := validation.IsDNS1123Label(account.Namespace); len(problems) > 0 {
 			return nil, fmt.Errorf("kubernetesServiceAccount.namespace %q: %s", account.Namespace, strings.Join(problems, "; "))
@@ -210,7 +204,7 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 		if problems := validation.IsDNS1123Subdomain(account.Name); len(problems) > 0 {
 			return nil, fmt.Errorf("kubernetesServiceAccount.name %q: %s", account.Name, strings.Join(problems, "; "))
 		}
-		parsed = append(parsed, KubernetesServiceAccount{APIServer: account.APIServer, Namespace: account.Namespace, Name: account.Name})
+		parsed = append(parsed, KubernetesServiceAccount{Namespace: account.Namespace, Name: account.Name})
 	}
 	if len(parsed) != 1 {
 		return nil, errors.New("source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount")

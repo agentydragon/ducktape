@@ -762,7 +762,7 @@ func actAsAccount(t *testing.T, l *lab, port int) resources.Credential {
 	t.Helper()
 	account := resources.Credential{
 		Name:    "k8s-account",
-		Source:  resources.KubernetesServiceAccount{APIServer: resources.LocalAPIServer, Namespace: "accounts", Name: "diagnostics"},
+		Source:  resources.KubernetesServiceAccount{Namespace: "accounts", Name: "diagnostics"},
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	}
 	l.index.PutCredential(account)

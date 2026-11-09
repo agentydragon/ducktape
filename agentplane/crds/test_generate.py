@@ -78,9 +78,7 @@ def test_credential_schema_preserves_source_and_target_constraints(runfiles: Run
         validator = Draft4Validator(source, registry=Registry())
         assert validator.is_valid({"secretRef": {"name": "token", "key": "value"}})
         assert validator.is_valid({"projectedWorkloadToken": {"audience": "api"}})
-        assert validator.is_valid(
-            {"kubernetesServiceAccount": {"apiServer": "local", "namespace": "accounts", "name": "diagnostics"}}
-        )
+        assert validator.is_valid({"kubernetesServiceAccount": {"namespace": "accounts", "name": "diagnostics"}})
         assert "filter(x,x==true).size() == 1" in source["x-kubernetes-validations"][0]["rule"]
 
         target = spec["properties"]["targets"]["items"]

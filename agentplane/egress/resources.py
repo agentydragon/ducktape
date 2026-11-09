@@ -142,7 +142,7 @@ class ProjectedWorkloadTokenSource(_Wire):
 
 
 class KubernetesServiceAccountSource(_Wire):
-    """A ServiceAccount the proxy acts as on a named API server, by impersonation.
+    """A ServiceAccount the proxy acts as by impersonation on its own in-cluster API server.
 
     The proxy presents its own bearer with `Impersonate-User` naming this account; no token for the
     account is minted or held.
@@ -150,9 +150,6 @@ class KubernetesServiceAccountSource(_Wire):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    api_server: str = Field(
-        min_length=1, description="The API server by its settings name; the proxy supports only `local`."
-    )
     namespace: str = Field(min_length=1, description="Namespace of the impersonated ServiceAccount.")
     name: str = Field(min_length=1, description="Name of the impersonated ServiceAccount.")
 
