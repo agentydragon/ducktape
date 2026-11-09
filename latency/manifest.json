@@ -18,8 +18,8 @@
     "prettier"
   ],
   "publication_scope": "Latency namespace only; current telemetry, experiment dispositions and reviewed visualizations.",
-  "report_html_sha256": "25335ece4e472c089ae529c7e394edcc15926b90090e9335ca5867e65c7a51a4",
-  "evidence_sha256": "3ca08a4b94fff0b61bc9a0705caf74bd3a5a2418a6788e78bae58a0994516794",
+  "report_html_sha256": "130e4cddc61a861c67bd5faab14fe6d720d7decc8bcc514f314545bf79521fe6",
+  "evidence_sha256": "837a8d611dd3a5121a0a12d906eefa390cadc0cdbcd6246e9f9927ed73dd1bc6",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
   "presentation_validation": "visual-validation.json",
@@ -46,7 +46,7 @@
   "resource_followup_experiments_end_utc": "2026-11-09T10:18:16.722345Z",
   "resource_followup_visual_scope": "Desktop/mobile, initial light/dark and live preference changes; actual pinned CDNs, telemetry controls, line/bar charts and retained span timelines.",
   "prior_presentation_validation": "../presentation-validation.json",
-  "resource_module_sha256": "a20351a231ee7c19fa7dfbe02a39bbb0b99df8161d517674e320c6ce1042990a",
+  "resource_module_sha256": "b1c30b64696a1e06c40ae07ce34d81c54aa660cf19f49b61818c078f1ac98a02",
   "resource_timeline_png_sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
   "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00",
   "cpu_followup_assembled_at_utc": "2026-11-09T11:03:17.556787+00:00",
@@ -65,7 +65,17 @@
   },
   "vm_readiness_followup_recorded_at_utc": "2026-11-09T11:41:54.139960+00:00",
   "evidence_index": "evidence.md",
-  "evidence_index_sha256": "c2ef823386cc8c13be84c0e5f5fde3b0446938621dfb6260e74df688a20e5c19",
+  "evidence_index_sha256": "d0271f91f5193a2cebe3cb5ede82e17cfea5c7db0d96644d03fd283050970c09",
   "prior_resource_visual_report_commit": "e849a33c8282ac5eeda9dbb4b2f5b43d46c67f69",
-  "vm_readiness_followup_scope": "Original early-kernel boundary unresolved; independent virtiofs startup regression repaired in merged PR 15144; controller and Debian guest-layout checks passed. Full VM follow-up failed during certificate-chain verification in service bootstrap, before VM scenarios."
+  "vm_readiness_followup_scope": "Original early-kernel boundary unresolved; merged tag guard and failure-time capture; independent fixture CA reuse proven from public chains and reproduced by real two-cycle control, with repaired two-cycle pass and fresh full-suite CI pending.",
+  "vm_pki_followup_recorded_at_utc": "2026-11-09T18:24:02.680894+00:00",
+  "vm_pki_followup_source": "f087a487f781497c3c4542330960ce3102ff63d2",
+  "vm_pki_followup_pr": "https://github.com/agentydragon/ducktape/pull/15193",
+  "vm_pki_visual_validation": {
+    "status": "PASSED",
+    "invocation": "https://app.buildbuddy.io/invocation/67b8a12f-b492-4249-90a4-6aaf1e5ebe7e",
+    "receipt": "visual-validation.json",
+    "reviewed_at_utc": "2026-11-09T18:27:47.472300+00:00",
+    "scope": "Four desktop/mobile and light/dark cases, live preference changes, populated charts and retained spans; CA section reviewed in all four cases and representative historical charts inspected."
+  }
 }
