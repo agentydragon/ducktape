@@ -34,6 +34,8 @@ STOP_TIMEOUT_SECONDS = 60
 POD_CIDR = "10.42.0.0/16"
 CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
 CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
+IMAGE_IMPORT_BATCH_MAX_BYTES = 256 * 1024 * 1024
+IMAGE_IMPORT_BATCH_MAX_IMAGES = 8
 
 
 def run(
@@ -115,6 +117,41 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     entry = tarfile.TarInfo(name)
     entry.size = len(encoded)
     archive.addfile(entry, io.BytesIO(encoded))
+
+
+def _image_import_batches(
+    images: dict[str, Path],
+) -> Iterator[tuple[list[str], list[dict[str, Any]], dict[str, Path], int]]:
+    """Yield bounded groups of layouts without merging references that retarget the same tag."""
+    references: list[str] = []
+    manifests: list[dict[str, Any]] = []
+    blobs: dict[str, Path] = {}
+    size_bytes = 0
+
+    for image, layout in images.items():
+        index = json.loads((layout / "index.json").read_text())
+        image_manifests = index["manifests"]
+        for descriptor in image_manifests:
+            descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
+        image_blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
+        new_blobs = image_blobs.keys() - blobs.keys()
+        image_bytes = sum(image_blobs[name].stat().st_size for name in new_blobs)
+
+        if references and (
+            len(references) >= IMAGE_IMPORT_BATCH_MAX_IMAGES or size_bytes + image_bytes > IMAGE_IMPORT_BATCH_MAX_BYTES
+        ):
+            yield references, manifests, blobs, size_bytes
+            references, manifests, blobs, size_bytes = [], [], {}, 0
+            image_bytes = sum(blob.stat().st_size for blob in image_blobs.values())
+
+        references.append(image)
+        manifests.extend(image_manifests)
+        for name, blob in image_blobs.items():
+            blobs.setdefault(name, blob)
+        size_bytes += image_bytes
+
+    if references:
+        yield references, manifests, blobs, size_bytes
 
 
 def _prepare_docker_namespaces() -> None:
@@ -467,25 +504,30 @@ class K3s:
 
     def import_images(self, images: dict[str, Path]) -> None:
         """Import Bazel OCI layouts, keyed by the image reference each loads as, into
-        containerd one image at a time. Blob digests are preserved, and a blob containerd
-        already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
+        containerd in bounded groups. Blob digests are preserved, and a blob containerd already
+        holds (an earlier group or, on a recycled runner, the last stack) is not streamed again."""
         self.protect_image_layouts(images)
         self.prune_unused_images()
         layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
         filesystem = os.statvfs(layers)
         # Sweep after imports consume half the starting headroom. Native filesystem
-        # checks avoid per-image CRI round trips.
+        # checks avoid per-group CRI round trips.
         prune_below_bytes = filesystem.f_bavail * filesystem.f_frsize // 2
-        for image, layout in images.items():
-            with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
-                index = json.loads((layout / "index.json").read_text())
-                for descriptor in index["manifests"]:
-                    descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
-                blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
+        for references, manifests, blobs, size_bytes in _image_import_batches(images):
+            with tracer.start_as_current_span(
+                "system_test.image.import",
+                attributes={
+                    "image": ",".join(references),
+                    "image.count": len(references),
+                    "image.layout_bytes": size_bytes,
+                },
+            ) as span:
                 stored = self._stored_blobs()
                 missing = {name: blobs[name] for name in blobs.keys() - stored}
-                self._import_layout(index["manifests"], missing)
-            # Retargeting a fixture tag leaves its old CRI config-ID alias behind.
+                span.set_attribute("image.missing_blob_count", len(missing))
+                self._import_layout(manifests, missing)
+            # Retargeting a fixture tag leaves its old CRI config-ID alias behind. Large layouts
+            # stay intact as one group; smaller groups bound space consumed before this sweep.
             if missing:
                 filesystem = os.statvfs(layers)
                 if filesystem.f_bavail * filesystem.f_frsize < prune_below_bytes:
