@@ -3095,7 +3095,9 @@ principals, a retained Session with a deleted Sandbox reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**Blocked on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
+**In progress (2026-11-09): `Sandbox.spec.identity` and its admission rule are in review; the
+controller, EnvironmentService and template pieces follow. Blocked on `WORKLOAD_AUTH_CUTOVER`'s
+Action-box step for what reads the caller's ServiceAccount.** Action
 command/build boxes must authenticate by SVID first. Box creation reads the caller's own
 ServiceAccount, runs the box as it and names it as the box record's subject
 (`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account. The
