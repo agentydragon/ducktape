@@ -1,0 +1,85 @@
+# Values for the langfuse chart (2.1.6, the version cluster/cdk8s/langfuse.py pins) against
+# the in-namespace dependencies in deps.yaml.
+langfuse:
+  nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+  image:
+    tag: 4.67.0
+  salt:
+    secretKeyRef: { name: scratch-secrets, key: salt }
+  encryptionKey:
+    secretKeyRef: { name: scratch-secrets, key: encryption-key }
+  nextauth:
+    url: http://localhost:3000
+    secret:
+      secretKeyRef: { name: scratch-secrets, key: nextauth-secret }
+  additionalEnv:
+    - { name: LANGFUSE_MIGRATION_V4_WRITE_MODE, value: events_only }
+    - { name: LANGFUSE_INIT_ORG_ID, value: scratch-org }
+    - { name: LANGFUSE_INIT_ORG_NAME, value: Scratch }
+    - { name: LANGFUSE_INIT_PROJECT_ID, value: scratch-project }
+    - { name: LANGFUSE_INIT_PROJECT_NAME, value: scratch }
+    - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+      valueFrom: { secretKeyRef: { name: scratch-secrets, key: langfuse-public-key } }
+    - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+      valueFrom: { secretKeyRef: { name: scratch-secrets, key: langfuse-secret-key } }
+    - { name: LANGFUSE_INIT_USER_EMAIL, value: scratch@example.invalid }
+    - { name: LANGFUSE_INIT_USER_NAME, value: scratch }
+    - name: LANGFUSE_INIT_USER_PASSWORD
+      valueFrom: { secretKeyRef: { name: scratch-secrets, key: langfuse-user-password } }
+  web:
+    resources:
+      requests: { cpu: 100m, memory: 768Mi }
+      limits: { memory: 2Gi }
+    livenessProbe: { initialDelaySeconds: 300 }
+  worker:
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { memory: 2Gi }
+    livenessProbe: { initialDelaySeconds: 300 }
+postgresql:
+  deploy: false
+  host: postgres
+  auth:
+    username: langfuse
+    database: langfuse
+    existingSecret: scratch-secrets
+    secretKeys:
+      userPasswordKey: postgres-password
+redis:
+  deploy: false
+  host: valkey
+  port: 6379
+  auth:
+    username: default
+    existingSecret: scratch-secrets
+    existingSecretPasswordKey: valkey-password
+clickhouse:
+  deploy: false
+  host: clickhouse
+  database: langfuse
+  auth:
+    username: langfuse
+    existingSecret: scratch-secrets
+    existingSecretKey: clickhouse-password
+  migration:
+    url: clickhouse://clickhouse:9000
+    ssl: false
+    autoMigrate: true
+  cluster:
+    enabled: false
+s3:
+  deploy: false
+  bucket: langfuse
+  region: auto
+  endpoint: http://s3:8333
+  forcePathStyle: true
+  accessKeyId:
+    secretKeyRef: { name: scratch-secrets, key: s3-access-key-id }
+  secretAccessKey:
+    secretKeyRef: { name: scratch-secrets, key: s3-secret-access-key }
+  eventUpload:
+    prefix: events/
+  batchExport:
+    prefix: exports/
+  mediaUpload:
+    prefix: media/

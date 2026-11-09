@@ -1,0 +1,46 @@
+# Scratch LiteLLM proxy: the production image, with config.yaml and environment taken from
+# one variant (run.sh <variant> recreates `litellm-config` and `litellm-variant-env`).
+# Models forward to the production LiteLLM with the cheap-experiments key.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: scratch-langfuse-tracing
+spec:
+  selector:
+    matchLabels: { app: litellm }
+  template:
+    metadata:
+      labels: { app: litellm }
+    spec:
+      nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+      imagePullSecrets: [{ name: forgejo-images-creds }]
+      containers:
+        - name: litellm
+          # Same image as the production proxy at the time of the experiment.
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20261108050831-f5f5201
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+          env:
+            - name: UPSTREAM_API_KEY
+              valueFrom: { secretKeyRef: { name: upstream-key, key: api-key } }
+            - name: LITELLM_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: scratch-secrets, key: litellm-master-key } }
+          envFrom: [{ secretRef: { name: litellm-variant-env } }]
+          ports: [{ containerPort: 4000 }]
+          readinessProbe:
+            httpGet: { path: /health/liveliness, port: 4000 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 200m, memory: 768Mi }
+            limits: { memory: 2Gi }
+          volumeMounts: [{ name: config, mountPath: /etc/litellm }]
+      volumes: [{ name: config, configMap: { name: litellm-config } }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: scratch-langfuse-tracing
+spec:
+  selector: { app: litellm }
+  ports: [{ port: 4000 }]
