@@ -1,10 +1,9 @@
 //! Heap and native-operation transfers over one settled execution snapshot.
 
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::value_model::{CallSite, Context, ValueExpr, Values};
-use super::CallKind;
-use super::MemberValueWrite;
+use super::effect_coverage::EffectCoverageFragment;
+use super::execution_index::{CallKind, MemberValueWrite};
 use super::interpreter::{Executor, NativeCallResolution};
+use super::value_model::{CallSite, Context, ValueExpr, Values};
 use std::collections::BTreeSet;
 use swc_common::Span;
 

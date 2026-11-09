@@ -113,22 +113,21 @@ fn graph_with_conditioned_set_proof(
         &flow,
         dynamic_scope,
     );
-    let prepared =
-        crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
-            &views,
-            &flow,
-            &crate::analysis_inputs::AnalysisInputs {
-                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
-                    consumed_value_inputs: dependencies.value_inputs.clone(),
-                    ..Default::default()
-                }),
+    let prepared = crate::facts::sync_effects::interpreter::prepare_synchronous_call_index(
+        &views,
+        &flow,
+        &crate::analysis_inputs::AnalysisInputs {
+            native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
+                consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
-            },
-            &plain_arrays,
-            &class_shapes,
-            set_shapes,
-            &shadowed,
-        );
+            }),
+            ..Default::default()
+        },
+        &plain_arrays,
+        &class_shapes,
+        set_shapes,
+        &shadowed,
+    );
     let set_proof = prepared.set_iterable_proof();
     ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,
@@ -1643,22 +1642,21 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &flow,
         DynamicScopeFact::analyze(&views),
     );
-    let prepared =
-        crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
-            &views,
-            &flow,
-            &crate::analysis_inputs::AnalysisInputs {
-                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
-                    consumed_value_inputs: dependencies.value_inputs.clone(),
-                    ..Default::default()
-                }),
+    let prepared = crate::facts::sync_effects::interpreter::prepare_synchronous_call_index(
+        &views,
+        &flow,
+        &crate::analysis_inputs::AnalysisInputs {
+            native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
+                consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
-            },
-            &plain_arrays,
-            &class_shapes,
-            crate::facts::SetIterableShapes::default(),
-            &shadowed,
-        );
+            }),
+            ..Default::default()
+        },
+        &plain_arrays,
+        &class_shapes,
+        crate::facts::SetIterableShapes::default(),
+        &shadowed,
+    );
     let class_proof = prepared.local_class_construction_proof();
     let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,

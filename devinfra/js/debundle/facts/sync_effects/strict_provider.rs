@@ -1,22 +1,22 @@
 //! The allocation-only provider consumer of the shared value transfers.
 
-use super::super::allocation_transfer::{self, AllocationJudgment, AllocationValue, LiteralHeap};
-use super::super::kernel::context::{
+use super::allocation_transfer::{self, AllocationJudgment, AllocationValue, LiteralHeap};
+use super::execution_index::ExecutionIndex;
+use super::kernel::context::{
     BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
 };
-use super::super::kernel::continuation::{self, LocalContinuation};
-use super::super::kernel::driver;
-use super::super::kernel::frame::{
+use super::kernel::continuation::{self, LocalContinuation};
+use super::kernel::driver;
+use super::kernel::frame::{
     LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
 };
-use super::super::local_operations::DeferredCallableCreation;
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::value_model::{
+use super::local_operations::DeferredCallableCreation;
+use super::own_data_transfer::OwnDataContext;
+use super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
 };
-use super::super::world::object_surface::ObjectSurfaceStore;
-use super::ExecutionIndex;
+use super::world::object_surface::ObjectSurfaceStore;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
@@ -286,7 +286,7 @@ struct ClosureCaptureProjection {
 /// private-var cells remain explicit retained captures after local transfer.
 fn closure_capture_projection(
     index: &ExecutionIndex,
-    body: &super::super::local_operations::LocalBody,
+    body: &super::local_operations::LocalBody,
 ) -> Option<ClosureCaptureProjection> {
     let outer_bindings: BTreeSet<_> = body.bindings.keys().cloned().collect();
     let mut projection = ClosureCaptureProjection {
@@ -759,7 +759,7 @@ mod tests {
             _ => panic!("provider fixture"),
         };
         let views = top_level_item_views(&module.body);
-        let prepared = super::super::prepare_callable_capabilities(
+        let prepared = super::super::execution_index::prepare_callable_capabilities(
             &views,
             StableArraySpreadShapes::default(),
             BTreeSet::from(["make".into()]),
@@ -874,7 +874,7 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = super::super::prepare_callable_capabilities(
+                let prepared = super::super::execution_index::prepare_callable_capabilities(
                     &views,
                     StableArraySpreadShapes::default(),
                     BTreeSet::from(["make".into()]),
@@ -918,7 +918,7 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = super::super::prepare_callable_capabilities(
+                let prepared = super::super::execution_index::prepare_callable_capabilities(
                     &views,
                     StableArraySpreadShapes::default(),
                     BTreeSet::from(["make".into()]),

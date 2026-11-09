@@ -1,7 +1,7 @@
 //! Deterministic synchronous models that consume a settled runtime prefix.
 
-use super::super::value_model::{AbstractValue, CallSite, Context, Values};
 use super::interpreter::{Executor, Outcome, ValidatedMetadataDecoration};
+use super::value_model::{AbstractValue, CallSite, Context, Values};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
 
