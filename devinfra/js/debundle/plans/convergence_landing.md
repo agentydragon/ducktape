@@ -48,8 +48,10 @@ Every PR in this plan:
    rejected with this typed reason, and the test shows why the split is unsafe
    (run the emitted program and show the divergence) or names the declared
    refusal (A1/A3/A5, top-level await, cross-module rebinding). A split that is
-   valid but not yet provable gets the positive test marked `#[ignore]` with
-   the gate that unblocks it; a test asserting that the debundler lacks a
+   valid but not yet provable gets the positive test wrapped in the
+   `e2e/support` xfail helper: it runs the positive assertion, requires today's
+   typed refusal, and fails with "capability landed, convert to a positive"
+   once the assertion passes. A test asserting that the debundler lacks a
    capability does not land. Exact `emitted_order` arrays, example-row ranking
    and receipt span pins are change detectors (<../../../STYLE.md> § Testing)
    and do not land either.
@@ -295,7 +297,7 @@ expectation or proves the change.
 such a flip only with a relocation (`swapped_pairs > 0`) and Node parity, or by
 showing the candidate order equals source order and the refusal signal is
 retained in a typed field. Where the devel refusal pinned a missing capability
-rather than an unsafe split, the slice replaces it with the ignored positive
+rather than an unsafe split, the slice replaces it with the xfail positive
 form of slice-contract item 3 instead of restoring the refusal:
 
 - Host-timing contracts in `reentry_free_operations_test.rs`: every exact Bun
