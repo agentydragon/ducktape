@@ -160,11 +160,6 @@ class ControlListener:
             self.facts.append(snapshot)
             self.facts_published.notify_all()
 
-    async def wait_connected(self, connections: int) -> None:
-        """Wait until a Runner state watch has opened at least `connections` times."""
-        async with asyncio.timeout(30), self._connected:
-            await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
-
     async def wait_ready(self, connections: int) -> None:
         """Wait until the Runner has published facts after accepting its latest state watch."""
         async with asyncio.timeout(30), self._connected:

@@ -15,12 +15,6 @@ from agentplane.notification_service.settings import (
     Settings,
 )
 
-BLOCKS: dict[str, object] = {
-    "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-    "runner_gateway": {"control_target": "{sandbox}-control.{namespace}.test:8080", "token_file": "/tokens/gateway"},
-    "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
-}
-
 
 @pytest.fixture
 def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
