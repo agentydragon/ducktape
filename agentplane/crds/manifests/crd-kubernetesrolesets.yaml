@@ -18,8 +18,14 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: KubernetesRoleSet is a reusable, named set of Kubernetes RBAC
-          rules that grants attach to accounts.
+        description: 'KubernetesRoleSet is a reusable, named set of Kubernetes RBAC
+          rules that grants attach to ServiceAccounts.
+
+          A set names no apiserver by design: each grant''s ServiceAccount does, and
+          the Policy Controller resolves the
+
+          set''s roles on that apiserver, reporting any that do not exist there as
+          missing.'
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation

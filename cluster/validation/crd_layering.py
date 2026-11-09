@@ -102,7 +102,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "PolicyBinding",
         "Identity",
         "KubernetesRoleSet",
-        "KubernetesAccountGrant",
+        "ServiceAccountGrant",
         "ManagedServiceAccount",
         "Sandbox.agentplane.allegedly.works",
         "SandboxTemplate.agentplane.allegedly.works",

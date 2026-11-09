@@ -23,7 +23,7 @@ CRD_FILES = (
     "crd-policybindings.yaml",
     "crd-identities.yaml",
     "crd-kubernetesrolesets.yaml",
-    "crd-kubernetesaccountgrants.yaml",
+    "crd-serviceaccountgrants.yaml",
     "crd-managedserviceaccounts.yaml",
     "crd-sandboxtemplates.yaml",
     "crd-sandboxes.yaml",
@@ -41,7 +41,7 @@ POLICY_CRDS = {
     "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
     "crd-identities.yaml": "agentplane.allegedly.works_identities.yaml",
     "crd-kubernetesrolesets.yaml": "agentplane.allegedly.works_kubernetesrolesets.yaml",
-    "crd-kubernetesaccountgrants.yaml": "agentplane.allegedly.works_kubernetesaccountgrants.yaml",
+    "crd-serviceaccountgrants.yaml": "agentplane.allegedly.works_serviceaccountgrants.yaml",
     "crd-managedserviceaccounts.yaml": "agentplane.allegedly.works_managedserviceaccounts.yaml",
 }
 

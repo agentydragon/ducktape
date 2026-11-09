@@ -17,7 +17,7 @@ func init() {
 		&PolicyBinding{}, &PolicyBindingList{},
 		&Identity{}, &IdentityList{},
 		&KubernetesRoleSet{}, &KubernetesRoleSetList{},
-		&KubernetesAccountGrant{}, &KubernetesAccountGrantList{},
+		&ServiceAccountGrant{}, &ServiceAccountGrantList{},
 		&ManagedServiceAccount{}, &ManagedServiceAccountList{},
 	)
 }

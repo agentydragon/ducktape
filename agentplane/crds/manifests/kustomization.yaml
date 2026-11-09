@@ -6,7 +6,7 @@ resources:
   - crd-policybindings.yaml
   - crd-identities.yaml
   - crd-kubernetesrolesets.yaml
-  - crd-kubernetesaccountgrants.yaml
+  - crd-serviceaccountgrants.yaml
   - crd-managedserviceaccounts.yaml
   - crd-sandboxtemplates.yaml
   - crd-sandboxes.yaml
