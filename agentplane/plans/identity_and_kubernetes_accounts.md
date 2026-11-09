@@ -518,14 +518,23 @@ cannot change in place, and the new launch writes the identity.
 20. **TODO: Accounts per preset vs per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per preset gives each agent one `kubectl` identity, holding its preset's role sets plus cluster
     diagnostics. Per role set is finer-grained, but an agent then needs a different token per command.
-21. **How the MCP edge proves an Identity to the Action Service** (open, 2026-11-09). Today the edge
-    mints a TokenRequest for the ServiceAccount a Connection is bound to, and Actions reviews that
-    token. A Connection bound to an `Identity` has no account to mint for, so the edge needs another
-    proof. Recommendation: the [delegated authorization](../docs/delegated_authorization.md) contract,
-    with the edge as the actor and the Identity as the effective caller; its envelope carries an
-    identity reference once `SERVICES_IDENTITY_PRINCIPAL` lands. This is the shape
+21. **How the MCP edge proves an Identity to the Action Service: decided 2026-11-09 (operator).**
+    Today the edge mints a TokenRequest for the ServiceAccount a Connection is bound to. A Connection
+    bound to an `Identity` has no account to mint for, so the edge uses the
+    [delegated authorization](../docs/delegated_authorization.md) contract instead: it authenticates
+    as itself, the Action Service's per-method delegation rule names the edge's account as an
+    allowed actor, and the envelope names the Identity as the effective caller once
+    `SERVICES_IDENTITY_PRINCIPAL` gives it an identity reference. Trust is coarse: the Action
+    Service accepts any Identity in the policy namespace from the edge, and the edge gates itself,
+    binding Connections only to Identities in its `connection_identities` allowlist, each binding
+    operator-approved at consent or rebind. This is the same trust as the other trusted writers
+    (the `WorkloadCredential` requesters, Dispatcher for Sessions). A narrower check at the Action
+    Service (a second allowlist, or a per-identity RBAC verb on the edge's account) is additive if
+    the edge's internet exposure ever warrants it. Revisit the static allowlist if runtime-created
+    identities need Connections; eligibility would then move onto the `Identity`. This is the shape
     `CENTRAL_SESSION_ACTING_DESIGN` defers for the sampler (question 6), so the two should share one
-    design. Until it is decided, the edge's `mintable_accounts` stays required with OAuth.
+    design. Until `SERVICES_IDENTITY_PRINCIPAL` lands, the edge's `mintable_accounts` stays required
+    with OAuth.
 
 ## Exit
 
