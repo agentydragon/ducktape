@@ -24,8 +24,9 @@ const (
 	RunnerTrustBundleKey              = "ca-certificates.crt"
 
 	// The workload CA alone, which verifies the Gateway's client SVID at the runner's control
-	// listener; the cluster bundle above keeps verifying the local chain and the servers a runner
-	// dials. A Pod gets it as RunnerWorkloadTrustFile beside ca.crt, a VM as its own filesystem.
+	// listener and, in the egress sidecar or launcher relay, the server SVIDs a runner dials; the
+	// cluster bundle above verifies only the Runtime's own chain. A Pod gets it as
+	// RunnerWorkloadTrustFile beside ca.crt, a VM as its own filesystem.
 	EnvironmentRuntimeWorkloadTrustVolumeName = "runner-workload-trust"
 	RunnerWorkloadTrustBundleName             = "agentplane-workload-ca-bundle"
 	RunnerWorkloadTrustFile                   = "workload-ca.crt"

@@ -1,10 +1,11 @@
 """SVID verifiers trust the Agentplane workload CA alone, not the cluster root it chains to.
 
 A Certificate anyone may request from `cluster-internal-ca`, naming a live Sandbox's exact Runtime
-URI, its WorkloadCredential's, with client auth, must not authenticate to the egress proxy's forward listener; one naming the
-Runner Gateway must not authenticate to a runner's control listener. The real credential, presented
-the same way, is the positive anchor: it shows the probe reaches the listener and that only the
-issuer differs.
+URI, its WorkloadCredential's, with client auth, must not authenticate to the egress proxy's forward
+listener; one naming the Runner Gateway must not authenticate to a runner's control listener; one
+naming a runner, served at that runner's address, must not authenticate to the Gateway dialing it.
+The real credential, presented the same way, is the positive anchor: it shows the probe reaches the
+verifier and that only the issuer differs.
 """
 
 from __future__ import annotations
@@ -12,15 +13,23 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import copy
 import json
 import ssl
 import tempfile
+import textwrap
+from collections.abc import Sequence
 from pathlib import Path
 from uuid import uuid4
 
+import yaml
+
+from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_root_certificates
 
 # cluster/cdk8s/agentplane/egress.py: `proxy()` and its listener port.
@@ -80,8 +89,10 @@ async def _answers_connect(
             await writer.wait_closed()
 
 
-async def _cluster_ca_client_leaf(cluster: Cluster, uri: str) -> tuple[bytes, bytes]:
-    """A client-auth leaf naming `uri` that `cluster-internal-ca` signs, requested in a fresh namespace."""
+async def _cluster_ca_leaf(
+    cluster: Cluster, uri: str, usages: Sequence[str] = ("digital signature", "client auth")
+) -> tuple[bytes, bytes]:
+    """A leaf naming `uri` that `cluster-internal-ca` signs, requested in a fresh namespace."""
     foreign = f"systest-foreign-{uuid4().hex[:8]}"
     await cluster.kubectl("create", "namespace", foreign)
     try:
@@ -99,7 +110,7 @@ async def _cluster_ca_client_leaf(cluster: Cluster, uri: str) -> tuple[bytes, by
                     "secretName": "foreign-leaf",
                     "issuerRef": {"name": "cluster-internal-ca", "kind": "ClusterIssuer"},
                     "uris": [uri],
-                    "usages": ["digital signature", "client auth"],
+                    "usages": list(usages),
                     "privateKey": {"algorithm": "ECDSA", "size": 256},
                 },
             },
@@ -119,7 +130,7 @@ async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(
     record = json.loads(await cluster.kubectl("get", "workloadcredential", view.target.name, "-o", "json"))
     credential, uri = record["status"]["secretName"], record["status"]["uri"]
 
-    impostor = await _cluster_ca_client_leaf(cluster, uri)
+    impostor = await _cluster_ca_leaf(cluster, uri)
     own = await _secret_pem(cluster, cluster.namespace, credential)
 
     roots = await service_root_certificates(cluster)
@@ -183,7 +194,7 @@ async def _answers_http2(target: str, *, roots: bytes, certificate: tuple[bytes,
 async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
-    impostor = await _cluster_ca_client_leaf(cluster, _GATEWAY_URI)
+    impostor = await _cluster_ca_leaf(cluster, _GATEWAY_URI)
     gateway = await _secret_pem(cluster, cluster.namespace, _GATEWAY_SECRET)
     roots = await service_root_certificates(cluster)
     forward = PortForward(
@@ -199,6 +210,165 @@ async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
             f"a cluster-internal-ca leaf naming {_GATEWAY_URI} authenticated to a runner's control listener"
         )
     # The Gateway's own connection still holds: a Sandbox is Ready only while its runner is connected.
+    await cluster.kubectl(
+        "wait",
+        f"sandbox.agentplane.allegedly.works/{view.target.name}",
+        "--for=condition=Ready=True",
+        f"--timeout={READY_SECONDS}s",
+    )
+
+
+# The impostor runner: a TLS server on the control port that serves the Sandbox's own credential
+# until the Gateway completes one handshake with it, then the mounted cluster-root leaf. Under TLS
+# 1.3 the server's handshake completes only once the client has verified the server certificate, so
+# each line records whether the dialing client accepted what was served.
+_IMPOSTOR_LEAF_PATH = "/run/agentplane/impostor-leaf"
+_IMPOSTOR_SCRIPT = textwrap.dedent(
+    f"""\
+    import json, socket, ssl
+    own = ("/run/agentplane/environment-runtime-tls/tls.crt", "/run/agentplane/environment-runtime-tls/tls.key")
+    impostor = ("{_IMPOSTOR_LEAF_PATH}/tls.crt", "{_IMPOSTOR_LEAF_PATH}/tls.key")
+    serving = "own"
+    listener = socket.create_server(("0.0.0.0", {_RUNNER_CONTROL_PORT}))
+    while True:
+        connection, peer = listener.accept()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(*(own if serving == "own" else impostor))
+        context.set_alpn_protocols(["h2"])
+        connection.settimeout(30)
+        try:
+            context.wrap_socket(connection, server_side=True).close()
+            outcome = "accepted"
+        except (OSError, ssl.SSLError) as error:
+            outcome = str(error)
+            connection.close()
+        print(json.dumps({{"peer": peer[0], "serving": serving, "outcome": outcome}}), flush=True)
+        if outcome == "accepted":
+            serving = "impostor"
+    """
+)
+
+
+async def _object(cluster: Cluster, kind: str, name: str) -> dict:
+    decoded = json.loads(await cluster.kubectl("get", kind, name, "-o", "json"))
+    assert isinstance(decoded, dict)
+    return decoded
+
+
+async def _sandbox_status(cluster: Cluster, name: str, *path: str) -> object:
+    """Poll the Sandbox until its status holds `path`, and return that value."""
+    async with asyncio.timeout(READY_SECONDS):
+        while True:
+            value: object = (await _object(cluster, f"sandboxes.{GROUP}", name)).get("status", {})
+            for key in path:
+                value = value.get(key) if isinstance(value, dict) else None
+            if value:
+                return value
+            await asyncio.sleep(1)
+
+
+async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+) -> None:
+    """A Sandbox whose runner container is the impostor server: the Gateway dials its Pod address as
+    it would a runner's, completing a handshake with the Sandbox's own credential and refusing a
+    `cluster-internal-ca` leaf naming the same runner URI, while the real runner `view` stays connected."""
+    name = f"systest-impostor-{uuid4().hex[:8]}"
+    base = await _object(cluster, f"sandboxtemplates.{GROUP}", POD_TEMPLATE)
+    spec = copy.deepcopy(base["spec"])
+    pod = spec["pod"]["spec"]
+    runtime = next(c for c in pod["containers"] if c["name"] == ENVIRONMENT_RUNTIME_CONTAINER)
+    for probe in ("readinessProbe", "livenessProbe", "startupProbe"):
+        runtime.pop(probe, None)
+    runtime |= {
+        "command": ["python3", "-c", _IMPOSTOR_SCRIPT],
+        "args": [],
+        "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"memory": "256Mi"}},
+        "volumeMounts": [
+            *runtime.get("volumeMounts", []),
+            {"name": "impostor-leaf", "mountPath": _IMPOSTOR_LEAF_PATH, "readOnly": True},
+        ],
+    }
+    pod["containers"] = [runtime]
+    # Kubelet holds the Pod until the Secret exists, which needs the URI the controller allocates.
+    pod["volumes"] = [*pod.get("volumes", []), {"name": "impostor-leaf", "secret": {"secretName": name}}]
+    gateway_settings = yaml.safe_load(
+        (await _object(cluster, "configmap", "runner-gateway-settings"))["data"]["settings.yaml"]
+    )
+    async with contextlib.AsyncExitStack() as cleanup:
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": SANDBOX_API_VERSION,
+                "kind": "SandboxTemplate",
+                "metadata": {"name": name, "namespace": cluster.namespace},
+                "spec": spec,
+            },
+        )
+        cleanup.push_async_callback(cluster.kubectl, "delete", f"sandboxtemplates.{GROUP}", name, "--wait=false")
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": SANDBOX_API_VERSION,
+                "kind": "Sandbox",
+                "metadata": {"name": name, "namespace": cluster.namespace},
+                "spec": {
+                    "template": name,
+                    "running": True,
+                    "policySets": gateway_settings["environment_default_policy_sets"],
+                },
+            },
+        )
+        cleanup.push_async_callback(
+            cluster.kubectl, "delete", f"sandboxes.{GROUP}", name, f"--timeout={READY_SECONDS}s"
+        )
+        credential = await _sandbox_status(cluster, name, "runnerCredential", "id")
+        async with asyncio.timeout(READY_SECONDS):
+            while True:
+                with contextlib.suppress(RuntimeError):
+                    runtime_certificate = await _object(cluster, "certificate", f"runner-{credential}")
+                    break
+                await asyncio.sleep(1)
+        (uri,) = runtime_certificate["spec"]["uris"]
+        crt, key = await _cluster_ca_leaf(cluster, uri, ("digital signature", "server auth", "client auth"))
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {"name": name, "namespace": cluster.namespace},
+                "type": "kubernetes.io/tls",
+                "data": {"tls.crt": base64.b64encode(crt).decode(), "tls.key": base64.b64encode(key).decode()},
+            },
+        )
+        cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")
+        incarnation = await _sandbox_status(cluster, name, "incarnation", "name")
+        gateway_pods = json.loads(
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+        )["items"]
+        gateway_ips = {pod["status"]["podIP"] for pod in gateway_pods if pod["status"].get("podIP")}
+        outcomes: dict[str, list[str]] = {}
+        async with asyncio.timeout(READY_SECONDS):
+            while not (outcomes.get("own") and outcomes.get("impostor")):
+                await asyncio.sleep(2)
+                with contextlib.suppress(RuntimeError):
+                    logs = await cluster.kubectl("logs", f"pod/{incarnation}", "-c", ENVIRONMENT_RUNTIME_CONTAINER)
+                    outcomes = {}
+                    for line in logs.splitlines():
+                        record = json.loads(line)
+                        if record["peer"] in gateway_ips:
+                            outcomes.setdefault(record["serving"], []).append(record["outcome"])
+        assert outcomes["own"][-1] == "accepted", f"the Gateway refused the Sandbox's own SVID: {outcomes['own']}"
+        assert "accepted" not in outcomes["impostor"], (
+            f"the Gateway accepted a cluster-internal-ca leaf naming {uri}: {outcomes['impostor']}"
+        )
+    # The Gateway's real runner connection still holds: a Sandbox is Ready only while its runner is connected.
     await cluster.kubectl(
         "wait",
         f"sandbox.agentplane.allegedly.works/{view.target.name}",

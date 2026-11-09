@@ -52,7 +52,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as TRUST_BUNDLE_NAME, BUNDLE_KEY as TRUST_BUNDLE_KEY
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import tls_grpc_probe
@@ -317,9 +317,10 @@ class RunnerGateway(Construct):
                         ],
                     )
                 ),
+                # The workload CA alone: it issues every runner's server SVID and the Gateway's own leaf.
                 k8s.VolumeProjection(
                     config_map=k8s.ConfigMapProjection(
-                        name=TRUST_BUNDLE_NAME, items=[k8s.KeyToPath(key=TRUST_BUNDLE_KEY, path="ca.crt")]
+                        name=cluster_ca.WORKLOAD_BUNDLE, items=[k8s.KeyToPath(key=cluster_ca.BUNDLE_KEY, path="ca.crt")]
                     )
                 ),
             ],

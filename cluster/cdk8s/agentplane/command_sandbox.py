@@ -28,6 +28,7 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # The command box's PodTemplate, and both boxes' Pod name label and fence. The egress proxy's
@@ -42,6 +43,9 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
+# The workload CA alone, on the sidecar: it verifies the proxy's and the platform routes' server SVIDs.
+_SIDECAR_TRUST_VOLUME = "workload-trust"
+_SIDECAR_TRUST_DIR = Path("/run/agentplane/workload-trust")
 _COMMAND_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
     limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
@@ -104,7 +108,7 @@ class CommandSandbox(Construct):
                 },
             ),
             proxy_transport=sidecar_config.TLSProxyTransport(
-                ca_file=sandbox_pod.SIDECAR_TRUST_DIR / egress.CA_BUNDLE_KEY,
+                ca_file=_SIDECAR_TRUST_DIR / cluster_ca.BUNDLE_KEY,
                 auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(sandbox_pod.EGRESS_TOKEN_FILE)),
             ),
         )
@@ -161,16 +165,17 @@ def _pod_template(
         sandbox_pod.pod_spec(
             env,
             workload=workload,
-            workload_volumes=volumes,
+            workload_volumes=[
+                *volumes,
+                k8s.Volume(
+                    name=_SIDECAR_TRUST_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=cluster_ca.WORKLOAD_BUNDLE)
+                ),
+            ],
             sidecar_settings=scope.sidecar_settings,
             sidecar_resources=scope.sidecar_resources,
             # Directory mount lets the TLS root source observe trust-manager rotation.
             sidecar_mounts=[
-                k8s.VolumeMount(
-                    name=sandbox_pod.EGRESS_CA_VOLUME_NAME,
-                    mount_path=str(sandbox_pod.SIDECAR_TRUST_DIR),
-                    read_only=True,
-                )
+                k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
             ],
             # CLEANUP(added 2026-11-09): Replace this proxy-hop bearer with a workload SVID once
             # command boxes have an issuer; the proxy's bearer mode goes with the last projection.

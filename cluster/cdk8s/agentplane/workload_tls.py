@@ -1,8 +1,8 @@
-"""cert-manager serving leaves and trust-manager roots for workload SVID listeners.
+"""cert-manager serving leaves and the trust-manager workload CA for workload SVID peers.
 
-A listener verifies client SVIDs against the Agentplane workload CA alone (`cluster_ca.WORKLOAD_BUNDLE`).
-A client verifies a service's server certificate against the cluster's internal roots, which the
-workload CA chains to.
+Every Agentplane SVID comes from the workload CA, and both directions verify against it alone
+(`cluster_ca.WORKLOAD_BUNDLE`): a listener checking a client SVID, and a client checking a service's
+server SVID. A `cluster-internal-ca` leaf naming an Agentplane URI therefore authenticates to neither.
 """
 
 from pathlib import Path
@@ -19,17 +19,15 @@ from cluster.cdk8s.providers.cert_manager.certificate import Certificate, Certif
 
 _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
-TRUST_BUNDLE_FILE = f"{_TRUST_PATH}/ca-certificates.crt"
-_CLIENT_TRUST_PATH = "/run/agentplane/workload-client-trust"
-CLIENT_TRUST_BUNDLE_FILE = f"{_CLIENT_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}"
+TRUST_BUNDLE_FILE = f"{_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}"
 
 
 def mount_trust_bundle(scope: Construct, container: Container) -> Path:
-    """Mount the cluster's internal roots for a caller that verifies service SVIDs."""
+    """Mount the workload CA for a caller that verifies service SVIDs or a listener verifying client SVIDs."""
     trust = Volume.from_config_map(
         scope,
         "workload-trust-volume",
-        ConfigMap.from_config_map_name(scope, "workload-trust-bundle", "cluster-internal-ca-bundle"),
+        ConfigMap.from_config_map_name(scope, "workload-trust-bundle", cluster_ca.WORKLOAD_BUNDLE),
         name="workload-trust",
     )
     container.mount(_TRUST_PATH, trust, read_only=True)
@@ -41,21 +39,9 @@ def client_tls(server_uri: str) -> ClientTLS:
     return ClientTLS(ca_file=Path(TRUST_BUNDLE_FILE), server_uri=server_uri)
 
 
-def mount_client_trust_bundle(scope: Construct, container: Container) -> Path:
-    """Mount the workload CA for a listener that verifies client SVIDs."""
-    trust = Volume.from_config_map(
-        scope,
-        "workload-client-trust-volume",
-        ConfigMap.from_config_map_name(scope, "workload-client-trust-bundle", cluster_ca.WORKLOAD_BUNDLE),
-        name="workload-client-trust",
-    )
-    container.mount(_CLIENT_TRUST_PATH, trust, read_only=True)
-    return Path(CLIENT_TRUST_BUNDLE_FILE)
-
-
 def serving_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
-    """Mount a serving leaf from the workload CA, the cluster roots for the workload's own clients, and
-    the workload CA as `ca_file` for its listener's client SVIDs."""
+    """Mount a serving leaf from the workload CA and the workload CA itself, which is both the
+    listener's `ca_file` for client SVIDs and the trust the workload's own clients dial with."""
     secret_name = f"{name}-workload-tls"
     Certificate(
         scope,
@@ -76,6 +62,5 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
         name="workload-tls",
     )
     container.mount(_CERT_PATH, certificate, read_only=True)
-    mount_trust_bundle(scope, container)
-    ca_file = mount_client_trust_bundle(scope, container)
+    ca_file = mount_trust_bundle(scope, container)
     return TLS(cert_file=f"{_CERT_PATH}/tls.crt", key_file=f"{_CERT_PATH}/tls.key", ca_file=str(ca_file))

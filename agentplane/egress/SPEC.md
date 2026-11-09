@@ -25,8 +25,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   trusting the Agentplane workload CA alone, and Pod-bound Kubernetes bearers for existing
   non-Sandbox callers; a leaf of the cluster's internal CA naming a Runtime URI does not
   authenticate. It presents `spiffe://agentplane/egress-proxy`, issued by the workload CA
-  with serverAuth. Clients require clientAuth and the canonical URI
-  `spiffe://agentplane/<namespace>/<name>/<credential-id>` of a `WorkloadCredential`.
+  with serverAuth. The sidecar's `proxy.transport.ca_file` holds the workload CA alone; it verifies
+  this SVID and the service SVIDs behind workload and platform routes. Clients require clientAuth and
+  the canonical URI `spiffe://agentplane/<namespace>/<name>/<credential-id>` of a `WorkloadCredential`.
   Plaintext is refused. Presenting both a certificate and bearer is refused; an invalid credential
   never falls back to another authentication method. A bearer is reviewed for the configured audience
   and allowed namespace, and its ServiceAccount is the unchanged policy subject.

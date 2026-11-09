@@ -429,9 +429,8 @@ class EnvironmentSandboxTemplate(Construct):
                         cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                         key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
                         ca_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/ca.crt",
-                        # The Sandbox Controller projects the workload CA alone here
-                        # (`RunnerWorkloadTrustFile`); it verifies the Gateway's client SVID.
-                        client_ca_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/workload-ca.crt",
+                        # The workload CA alone; it verifies the Gateway's client SVID.
+                        client_ca_file=str(sidecar_config.RUNNER_WORKLOAD_TRUST_FILE),
                     )
                 ),
             ),
@@ -524,7 +523,7 @@ class EnvironmentSandboxTemplate(Construct):
             workload_routes=workload_routes.sidecar_routes(self.env.namespace),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_transport=sidecar_config.TLSProxyTransport(
-                ca_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "ca.crt",
+                ca_file=sidecar_config.RUNNER_WORKLOAD_TRUST_FILE,
                 auth=sidecar_config.SpiffeProxyAuth(
                     cert_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.crt",
                     key_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.key",
