@@ -227,7 +227,7 @@ type ServiceAccount policyapi.ServiceAccountRef
 // deletes an agent's bindings with the Identity.
 //
 // No enforcing service looks up an Identity yet. Its callers land next: the WorkloadCredential
-// resolver (agentplane/plans/workload_identity_lifecycle.md, "How a verifier resolves a peer") and
+// resolver (agentplane/docs/workload_authentication.md, "How a verifier resolves a peer") and
 // SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md).
 type Identity struct {
 	Name string

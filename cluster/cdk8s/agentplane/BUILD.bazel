@@ -813,10 +813,8 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_issuer",
         # chart.py imports enum types from these generated bindings directly.
         "//cluster/cdk8s/providers/cert_manager:certificate",
-        "//cluster/cdk8s/providers/cert_manager:issuer",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

@@ -8,7 +8,6 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 
 GATEWAY_TLS_SECRET = "agentplane-runner-gateway-tls"
 GATEWAY_TLS_MOUNT_PATH = "/run/agentplane/runner-tls"
-RUNNER_CERTIFICATE_ISSUER = "agentplane-runner-ca"
 
 
 def service(namespace: str) -> ServiceRef:

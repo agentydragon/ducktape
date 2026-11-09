@@ -14,12 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKeyRotationPolicy,
-    CertificateSpecUsages,
-)
-from cert_manager_issuer_crds.io.cert_manager import IssuerSpecCa
+from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -47,15 +42,12 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
-from cluster.cdk8s.cert_manager.cluster_ca import INTERNAL_ISSUER
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
-from cluster.cdk8s.providers.cert_manager.issuer import Issuer
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 
-RUNNER_CA_SECRET = "agentplane-runner-ca"
 RUNNER_GATEWAY_CERTIFICATE = "agentplane-runner-gateway"
 RUNNER_GATEWAY_SECRET = runner_gateway.GATEWAY_TLS_SECRET
 RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
@@ -81,30 +73,7 @@ class Namespace(Construct):
 
 
 def add_runner_certificates(scope: Construct, env: Environment) -> None:
-    """Provision the Gateway leaf, and the legacy environment CA and namespaced Issuer."""
-    # CLEANUP(added 2026-11-09): Remove this CA and Issuer, `runner_gateway.RUNNER_CERTIFICATE_ISSUER`
-    #   and the k3s `cert_manager_reissues_a_deleted_tls_secret` scenario's use of it once the change
-    #   moving every Agentplane certificate to `cluster_ca.WORKLOAD_ISSUER` has rolled out to staging and no
-    #   Certificate's `issuerRef` there names `agentplane-runner-ca`.
-    Certificate(
-        scope,
-        "runner-issuer-ca-certificate",
-        metadata=ApiObjectMetadata(name=RUNNER_CA_SECRET, namespace=env.namespace),
-        secret_name=RUNNER_CA_SECRET,
-        is_ca=True,
-        common_name=RUNNER_CA_SECRET,
-        duration="87600h",
-        renew_before="8760h",
-        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-        issuer_ref=CertificateSpecIssuerRef(name=INTERNAL_ISSUER.name, kind="ClusterIssuer"),
-    )
-    Issuer(
-        scope,
-        "runner-issuer",
-        metadata=ApiObjectMetadata(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, namespace=env.namespace),
-        ca=IssuerSpecCa(secret_name=RUNNER_CA_SECRET),
-    )
+    """Provision the Gateway leaf."""
     Certificate(
         scope,
         "runner-gateway-certificate",
