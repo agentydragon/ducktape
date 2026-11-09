@@ -64,5 +64,5 @@ Lease in the policy namespace.
 
 The same binary also serves `PolicyService` gRPC on `:8082` using TokenReview with the
 `agentplane-policy` audience. Its read watches run on every replica independently of reconciliation
-leader election. Operator grant and revoke calls are admitted only for `writer_accounts`, separately
+leader election. Operator grant, revoke and Identity delete calls are admitted only for `writer_accounts`, separately
 from the workload read/watch resolver; see the [service contract](SPEC.md#policy-resource-watches).

@@ -56,6 +56,14 @@ UID in a non-controller owner reference. Revoke requires the caller's Sandbox UI
 PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
 UID and resourceVersion preconditions.
 
+`PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
+observed UID with UID and resourceVersion preconditions; garbage collection then removes what the
+Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.io/name` label,
+which Flux would recreate, and an Identity named by a PolicyBinding with no owner reference to that
+Identity's UID: such a binding names a subject by name only, so it would grant a later Identity of
+the same name. That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per
+binding. The check is advisory; a binding created between the read and the delete is not fenced.
+
 Kubernetes does not transact a Sandbox read with a PolicyBinding create. Grant checks the exact
 Sandbox and ServiceAccount before and after creation, and attempts UID/resourceVersion-guarded
 cleanup if either identity changed. A replacement between those checks can still see a transient
@@ -139,9 +147,10 @@ not exist. It is checked once the subject resolves and holds even when applying 
 ## Policy resource watches
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
-observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets; and
-`ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
-directly configured reader may select another subject and see every set; other authenticated
+observes bindings for one ServiceAccount or one Identity name; `WatchPolicySets` observes PolicySets;
+`WatchIdentities` observes Identities; and `ListPolicySetNames` returns one sorted snapshot of the
+PolicySet names visible to the caller. A directly configured reader may select another subject or
+an Identity, see every set and watch Identities; other authenticated
 ServiceAccounts may read their own bindings and only sets named by those bindings. Losing a binding
 removes a set from that caller's view when no other binding names it. The server reviews the
 PolicyService-audience bearer at admission, before writes, and while idle; a changed or refused
@@ -150,7 +159,7 @@ identity ends the stream.
 Each stream sends snapshot chunks, `snapshot_complete`, then coalesced resource upserts and
 UID-fenced removals. It opens Kubernetes watches before reading the snapshot, so an intervening
 change is revisited. A closed or failed Kubernetes watch ends the RPC; a client must mark the data
-stale and reconnect for a fresh snapshot. The two watches do not provide an atomic cross-kind view.
+stale and reconnect for a fresh snapshot. The watches do not provide an atomic cross-kind view.
 No fixed timer forces healthy clients to reconnect.
 
 The Kubernetes Go resource types and their validation markers remain authoritative. Explicit `proto`

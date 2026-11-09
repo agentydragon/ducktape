@@ -10111,6 +10111,15 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - identities
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - serviceaccountgrants
     verbs:
       - get

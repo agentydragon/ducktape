@@ -16,6 +16,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -536,5 +537,160 @@ func TestListPolicySetNamesReturnsOneSortedCallerVisibleSnapshot(t *testing.T) {
 		if !reflect.DeepEqual(response.GetNames(), test.want) {
 			t.Errorf("ListPolicySetNames(%s) = %v, want %v", test.token, response.GetNames(), test.want)
 		}
+	}
+}
+
+func testIdentity(name string, labels map[string]string) *policyapi.Identity {
+	return &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), ResourceVersion: "1", Generation: 1, Labels: labels},
+		Spec:       policyapi.IdentitySpec{Description: "Fake agent " + name},
+	}
+}
+
+func identityBinding(name, identity string, owner *policyapi.Identity) *policyapi.PolicyBinding {
+	bound := binding(name, "", "base")
+	bound.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity}}
+	if owner != nil {
+		bound.OwnerReferences = []metav1.OwnerReference{{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity", Name: owner.Name, UID: owner.UID}}
+	}
+	return bound
+}
+
+func TestIdentityBindingWatchSelectsOnlyBindingsNamingThatIdentity(t *testing.T) {
+	api, _, _ := fixture(t, identityBinding("names-agent", "fake-agent", nil), identityBinding("names-other", "other-agent", nil), binding("account", "fake-agent", "base"))
+	stream, err := api.WatchPolicyBindings(tokenContext(t, "app"), &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := first.GetSnapshot().GetBindings(); len(got) != 1 || got[0].GetIdentity().GetName() != "names-agent" || got[0].GetSpec().GetSubject().GetIdentity().GetName() != "fake-agent" {
+		t.Fatalf("snapshot = %v", got)
+	}
+	for _, tc := range []struct {
+		token   string
+		request *policypb.WatchPolicyBindingsRequest
+		want    codes.Code
+	}{
+		{"alice", &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent"}, codes.PermissionDenied},
+		{"app", &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent", Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "alice"}}, codes.InvalidArgument},
+	} {
+		refused, err := api.WatchPolicyBindings(tokenContext(t, tc.token), tc.request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := refused.Recv(); status.Code(err) != tc.want {
+			t.Errorf("%s watching %v: %v, want %v", tc.token, tc.request, err, tc.want)
+		}
+	}
+}
+
+func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
+	flux := map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}
+	api, kube, _ := fixture(t, testIdentity("git-origin-identity", flux))
+	stream, err := api.WatchIdentities(tokenContext(t, "app"), &policypb.WatchIdentitiesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := first.GetSnapshot().GetIdentities()
+	if len(got) != 1 || got[0].GetIdentity().GetName() != "git-origin-identity" || got[0].GetSpec().GetDescription() != "Fake agent git-origin-identity" ||
+		got[0].GetLabels()["kustomize.toolkit.fluxcd.io/name"] != "fake-kustomization" {
+		t.Fatalf("snapshot = %v", got)
+	}
+	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
+		t.Fatalf("snapshot complete %v %v", frame, err)
+	}
+	created := testIdentity("app-identity", nil)
+	created.ResourceVersion = ""
+	if err := kube.Create(context.Background(), created); err != nil {
+		t.Fatal(err)
+	}
+	if frame, err := stream.Recv(); err != nil || frame.GetUpsert().GetIdentity().GetName() != "app-identity" {
+		t.Fatalf("upsert = %v %v", frame, err)
+	}
+	if err := kube.Delete(context.Background(), testIdentity("git-origin-identity", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if frame, err := stream.Recv(); err != nil || frame.GetRemoved().GetUid() != "uid-git-origin-identity" {
+		t.Fatalf("removed = %v %v", frame, err)
+	}
+	denied, err := api.WatchIdentities(tokenContext(t, "alice"), &policypb.WatchIdentitiesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := denied.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("narrow reader watching identities: %v", err)
+	}
+}
+
+func TestDeleteIdentityRemovesAnUnreferencedIdentityExactly(t *testing.T) {
+	identity := testIdentity("unreferenced-identity", nil)
+	api, kube, _ := fixture(t, identity, identityBinding("own-launch-binding", "unreferenced-identity", identity))
+	_, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kube.deletePreconditions == nil || kube.deletePreconditions.UID == nil || *kube.deletePreconditions.UID != "uid-unreferenced-identity" ||
+		kube.deletePreconditions.ResourceVersion == nil || *kube.deletePreconditions.ResourceVersion != "1" {
+		t.Fatalf("delete preconditions = %+v", kube.deletePreconditions)
+	}
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: "unreferenced-identity"}, &policyapi.Identity{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("deleted Identity remains: %v", err)
+	}
+}
+
+func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
+	referenced := testIdentity("referenced-identity", nil)
+	// A binding owned by another incarnation of the same name is not this identity's own.
+	previous := testIdentity("referenced-identity", nil)
+	previous.UID = "uid-previous-incarnation"
+	api, kube, _ := fixture(
+		t,
+		referenced, identityBinding("standing-grant", "referenced-identity", nil), identityBinding("stale-owner", "referenced-identity", previous),
+		testIdentity("git-origin-identity", map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}),
+	)
+	for _, tc := range []struct {
+		name    string
+		token   string
+		request *policypb.DeleteIdentityRequest
+		want    codes.Code
+	}{
+		{"referenced", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.FailedPrecondition},
+		{"git origin", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "git-origin-identity", Uid: "uid-git-origin-identity"}, codes.FailedPrecondition},
+		{"replaced incarnation", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "git-origin-identity", Uid: "uid-replaced"}, codes.Aborted},
+		{"another namespace", "app", &policypb.DeleteIdentityRequest{Namespace: "other-policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.NotFound},
+		{"missing UID", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity"}, codes.InvalidArgument},
+		{"non-writer", "alice", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.PermissionDenied},
+	} {
+		_, err := api.DeleteIdentity(tokenContext(t, tc.token), tc.request)
+		if status.Code(err) != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
+		}
+		if tc.name == "referenced" {
+			var named []string
+			for _, detail := range status.Convert(err).Details() {
+				if failure, ok := detail.(*errdetails.PreconditionFailure); ok {
+					for _, violation := range failure.GetViolations() {
+						named = append(named, violation.GetType()+"/"+violation.GetSubject())
+					}
+				}
+			}
+			if want := []string{"PolicyBinding/stale-owner", "PolicyBinding/standing-grant"}; !reflect.DeepEqual(named, want) {
+				t.Errorf("referenced refusal names %v, want %v", named, want)
+			}
+		}
+	}
+	var identities policyapi.IdentityList
+	if err := kube.List(context.Background(), &identities, client.InNamespace("policies")); err != nil {
+		t.Fatal(err)
+	}
+	if len(identities.Items) != 2 {
+		t.Fatalf("refused deletes removed identities: %v", identities.Items)
 	}
 }

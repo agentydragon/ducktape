@@ -63,6 +63,10 @@ class PolicyControllerRbac(Construct):
                 RolePolicyRule(
                     resources=[custom_resource(_GROUP, "kubernetesrolesets")], verbs=["get", "list", "watch"]
                 ),
+                # PolicyService serves identities and the operator's delete of one.
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch", "delete"]
+                ),
                 # Deleting is how a grant or a managed account expires.
                 RolePolicyRule(
                     resources=[
