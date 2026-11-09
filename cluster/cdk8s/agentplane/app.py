@@ -65,6 +65,7 @@ _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
@@ -96,6 +97,7 @@ class App(Construct):
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -104,6 +106,7 @@ class App(Construct):
         self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
@@ -222,7 +225,7 @@ class App(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             # The Go HTTP/SSE drain is bounded by shutdown_timeout (5s by default); the rest
             # of the grace period allows background workers and stores to close cleanly.

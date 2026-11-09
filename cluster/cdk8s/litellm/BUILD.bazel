@@ -175,9 +175,11 @@ py_test(
     deps = [
         ":config",
         ":proxy",
+        ":secrets",
         ":upstreams",
         "//:conftest",
         "//model_catalog:catalog",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//litellm",
     ],

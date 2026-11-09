@@ -97,6 +97,9 @@ _LIVENESS_HEALTH_SERVICE = "livez"
 # Only the app's authenticated admin gRPC caller receives this audience.
 ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
+# Must equal localAPIServerHost in agentplane/policy_controller/account_use.go; the managed account
+# admission policy refuses that controller's use sets naming any other host, which the controller's
+# TestManagedAccountUseIsAdmitted envtest checks.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there; agents discover its usage through the rules endpoint.
 KUBERNETES_CREDENTIAL = "kubernetes-workload"
@@ -140,6 +143,7 @@ PUBLIC_INTERNET_POLICY = "public-internet"
 DEFAULT_POLICIES = (BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY)
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
@@ -562,6 +566,7 @@ class Egress(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         tls_passthrough_services: Sequence[ServiceRef] = (),
     ) -> None:
@@ -575,6 +580,7 @@ class Egress(Construct):
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.container_env = container_env or {}
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
 
         Certificate(
@@ -701,6 +707,23 @@ class Egress(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
         ).add_subjects(service_account)
+        # A standing workload's record and subject live in its own namespace.
+        for namespace in self.env.egress.standing_workload_namespaces:
+            standing = Role(
+                self,
+                f"workload-credentials-role-{namespace}",
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=namespace),
+                rules=[
+                    RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                    RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+                ],
+            )
+            RoleBinding(
+                self,
+                f"workload-credentials-rolebinding-{namespace}",
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=namespace),
+                role=standing,
+            ).add_subjects(service_account)
 
     def _add_certificate_and_bundle(self) -> None:
         # The interception root the proxy issues leaves from, separate from the cluster's
@@ -822,7 +845,7 @@ class Egress(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             startup=tls_grpc_probe(

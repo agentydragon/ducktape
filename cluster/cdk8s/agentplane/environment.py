@@ -79,6 +79,12 @@ class EgressProps:
     zones: tuple[str, ...] | None = None
     # Static relay clients outside the runner namespace; admission is not an egress grant.
     external_workload_namespaces: tuple[str, ...] = ()
+    # Those of them holding standing WorkloadCredentials, which the proxy reads to resolve their SVIDs.
+    standing_workload_namespaces: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if outside := set(self.standing_workload_namespaces) - set(self.external_workload_namespaces):
+            raise ValueError(f"standing workload namespaces must be external workload namespaces: {sorted(outside)}")
 
 
 @dataclass(frozen=True)

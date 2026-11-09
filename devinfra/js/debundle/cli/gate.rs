@@ -747,48 +747,45 @@ fn inspection_command(
         .context("resolving --source-root for inspection command")?;
     let executable = std::env::current_exe()
         .context("resolving running debundle executable for inspection command")?;
-    Ok(format!(
-        "{}{}inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
-        shell_quote(&executable.display().to_string()),
-        inspection_root_args(inspection_roots),
-        shell_quote(source_unit),
-        shell_quote(&graph.display().to_string()),
-        shell_quote(&modules.display().to_string()),
-        shell_quote(&source_root.display().to_string()),
-    ))
+    let mut argv = vec![executable.display().to_string()];
+    argv.extend(inspection_root_args(inspection_roots));
+    argv.extend([
+        "inspect-source".to_owned(),
+        "--id".to_owned(),
+        source_unit.to_owned(),
+        "--graph".to_owned(),
+        graph.display().to_string(),
+        "--modules".to_owned(),
+        modules.display().to_string(),
+        "--source-root".to_owned(),
+        source_root.display().to_string(),
+        "--format".to_owned(),
+        "json".to_owned(),
+    ]);
+    shlex::try_join(argv.iter().map(String::as_str))
+        .context("inspection command argument cannot be represented in a POSIX shell command")
 }
 
 /// The root flags the diagnosing command ran with, forwarded so the generated
 /// `inspect-source` command verifies the graph against the same inputs.
-fn inspection_root_args(roots: &CurrentRoots) -> String {
+fn inspection_root_args(roots: &CurrentRoots) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(spec_root) = &roots.spec {
-        args.push(format!(
-            "--spec-root {}",
-            shell_quote(&spec_root.display().to_string())
-        ));
+        args.extend(["--spec-root".to_owned(), spec_root.display().to_string()]);
     }
     if let Some(graph_source_root) = &roots.source {
-        args.push(format!(
-            "--graph-source-root {}",
-            shell_quote(&graph_source_root.display().to_string())
-        ));
+        args.extend([
+            "--graph-source-root".to_owned(),
+            graph_source_root.display().to_string(),
+        ]);
     }
     for (package, path) in &roots.packages {
-        args.push(format!(
-            "--graph-package-root {}",
-            shell_quote(&format!("{}={}", package, path.display()))
-        ));
+        args.extend([
+            "--graph-package-root".to_owned(),
+            format!("{}={}", package, path.display()),
+        ]);
     }
-    if args.is_empty() {
-        " ".to_owned()
-    } else {
-        format!(" {} ", args.join(" "))
-    }
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+    args
 }
 
 #[cfg(test)]
@@ -799,7 +796,7 @@ mod inspection_command_tests {
     use std::path::PathBuf;
 
     #[test]
-    fn inspection_roots_are_shell_quoted_with_spaces_and_sorted_package_roots() {
+    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
         let roots = CurrentRoots {
             spec: Some(PathBuf::from("spec root")),
             source: Some(PathBuf::from("graph source root")),
@@ -811,13 +808,18 @@ mod inspection_command_tests {
 
         assert_eq!(
             inspection_root_args(&roots),
-            concat!(
-                " --spec-root 'spec root' --graph-source-root 'graph source root' ",
-                "--graph-package-root 'package one=package root one' ",
-                "--graph-package-root 'package two=package root two' ",
-            )
+            [
+                "--spec-root",
+                "spec root",
+                "--graph-source-root",
+                "graph source root",
+                "--graph-package-root",
+                "package one=package root one",
+                "--graph-package-root",
+                "package two=package root two",
+            ]
         );
-        assert_eq!(inspection_root_args(&CurrentRoots::default()), " ");
+        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
     }
 }
 

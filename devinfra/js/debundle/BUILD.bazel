@@ -585,6 +585,7 @@ rust_library(
         "@crates//:ring",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:shlex",
     ],
 )
 

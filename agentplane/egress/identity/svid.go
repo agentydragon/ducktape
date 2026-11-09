@@ -12,7 +12,8 @@ import (
 
 // ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only
 // the record supplies the ServiceAccount used as the policy subject, and the Pod its owner accepted,
-// which a forwarded projected token must come from.
+// which a forwarded projected token must come from. A standing record, with no owner and no binding,
+// proves no Pod: its principal has none, and no projected token can be bound to it.
 func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.Principal, error) {
 	if state == nil || len(state.PeerCertificates) == 0 {
 		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
@@ -27,11 +28,14 @@ func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resol
 	if err != nil {
 		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current WorkloadCredential"}
 	}
+	principal := auth.Principal{Account: auth.Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name}}
+	if resolved.Binding == nil {
+		return principal, nil
+	}
+	// A bound incarnation authenticates only once its owner has named the Pod it runs in.
 	if resolved.Pod == nil {
 		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "WorkloadCredential has no accepted Pod"}
 	}
-	return auth.Principal{
-		Account: auth.Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name},
-		PodName: resolved.Pod.Name, PodUID: string(resolved.Pod.UID),
-	}, nil
+	principal.PodName, principal.PodUID = resolved.Pod.Name, string(resolved.Pod.UID)
+	return principal, nil
 }

@@ -7,6 +7,7 @@ Hand-written beside the generated output: `litellm-master-key.sops.yaml` and
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -31,6 +32,22 @@ _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
 ANTHROPIC_API_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-anthropic-key").key("api-key")
 _SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml", "rugged-local-llm-bearer-token.sops.yaml")
 _TANA_REFRESH_TOKEN = "tana-firebase-refresh-token"
+# ESO template for LiteLLM's EXPORTERS: the Langfuse OTLP exporter, owned by `langfuse_otel` so
+# LITELLM_OTEL_LANGFUSE_SPAN_SCOPE applies to it (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
+# The Go template uses a raw-string printf argument so the JSON needs no escaped quotes.
+LANGFUSE_EXPORTERS_TEMPLATE = json.dumps(
+    [
+        {
+            "kind": "otlp_http",
+            "endpoint": "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel",
+            "headers": (
+                "Authorization=Basic {{ printf `%s:%s` .public_key .secret_key | b64enc }},"
+                "x-langfuse-ingestion-version=4"
+            ),
+            "owner": "langfuse_otel",
+        }
+    ]
+)
 
 
 def _external_secret(
@@ -81,7 +98,7 @@ def _chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(
             name="litellm-langfuse-otel-config",
             namespace=_NAMESPACE,
-            annotations={"description": "Langfuse OTLP endpoint and headers for LiteLLM."},
+            annotations={"description": "LiteLLM EXPORTERS entry for the Langfuse OTLP endpoint."},
         ),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(langfuse_store),
@@ -92,13 +109,7 @@ def _chart(app: App) -> Chart:
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
-            data={
-                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel",
-                "OTEL_EXPORTER_OTLP_HEADERS": (
-                    'Authorization=Basic {{ printf "%s:%s" .public_key .secret_key | b64enc }},'
-                    "x-langfuse-ingestion-version=4"
-                ),
-            },
+            data={"EXPORTERS": LANGFUSE_EXPORTERS_TEMPLATE},
         ),
     )
     # Anthropic API key for LiteLLM's anthropic-api/ant-messages/* exposed models. Its dedicated

@@ -274,23 +274,7 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         "system_test.stack.namespace.delete", attributes={"k8s.namespace.name": "monitoring"}
     ):
         k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
-    root_certificate = json.loads(
-        k3s.kubectl("get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "json")
-    )
-    certificate_uid = root_certificate["metadata"]["uid"]
-    requests = json.loads(k3s.kubectl("get", "certificaterequests", "-n", "cert-manager", "-o", "json"))["items"]
-    owned_requests = [
-        item["metadata"]["name"]
-        for item in requests
-        if any(owner["uid"] == certificate_uid for owner in item["metadata"].get("ownerReferences", []))
-    ]
-    k3s.kubectl("delete", "certificate", "test-runner-root", "-n", "cert-manager", "--wait=true")
-    if owned_requests:
-        k3s.kubectl(
-            "delete", "certificaterequest", *owned_requests, "-n", "cert-manager",
-            "--ignore-not-found=true", "--wait=true",
-        )  # fmt: skip
-    k3s.kubectl("delete", "secret", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    certificates.cleanup_fixture_certificates(k3s.kubectl, fixture.objects, namespaces)
     cluster_objects = [
         doc for doc in fixture.objects if doc["kind"] != "Namespace" and not doc["metadata"].get("namespace")
     ]
@@ -313,9 +297,6 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
     for namespace in [*namespaces, "monitoring"]:
         if k3s.kubectl("get", "namespace", namespace, "--ignore-not-found=true", "-o", "name"):
             raise RuntimeError(f"namespace {namespace} still exists after cleanup")
-    for kind in ("certificate", "secret"):
-        if k3s.kubectl("get", kind, "test-runner-root", "-n", "cert-manager", "--ignore-not-found=true", "-o", "name"):
-            raise RuntimeError(f"fixture-owned root {kind} survived cleanup")
     remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
     if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
         raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
@@ -406,7 +387,10 @@ def running_stack(
                         + (virtualization.baseline_objects() if virtualization is not None else []),
                         pki_images | infrastructure_images,
                         layers_in_memory=not uses_virtualization,
-                        helpers=virtualization.baseline_helpers() if virtualization is not None else {},
+                        helpers={
+                            "certificates.py": Path(certificates.__file__),
+                            **(virtualization.baseline_helpers() if virtualization is not None else {}),
+                        },
                     ),
                     layers_in_memory=not uses_virtualization,
                 )
@@ -423,6 +407,7 @@ def running_stack(
             setup.add_event("node Ready")
             k3s.report_storage("before-import")
             cleanup.callback(k3s.report_storage, "final")
+            cleanup.enter_context(k3s.sample_working_sets())
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
             )
@@ -467,7 +452,10 @@ def running_stack(
             install_baseline = not baseline_warm
             # A later group may already have an ID alias while CRI is still publishing its tag.
             # Register every current runfile image before any of the import-group sweeps.
-            k3s.protect_image_layouts(pki_images | infrastructure_images | fixture_images | guest_images)
+            declared_images = pki_images | infrastructure_images | fixture_images | guest_images
+            k3s.protect_image_layouts(declared_images)
+            # A recycled node can hold another stack's images, e.g. the MCP fixtures on a Pod stack.
+            k3s.remove_undeclared_fixture_images(declared_images.keys())
             if virtualization is not None and install_baseline:
                 k3s.import_images(infrastructure_images)
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)

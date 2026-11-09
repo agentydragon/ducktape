@@ -38,10 +38,14 @@ import {
   type McpServerLinkage,
 } from "../../../action_service/operator_action_service_pb";
 import {
+  IdentitySchema,
   PolicyBindingSchema,
   PolicySetSchema,
+  WatchIdentitiesResponseSchema,
   WatchPolicyBindingsResponseSchema,
   WatchPolicySetsResponseSchema,
+  type Identity,
+  type PolicyBinding,
 } from "../../../policy/v1/policy_service_pb";
 import {
   Decision_Outcome,
@@ -398,6 +402,20 @@ const POLICY_SETS = [
     },
   }),
   create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "kube-reader", uid: "set-kube-reader" },
+    generation: 1n,
+    spec: {
+      rules: [
+        {
+          type: "egress",
+          hosts: ["kubernetes.default.svc"],
+          methods: ["GET"],
+          credentialRef: { name: "harness-kube-token" },
+        },
+      ],
+    },
+  }),
+  create(PolicySetSchema, {
     identity: { namespace: "agentplane-visual", name: "pypi", uid: "set-pypi" },
     generation: 1n,
     spec: {
@@ -469,6 +487,100 @@ const BINDINGS = [
     },
   })
 );
+
+/** Each identity is named after the state the identities screens show it in. */
+let identities: Identity[] = [
+  { name: "unreferenced-identity", description: "Unreferenced identity: no binding names it", git: false },
+  { name: "git-origin-identity", description: "Git-origin identity, applied by Flux", git: true },
+  { name: "identity-with-an-expiring-binding", description: "Identity with an expiring binding it owns", git: false },
+  { name: "referenced-identity", description: "Referenced identity: an operator binding names it", git: false },
+].map(({ name, description, git }) =>
+  create(IdentitySchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `identity-${name}` },
+    generation: 1n,
+    labels: git ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    spec: { description },
+  })
+);
+
+let identityBindings: PolicyBinding[] = [
+  {
+    name: "git-origin-identity-github-public",
+    identity: "git-origin-identity",
+    source: "git",
+    sets: ["github-public"],
+  },
+  {
+    name: "identity-with-an-expiring-binding-kube-reader",
+    identity: "identity-with-an-expiring-binding",
+    source: "identity",
+    sets: ["kube-reader"],
+    expires: ago(-2 * HOUR),
+  },
+  { name: "referenced-identity-operator-grant", identity: "referenced-identity", source: "operator", sets: ["pypi"] },
+].map(({ name, identity, source, sets, expires }) =>
+  create(PolicyBindingSchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
+    generation: 1n,
+    labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    ownerReferences:
+      source === "identity"
+        ? [
+            {
+              apiVersion: "agentplane.allegedly.works/v1alpha1",
+              kind: "Identity",
+              name: identity,
+              uid: `identity-${identity}`,
+            },
+          ]
+        : [],
+    spec: {
+      subject: { identity: { name: identity } },
+      policySets: sets,
+      ...(expires ? { expiresAt: timestampFromDate(new Date(expires)) } : {}),
+    },
+    status: {
+      conditions: [
+        { type: "ActionsReady", status: "True", reason: "Valid", message: "spec accepted", observedGeneration: 1n },
+      ],
+    },
+  })
+);
+
+/** The Policy Service's DeleteIdentity: its Flux and unowned-binding refusals, then garbage collection. */
+function deleteIdentity(name: string, uid: string | null): unknown {
+  const identity = identities.find((item) => item.identity?.name === name);
+  if (!identity) return undefined;
+  if (identity.identity?.uid !== uid)
+    return Response.json({ code: 10, message: "Identity changed; refresh the identities view" }, { status: 409 });
+  if ("kustomize.toolkit.fluxcd.io/name" in identity.labels)
+    return Response.json({ code: 9, message: "Identity is managed by Flux" }, { status: 400 });
+  const owned = (binding: PolicyBinding): boolean => binding.ownerReferences.some((owner) => owner.uid === uid);
+  const referencing = identityBindings.filter(
+    (binding) => binding.spec?.subject?.identity?.name === name && !owned(binding)
+  );
+  if (referencing.length)
+    return Response.json(
+      {
+        code: 9,
+        message: "Identity is named by PolicyBindings it does not own",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.PreconditionFailure",
+            violations: referencing.map((binding) => ({
+              type: "PolicyBinding",
+              subject: binding.identity?.name,
+              description: "names this Identity and is not owned by it",
+            })),
+          },
+        ],
+      },
+      { status: 400 }
+    );
+  identities = identities.filter((item) => item !== identity);
+  identityBindings = identityBindings.filter((binding) => !owned(binding));
+  return {};
+}
 
 /** What the Action Service auto-decides for ready-sandbox, from the sets those bindings name. */
 function actionPolicy(namespace: string, name: string) {
@@ -3587,6 +3699,13 @@ routes.unshift(
                       description: "GitHub API access",
                       targets: [{ method: 2, header: "Authorization", scheme: "Bearer" }],
                     },
+                    {
+                      name: "harness-kube-token",
+                      uid: "credential-kube-uid",
+                      description: "Kubernetes API access as kube-reader",
+                      targets: [{ method: 2, header: "Authorization", scheme: "Bearer" }],
+                      kubernetesServiceAccount: { namespace: "agentplane-visual", name: "kube-reader" },
+                    },
                   ],
                 },
               },
@@ -3605,10 +3724,16 @@ routes.unshift(
     /^\/upstream\/policy\/v1\/policy-bindings:watch$/,
     (_match, query, signal) => {
       const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
-      const bindings = BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
-        item.spec!.subject = create(SubjectSchema, subject);
-        return item;
-      });
+      const identity = query.get("identity");
+      const bindings =
+        query.get("everyIdentity") === "true"
+          ? identityBindings
+          : identity !== null
+            ? identityBindings.filter((item) => item.spec?.subject?.identity?.name === identity)
+            : BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
+                item.spec!.subject = create(SubjectSchema, subject);
+                return item;
+              });
       return ndjsonWatch(
         [
           toJson(
@@ -3623,6 +3748,29 @@ routes.unshift(
         signal
       );
     },
+  ],
+  [
+    "GET",
+    /^\/upstream\/policy\/v1\/identities:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchIdentitiesResponseSchema,
+            create(WatchIdentitiesResponseSchema, { frame: { case: "snapshot", value: { identities } } })
+          ),
+          toJson(
+            WatchIdentitiesResponseSchema,
+            create(WatchIdentitiesResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ],
+  [
+    "DELETE",
+    /^\/upstream\/policy\/v1\/identities\/agentplane-visual\/([^/]+)$/,
+    (match, query) => deleteIdentity(decodeURIComponent(match[1]!), query.get("uid")),
   ],
   [
     "GET",

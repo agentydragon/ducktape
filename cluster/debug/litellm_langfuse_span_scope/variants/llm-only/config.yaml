@@ -1,0 +1,29 @@
+# Candidate for #15038: `langfuse_otel` callback, so LITELLM_OTEL_LANGFUSE_SPAN_SCOPE applies.
+# Same models and baggage keys as the baseline.
+model_list:
+  - model_name: luna-responses
+    litellm_params:
+      model: openai/chatgpt-sub/oai-responses/gpt-6-luna
+      api_base: http://litellm.litellm.svc:4000/v1
+      api_key: os.environ/UPSTREAM_API_KEY
+  - model_name: luna-messages
+    litellm_params:
+      model: anthropic/chatgpt-sub/ant-messages/gpt-6-luna
+      api_base: http://litellm.litellm.svc:4000
+      api_key: os.environ/UPSTREAM_API_KEY
+  - model_name: ministral-chat
+    litellm_params:
+      model: openai/mistral/oai-chat/ministral-14b-latest
+      api_base: http://litellm.litellm.svc:4000/v1
+      api_key: os.environ/UPSTREAM_API_KEY
+litellm_settings:
+  drop_params: true
+  callbacks: ["langfuse_otel"]
+callback_settings:
+  otel:
+    baggage_metadata_keys:
+      - user_api_key_alias
+      - spend_logs_metadata.agentplane.namespace
+      - spend_logs_metadata.agentplane.session_id
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

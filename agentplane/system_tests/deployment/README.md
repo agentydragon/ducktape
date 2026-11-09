@@ -16,7 +16,10 @@ with VM Sandboxes ([measurements](../k3s/debug/stack_timings.md#image-layers-in-
 The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
 delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
 At import-group boundaries, the stack removes untagged, unpinned CRI images
-that no container uses. Named caches stay warm, including k3s's own images. Cleanup also runs with
+that no container uses. Named caches stay warm, including k3s's own images. Before importing, it also
+removes unused fixture-local images (`git.allegedly.works/ducktape-ci/…`) the target's manifest does
+not declare: Pod and MCP suites share a recycling key, and pinned MCP layers would otherwise stay in a
+Pod stack's tmpfs. An MCP suite after a Pod suite reimports them. Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
 while a fresh kubelet waits for its image-GC minimum age. See the
 [storage-pressure reproduction](../k3s/debug/2026_11_02_image_store_pressure.md).
@@ -38,9 +41,11 @@ identified by the ownership marker, then starts and tears down its own fresh nod
 
 Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
 family with the VM resource estimate. Baseline fingerprints include the layer mode, k3s, CRDs,
-`baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`, and PKI
-releases/images. VM stacks also include `vm/infrastructure.py` and VM releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup; `vm/runtime.py` owns per-action
-VM volumes and guest evidence. These per-action helpers do not enter infrastructure compatibility.
+`baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`,
+`certificates.py`, and PKI releases/images. VM stacks also include `vm/infrastructure.py` and VM
+releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup;
+`vm/runtime.py` owns per-action VM volumes and guest evidence. The fingerprint includes
+`certificates.py` because its cleanup determines whether retained PKI is clean.
 Only VM suites load `vm/pytest_plugin.py`, which supplies the typed lifecycle extension; Pod/MCP
 runfiles omit VM runtime helpers.
 
@@ -56,6 +61,9 @@ images remain per-action inputs. The runtime fingerprint additionally checks act
 baseline contents, helper code and CRDs before reuse.
 
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
+Fixture Certificates rendered outside the deleted fixture namespaces are removed with their
+CertificateRequests selected by Certificate UID and their declared Secrets. This refreshes the
+fixture root and workload CA while preserving unrelated PKI resources and the retained controllers.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
 controllers remain running after successful teardown.

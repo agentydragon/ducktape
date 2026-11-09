@@ -10,7 +10,7 @@ import type { ServiceAccount } from "../../../proto/identity_pb";
 
 /** Observe the policy resources naming this ServiceAccount. */
 export function CallerGrants({ account }: { account: ServiceAccount }): JSX.Element {
-  const policy = usePolicyResources(account, undefined);
+  const policy = usePolicyResources({ case: "subject", value: account }, undefined);
   return (
     <Stack component="section" aria-label={`Grants for ${serviceAccountKey(account)}`} gap="sm" py="sm">
       <Title order={5}>Grants for {serviceAccountKey(account)}</Title>
@@ -29,7 +29,12 @@ export function CallerGrants({ account }: { account: ServiceAccount }): JSX.Elem
             <Title order={6}>Bindings</Title>
             <HelpTooltip topic="Bindings" description={BINDING_GRANT_HELP} />
           </Group>
-          <BindingsTable bindings={policy.resources.bindings} policySets={policy.resources.sets} onRevoke={null} />
+          <BindingsTable
+            bindings={policy.resources.bindings}
+            policySets={policy.resources.sets}
+            onRevoke={null}
+            subjectKind="ServiceAccount"
+          />
         </>
       )}
       <ActionPolicyWatch subject={account} />

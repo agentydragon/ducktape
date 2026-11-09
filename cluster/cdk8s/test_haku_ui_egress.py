@@ -78,5 +78,79 @@ def test_haku_sandbox_retains_explicit_bearer_authentication(resources: list[dic
     assert actions["policy_namespace"] == "agentplane-staging"
 
 
+def _standing_records(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        d for d in resources if d["kind"] == "WorkloadCredential" and d["metadata"]["namespace"] == ui_egress.NAMESPACE
+    ]
+
+
+def _granted(resources: list[dict[str, Any]], namespace: str, account: tuple[str, str]) -> set[tuple[str, str]]:
+    """The (resource, verb) pairs Roles bound to `account` grant in `namespace`."""
+    roles = {
+        binding["roleRef"]["name"]
+        for binding in resources
+        if binding["kind"] == "RoleBinding"
+        and binding["metadata"]["namespace"] == namespace
+        and any((s.get("namespace"), s["name"]) == account for s in binding["subjects"])
+    }
+    return {
+        (resource, verb)
+        for role in resources
+        if role["kind"] == "Role" and role["metadata"]["namespace"] == namespace and role["metadata"]["name"] in roles
+        for rule in role["rules"]
+        for resource in rule["resources"]
+        for verb in rule["verbs"]
+    }
+
+
+def _container_env(resources: list[dict[str, Any]], deployment: str) -> dict[str, str]:
+    workload = one(
+        d
+        for d in resources
+        if d["kind"] == "Deployment"
+        and d["metadata"]["name"] == deployment
+        and d["metadata"]["namespace"] == "agentplane-staging"
+    )
+    (container,) = workload["spec"]["template"]["spec"]["containers"]
+    return {variable["name"]: variable["value"] for variable in container["env"] if "value" in variable}
+
+
+def test_each_haku_workload_has_a_standing_record_as_haku_ui(resources: list[dict[str, Any]]) -> None:
+    """No owner and no binding make a record standing: its ID never rotates and its Secret is `svid-<name>`."""
+    records = _standing_records(resources)
+
+    assert {record["metadata"]["name"] for record in records} == set(ui_egress.STANDING_WORKLOADS)
+    for record in records:
+        assert "ownerReferences" not in record["metadata"]
+        assert record["spec"] == {"subject": {"serviceAccount": ui_egress.SERVICE_ACCOUNT}}
+
+
+def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict[str, Any]]) -> None:
+    served = set(
+        _container_env(resources, "policy-controller")["AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES"].split(",")
+    )
+    for namespace in {record["metadata"]["namespace"] for record in _standing_records(resources)}:
+        assert namespace in served
+        granted = _granted(resources, namespace, ("agentplane-staging", "policy-controller"))
+        assert {
+            ("workloadcredentials", "watch"),
+            ("workloadcredentials/status", "update"),
+            ("certificates", "create"),
+        } <= granted
+
+
+def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str, Any]]) -> None:
+    """The proxy reads the record and its subject live on each request; a missing grant fails closed."""
+    allowed = set(_settings(resources, "egress-go-settings")["allowed_service_account_namespaces"])
+    accounts = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "ServiceAccount"}
+    for record in _standing_records(resources):
+        namespace = record["metadata"]["namespace"]
+        assert namespace in allowed
+        assert {("workloadcredentials", "get"), ("serviceaccounts", "get")} <= _granted(
+            resources, namespace, ("agentplane-staging", "egress")
+        )
+        assert (namespace, record["spec"]["subject"]["serviceAccount"]) in accounts
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

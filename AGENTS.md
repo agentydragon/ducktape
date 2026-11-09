@@ -93,6 +93,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - **Every `py_test` needs `pytest_bazel.main()`** under `if __name__ == "__main__":` (dep `@pypi//pytest_bazel`) — otherwise it exits 0 without running tests.
 - pytest-asyncio auto mode is on; a test using a session-scoped async fixture (e.g. `playwright_driver`) needs `@pytest.mark.asyncio(loop_scope="session")` or browser startup can hang.
 - Never skip for missing tools; they come from runfiles or the RBE image.
+- **Test pins don't chase production pins.** A tool or harness version pinned for tests (e.g. the Claude/Codex CLIs in system-test images) may lag what production ships; bump it only when a test needs a newer version's behavior, not to match production.
 - Docker tests: `py_test` from `//devinfra/python:defs.bzl` with `requires_docker = True`; they run on RBE.
 - Diagnostics (container logs, HAR dumps) go to `devinfra.testing.undeclared_outputs.undeclared_outputs_dir()`, not stdout.
 - **A timeout means a wedge, not slowness** — usually waiting on something that never arrives. Trace it (`--test_output=streamed --test_arg=-s`, fixture logs, `docker ps`); don't raise `size`/`timeout`. Raise size (default `small`, 60s) only with evidence the test was actively working: `bbapi target history` timings plus a local pass.

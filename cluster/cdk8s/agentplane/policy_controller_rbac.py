@@ -10,7 +10,9 @@ from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePoli
 from constructs import Construct
 
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 from cluster.cdk8s.agentplane.policy_controller import NAME
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 
@@ -52,7 +54,11 @@ class PolicyControllerRbac(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
-                RolePolicyRule(resources=[custom_resource(_GROUP, "policysets")], verbs=["get", "list", "watch"]),
+                # A ManagedServiceAccount's EgressCredential and use PolicySet, which it owns.
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "policysets"), custom_resource(_GROUP, "egresscredentials")],
+                    verbs=["create", "update", "patch", "get", "list", "watch"],
+                ),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get"]),
                 # Deleting is how a binding expires.
                 RolePolicyRule(
@@ -104,6 +110,13 @@ class PolicyControllerRbac(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(account)
+        # Narrows the EgressCredential and PolicySet writes above to managed accounts' use.
+        add_managed_account_admission(
+            self,
+            namespace=namespace,
+            controller=ServiceAccountRef(namespace=namespace, name=account.name),
+            accounts_namespace=accounts_namespace,
+        )
         # ManagedServiceAccounts' ServiceAccounts, created and pruned only in the accounts namespace.
         accounts_role = Role(
             self,

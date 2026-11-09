@@ -162,7 +162,7 @@ def _database(scope: Construct) -> None:
         # Leave room for the old and replacement cache databases to coexist during migration.
         size="16Gi",
         resize_in_use_volumes=True,
-        instances=3,
+        instances=2,
         initdb=cluster.same_owner_initdb("attic"),
         # Cache metadata is rebuildable, so this cluster is not backed up.
         wal_archive=False,
@@ -282,6 +282,10 @@ def _local_server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
+                                # Attic's default EnvFilter hides its GC lifecycle logs. Keep
+                                # errors from every target while exposing the startup GC phases.
+                                # Do not enable tower_http::trace: it logs full request URIs.
+                                k8s.EnvVar(name="RUST_LOG", value="error,attic_server::gc=info"),
                                 SecretRef(namespace=NAMESPACE, name=_NEXT_DATABASE_SECRET)
                                 .key("uri")
                                 .env_var("ATTIC_SERVER_DATABASE_URL"),

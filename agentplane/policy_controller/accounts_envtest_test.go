@@ -2,7 +2,11 @@ package policycontroller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,10 +14,15 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
+
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
@@ -38,6 +47,23 @@ func TestManagedServiceAccountLifecycleThroughExpiry(t *testing.T) {
 		natives := grantNatives(t, api, grant.Name)
 		return len(natives) == 1 && allBind(natives, first), describe(natives)
 	})
+	assertAccountUse(t, api, account, first)
+	// A hand-deleted use set and a hand-edited credential are restored.
+	if err := api.Delete(ctx, readUseSet(t, api, account.Name)); err != nil {
+		t.Fatal(err)
+	}
+	edited := readCredential(t, api, account.Name)
+	edited.Spec.Source.KubernetesServiceAccount.Name = "test-other-account"
+	if err := api.Update(ctx, edited); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the account's use restored", func() (bool, string) {
+		var set policyapi.PolicySet
+		err := api.Get(ctx, client.ObjectKey{Namespace: policyNamespace, Name: AccountCredentialName(account.Name)}, &set)
+		source := readCredential(t, api, account.Name).Spec.Source.KubernetesServiceAccount
+		return err == nil && source.Name == first.Name, fmt.Sprintf("PolicySet: %v, source: %+v", err, source)
+	})
+	assertAccountUse(t, api, account, first)
 
 	if err := api.Delete(ctx, first); err != nil {
 		t.Fatal(err)
@@ -108,8 +134,10 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 		status.ServiceAccount.UID != created.UID || accountReason(status) != "Created" {
 		t.Fatalf("created ServiceAccount %+v for account uid=%s", created.ObjectMeta, account.UID)
 	}
+	assertAccountUse(t, api, account, created)
 
-	// A new account of the same name does not take over its predecessor's ServiceAccount.
+	// A new account of the same name does not take over its predecessor's ServiceAccount, nor its
+	// EgressCredential and PolicySet until the garbage collector, which envtest lacks, removes them.
 	if err := api.Delete(ctx, account); err != nil {
 		t.Fatal(err)
 	}
@@ -117,9 +145,20 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 	create(t, api, successor)
 	waitForCached(t, cached, &corev1.ServiceAccount{}, client.ObjectKeyFromObject(created))
 	waitForCachedAccount(t, cached, successor)
+	if _, err := r.ReconcileManagedServiceAccount(ctx, request); err == nil {
+		t.Fatal("reconcile adopted its predecessor's EgressCredential")
+	}
+	if reason := accountReason(readManagedAccount(t, api, successor.Name).Status); reason != EgressCredentialConflict {
+		t.Fatalf("successor's reason before its predecessor's use is collected: %s", reason)
+	}
+	if credential := readCredential(t, api, account.Name); !metav1.IsControlledBy(credential, account) {
+		t.Fatalf("predecessor's EgressCredential taken over: %+v", credential.OwnerReferences)
+	}
+	collect(t, api, readCredential(t, api, account.Name), readUseSet(t, api, account.Name))
 	if _, err := r.ReconcileManagedServiceAccount(ctx, request); err != nil {
 		t.Fatal(err)
 	}
+	assertAccountUse(t, api, successor, readServiceAccount(t, api, foreign.Name))
 	replaced := readServiceAccount(t, api, foreign.Name)
 	if replaced.UID == created.UID || replaced.Labels[ManagedAccountUIDLabel] != string(successor.UID) ||
 		readManagedAccount(t, api, successor.Name).Status.ServiceAccount.UID != replaced.UID {
@@ -221,6 +260,189 @@ func TestOwnedGrantWithItsOwnExpiryConflicts(t *testing.T) {
 		return grantReady(t, api, grant.Name, "Applied") && len(natives) == 1 &&
 			accountReason(readManagedAccount(t, api, account.Name).Status) == "Created", describe(natives)
 	})
+}
+
+// An EgressCredential or PolicySet at a managed account's use name that the account does not
+// control is never adopted: the account reports the conflict, the object stays untouched, and the
+// use is created once it is gone.
+func TestManagedAccountUseIsNeverAdopted(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		reason  string
+		foreign client.Object
+	}{
+		{EgressCredentialConflict, &egressapi.EgressCredential{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: AccountCredentialName("test-collision")},
+			Spec: egressapi.EgressCredentialSpec{
+				Description: "test foreign credential",
+				Source:      egressapi.CredentialSource{SecretRef: &egressapi.SecretKeyRef{Name: "test-secret", Key: "test-key"}},
+				Targets:     []egressapi.Target{{Header: "X-Test", Method: egressapi.WholeValue}},
+			},
+		}},
+		{PolicySetConflict, &policyapi.PolicySet{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: AccountCredentialName("test-collision")},
+			Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "egress", Hosts: []string{"test.example"}}}},
+		}},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			api, cached, r := startPolicyAPIServer(t, false)
+			for _, name := range []string{policyNamespace, accountsNamespace} {
+				create(t, api, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+			}
+			account := testManagedAccount("test-collision")
+			create(t, api, account, tc.foreign)
+			before := tc.foreign.GetResourceVersion()
+			waitForCachedAccount(t, cached, account)
+			request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(account)}
+			if _, err := r.ReconcileManagedServiceAccount(ctx, request); err == nil {
+				t.Fatal("reconcile adopted a use object it did not create")
+			}
+			if err := api.Get(ctx, client.ObjectKeyFromObject(tc.foreign), tc.foreign); err != nil {
+				t.Fatal(err)
+			}
+			if tc.foreign.GetResourceVersion() != before || len(tc.foreign.GetOwnerReferences()) != 0 {
+				t.Fatalf("the foreign object was changed: %+v", tc.foreign)
+			}
+			if reason := accountReason(readManagedAccount(t, api, account.Name).Status); reason != tc.reason {
+				t.Fatalf("reason after a collision: %s", reason)
+			}
+
+			if err := api.Delete(ctx, tc.foreign); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.ReconcileManagedServiceAccount(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			if reason := accountReason(readManagedAccount(t, api, account.Name).Status); reason != "Created" {
+				t.Fatalf("reason once the collision is gone: %s", reason)
+			}
+			assertAccountUse(t, api, account, readServiceAccount(t, api, account.Name))
+		})
+	}
+}
+
+// The controller's real writes of an account's use pass the admission policy cdk8s renders over them
+// (cluster/cdk8s/agentplane/managed_account_admission.py), and one outside that shape does not, so
+// the controller and the policy cannot drift apart on the host, prefix or shape.
+func TestManagedAccountUseIsAdmitted(t *testing.T) {
+	ctx := context.Background()
+	controllerUser := "system:serviceaccount:" + policyNamespace + ":test-policy-controller"
+	api, cached, r := startPolicyAPIServerAs(t, false, controllerUser)
+	for _, name := range []string{policyNamespace, accountsNamespace} {
+		create(t, api, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+	}
+	installManagedAccountAdmission(t, api)
+	account := testManagedAccount("test-admitted-account")
+	create(t, api, account)
+	waitForCachedAccount(t, cached, account)
+
+	mismatched := &policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: policyNamespace, Name: AccountCredentialName(account.Name),
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(account, policyapi.SchemeGroupVersion.WithKind("ManagedServiceAccount"))},
+		},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
+			Type: resources.EgressRuleType, Hosts: []string{"test.example"}, ClusterInternal: true,
+			CredentialRef: &policyapi.CredentialRef{Name: AccountCredentialName(account.Name)},
+		}}},
+	}
+	// The API server loads a new policy in the background, and shows no sign of having loaded it.
+	eventually(t, "the policy to refuse the controller a use set to another host", func() (bool, string) {
+		err := r.Create(ctx, mismatched.DeepCopy(), client.DryRunAll)
+		return apierrors.IsInvalid(err), fmt.Sprint(err)
+	})
+
+	if _, err := r.ReconcileManagedServiceAccount(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(account)}); err != nil {
+		t.Fatal(err)
+	}
+	assertAccountUse(t, api, account, readServiceAccount(t, api, account.Name))
+	if reason := accountReason(readManagedAccount(t, api, account.Name).Status); reason != "Created" {
+		t.Fatalf("reason after an admitted reconcile: %s", reason)
+	}
+}
+
+// installManagedAccountAdmission creates the rendered policy and binding, named for this package's
+// namespaces and the controller test-policy-controller.
+func installManagedAccountAdmission(t *testing.T, api client.Client) {
+	t.Helper()
+	path, err := runfiles.Rlocation(os.Getenv("MANAGED_ACCOUNT_ADMISSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var documents []map[string]any
+	if err := json.Unmarshal(rendered, &documents); err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 {
+		t.Fatalf("want the policy and its binding, rendered %d objects", len(documents))
+	}
+	for _, document := range documents {
+		create(t, api, &unstructured.Unstructured{Object: document})
+	}
+}
+
+// assertAccountUse checks the account's EgressCredential and use PolicySet: the shape cdk8s renders
+// for a static account, acting as serviceAccount, and controlled by account so garbage collection
+// removes them with it.
+func assertAccountUse(t *testing.T, api client.Client, account *policyapi.ManagedServiceAccount, serviceAccount *corev1.ServiceAccount) {
+	t.Helper()
+	credential := readCredential(t, api, account.Name)
+	set := readUseSet(t, api, account.Name)
+	for _, owned := range []client.Object{credential, set} {
+		if refs := owned.GetOwnerReferences(); len(refs) != 1 || !metav1.IsControlledBy(owned, account) ||
+			refs[0].Kind != "ManagedServiceAccount" || (refs[0].BlockOwnerDeletion != nil && *refs[0].BlockOwnerDeletion) {
+			t.Fatalf("%T %s ownerReferences: %+v", owned, owned.GetName(), refs)
+		}
+	}
+	name := AccountCredentialName(account.Name)
+	source := credential.Spec.Source
+	if source.SecretRef != nil || source.ProjectedWorkloadToken != nil || source.KubernetesServiceAccount == nil ||
+		*source.KubernetesServiceAccount != (egressapi.KubernetesServiceAccountSource{Namespace: serviceAccount.Namespace, Name: serviceAccount.Name}) {
+		t.Fatalf("credential source: %+v", source)
+	}
+	if want := []egressapi.Target{{Header: "Authorization", Method: egressapi.SchemeToken, Scheme: "Bearer"}}; !slices.Equal(credential.Spec.Targets, want) {
+		t.Fatalf("credential targets: %+v", credential.Spec.Targets)
+	}
+	if !strings.Contains(credential.Spec.Description, "--token "+resources.Placeholder(name)) {
+		t.Fatalf("credential description names no placeholder: %s", credential.Spec.Description)
+	}
+	if rules := set.Spec.Rules; len(rules) != 1 || rules[0].Type != resources.EgressRuleType ||
+		!slices.Equal(rules[0].Hosts, []string{localAPIServerHost}) || !rules[0].ClusterInternal ||
+		rules[0].CredentialRef == nil || rules[0].CredentialRef.Name != name || len(rules[0].Methods) != 0 || len(rules[0].Paths) != 0 {
+		t.Fatalf("use set rules: %+v", rules)
+	}
+}
+
+// collect deletes what the garbage collector would once objs' owner is gone.
+func collect(t *testing.T, api client.Client, objs ...client.Object) {
+	t.Helper()
+	for _, obj := range objs {
+		if err := api.Delete(context.Background(), obj); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func readCredential(t *testing.T, api client.Client, account string) *egressapi.EgressCredential {
+	t.Helper()
+	var credential egressapi.EgressCredential
+	if err := api.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: AccountCredentialName(account)}, &credential); err != nil {
+		t.Fatal(err)
+	}
+	return &credential
+}
+
+func readUseSet(t *testing.T, api client.Client, account string) *policyapi.PolicySet {
+	t.Helper()
+	var set policyapi.PolicySet
+	if err := api.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: AccountCredentialName(account)}, &set); err != nil {
+		t.Fatal(err)
+	}
+	return &set
 }
 
 func ownedBy(account *policyapi.ManagedServiceAccount) metav1.OwnerReference {

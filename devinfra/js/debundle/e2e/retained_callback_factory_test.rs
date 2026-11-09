@@ -853,17 +853,18 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     let executable = binary
         .canonicalize()
         .expect("resolve debundle runfile executable");
-    let expected_program = format!(
-        "'{}' inspect-source",
-        executable.to_string_lossy().replace('\'', "'\\''")
-    );
-    assert!(
-        inspection.starts_with(&expected_program),
+    let argv = shlex::split(inspection).expect("inspection command is a POSIX shell command");
+    assert_eq!(
+        argv[0],
+        executable.to_str().unwrap(),
         "inspection must invoke the same debundle executable: {inspection}"
     );
-    assert!(inspection.contains("--graph '"));
-    assert!(inspection.contains("--modules '"));
-    assert!(inspection.contains("--source-root '"));
+    for flag in ["inspect-source", "--graph", "--modules", "--source-root"] {
+        assert!(
+            argv.iter().any(|arg| arg == flag),
+            "missing {flag}: {inspection}"
+        );
+    }
     assert!(
         inspection.contains(
             rejected

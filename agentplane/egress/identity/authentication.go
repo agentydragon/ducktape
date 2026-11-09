@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -110,7 +111,16 @@ func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
 	return auth.Principal{}, status.Error(codes.Unauthenticated, "workload authentication refused")
 }
 
+// VerifyProjected keeps the presented destination tokens bound to the caller's Pod. A standing
+// workload's SVID proves no Pod, so it has nothing to bind a token to: every token it presents is
+// dropped unreviewed, and a rule needing one refuses with `credential-unavailable`.
 func (a *Authenticator) VerifyProjected(ctx context.Context, caller Authenticated, presented map[string]string) map[string]string {
+	if caller.Mode == listener.SPIFFE && caller.Principal.PodUID == "" {
+		if len(presented) > 0 {
+			slog.Warn("dropping projected tokens a standing workload presented: its credential proves no Pod")
+		}
+		return map[string]string{}
+	}
 	if caller.Mode == listener.SPIFFE {
 		return a.tokens.VerifyProjectedForSandbox(ctx, presented, caller.Principal.Account, caller.Principal.PodUID)
 	}

@@ -45,7 +45,7 @@ spec:
     initdb:
       database: attic
       owner: attic
-  instances: 3
+  instances: 2
   monitoring:
     enablePodMonitor: true
   postgresql:
@@ -422,6 +422,8 @@ spec:
             - --mode
             - monolithic
           env:
+            - name: RUST_LOG
+              value: error,attic_server::gc=info
             - name: ATTIC_SERVER_DATABASE_URL
               valueFrom:
                 secretKeyRef:

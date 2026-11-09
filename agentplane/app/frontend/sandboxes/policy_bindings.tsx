@@ -162,6 +162,7 @@ export function PolicyBindingsSection({
           bindings={resources.bindings}
           policySets={resources.sets}
           onRevoke={(binding) => void revoke(binding)}
+          subjectKind="ServiceAccount"
         />
       )}
     </Stack>

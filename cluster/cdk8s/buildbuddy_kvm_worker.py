@@ -9,6 +9,10 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    VirtualMachineSpecTemplateSpecAffinityPodAntiAffinity,
+    VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainCpuFeatures,
     VirtualMachineSpecTemplateSpecDomainResources,
@@ -33,6 +37,9 @@ from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, isolate_ingress
 
 NAME = "buildbuddy-kvm-worker"
+# Each worker registers its own executor in the pool and runs one action at a time. The first keeps the
+# original name so its VM is not recreated.
+WORKER_NAMES = (NAME, f"{NAME}-2")
 NAMESPACE = "buildbuddy-executor"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
@@ -77,6 +84,26 @@ def _cloud_init() -> str:
     )
 
 
+def _other_workers_anti_affinity(name: str) -> VirtualMachineSpecTemplateSpecAffinityPodAntiAffinity:
+    """Keep a worker off any node that already runs another worker, without naming a node."""
+    return VirtualMachineSpecTemplateSpecAffinityPodAntiAffinity(
+        required_during_scheduling_ignored_during_execution=[
+            VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                topology_key="kubernetes.io/hostname",
+                label_selector=VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                    match_expressions=[
+                        VirtualMachineSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions(
+                            key="kubevirt.io/domain",
+                            operator="In",
+                            values=[other for other in WORKER_NAMES if other != name],
+                        )
+                    ]
+                ),
+            )
+        ]
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     runfiles_root = Runfiles.CreateOrRaise().root()
@@ -106,95 +133,97 @@ def chart(app: App) -> Chart:
             ),
         },
     )
-    container_disk_vm(
-        chart,
-        "worker",
-        name=NAME,
-        namespace=NAMESPACE,
-        image=_IMAGE,
-        cpu=VirtualMachineSpecTemplateSpecDomainCpu(
-            cores=4,
-            model="host-passthrough",
-            features=[
-                VirtualMachineSpecTemplateSpecDomainCpuFeatures(name=feature, policy="optional")
-                for feature in ("svm", "vmx")
-            ],
-        ),
-        resources=VirtualMachineSpecTemplateSpecDomainResources(
-            requests={
-                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(Cpu.units(4).amount),
-                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(
-                    Size.gibibytes(16).as_string()
-                ),
-            },
-            limits={
-                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(Cpu.units(4).amount),
-                "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(
-                    Size.gibibytes(16).as_string()
-                ),
-            },
-        ),
-        tolerations=[
-            VirtualMachineSpecTemplateSpecTolerations(
-                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
-            )
-        ],
-        affinity=VirtualMachineSpecTemplateSpecAffinity(
-            node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
-                required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                    node_selector_terms=[
-                        VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                            match_expressions=[
-                                VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                    key=f"cpu-feature.node.kubevirt.io/{feature}", operator="In", values=["true"]
-                                )
-                            ]
-                        )
-                        for feature in ("svm", "vmx")
-                    ]
+    for index, name in enumerate(WORKER_NAMES):
+        container_disk_vm(
+            chart,
+            "worker" if index == 0 else f"worker-{index + 1}",
+            name=name,
+            namespace=NAMESPACE,
+            image=_IMAGE,
+            cpu=VirtualMachineSpecTemplateSpecDomainCpu(
+                cores=4,
+                model="host-passthrough",
+                features=[
+                    VirtualMachineSpecTemplateSpecDomainCpuFeatures(name=feature, policy="optional")
+                    for feature in ("svm", "vmx")
+                ],
+            ),
+            resources=VirtualMachineSpecTemplateSpecDomainResources(
+                requests={
+                    "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(Cpu.units(4).amount),
+                    "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(
+                        Size.gibibytes(16).as_string()
+                    ),
+                },
+                limits={
+                    "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(Cpu.units(4).amount),
+                    "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(
+                        Size.gibibytes(16).as_string()
+                    ),
+                },
+            ),
+            tolerations=[
+                VirtualMachineSpecTemplateSpecTolerations(
+                    key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
                 )
-            )
-        ),
-        ports=[],
-        disks={
-            "work": VirtualMachineSpecTemplateSpecVolumes(
-                name="work",
-                empty_disk=VirtualMachineSpecTemplateSpecVolumesEmptyDisk(
-                    capacity=VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity.from_string("80Gi")
+            ],
+            affinity=VirtualMachineSpecTemplateSpecAffinity(
+                pod_anti_affinity=_other_workers_anti_affinity(name),
+                node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
+                    required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        node_selector_terms=[
+                            VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                                match_expressions=[
+                                    VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                        key=f"cpu-feature.node.kubevirt.io/{feature}", operator="In", values=["true"]
+                                    )
+                                ]
+                            )
+                            for feature in ("svm", "vmx")
+                        ]
+                    )
                 ),
             ),
-            "bbkey": VirtualMachineSpecTemplateSpecVolumes(
-                name="buildbuddy-key",
-                secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name="buildbuddy-api-key"),
-            ),
-            "bbconfig": VirtualMachineSpecTemplateSpecVolumes(
-                name="worker-config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=NAME)
-            ),
-            "cloudinit": VirtualMachineSpecTemplateSpecVolumes(
-                name="cloudinit",
-                cloud_init_no_cloud=VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud(user_data=_cloud_init()),
-            ),
-        },
-        autoattach_graphics_device=False,
-        annotations={
-            "description": (
-                "Static trusted-code BuildBuddy worker. Privileged Docker test actions run inside the guest; "
-                "the guest has no outer Kubernetes token or host filesystem mounts."
-            )
-        },
-    )
-    NetworkPolicy(
-        chart,
-        "network",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        endpoint_selector=domain_labels(NAME),
-        ingress=isolate_ingress(),
-        egress=[
-            cilium.dns_egress(resolves=["*"]),
-            EgressRule.to_fqdns(*_HTTPS_HOSTS),
-            EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
-        ],
-    )
+            ports=[],
+            disks={
+                "work": VirtualMachineSpecTemplateSpecVolumes(
+                    name="work",
+                    empty_disk=VirtualMachineSpecTemplateSpecVolumesEmptyDisk(
+                        capacity=VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity.from_string("80Gi")
+                    ),
+                ),
+                "bbkey": VirtualMachineSpecTemplateSpecVolumes(
+                    name="buildbuddy-key",
+                    secret=VirtualMachineSpecTemplateSpecVolumesSecret(secret_name="buildbuddy-api-key"),
+                ),
+                "bbconfig": VirtualMachineSpecTemplateSpecVolumes(
+                    name="worker-config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=NAME)
+                ),
+                "cloudinit": VirtualMachineSpecTemplateSpecVolumes(
+                    name="cloudinit",
+                    cloud_init_no_cloud=VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud(user_data=_cloud_init()),
+                ),
+            },
+            autoattach_graphics_device=False,
+            annotations={
+                "description": (
+                    "Static trusted-code BuildBuddy worker. Privileged Docker test actions run inside the guest; "
+                    "the guest has no outer Kubernetes token or host filesystem mounts."
+                )
+            },
+        )
+        NetworkPolicy(
+            chart,
+            "network" if index == 0 else f"network-{index + 1}",
+            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+            endpoint_selector=domain_labels(name),
+            ingress=isolate_ingress(),
+            egress=[
+                cilium.dns_egress(resolves=["*"]),
+                EgressRule.to_fqdns(*_HTTPS_HOSTS),
+                EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
+            ],
+        )
     return chart
 
 

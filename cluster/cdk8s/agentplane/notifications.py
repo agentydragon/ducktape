@@ -57,6 +57,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _LIVENESS_HEALTH_SERVICE = "livez"
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
@@ -94,6 +95,7 @@ class Notifications(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         """Bearer-authenticated and Sandbox-SVID RPCs share the TLS gRPC listener."""
@@ -179,7 +181,7 @@ class Notifications(Construct):
             startup=startup,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
+                memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
             replica_profile=env.replicas,

@@ -1,6 +1,6 @@
 # Workload identity lifecycle
 
-Status: **steps 1 and 2 landed; steps 3 to 5 remain, 2026-11-09.** DAG node
+Status: **steps 1 and 2 landed; steps 3 and 4 in flight, 2026-11-09; step 5 follows.** DAG node
 [`WORKLOAD_AUTH_CUTOVER`](task_dag.md#workload_auth_cutover--migrate-workload-callers-and-remove-the-proxy-bearer-hop).
 One issuer for owners' requests, hosted in the Policy
 Controller, is implemented for Sandboxes: the workload CA (#15104, #15113, #15129, #15131), the
@@ -15,8 +15,8 @@ the workload bearer projections can be removed.
 | Caller                     | Created by                                                                | Proves its incarnation today                                                | Policy subject today          | Its request                                                                                                          |
 | -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, named after and owned by the box Pod, subject the caller             |
-| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux     | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the Deployment, with no owner and no binding                   |
-| Anki                       | as Haku UI                                                                | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                                                                           |
+| Haku UI                    | Haku: a StatefulSet in `haku-state`, applied to `haku-sandbox` by Flux    | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the StatefulSet, with no owner and no binding                  |
+| Anki                       | as Haku UI, a Deployment `haku-anki`                                      | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own record `haku-anki`, same subject ([below](#standing-workloads))                                              |
 | Central sampler            | Flux Deployment                                                           | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer) |
 | OpenClaw, external callers | `public_coder` cdk8s; none yet                                            | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                     |
 
@@ -77,13 +77,33 @@ rules:
 
 ## Standing workloads
 
-Haku UI and Anki are Haku-authored Deployments with replicas, not controller-owned incarnations.
-cdk8s renders one record per Deployment into `haku-sandbox`, with no owner and no binding. Haku's
-deployer Role cannot write it. The issuer gives it a stable Secret name, and Haku's Deployment
-mounts that Secret into its sidecar, as it mounts the token projection today. Any Pod Haku creates
-there could mount it, which is the reach the `haku-ui` ServiceAccount already gives. For a
-Deployment, the incarnation is the record itself. Every replica presents the same SVID, and no Pod
-is proven. Revocation is deleting the record, which Flux recreates with a fresh ID, or a Flux prune.
+Haku UI (a StatefulSet) and Anki (a Deployment) are Haku-authored workloads with replicas, not
+controller-owned incarnations. cdk8s renders one record per workload into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), with no owner and no binding. Haku's deployer Role cannot write
+it. The issuer gives it a stable Secret name, `svid-<name>`, and Haku's manifest mounts that Secret
+into its egress sidecar alone, in place of the token projection. Any Pod Haku creates there could
+mount it, which is the reach the `haku-ui` ServiceAccount already gives. The incarnation is the
+record itself. Every replica presents the same SVID, and no Pod is proven, so the proxy drops any
+Pod token such a caller forwards ([egress SPEC](../egress/SPEC.md)). Neither sidecar forwards one:
+the hop projection is their only token. Revocation is deleting the record, which Flux recreates with
+a fresh ID, or a Flux prune. A running sidecar refuses a reloaded SVID with a different URI
+(`environment_runtime_transport` pins the first), so after a recreate the workload regains egress
+only on a rollout restart.
+
+Neither workload may lose egress, so step 4 lands in this order:
+
+1. The proxy accepts standing SVIDs (#15201).
+2. cdk8s renders the records and adds `haku-sandbox` to the issuer's namespaces and the proxy's
+   record grant; it may land in parallel with 1, since the sidecars still use the bearer.
+3. Once both have rolled out and both records are `Ready`, a `haku-state` commit switches each
+   sidecar to `auth.mode: spiffe` with `svid-<name>` mounted, and drops the hop projection.
+
+Decided for now (2026-11-09): no Pod provenance for standing replicas, since decision history and
+LLM ingress metadata name the record and its credential ID; and Anki has its own record with subject
+`haku-ui`, to be split into its own identity when its grants diverge. One shared non-rotating
+credential with no Pod provenance is weaker than the per-incarnation credentials of Sandboxes and
+boxes. To revisit: bring standing workloads up to per-incarnation credentials, or accept the weaker
+guarantee everywhere.
 
 ## Migration and rollback
 
@@ -101,7 +121,7 @@ Step 5 removes the `CLEANUP(added 2026-11-09)` set from #15065:
   `egress/sidecar/config.go`);
 - the forward listener's bearer mode and hop verifier (`egress/identity/authentication.go`).
 
-It also deletes or converts `cluster/cdk8s/public_coder/egress.py:63`, which renders both removed
+It also deletes or converts `add_relay_settings` in `cluster/cdk8s/public_coder/egress.py`, which renders both removed
 models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0, and #15089
 tombstones it. `kubernetes_bearer` stays on service listeners for backend callers.
 
@@ -117,24 +137,13 @@ resolver then reads `spec.subject.identity` through the shared policy reader, li
 the policy namespace rather than the record's own, which matters for `haku-sandbox` records. Steps 4
 and 5 may land on either side.
 
-## Open questions
+## Open question
 
-Numbers are stable because other plans cite them.
-
-- **3. Pod provenance for standing replicas: decided for now, 2026-11-09.** None. Decision history
-  and LLM ingress metadata name the record and its credential ID.
-- **4. Anki's identity: decided for now, 2026-11-09.** Its own record, with subject `haku-ui`. Split
-  the identity when its grants diverge.
-
-  Standing workloads share one non-rotating credential with no Pod provenance, which is weaker
-  than the per-incarnation credentials of Sandboxes and boxes. To revisit: bring standing workloads
-  up to per-incarnation credentials, or accept the weaker guarantee everywhere.
-
-- **7. Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
-  design delivery when one exists. The record and the resolver stay as they are. The MCP edge path
-  for off-cluster agents is out of this design's scope and unchanged: an OAuth Connection, forwarded
-  to the Action Service with the edge's backend credential. Only its Connection-to-Identity binding
-  changes, at `IDENTITY_CUTOVER`.
+**Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
+design delivery when one exists. The record and the resolver stay as they are. The MCP edge path
+for off-cluster agents is out of this design's scope: an OAuth Connection, forwarded to the Action
+Service with the edge's backend credential. What changes at `IDENTITY_CUTOVER` is how the edge
+binds a Connection to an Identity and proves it (the identity plan's MCP edge section).
 
 When `WORKLOAD_AUTH_CUTOVER` lands, the rest of this content moves into
 `docs/workload_authentication.md` and the SPECs of the Policy Controller, Sandbox Controller, egress
