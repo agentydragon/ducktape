@@ -475,6 +475,8 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		slog.ErrorContext(ctx, "PolicyService PolicyBinding read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "PolicyBinding inventory is unavailable")
 	}
+	// TODO: also refuse while a WorkloadCredential's identity subject names this Identity, as a
+	// violation of its own type that the app's identity page can name beside the bindings.
 	var referencing []string
 	for _, binding := range bindings.Items {
 		bound := binding.Spec.Subject.Identity

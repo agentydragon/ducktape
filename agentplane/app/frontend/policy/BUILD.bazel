@@ -25,7 +25,6 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:watch_stream",
         "//agentplane/policy/v1:policy_service_pb",
-        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -42,5 +41,6 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/proto:identity_pb",
     ],
 )
