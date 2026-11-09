@@ -42,7 +42,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests.deployment import fixture_chart, runtime_grant
+from agentplane.system_tests.deployment import runtime_grant, svid_box
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
@@ -523,7 +523,7 @@ async def a_command_box_presents_its_own_svid(
             *submission(
                 _SANDBOX_GROUP,
                 "create",
-                {"name": box, "template": fixture_chart.SVID_BOX_TEMPLATE},
+                {"name": box, "template": svid_box.TEMPLATE},
                 title="Create an SVID box",
                 wait=True,
             ),

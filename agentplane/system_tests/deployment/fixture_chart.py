@@ -43,7 +43,7 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
+from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
@@ -111,10 +111,6 @@ POD_TEMPLATE = "environment-tools"
 # imports into containerd under this reference. The runner binary itself still comes from the runner
 # disk image, as in staging.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
-# A command box the sandbox Actions offer only here: the command box on the runner's images, which
-# stack.py imports, with the runner disk's `agentplane` CLI, so a scenario can drive the box's own
-# egress. Production's command box image is not imported into k3s.
-SVID_BOX_TEMPLATE = "systest-svid-box"
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
@@ -295,7 +291,7 @@ def environment(
                         namespace=NAMESPACE,
                         templates={
                             **command_sandbox.TEMPLATES,
-                            SVID_BOX_TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
+                            svid_box.TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
                         },
                     ),
                 )
@@ -800,12 +796,12 @@ def build_chart(
 
 
 def _add_svid_box_template(objects: list[dict[str, Any]]) -> None:
-    """`SVID_BOX_TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
+    """`svid_box.TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
     the runner's workload image and with the runner disk mounted where a runner has it."""
     box = deepcopy(
         one(doc for doc in objects if doc["kind"] == "PodTemplate" and doc["metadata"]["name"] == command_sandbox.NAME)
     )
-    box["metadata"]["name"] = SVID_BOX_TEMPLATE
+    box["metadata"]["name"] = svid_box.TEMPLATE
     spec = box["template"]["spec"]
     workload = one(c for c in spec["containers"] if c["name"] == command_sandbox.CONTAINER)
     # The tag the runner's own reference carries, under which stack.py imports it.
