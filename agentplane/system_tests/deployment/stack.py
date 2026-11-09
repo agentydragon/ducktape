@@ -407,6 +407,7 @@ def running_stack(
             setup.add_event("node Ready")
             k3s.report_storage("before-import")
             cleanup.callback(k3s.report_storage, "final")
+            cleanup.enter_context(k3s.sample_working_sets())
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
             )

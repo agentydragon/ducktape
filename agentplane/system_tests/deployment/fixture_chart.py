@@ -467,6 +467,8 @@ def build_chart(
     mcp_edge_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-mcp-edge").key("uri").env_value(chart, "mcp-edge-database-url")
     )
+    # Control-plane `memory_request`s below are the measured peak working set (`memory/peaks.json`
+    # in a suite's undeclared outputs) plus about half again, so the node keeps room for Sandboxes.
     llm_ingress.LlmIngress(
         chart,
         "llm-ingress",
@@ -474,6 +476,7 @@ def build_chart(
         litellm_url=_litellm_url(models),
         placement=None,
         registry_secret_name=None,
+        memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
     database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
@@ -489,6 +492,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
+        memory_request=Size.mebibytes(32),
         memory_limit=None,
         tls_passthrough_services=[
             history_service.service(env.namespace),
@@ -535,6 +539,7 @@ def build_chart(
         registry_secret_name=None,
         placement=None,
         container_env=database_env,
+        memory_request=Size.mebibytes(64),
         memory_limit=None,
     )
     control_target = runner_gateway.control_target(NAMESPACE)
@@ -561,6 +566,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
+        memory_request=Size.mebibytes(48),
         memory_limit=None,
     )
     app_service = app_component.App(
@@ -571,6 +577,7 @@ def build_chart(
         database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
+        memory_request=Size.mebibytes(48),
         memory_limit=None,
     )
     mcp_edge_service = mcp_edge.McpEdge(
@@ -581,6 +588,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        memory_request=Size.mebibytes(32),
     )
     environment_sandbox.EnvironmentSandbox(
         chart,
@@ -590,11 +598,25 @@ def build_chart(
         image=ENVIRONMENT_TOOLS_IMAGE,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
+        # Sized so the pod suites' concurrent Sandboxes fit the nested node; the limits make an
+        # outgrown request an OOM kill rather than a silent squeeze. Measured working sets:
+        # `memory/peaks.json` in the suite's undeclared outputs.
         environment_runtime_resources=k8s.ResourceRequirements(
             requests={
                 "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
+                "memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string()),
+            },
+            limits={"memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string())},
+        ),
+        executor_resources=k8s.ResourceRequirements(
+            requests={
+                "cpu": k8s.Quantity.from_string(Cpu.millis(250).amount),
+                "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
+            },
+            limits={
+                "cpu": k8s.Quantity.from_string(Cpu.units(2).amount),
                 "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
-            }
+            },
         ),
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
@@ -618,6 +640,7 @@ def build_chart(
         gateway_control_target=control_target,
         placement=None,
         registry_secret_name=None,
+        memory_request=Size.mebibytes(48),
         memory_limit=None,
     )
     action_service = actions.Actions(
@@ -632,6 +655,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
     notifications.Notifications(
@@ -651,6 +675,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
+        memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
     command_sandbox.CommandSandbox(
@@ -744,6 +769,7 @@ def build_chart(
         workload_namespaces={NAMESPACE},
         placement=None,
         registry_secret_name=None,
+        memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
     policy_controller_rbac.PolicyControllerRbac(
