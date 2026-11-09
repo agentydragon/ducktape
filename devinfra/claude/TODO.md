@@ -2,6 +2,10 @@
 
 ## Session setup and Bazel
 
+- Audit and trim the Ducktape Claude Code web setup's `.#devtools` closure. Start
+  with `bb`, `bbapi`, pre-commit dependencies, and Claude integration as likely
+  essentials; verify actual consumers before removing tools. Account for other
+  users of the shared bundle, including Haku and CI, and the public Attic cache.
 - Consider making `devinfra/secrets/ci_env.sh` a fuller CI setup step for registry
   logins and release credentials after auditing their in-repo consumers.
 - Revisit an external-RBE Docker CI path only if tests need the cluster `docker-ci`
