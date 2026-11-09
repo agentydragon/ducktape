@@ -3315,9 +3315,15 @@ calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
 Every call must initially select a synchronous local callable;
 member callees require a present ordinary data slot and
-an unused implicit receiver. Native and imported whole-owner proof families
-retain their established dispatch until their value transfers accept evaluated
-operands. Evaluated return values pass directly to initializer publication;
+an unused implicit receiver. A root whose every call is a direct call of an
+imported binding with a published summary uses the ordered plan too: each call
+is replaced by its summary, and under the summary's premises the effect verdict
+treats the call as touching no global property, heap, host or importer lexical
+cell. The summary is not a receipt for the root's lexical binding effects.
+Construction of an imported class keeps its established dispatch, since the
+class binding can be in its TDZ. Other native and imported whole-owner proof
+families retain their established dispatch until their value transfers accept
+evaluated operands. Evaluated return values pass directly to initializer publication;
 the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths

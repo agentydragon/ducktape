@@ -473,6 +473,21 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                             )
                             .is_some()
                 });
+        // A published foreign call summary has proved the provider binding
+        // available to this importer, so reading it as a callee is a normal
+        // declarative read under the summary's premises.
+        let summary = self
+            .executor
+            .foreign_call_summary(CallKind::Call, &ValueExpr::Binding(binding.clone()));
+        if let Some(summary) = summary
+            && !result
+                .allocation
+                .values
+                .contains(&AbstractValue::Value(Value::Unavailable))
+        {
+            result.effects = EffectCoverageFragment::initialized_module_read();
+            result.effects.depend_on(&summary.dependencies);
+        }
         if selected
             && !result.allocation.values.is_empty()
             && !result

@@ -9171,6 +9171,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )
     }
 
+    /// Every call of the root is a direct call of an imported binding that
+    /// carries a published foreign call summary. The ordered lane substitutes
+    /// each summary, so it runs no provider or application code.
+    pub(super) fn ordered_root_calls_are_provider_summaries(&self, calls: &[Call]) -> bool {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+            .peekable();
+        calls.peek().is_some()
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && !call.has_spread
+                    && self.foreign_call_summary(call.kind, &call.callee).is_some()
+            })
+    }
+
     /// Native and imported calls whose proofs still project source operands
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
@@ -9914,6 +9930,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
+                            || self.inputs.index.foreign_call_imports.contains_key(binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -9985,13 +10002,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         // CLEANUP(added 2026-11-09): the source-summary lane after this block
-        // is the flat lane for bodies that have an ordered plan. It stays until
-        // the kernel covers each gate that still routes such a body there:
-        // `requires_keyed_collection_new` (no application keyed-collection
-        // lane), captured writes to bindings without an active cell, free
-        // reads outside module, imported-primitive and intact-native bindings,
-        // and `established_writes` (member-write proofs the kernel's own-data
-        // store lacks). Remove each gate with the lane it protects.
+        // is the flat lane for bodies that have an ordered plan. Each gate
+        // below routes such a body there until the kernel has the rule named;
+        // remove the gate with that rule, and the lane with the last gate.
+        // - `requires_keyed_collection_new`: an application keyed-collection
+        //   lane.
+        // - captured writes to bindings without an active cell: a kernel
+        //   store to a module binding that records the rebind
+        //   (`Unproved::CaptureStore` summarizes the remainder today).
+        // - free reads outside module, summarized-import, imported-primitive
+        //   and intact-native bindings: global-object and callback-factory
+        //   import reads with their global-cell provenance.
+        // - `established_writes`: member-write proofs (fresh local records,
+        //   borrowed parameters, array iteration) in the kernel's own-data
+        //   store.
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()
@@ -10007,6 +10031,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
+                    || self.inputs.index.foreign_call_imports.contains_key(binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(
@@ -10400,6 +10425,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.retain_foreign_arguments(&summary, &args);
             self.record_foreign_call_use(&summary);
+            if needs_value {
+                let mut coverage = EffectCoverageFragment::provider_summary(&summary.dependencies);
+                if operands_may_throw {
+                    // An unavailable operand throws before the body runs.
+                    coverage.uncertain_completion();
+                }
+                outcome.effect_coverage = coverage;
+            }
             return CallTransfer::requested(needs_value, || {
                 let mut values = self.foreign_call_result(&summary, &args);
                 if operands_may_throw {

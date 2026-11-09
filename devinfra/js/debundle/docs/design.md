@@ -3932,13 +3932,13 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module      | Owns                                                                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `kernel/`   | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ. |
-| `world/`    | `World`, the per-prefix execution state, and `World::join`.                                                                                                              |
-| `adapters/` | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), driven by the strict provider query (`strict_provider.rs`).                         |
-| `roots/`    | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                             |
-| `legacy/`   | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                      |
+| Module      | Owns                                                                                                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`   | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.           |
+| `world/`    | `World`, the per-prefix execution state, and `World::join`.                                                                                                                        |
+| `adapters/` | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary. |
+| `roots/`    | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                                       |
+| `legacy/`   | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -3968,6 +3968,15 @@ behind an `Arc` with copy-on-write (`make_mut`), uses `imbl` maps and shares
 one lexical-cell id allocator, so a fork clones a handle rather than the
 contents. Callers name the owner (`world.surface`, `world.module`); there is
 no `Deref` to a store.
+
+**A provider body is run in one place, and replaced by its summary where
+one exists.** The provider adapter seals a body in a fresh `World` of the
+isolated provider scope. The scope gives its closures their own addresses and
+proves no literal writability, and the adapter keeps the ledger's heap cells
+private. An importer holds only the summary, so a call of a summarized import
+is a substitution: the application adapter covers the callee read and the call
+under the summary's premises and runs nothing. A provider body without a
+summary stays an unknown call in the importer.
 
 **Legacy enumeration and kernel receipts are different facts.** An
 `Outcome.complete` legacy execution has enumerated every effect it can
