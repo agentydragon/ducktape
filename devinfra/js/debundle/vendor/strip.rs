@@ -4,9 +4,9 @@ use std::fmt;
 use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use js_ast::item_var_decl;
+use js_ast::{GlobalUseElisionReceipt, ParsedGlobalUses, item_var_decl};
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap, Spanned};
+use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -20,7 +20,15 @@ fn strip_one_chunk(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
 ) -> Result<()> {
-    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
+    strip_one_chunk_with_replacement_imports(
+        module,
+        symbols,
+        chunk_path,
+        &BTreeSet::new(),
+        "",
+        None,
+    )
+    .map(|_| ())
 }
 
 /// Residual strip for one partially-swapped vendor entry: drops
@@ -36,11 +44,14 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
-) -> Result<()> {
+    parsed_source_file: &str,
+    global_uses: Option<&ParsedGlobalUses>,
+) -> Result<Option<GlobalUseElisionReceipt>> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
+    let mut removed_global_uses = RemovedGlobalUseRecorder::new(parsed_source_file, global_uses);
 
     split_top_level_var_decls(module);
-    let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
+    let stripped = strip_export_specifiers(module, symbols, chunk_path, &mut removed_global_uses)?;
     let post_strip_exports = super::export_surface::collect_exported_names(module);
 
     sweep_unreachable_top_level(
@@ -49,6 +60,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         &stripped,
         chunk_path,
         replacement_import_locals,
+        &mut removed_global_uses,
     )?;
 
     // Phase 2 must not change the export surface relative to Phase 1.
@@ -78,7 +90,60 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         );
     }
 
-    Ok(())
+    Ok(removed_global_uses.into_receipt())
+}
+
+/// Mutation bookkeeping only: visit nodes that the checked strip actually
+/// removes, then intersect their canonical identifier/span pairs with the
+/// original same-parse manifest. This does not classify global names or
+/// create a second source-use analysis.
+struct RemovedGlobalUseRecorder<'a> {
+    manifest: Option<&'a ParsedGlobalUses>,
+    uses: BTreeMap<Id, Vec<swc_common::Span>>,
+}
+
+impl<'a> RemovedGlobalUseRecorder<'a> {
+    fn new(parsed_source_file: &str, manifest: Option<&'a ParsedGlobalUses>) -> Self {
+        let manifest = manifest.filter(|manifest| {
+            !manifest.dynamic_scope && manifest.source_file.as_str() == parsed_source_file
+        });
+        Self {
+            manifest,
+            uses: BTreeMap::new(),
+        }
+    }
+
+    fn record<T: VisitWith<Self>>(&mut self, removed_node: &T) {
+        if self.manifest.is_some() {
+            removed_node.visit_with(self);
+        }
+    }
+
+    fn into_receipt(self) -> Option<GlobalUseElisionReceipt> {
+        let manifest = self.manifest?;
+        (!self.uses.is_empty()).then(|| GlobalUseElisionReceipt {
+            source_file: manifest.source_file.clone(),
+            uses: self.uses,
+        })
+    }
+}
+
+impl Visit for RemovedGlobalUseRecorder<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if ident.span.is_dummy() {
+            return;
+        }
+        let id = ident.to_id();
+        let Some(source_spans) = self.manifest.and_then(|manifest| manifest.uses.get(&id)) else {
+            return;
+        };
+        if source_spans.contains(&ident.span) {
+            let spans = self.uses.entry(id).or_default();
+            if !spans.contains(&ident.span) {
+                spans.push(ident.span);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +170,7 @@ fn strip_export_specifiers(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<BTreeMap<String, StrippedExport>> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
     let mut found: BTreeMap<String, StrippedExport> = BTreeMap::new();
@@ -129,6 +195,7 @@ fn strip_export_specifiers(
                         .map(module_export_name)
                         .unwrap_or_else(|| module_export_name(&named_spec.orig));
                     if swapped.contains(&exported) {
+                        removed_global_uses.record(&spec);
                         let Some(symbol) = symbols.get(&exported) else {
                             unreachable!("swapped names are derived from symbols");
                         };
@@ -307,6 +374,7 @@ fn sweep_unreachable_top_level(
     stripped: &BTreeMap<String, StrippedExport>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<()> {
     let analyses = analyze_prune_items(module, chunk_path)?;
 
@@ -521,22 +589,37 @@ fn sweep_unreachable_top_level(
         .filter(|&(i, _)| live[i])
         .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
         .collect();
-    // Allocation origins are the allocation node's `span.lo`.
-    let born_in_dropped_item = |origin: u32| -> bool {
-        module.body.iter().zip(&live).any(|(item, &is_live)| {
-            let span = item.span();
-            !is_live && span.lo.0 <= origin && origin < span.hi.0
-        })
+    // `analyses` and these allocation receipts come from the fresh
+    // source-only `analyze_vendor_prune_chunk(module)` call above; no saved
+    // receipt table authenticates its own ownership. A heap-content write is
+    // private only when a dropped owner's source-family allocation receipt
+    // names that complete address. Source-offset containment would alias an
+    // allocation from another chunk that reused the same offset.
+    let dropped_heap_allocations = analyses
+        .iter()
+        .zip(&live)
+        .filter_map(|(analysis, &is_live)| (!is_live).then_some(&analysis.heap_allocations))
+        .collect::<Vec<_>>();
+    let is_cell_owned_by_dropped_item = |cell: &EffectCell| -> bool {
+        dropped_item_owns_heap_cell(cell, &dropped_heap_allocations)
     };
     let private_cell = |cell: &EffectCell| -> bool {
         match cell {
-            EffectCell::GlobalProp(_) => false,
-            EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
-                born_in_dropped_item(*origin)
+            EffectCell::GlobalProp(_)
+            | EffectCell::ModuleCell(_)
+            | EffectCell::ExecutionProgress => false,
+            EffectCell::GlobalSymbolRegistry => false,
+            EffectCell::ArrayContents(_) | EffectCell::SetContents(_) => {
+                is_cell_owned_by_dropped_item(cell)
             }
-            // Property origins can be shared by repeated factory allocations;
-            // source containment alone does not prove their results private.
-            EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_) => false,
+            // The source-family receipt does not prove private property/brand state.
+            // Exact captured-cell identity likewise proves no escape/liveness
+            // condition that would permit dropping its accesses here.
+            EffectCell::OwnProperty { .. }
+            | EffectCell::PrivateSlot { .. }
+            | EffectCell::LexicalCell { .. }
+            | EffectCell::ObjectShape(_)
+            | EffectCell::DescriptorMapContents(_) => false,
             EffectCell::Binding(id) => {
                 replacement_import_locals.contains(id) || !live_reads.contains(id)
             }
@@ -799,11 +882,18 @@ fn sweep_unreachable_top_level(
         );
     }
 
-    module.body = std::mem::take(&mut module.body)
+    let mut retained = Vec::with_capacity(module.body.len());
+    for (item, &is_live) in std::mem::take(&mut module.body)
         .into_iter()
         .zip(live.iter())
-        .filter_map(|(item, &is_live)| is_live.then_some(item))
-        .collect();
+    {
+        if is_live {
+            retained.push(item);
+        } else {
+            removed_global_uses.record(&item);
+        }
+    }
+    module.body = retained;
     Ok(())
 }
 
@@ -1174,13 +1264,30 @@ fn format_live_trace(
 fn format_effect_cell(cell: &EffectCell) -> String {
     match cell {
         EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
-        EffectCell::GlobalProp(key) => format!("global `{key}`"),
-        EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),
-        EffectCell::SetContents(origin) => format!("set contents #{origin}"),
-        EffectCell::ObjectShape(origin) => format!("object shape #{}", origin),
-        EffectCell::OwnProperty { origin, property } => {
-            format!("own property `{property}` of allocation #{origin}")
+        EffectCell::LexicalCell { origin, instance } => {
+            format!("lexical cell #{origin} instance {instance}")
         }
+        EffectCell::ModuleCell(cell) => format!(
+            "module cell in chunk {} at declaration #{}",
+            cell.chunk.0, cell.declaration_origin
+        ),
+        EffectCell::GlobalProp(key) => format!("global `{key}`"),
+        EffectCell::ExecutionProgress => "synchronous initialization progress".to_owned(),
+        EffectCell::GlobalSymbolRegistry => "global symbol registry".to_owned(),
+        EffectCell::ArrayContents(origin) => format!("array contents {origin:?}"),
+        EffectCell::SetContents(origin) => format!("set contents {origin:?}"),
+        EffectCell::ObjectShape(origin) => format!("object shape {origin:?}"),
+        EffectCell::DescriptorMapContents(origin) => {
+            format!("descriptor map contents {origin:?}")
+        }
+        EffectCell::OwnProperty { origin, property } => {
+            format!("own property `{property}` of allocation {origin:?}")
+        }
+        EffectCell::PrivateSlot {
+            origin,
+            class,
+            name,
+        } => format!("private slot `#{name}` of class {class:?} on allocation {origin:?}"),
     }
 }
 
@@ -1258,6 +1365,8 @@ struct ItemAnalysis {
     /// island-reachability analysis, so the S-chain's stronger
     /// opaque-call bail does not apply here.
     observable_writes: BTreeSet<EffectCell>,
+    /// Exact typed allocation cells owned by this source item.
+    heap_allocations: BTreeSet<EffectCell>,
     /// False when the statement contains a shape the analyzer cannot
     /// statically summarize (dynamic `globalThis[expr]`, `with`,
     /// direct `eval`, `Function(...)`, etc.); in that case the write
@@ -1278,6 +1387,15 @@ struct ItemAnalysis {
     first_order: CallSites,
     /// Bindings that first-order body reads or rebinds.
     first_order_bindings: BTreeSet<Id>,
+}
+
+fn dropped_item_owns_heap_cell(
+    cell: &EffectCell,
+    dropped_allocations: &[&BTreeSet<EffectCell>],
+) -> bool {
+    dropped_allocations
+        .iter()
+        .any(|allocations| allocations.contains(cell))
 }
 
 /// Calls one code position makes: identifier callees, plus the bindings and
@@ -1343,6 +1461,7 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects().writes,
+        heap_allocations: fact.initialization_effects().allocates,
         effects_summarizable: fact.cell_writes_summarizable(),
         rebinds: fact
             .rebinds
@@ -2262,6 +2381,8 @@ fn matches_global_intrinsic(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use analysis::facts::abstract_domain::value::{HeapAddress, Kind};
+    use source_identity::ChunkId;
     use spec::{PartialSwapKind, PartialSwapSymbol};
     use swc_common::sync::Lrc;
     use swc_common::{DUMMY_SP, FileName, SourceMap};
@@ -2666,6 +2787,8 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            "",
+            None,
         )
         .unwrap();
         let emitted = emit(&module);
@@ -2691,6 +2814,8 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            "",
+            None,
         )
         .unwrap();
         let emitted = emit(&module);
@@ -2766,6 +2891,24 @@ mod tests {
         assert!(
             an.side_effect == SideEffectKind::None,
             "object literal init should be a pure decl",
+        );
+    }
+
+    #[test]
+    fn dropped_allocation_ownership_keeps_same_offsets_from_other_chunks_public() {
+        let provider =
+            EffectCell::ArrayContents(HeapAddress::module_family(ChunkId(3), Kind::Object, 17));
+        let other_chunk =
+            EffectCell::ArrayContents(HeapAddress::module_family(ChunkId(4), Kind::Object, 17));
+        let dropped_allocations = BTreeSet::from([provider.clone()]);
+
+        assert!(dropped_item_owns_heap_cell(
+            &provider,
+            &[&dropped_allocations]
+        ));
+        assert!(
+            !dropped_item_owns_heap_cell(&other_chunk, &[&dropped_allocations]),
+            "an equal source offset from another module is not private to this dropped owner"
         );
     }
 }

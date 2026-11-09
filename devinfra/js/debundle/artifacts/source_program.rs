@@ -22,6 +22,45 @@ impl SourceProgram {
         })
     }
 
+    /// Keep canonical syntax for source analysis independently of emission.
+    /// Emission entries keep ordinary AST storage; analysis-only entries retain
+    /// their original bytes and release their AST at the emission boundary.
+    /// Call before dropping any freshly prepared entry AST.
+    pub fn retain_entry_asts(
+        mut self,
+        emission_chunks: &BTreeSet<ChunkId>,
+        analysis_roots: &[String],
+    ) -> Result<Self> {
+        let analysis_chunks = self
+            .indexes()
+            .selected_static_import_closure(self.artifact(), analysis_roots)?;
+        let (indexed, ()) = self.indexed.update_file_bodies(|artifact, _| {
+            for chunk in &mut artifact.chunks {
+                if emission_chunks.contains(&chunk.chunk_id) {
+                    continue;
+                }
+                let entry = &chunk.analysis.entry_file;
+                let position = chunk
+                    .js
+                    .files
+                    .iter()
+                    .position(|file| &file.path == entry)
+                    .context("freshly prepared chunk must contain its entry")?;
+                let file = chunk.js.files.remove(position);
+                let file = if analysis_chunks.contains(&chunk.chunk_id) {
+                    file.into_source_with_ast()
+                } else {
+                    file.into_rendered_source()
+                }
+                .context("freshly prepared entry must contain an AST")?;
+                chunk.js.files.insert(position, file);
+            }
+            Ok(())
+        })?;
+        self.indexed = indexed;
+        Ok(self)
+    }
+
     pub fn artifact(&self) -> &ChunkBundle {
         self.indexed.artifact()
     }

@@ -150,7 +150,7 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                 bindings: ids,
             });
         }
-        record_runtime_imports(item, &mut imports);
+        record_runtime_imports(item, statement, &mut imports);
         record_pre_existing_named_exports(
             item,
             &mut pre_existing_entry_exports,

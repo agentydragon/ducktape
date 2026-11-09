@@ -8,17 +8,17 @@ mod fixture_spec;
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
-    assert_module_variable_declarators, parse_module,
+    assert_module_variable_declarators, assert_single_namespace_import, parse_module,
 };
 use fixture_spec::build_spec;
 pub use fixture_spec::{
-    BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
-    anonymous_source_unit, commuting_pair, composed_global_access_fixture, declared_source_unit,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
-    logical_module_with_anon_comment, logical_module_with_binding_groups,
-    logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,
-    unassigned_mode_catchall_file, unassigned_mode_coarse_atomic_groups, unassigned_mode_inline,
-    unassigned_mode_per_atomic_group,
+    BindingGroup, ChunkExportPurityBuilder, DESCRIPTOR_COPY_PROVIDER, FixtureOpts,
+    LogicalModuleEntry, Member, anonymous_source_unit, commuting_pair,
+    composed_global_access_fixture, declared_source_unit, logical_module, logical_module_with_anon,
+    logical_module_with_anon_alpha, logical_module_with_anon_comment,
+    logical_module_with_binding_groups, logical_module_with_comment, member_source_unit,
+    mixed_selector_failure_fixture, unassigned_mode_catchall_file,
+    unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
@@ -75,6 +75,10 @@ pub struct Fixture {
 
 pub struct RejectedFixture {
     pub chunk_id: String,
+    /// The CLI's actual exit status, retained for outcome-observing tests.
+    pub status: Option<i32>,
+    /// The CLI's stdout, retained alongside reports and stderr on rejection.
+    pub stdout: String,
     pub stderr: String,
     pub report_root: PathBuf,
     /// Empty spec root used by source-unit inspection queries in this flat-spec fixture.
@@ -91,7 +95,92 @@ pub struct RejectedFixture {
     _root: TempDir,
 }
 
+/// A fixture run whose verdict is returned to the caller instead of asserted.
+/// This lets black-box controls preserve reports from either accepted or
+/// rejected candidates before checking the expected effect verdict.
+pub enum FixtureRunOutcome {
+    Accepted(Fixture),
+    Rejected(RejectedFixture),
+}
+
+/// A conservative progress-cell conflict is a rejection with incomplete
+/// execution authority, not an observed throw. Keep those diagnostics and
+/// their provenance explicit wherever tests rely on the changed verdict.
+pub fn assert_potential_suppression_rejection(
+    assessment: &Value,
+    effects: &Value,
+    expected_status: &str,
+) {
+    assert_eq!(assessment["status"], expected_status, "{assessment:#}");
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["uncovered_modeled_may_conflict"], true,
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["premise_contradiction"], false,
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["counts"]["uncovered_pairs"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "the candidate must retain an uncovered conflict pair: {assessment:#}"
+    );
+
+    assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
+    assert_eq!(
+        effects["decision"]["uncovered_modeled_may_conflict"], true,
+        "{effects:#}"
+    );
+    assert_eq!(
+        effects["decision"]["premise_contradiction"], false,
+        "{effects:#}"
+    );
+    assert_eq!(
+        effects["counts"]["premise_contradictions"], 0,
+        "{effects:#}"
+    );
+    let unknown_coverage = effects["coverage"]["unknown_coverage"]
+        .as_object()
+        .expect("the rejection must retain its effect-domain coverage report");
+    assert!(
+        unknown_coverage
+            .values()
+            .any(|count| count.as_u64().is_some_and(|count| count > 0)),
+        "the changed conflict must not erase unknown effect coverage: {effects:#}"
+    );
+    assert!(
+        effects["examples"].as_array().is_some_and(|examples| {
+            examples.iter().any(|example| {
+                example["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "execution_progress"
+                            && cell["observed_conflict"] == false
+                            && ["first_write", "later_write"]
+                                .iter()
+                                .any(|field| cell[*field]["kind"] == "potential_suppression")
+                    })
+                })
+            })
+        }),
+        "the conflict must show a non-observed potential-suppression progress write: {effects:#}"
+    );
+}
+
 impl Fixture {
+    pub fn candidate_relocation_assessment(&self) -> Value {
+        read_json(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("candidate_relocation_assessment.json"),
+        )
+    }
+
     /// `translation_validation.json`: translation validation beside the gate's verdict.
     pub fn translation_validation(&self) -> Value {
         read_json(
@@ -181,31 +270,64 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
 }
 
 pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, true)
+    run_fixture_with_options(opts, extra_args, true, FixtureExpectation::Accepted)
 }
 
 /// Run a fixture without `--graphs`, for CLI options that conflict with full
 /// graph export.
 pub fn run_fixture_without_graphs_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, false)
+    run_fixture_with_options(opts, extra_args, false, FixtureExpectation::Accepted)
 }
 
-fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
+/// Emit a marked, rejected inspection tree and require exit 3. Node controls
+/// can inspect its behavior without asserting that the candidate was accepted.
+pub fn run_inspection_fixture(opts: FixtureOpts<'_>) -> Fixture {
+    run_inspection_fixture_with_args(opts, &[])
+}
+
+pub fn run_inspection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(
+        opts,
+        extra_args,
+        true,
+        FixtureExpectation::RejectedInspection,
+    )
+}
+
+enum FixtureExpectation {
+    Accepted,
+    RejectedInspection,
+}
+
+fn run_fixture_with_options(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    graphs: bool,
+    expectation: FixtureExpectation,
+) -> Fixture {
     let setup = prepare_fixture(&opts);
 
     let mut args = Vec::new();
     if graphs {
         args.push("--graphs");
     }
+    let expected_code = match expectation {
+        FixtureExpectation::Accepted => 0,
+        FixtureExpectation::RejectedInspection => {
+            args.push("--emit-on-rejection");
+            3
+        }
+    };
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     let app_root = setup.out_root.join(APP_DIR);
     mirror_runtime_extra_files(&app_root, opts.extra_files, result.status.success());
-    if !result.status.success() {
+    if result.status.code() != Some(expected_code) {
         preserve_failed_fixture_reports(&setup, opts.chunk_id);
     }
-    assert!(
-        result.status.success(),
+    assert_eq!(
+        result.status.code(),
+        Some(expected_code),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
         result.status.code(),
         result.stdout,
@@ -310,6 +432,78 @@ fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()>
         }
     }
     Ok(())
+}
+
+/// Preserve common relocation evidence before runtime assertions can drop the
+/// fixture's temporary directory.
+pub fn save_relocation_reports(report_root: &Path, chunk_id: &str, case: &str) -> PathBuf {
+    let output_root = PathBuf::from(
+        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+            .expect("Bazel undeclared outputs directory is set"),
+    )
+    .join("relocation-controls")
+    .join(case);
+    fs::create_dir_all(&output_root).expect("create relocation control report directory");
+
+    for name in [
+        "candidate_relocation_assessment.json",
+        "effect_translation_validation.json",
+        "dependency_graph.json.gz",
+    ] {
+        let source = report_root.join(chunk_id).join(name);
+        let destination = output_root.join(name);
+        fs::copy(&source, &destination).unwrap_or_else(|error| {
+            panic!(
+                "preserve {case} report {} at {}: {error}",
+                source.display(),
+                destination.display()
+            )
+        });
+    }
+    output_root
+}
+
+/// Run a normal graph-producing fixture and return the CLI's actual gate
+/// outcome without asserting acceptance or rejection.
+pub fn run_fixture_observing_gate(opts: FixtureOpts<'_>) -> FixtureRunOutcome {
+    let setup = prepare_fixture(&opts);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--graphs"]);
+    if result.status.success() {
+        let app_root = setup.out_root.join("app");
+
+        // Keep runtime-only imports available under the emitted app tree just
+        // as the asserting successful-fixture helpers do.
+        for (rel_path, content) in opts.extra_files {
+            write_text_file(&app_root.join(rel_path), content);
+        }
+
+        let entry_path = app_root
+            .join(opts.chunk_id.split('/').collect::<PathBuf>())
+            .join("entry.js");
+        FixtureRunOutcome::Accepted(Fixture {
+            chunk_id: opts.chunk_id.to_string(),
+            entry_path,
+            out_root: app_root,
+            report_root: setup.report_root,
+            stderr: result.stderr,
+            harness_root: setup.browser_harness.map(|harness| harness.out_dir),
+            source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
+            _root: setup.root,
+        })
+    } else {
+        FixtureRunOutcome::Rejected(RejectedFixture {
+            chunk_id: opts.chunk_id.to_string(),
+            status: result.status.code(),
+            stdout: result.stdout,
+            stderr: result.stderr,
+            report_root: setup.report_root,
+            modules_root: setup.modules_root,
+            source_root: setup.snapshot_root,
+            out_root: setup.out_root,
+            harness_root: setup.browser_harness.map(|harness| harness.out_dir),
+            _root: setup.root,
+        })
+    }
 }
 
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
@@ -553,6 +747,8 @@ fn run_rejection_fixture_with_options(
     );
     RejectedFixture {
         chunk_id: opts.chunk_id.to_string(),
+        status: result.status.code(),
+        stdout: result.stdout,
         stderr: result.stderr,
         report_root: setup.report_root,
         modules_root: setup.modules_root,
@@ -626,6 +822,110 @@ pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
 pub fn assert_preserved_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.source_path, expected_stdout, "");
     assert_entry_output(fixture, expected_stdout);
+}
+
+/// Compare an accepted entry with its original under identical preexisting host
+/// setup, in fresh pinned Node processes. Neither program's source is rewritten.
+pub fn assert_preserved_entry_output_with_host_setup(
+    fixture: &Fixture,
+    host_setup: &str,
+    expected_stdout: &str,
+    case: &str,
+) {
+    assert_preserved_entry_execution_with_host_setup(
+        fixture,
+        host_setup,
+        ExpectedHostExecution::Output(expected_stdout),
+        case,
+    );
+}
+
+/// Preserve actual failure diagnostics while checking the same error class,
+/// exit status and stdout under an identical preexisting host.
+pub fn assert_preserved_entry_error_with_host_setup(
+    fixture: &Fixture,
+    host_setup: &str,
+    expected_error: &str,
+    case: &str,
+) {
+    assert_preserved_entry_execution_with_host_setup(
+        fixture,
+        host_setup,
+        ExpectedHostExecution::Error(expected_error),
+        case,
+    );
+}
+
+#[derive(Clone, Copy)]
+enum ExpectedHostExecution<'a> {
+    Output(&'a str),
+    Error(&'a str),
+}
+
+fn assert_preserved_entry_execution_with_host_setup(
+    fixture: &Fixture,
+    host_setup: &str,
+    expected: ExpectedHostExecution<'_>,
+    case: &str,
+) {
+    let assessment_path = fixture
+        .report_root
+        .join(&fixture.chunk_id)
+        .join("candidate_relocation_assessment.json");
+    let assessment: Value = read_json(&assessment_path);
+    assert_eq!(assessment["status"], "accepted_within_checked_scope");
+    assert!(
+        !fixture
+            .out_root
+            .parent()
+            .expect("app output has a parent")
+            .join(GATE_REJECTED_MARKER)
+            .is_file(),
+        "host preservation requires an accepted output tree"
+    );
+    let artifacts = save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+    fs::write(artifacts.join("host-setup.mjs"), host_setup).unwrap();
+    let mut original = None;
+    for (name, path) in [
+        ("original", &fixture.source_path),
+        ("emitted", &fixture.entry_path),
+    ] {
+        let script = format!(
+            "{host_setup}\nawait import({});\n",
+            serde_json::to_string(path.to_str().expect("fixture path is UTF-8")).unwrap(),
+        );
+        let result = command_result(
+            Command::new(node_path())
+                .args(["--input-type=module", "--eval"])
+                .arg(script)
+                .output()
+                .unwrap_or_else(|error| panic!("spawn Node host setup: {error}")),
+        );
+        fs::write(artifacts.join(format!("{name}.stdout")), &result.stdout).unwrap();
+        fs::write(artifacts.join(format!("{name}.stderr")), &result.stderr).unwrap();
+        fs::write(
+            artifacts.join(format!("{name}.exit-code.json")),
+            serde_json::to_vec(&result.status.code()).unwrap(),
+        )
+        .unwrap();
+        match expected {
+            ExpectedHostExecution::Output(stdout) => {
+                assert!(result.status.success(), "{name}: {}", result.stderr);
+                assert_eq!(result.stdout, stdout, "{name} stdout");
+                assert_eq!(result.stderr, "", "{name} stderr");
+            }
+            ExpectedHostExecution::Error(error) => {
+                assert!(!result.status.success(), "{name} unexpectedly succeeded");
+                assert!(result.stderr.contains(error), "{name}: {}", result.stderr);
+            }
+        }
+        let actual = (result.status.code(), result.stdout);
+        if let Some(original) = &original {
+            assert_eq!(&actual, original, "original/emitted exit status and stdout");
+        } else {
+            original = Some(actual);
+        }
+    }
 }
 
 /// Assert that the original and emitted entry both fail with the same runtime
@@ -1036,6 +1336,24 @@ pub fn assert_node_error(path: &Path, expected_error: &str) {
         path.display(),
         result.stderr,
     );
+}
+
+pub fn assert_node_error_with_stdout(path: &Path, expected_error: &str, expected_stdout: &str) {
+    let result = run_node_script(path);
+    assert!(
+        !result.status.success(),
+        "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        path.display(),
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains(expected_error),
+        "node {} stderr did not contain {expected_error:?}:\n{}",
+        path.display(),
+        result.stderr,
+    );
+    assert_eq!(result.stdout, expected_stdout, "stdout mismatch");
 }
 
 /// Real source files plus a serialized spec, ready for any CLI execution mode.
@@ -1510,9 +1828,18 @@ fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandRe
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
+    run_debundler_with_args(spec_path, package_roots, &[])
+}
+
+pub fn run_debundler_with_args(
+    spec_path: &Path,
+    package_roots: &[(&str, &Path)],
+    extra_args: &[&str],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
+    command.args(extra_args);
     for (name, dir) in package_roots {
         command
             .arg("--package-root")

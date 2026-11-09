@@ -7,6 +7,15 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
+fn assert_graph_only_candidate(report: &serde_json::Value, graph_realizable: bool) {
+    assert_eq!(
+        report["graph_candidate_is_realizable"], graph_realizable,
+        "{report}"
+    );
+    assert_eq!(report["candidate_is_realizable"], json!(null), "{report}");
+    assert!(report.get("candidate_assessment").is_none(), "{report}");
+}
+
 fn source_units_for_binding(fixture: &GraphFixture, binding: &str) -> Vec<String> {
     fixture
         .dependency_graph()
@@ -43,7 +52,7 @@ fn write_batch(value: serde_json::Value) -> tempfile::TempDir {
 
 #[test]
 fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const alpha = 1;\nconst beta = 2, gamma = 3;\nconsole.log(alpha, beta, gamma);\n",
         &[(
             "home.yaml",
@@ -69,12 +78,15 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
         {"unit_id": gamma, "module": "values/gamma"},
         {"unit_id": log, "module": "effects/log"},
     ]));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
 
     let home: serde_yaml::Value =
         serde_yaml::from_slice(&fs::read(fixture.modules.join("home.yaml")).unwrap()).unwrap();
@@ -190,20 +202,32 @@ fn rejects_atom_split_without_changing_any_module_yaml() {
         "unit_id": source_unit_for_binding(&fixture, "alpha"),
         "module": "split/alpha",
     }]));
-    fixture.assert_rejected_unchanged(
-        &[
-            "modules",
-            "refine",
-            "--batch",
-            batch.path().join("refine.json").to_str().unwrap(),
-        ],
-        &["splits one or more atomic groups"],
+    let preview = fixture.json(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+        "--dry-run",
+    ]);
+    assert_eq!(preview["needs_full_assessment"], true);
+    let before = fs::read(fixture.modules.join("home/atom.yaml")).unwrap();
+    let output = fixture.command(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+    assert_eq!(
+        fs::read(fixture.modules.join("home/atom.yaml")).unwrap(),
+        before
     );
 }
 
 #[test]
 fn moves_free_claim_from_use_inside_multi_declarator_statement() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const spare = 0, limit = 8, sanitizer = value => value.length > limit ? value.slice(0, limit) : value, tail = 1;\nconsole.log(sanitizer('hello world'));\n",
         &[(
             "home.yaml",
@@ -216,18 +240,21 @@ fn moves_free_claim_from_use_inside_multi_declarator_statement() {
         "unit_id": source_unit_for_binding(&fixture, "limit"),
         "module": "config/limit",
     }]));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("hello wo\n");
 }
 
 #[test]
 fn moves_one_claim_from_gapped_source_match_group() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "function first() { return 1; }\nfunction middle() { return 99; }\nfunction second() { return 2; }\nconsole.log(first() + second());\n",
         &[(
             "home.yaml",
@@ -240,12 +267,15 @@ fn moves_one_claim_from_gapped_source_match_group() {
         "unit_id": source_unit_for_binding(&fixture, "first"),
         "module": "split/first",
     }]));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("3\n");
 }
 
@@ -323,6 +353,7 @@ fn refines_only_the_selected_chunk_under_tree_config() {
         .arg(run.root().join("snapshot"))
         .args(["--tree-config"])
         .arg(run.root().join("spec_config.yaml"))
+        .args(["--dry-run", "--format", "json"])
         .output()
         .unwrap();
     assert!(
@@ -330,12 +361,14 @@ fn refines_only_the_selected_chunk_under_tree_config() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(preview["needs_full_assessment"], true);
     assert!(existing_destination.exists());
-    assert_ne!(fs::read(&existing_destination).unwrap(), destination_before);
+    assert_eq!(fs::read(&existing_destination).unwrap(), destination_before);
     assert!(!modules.join("chunks/Main/existingcase.yaml").exists());
     let destination: serde_yaml::Value =
         serde_yaml::from_slice(&fs::read(&existing_destination).unwrap()).unwrap();
-    assert_eq!(destination["members"].as_sequence().unwrap().len(), 2);
+    assert_eq!(destination["members"].as_sequence().unwrap().len(), 1);
     assert!(
         destination["members"]
             .as_sequence()
@@ -343,7 +376,7 @@ fn refines_only_the_selected_chunk_under_tree_config() {
             .iter()
             .any(|member| member["name"] == "Retained")
     );
-    assert!(!main_home.exists());
+    assert!(main_home.exists());
     assert_eq!(fs::read(helper_home).unwrap(), helper_before);
 }
 
@@ -413,7 +446,7 @@ fn rejects_unclaimed_scaffolding_and_duplicate_source_unit_rows() {
 
 #[test]
 fn atomic_decomposition_can_preserve_local_selector_anchors() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         r#"var getDescriptor = Object.getOwnPropertyDescriptor;
 var defineProperty = Object.defineProperty;
 var decorate = (decorators, target, key) => {
@@ -447,7 +480,7 @@ console.log(new C().greet());
     let decorators_yaml = fs::read(fixture.modules.join("runtime/decorators.yaml")).unwrap();
 
     let atomic = fixture.json(&["modules", "decompose", "--atomic"]);
-    assert_eq!(atomic["candidate_is_realizable"], true);
+    assert_graph_only_candidate(&atomic, true);
     assert_eq!(atomic.get("preserve_selector_anchors"), None);
     let mut atomic_paths = BTreeMap::new();
     let mut atomic_rows = Vec::new();
@@ -493,7 +526,7 @@ console.log(new C().greet());
         "--source-root",
         source_root,
     ]);
-    assert_eq!(cohesive["candidate_is_realizable"], true);
+    assert_graph_only_candidate(&cohesive, true);
     assert_eq!(cohesive["preserve_selector_anchors"], true);
     assert_eq!(
         cohesive["selector_anchor_relations"]
@@ -544,18 +577,21 @@ console.log(new C().greet());
     );
 
     let batch = write_batch(serde_json::Value::Array(cohesive_rows));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("hi!\n");
 }
 
 #[test]
 fn atomic_decomposition_keeps_source_match_references_with_local_helpers() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         r#"const decorateA = value => value;
 const decorateB = value => value;
 class Widget { render() { return "widget"; } }
@@ -594,7 +630,7 @@ annotations:
     fixture.assert_runs("widget\n");
 
     let atomic = fixture.json(&["modules", "decompose", "--atomic"]);
-    assert_eq!(atomic["candidate_is_realizable"], true);
+    assert_graph_only_candidate(&atomic, true);
     let mut atomic_paths = BTreeMap::new();
     let mut atomic_rows = Vec::new();
     for module in atomic["modules"].as_array().unwrap() {
@@ -642,7 +678,7 @@ annotations:
         "--source-root",
         source_root,
     ]);
-    assert_eq!(cohesive["candidate_is_realizable"], true);
+    assert_graph_only_candidate(&cohesive, true);
     let relations = cohesive["selector_anchor_relations"].as_array().unwrap();
     assert!(relations.iter().any(|relation| {
         relation["kind"] == "source_match_reference"
@@ -680,18 +716,21 @@ annotations:
         "the unrelated duplicate provider should remain independently placed"
     );
     let batch = write_batch(serde_json::Value::Array(cohesive_rows));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("widget\n");
 }
 
 #[test]
 fn atomic_decomposition_splits_source_match_from_a_unique_local_helper() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         r#"const decorate = value => value;
 class Widget { render() { return "widget"; } }
 decorate(Widget);
@@ -731,7 +770,7 @@ annotations:
         "--source-root",
         source_root,
     ]);
-    assert_eq!(decomposition["candidate_is_realizable"], true);
+    assert_graph_only_candidate(&decomposition, true);
     assert!(
         decomposition["selector_anchor_relations"]
             .as_array()
@@ -762,18 +801,21 @@ annotations:
     );
 
     let batch = write_batch(serde_json::Value::Array(rows));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("widget\n");
 }
 
 #[test]
 fn source_match_claim_with_raw_sibling_references_survives_split() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
         &[(
             "home.yaml",
@@ -797,18 +839,21 @@ fn source_match_claim_with_raw_sibling_references_survives_split() {
         "unit_id": source_unit_for_binding(&fixture, "b"),
         "module": "parts/loader",
     }]));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("ready\n");
 }
 
 #[test]
 fn source_match_claim_with_declared_sibling_references_survives_split() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
         &[(
             "home.yaml",
@@ -833,12 +878,15 @@ fn source_match_claim_with_declared_sibling_references_survives_split() {
         "unit_id": source_unit_for_binding(&fixture, "b"),
         "module": "parts/loader",
     }]));
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().join("refine.json").to_str().unwrap(),
-    ]);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &fixture.stage_analysis(),
+    );
     fixture.assert_runs("ready\n");
 }
 
@@ -864,21 +912,31 @@ fn refining_a_local_binding_preserves_an_import_claim() {
         "unit_id": source_unit_for_binding(&fixture, "b"),
         "module": "moved/value",
     }]));
-    fixture.assert_success(&[
+    let preview = fixture.json(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+        "--dry-run",
+    ]);
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&[
         "modules",
         "refine",
         "--batch",
         batch.path().join("refine.json").to_str().unwrap(),
     ]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
     assert_eq!(fs::read(import_path).unwrap(), import_claim);
-    assert!(!fixture.modules.join("values.yaml").exists());
+    assert!(fixture.modules.join("values.yaml").exists());
     fixture.assert_runs("1 2\n");
 }
 
 #[test]
 fn both_edit_commands_move_all_sites_of_one_var_binding() {
     for command in ["assign", "refine"] {
-        let fixture = GraphFixture::new(
+        let fixture = GraphFixture::new_full_tree(
             "var a = 1;\nvar a = a + 1;\nconsole.log(a);\n",
             &[(
                 "values.yaml",
@@ -888,7 +946,10 @@ fn both_edit_commands_move_all_sites_of_one_var_binding() {
         let declarations = source_units_for_binding(&fixture, "a");
         assert_eq!(declarations.len(), 2);
         if command == "assign" {
-            fixture.assert_success(&["bindings", "assign", "a:moved/value"]);
+            fixture.assert_success_with_assessment(
+                &["bindings", "assign", "a:moved/value"],
+                &fixture.stage_analysis(),
+            );
         } else {
             let batch = write_batch(json!(
                 declarations
@@ -896,12 +957,15 @@ fn both_edit_commands_move_all_sites_of_one_var_binding() {
                     .map(|id| { json!({"unit_id": id, "module": "moved/value"}) })
                     .collect::<Vec<_>>()
             ));
-            fixture.assert_success(&[
-                "modules",
-                "refine",
-                "--batch",
-                batch.path().join("refine.json").to_str().unwrap(),
-            ]);
+            fixture.assert_success_with_assessment(
+                &[
+                    "modules",
+                    "refine",
+                    "--batch",
+                    batch.path().join("refine.json").to_str().unwrap(),
+                ],
+                &fixture.stage_analysis(),
+            );
         }
         assert!(!fixture.modules.join("values.yaml").exists());
         let destination: serde_yaml::Value =

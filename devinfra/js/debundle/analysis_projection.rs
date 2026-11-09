@@ -21,9 +21,7 @@ pub use analysis::analysis_inputs::{
 use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
-use artifact::{ArtifactIndexes, ChunkBundle};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use source_identity::ChunkId;
 use spec::{
     AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
     CommutingStatementsContract, DependencyGraphOptions, HostBehavior,
@@ -163,50 +161,6 @@ pub fn project_chunk_options(
             ))
         })
         .collect()
-}
-
-/// Static-request provider closure shared by frontend premise resolution and
-/// staged analysis. Canonical requests include export-from dependencies, even
-/// in modules with no import declarations. Including a request here grants no
-/// availability proof; unsupported request modes retain their later refusals.
-pub fn selected_static_import_closure(
-    artifact: &ChunkBundle,
-    indexes: &ArtifactIndexes,
-    selected_chunk_ids: &[String],
-) -> Result<BTreeSet<ChunkId>> {
-    let mut closure = BTreeSet::new();
-    let mut pending = Vec::new();
-    for chunk_id in selected_chunk_ids {
-        let interned = artifact
-            .chunk_table
-            .get(chunk_id)
-            .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-        if closure.insert(interned) {
-            pending.push(interned);
-        }
-    }
-
-    while let Some(chunk_id) = pending.pop() {
-        let Some(chunk_artifact) = artifact.find_chunk(chunk_id) else {
-            continue;
-        };
-        let entry_file = &chunk_artifact.analysis.entry_file;
-        for request in &chunk_artifact.analysis.runtime_facts.static_requests {
-            let Some(target) = indexes.resolve_runtime_import_reference(
-                &request.specifier,
-                chunk_id,
-                entry_file,
-                &artifact.chunk_table,
-            ) else {
-                continue;
-            };
-            if closure.insert(target.target_chunk_id) {
-                pending.push(target.target_chunk_id);
-            }
-        }
-    }
-
-    Ok(closure)
 }
 
 pub struct AnalysisProjection<'a> {

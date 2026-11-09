@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use analysis::{ModuleId, PlacementProjection, PlacementProjectionViolation};
 use anyhow::{Context, Result, ensure};
-use gate::AssignmentAnalysis;
+use gate::{AssignmentAnalysis, CandidatePreflight};
 use swc_ecma_ast::Id;
 
 /// Immutable placement instructions tied to the exact assignment the shared
-/// analysis kernel checked. A legacy-rejected but structurally mappable
+/// analysis kernel checked. A rejected but structurally mappable
 /// candidate can use these maps for inspection output; an unmappable result
 /// has no emitter placement.
 pub(super) struct EmissionPlacement<'a> {
@@ -19,7 +19,14 @@ pub(super) struct EmissionPlacement<'a> {
 }
 
 impl<'a> EmissionPlacement<'a> {
-    pub(super) fn from_projection(
+    pub(super) fn from_preflight(
+        preflight: &CandidatePreflight<'a>,
+        projection: &PlacementProjection<'_>,
+    ) -> Result<Self> {
+        Self::from_projection(preflight.assignment_analysis(), projection)
+    }
+
+    fn from_projection(
         assignment_analysis: &'a AssignmentAnalysis,
         projection: &PlacementProjection<'_>,
     ) -> Result<Self> {
@@ -47,7 +54,7 @@ impl<'a> EmissionPlacement<'a> {
         })
     }
 
-    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+    pub(super) fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
@@ -60,7 +67,7 @@ impl<'a> EmissionPlacement<'a> {
     }
 }
 
-fn diagnostic_with_destination_context(
+pub(super) fn diagnostic_with_destination_context(
     assignment_analysis: &AssignmentAnalysis,
     violation: &PlacementProjectionViolation,
 ) -> String {

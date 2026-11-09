@@ -673,6 +673,11 @@ pub struct ChunkExportPurity {
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
+    /// Static namespace members whose synchronous-import lookup resolves to
+    /// the unique source callable selected by structural property-value flow.
+    /// Each asserted member also requires `namespace_independent_members`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source_callable_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Exact provider operations that can otherwise observe an input accessor at

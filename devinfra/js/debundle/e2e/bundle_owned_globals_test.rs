@@ -4,6 +4,75 @@
 
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use serde_json::Value;
+
+const STANDARD_NODE_HOST_SETUP: &str = r#"
+globalThis.window = globalThis;
+globalThis.self = globalThis;
+globalThis.global = globalThis;
+"#;
+
+// This seeds only the Bun global surface needed by the fixture under Node; it
+// does not claim to model or execute the Bun runtime itself.
+const BUN_NODE_HOST_SETUP: &str = r#"
+globalThis.window = globalThis;
+globalThis.self = globalThis;
+globalThis.Bun = Object.create(null);
+"#;
+
+fn assert_unknown_coverage(report: &Value, case: &str) {
+    let unknown = report["coverage"]["unknown_coverage"]
+        .as_object()
+        .unwrap_or_else(|| panic!("{case}: missing unknown coverage: {report:#}"));
+    for field in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            unknown
+                .get(field)
+                .and_then(Value::as_u64)
+                .is_some_and(|count| count > 0),
+            "{case}: {field} must remain unknown: {report:#}"
+        );
+    }
+}
+
+/// Accept only the canonical no-move case: the source-unit order must be the
+/// identity order, while unknown effect coverage stays explicitly unresolved.
+/// Runtime equivalence is checked by loading source and emitted entry in fresh
+/// Node processes with the same host setup.
+fn assert_no_reordering_preserves_unknown_effects(fixture: &Fixture, host_setup: &str, case: &str) {
+    let candidate = fixture.candidate_relocation_assessment();
+    let effects = fixture.effect_translation_validation();
+    assert_eq!(
+        candidate["status"], "accepted_within_checked_scope",
+        "{case}: {candidate:#}"
+    );
+    for report in [&candidate, &effects] {
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{case}: {report:#}"
+        );
+        assert_eq!(
+            report["decision"]["scope"], "no_reordering",
+            "{case}: {report:#}"
+        );
+        assert_eq!(report["swapped_pairs"], 0, "{case}: {report:#}");
+        let statement_count = report["coverage"]["statement_count"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{case}: missing statement count: {report:#}"));
+        let original_order: Vec<_> = (0..statement_count).collect();
+        assert_eq!(
+            report["emitted_order"],
+            serde_json::json!(original_order),
+            "{case}: emitted body order must equal source order: {report:#}"
+        );
+        assert_unknown_coverage(report, case);
+    }
+    assert_eq!(
+        effects["full_semantic_precision"], false,
+        "{case}: no-reordering acceptance must not claim complete effect precision: {effects:#}"
+    );
+    assert_preserved_entry_output_with_host_setup(fixture, host_setup, "0 42\n", case);
+}
 
 /// `mutations` are anonymous statements and `members` the declarations of
 /// the bundle code; `new Map()` follows and a published callback reads
@@ -82,10 +151,16 @@ fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 6] {
 
 #[test]
 fn bundle_owned_globals_keep_native_slots() {
-    for (bundle, members, anonymous) in cases() {
+    for (index, (bundle, members, anonymous)) in cases().into_iter().enumerate() {
         let source = source(bundle);
         let fixture = run_fixture(opts(&source, &members, &anonymous, true));
-        assert_preserved_entry_output(&fixture, "0 42\n");
+        let case = format!("bundle-owned-standard-host-{index}");
+        assert_preserved_entry_output_with_host_setup(
+            &fixture,
+            STANDARD_NODE_HOST_SETUP,
+            "0 42\n",
+            &case,
+        );
         assert_all_emitted_js_checks(&fixture);
     }
 }
@@ -94,11 +169,20 @@ fn bundle_owned_globals_keep_native_slots() {
 fn without_the_host_claim_bundle_globals_stay_unknown() {
     for (bundle, members, anonymous) in cases() {
         let source = source(bundle);
-        expect_atomic_conflict_rejection(
-            opts(&source, &members, &anonymous, false),
-            &["values/native", "values/later"],
-            &[],
-        );
+        if bundle == LOGICAL_NOT_REGISTRY {
+            let fixture = run_fixture(opts(&source, &members, &anonymous, false));
+            assert_no_reordering_preserves_unknown_effects(
+                &fixture,
+                STANDARD_NODE_HOST_SETUP,
+                "unknown-host-logical-not-registry",
+            );
+        } else {
+            expect_atomic_conflict_rejection(
+                opts(&source, &members, &anonymous, false),
+                &["values/native", "values/later"],
+                &[],
+            );
+        }
     }
 }
 
@@ -120,8 +204,6 @@ fn non_fresh_predefined_unknown_key_or_accessor_stores_stay_unknown() {
             "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction set(key, value) { root[key] = value; }",
             vec!["root", "install", "set"],
         ),
-        // `method` may be `__defineGetter__`, installing a getter for the slot.
-        (ACCESSOR_CALL, vec!["root", "install", "call", "other"]),
     ] {
         let source = source(bundle);
         expect_atomic_conflict_rejection(
@@ -130,6 +212,21 @@ fn non_fresh_predefined_unknown_key_or_accessor_stores_stay_unknown() {
             &[],
         );
     }
+
+    // This body never calls `install` or `call`, so acceptance is justified
+    // only by the canonical unchanged schedule; unknown global effects remain.
+    let source = source(ACCESSOR_CALL);
+    let fixture = run_fixture(opts(
+        &source,
+        &["root", "install", "call", "other"],
+        &[],
+        true,
+    ));
+    assert_no_reordering_preserves_unknown_effects(
+        &fixture,
+        STANDARD_NODE_HOST_SETUP,
+        "non-fresh-accessor-call-no-reordering",
+    );
 }
 
 #[test]
@@ -140,13 +237,30 @@ fn a_slot_holding_the_global_object_can_replace_map() {
         "globalThis.registry[[\"Ma\", \"p\"].join(\"\")] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
     ];
     let source = source(bundle);
-    expect_atomic_conflict_rejection(
-        opts(&source, &[], &anonymous, true),
-        &["values/native", "values/later"],
-        &[],
-    );
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+    match run_fixture_observing_gate(opts(&source, &[], &anonymous, true)) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "global-alias-map-replacement",
+            );
+            assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(
+                &rejected.report_root,
+                &rejected.chunk_id,
+                "global-alias-map-replacement",
+            );
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
 }
 
 #[test]
@@ -221,13 +335,14 @@ fn a_premise_on_the_calling_function_keeps_the_slot() {
 #[test]
 fn a_premise_on_another_function_keeps_the_slot_unknown() {
     let source = source(ACCESSOR_CALL);
-    expect_atomic_conflict_rejection(
-        accessor_opts(
-            &source,
-            no_accessor_install("function other(target, key) { target[key](); }", "other"),
-        ),
-        &["values/native", "values/later"],
-        &[],
+    let fixture = run_fixture(accessor_opts(
+        &source,
+        no_accessor_install("function other(target, key) { target[key](); }", "other"),
+    ));
+    assert_no_reordering_preserves_unknown_effects(
+        &fixture,
+        STANDARD_NODE_HOST_SETUP,
+        "premise-on-another-function-no-reordering",
     );
 }
 
@@ -286,7 +401,6 @@ fn a_write_that_may_name_a_read_global_keeps_it_unknown() {
             "function alias() { Object.defineProperty(window, \"componentHandler\", { value: window }); }",
             "alias",
         ),
-        ("function alias() { componentHandler = window; }", "alias"),
     ] {
         let source = source(&format!("{COMPONENT_HANDLER}\n{write}"));
         expect_atomic_conflict_rejection(
@@ -295,6 +409,21 @@ fn a_write_that_may_name_a_read_global_keeps_it_unknown() {
             &[],
         );
     }
+
+    let source = source(&format!(
+        "{COMPONENT_HANDLER}\nfunction alias() {{ componentHandler = window; }}"
+    ));
+    let fixture = run_fixture(opts(
+        &source,
+        &["root", "install", "upgrade", "alias"],
+        &[],
+        true,
+    ));
+    assert_no_reordering_preserves_unknown_effects(
+        &fixture,
+        STANDARD_NODE_HOST_SETUP,
+        "global-alias-write-no-reordering",
+    );
 }
 
 /// A bundled library publishing its handler object (MDL's shape): every write
@@ -337,13 +466,19 @@ fn a_bun_host_predefines_its_own_globals() {
         &[],
         PredefinedGlobals::Standard,
     ));
-    assert_preserved_entry_output(&fixture, "0 42\n");
-    expect_atomic_conflict_rejection(
-        opts_on(&registry, &members, &[], PredefinedGlobals::Bun),
-        &["values/native", "values/later"],
-        &[],
+    assert_preserved_entry_output_with_host_setup(
+        &fixture,
+        STANDARD_NODE_HOST_SETUP,
+        "0 42\n",
+        "bun-registry-standard-host",
     );
-    for (bundle, members, anonymous) in cases() {
+    let bun_fixture = run_fixture(opts_on(&registry, &members, &[], PredefinedGlobals::Bun));
+    assert_no_reordering_preserves_unknown_effects(
+        &bun_fixture,
+        BUN_NODE_HOST_SETUP,
+        "bun-registry-bun-host-no-reordering",
+    );
+    for (index, (bundle, members, anonymous)) in cases().into_iter().enumerate() {
         let source = source(bundle);
         let fixture = run_fixture(opts_on(
             &source,
@@ -351,6 +486,12 @@ fn a_bun_host_predefines_its_own_globals() {
             &anonymous,
             PredefinedGlobals::Bun,
         ));
-        assert_preserved_entry_output(&fixture, "0 42\n");
+        let case = format!("bun-host-bundle-owned-global-{index}");
+        assert_preserved_entry_output_with_host_setup(
+            &fixture,
+            BUN_NODE_HOST_SETUP,
+            "0 42\n",
+            &case,
+        );
     }
 }

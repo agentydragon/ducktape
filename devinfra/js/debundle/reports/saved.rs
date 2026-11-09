@@ -196,6 +196,15 @@ impl<'a> SavedExecutionPrecisionLoss<'a> {
         report.span = self.span;
         report
     }
+
+    pub(crate) fn snapshot_owned(
+        report: ExecutionPrecisionLoss,
+    ) -> SavedExecutionPrecisionLoss<'static> {
+        SavedExecutionPrecisionLoss {
+            span: report.span,
+            report: Cow::Owned(report),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,15 @@
 use analysis_model::DepKind;
-use source_identity::ChunkId;
-use std::collections::{BTreeSet, HashMap};
+use source_identity::{ChunkId, ModuleCellId, SourceUnitOrdinal};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
 use thiserror::Error;
 
+use super::final_global_resolution::{
+    ChunkGlobalResolutionAssessment, FinalGlobalResolutionAssessment,
+    FinalGlobalResolutionSourceInputs, GlobalResolutionReason, GlobalResolutionStatus,
+};
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
@@ -19,6 +23,7 @@ use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
+use crate::final_candidate_assessment::FinalCandidateOutputSeal;
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
@@ -64,12 +69,9 @@ pub struct AssignmentAnalysis {
     /// downstream diagnostics reuse the same atomic group grouping that
     /// factor assembly validated.
     atomic_groups: Vec<AtomicGroup>,
-    /// Atomic-group conflicts the spec demands but the
-    /// constraining-edge SCC analysis forbids — populated by
-    /// `assignment_assembly` when YAML claims split an atomic group across
-    /// destination modules. Non-empty means the spec is unrealizable
-    /// by construction; the materializer bails on these before
-    /// emitting code.
+    /// Atomic-group conflicts populated by `assignment_assembly` when YAML
+    /// claims split a group across destinations. The final assessment separates
+    /// structural blockers from semantic-order comparison constraints.
     assembly_conflicts: Vec<AtomicGroupConflict>,
     module_quotient: ModuleQuotient,
     /// SCC partition of `module_quotient` in `tarjan_scc` reverse-
@@ -86,16 +88,17 @@ pub struct AssignmentAnalysis {
     realizability: OnceLock<RealizabilityVerdict>,
 }
 
-/// An immutable assignment whose atomic-group, schedule, and rebinding checks
-/// passed. The borrow prevents changing the assignment while lowering uses it.
+/// An immutable assignment whose complete effect and structural assessment
+/// accepted the exact emitted order. The borrow keeps that assignment fixed.
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     validation: AssignmentValidation,
+    assessment: CandidateRelocationAssessment,
 }
 
-impl ValidatedAssignment<'_> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+impl<'a> ValidatedAssignment<'a> {
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
@@ -103,8 +106,8 @@ impl ValidatedAssignment<'_> {
         &self.validation.report
     }
 
-    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
-        &self.validation.verdict.cross_rebinds
+    pub fn assessment(&self) -> &CandidateRelocationAssessment {
+        &self.assessment
     }
 }
 
@@ -117,52 +120,240 @@ pub struct RejectedAssignment<'a> {
     validation: Box<AssignmentValidation>,
 }
 
-impl RejectedAssignment<'_> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+impl<'a> RejectedAssignment<'a> {
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
     pub fn report(&self) -> &AssignmentReport {
         &self.validation.report
     }
+}
 
-    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
-        &self.validation.verdict.cross_rebinds
+/// Structural preflight for one exact immutable assignment. It retains the
+/// legacy graph verdict, emitted order, and structural placement so candidate
+/// preparation and effect assessment consume the same pre-effect evidence.
+pub struct CandidatePreflight<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
+    emitted_order: CandidateEmittedOrder,
+    placement: StructuralPlacementAssessment,
+    preparation_context: CandidateAssessmentContext,
+    assignment_identity: String,
+}
+
+/// Opaque binding between canonical pipeline preparation and its local
+/// candidate assessments. Reports copied or rebuilt from serialized JSON do
+/// not carry this value and cannot authorize the final-output checker.
+#[derive(Debug, Clone)]
+pub struct CandidateAssessmentContext {
+    candidate_document_identity: String,
+    source_context_identity: String,
+    expected_materialized_chunks: BTreeSet<String>,
+}
+
+impl CandidateAssessmentContext {
+    /// Bind the candidate's authored logical-module document to the captured
+    /// source preparation. This context is not acceptance by itself; each
+    /// chunk report must also be produced by `CandidateEvaluation` for the
+    /// exact assignment that is materialized.
+    pub fn capture(
+        candidate_document_identity: String,
+        source_inputs: &FinalGlobalResolutionSourceInputs,
+        expected_materialized_chunks: BTreeSet<String>,
+    ) -> Option<Self> {
+        if candidate_document_identity.is_empty() || !source_inputs.has_unchanged_context() {
+            return None;
+        }
+        let source_names = source_inputs
+            .required_source_chunks
+            .iter()
+            .filter_map(|chunk| source_inputs.source_chunk_names.get(chunk))
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if !expected_materialized_chunks
+            .iter()
+            .all(|chunk| source_names.contains(chunk.as_str()))
+        {
+            return None;
+        }
+        Some(Self {
+            candidate_document_identity,
+            source_context_identity: source_inputs.context_identity()?.to_owned(),
+            expected_materialized_chunks,
+        })
+    }
+
+    fn matches_assignment(&self, assignment: &AssignmentAnalysis) -> bool {
+        self.expected_materialized_chunks
+            .contains(assignment.inputs.chunk_id())
+    }
+
+    /// Read-only view of the source chunks whose exact assignments this
+    /// context expects the canonical materializer to assess.
+    pub fn expected_materialized_chunks(&self) -> &BTreeSet<String> {
+        &self.expected_materialized_chunks
+    }
+
+    /// Check that a source snapshot is the one used to mint this context.
+    pub fn matches_source_inputs(&self, source_inputs: &FinalGlobalResolutionSourceInputs) -> bool {
+        source_inputs.has_unchanged_context()
+            && source_inputs.context_identity() == Some(self.source_context_identity.as_str())
     }
 }
 
-/// The authoritative assignment gate and both diagnostic projections of the
-/// same concrete candidate. Assessment always runs; report selection controls
-/// only serialization. Effect coverage remains diagnostic until all required
-/// owner domains can discharge the relocation obligations.
+/// Prepared-output preservation proofs consumed together by final assessment.
+struct CandidatePreservationEvidence {
+    module_initialization: CandidateModuleInitializationEvidence,
+    provider_targets: CandidateProviderTargetEvidence,
+}
+
+impl<'a> CandidatePreflight<'a> {
+    /// Prepare all assignment and structural facts before candidate effects are
+    /// assessed. The projection must be for this immutable assignment.
+    pub fn prepare(
+        assignment_analysis: &'a AssignmentAnalysis,
+        projection: &analysis::PlacementProjection<'_>,
+        preparation_context: CandidateAssessmentContext,
+    ) -> Self {
+        assert!(
+            std::ptr::eq(assignment_analysis.assignment(), projection.assignment()),
+            "candidate placement projection must belong to this immutable assignment"
+        );
+        let legacy_validation = assignment_analysis.validate_with_verdict();
+        let emitted_order = assignment_analysis.candidate_emitted_order();
+        let placement = structural_placement_assessment(
+            assignment_analysis.inputs.dependency_graph(),
+            &legacy_validation,
+            projection,
+        );
+        assert!(
+            preparation_context.matches_assignment(assignment_analysis),
+            "candidate assessment context must include this exact source chunk"
+        );
+        let assignment_identity = candidate_assignment_identity(assignment_analysis);
+        Self {
+            assignment_analysis,
+            legacy_validation,
+            emitted_order,
+            placement,
+            preparation_context,
+            assignment_identity,
+        }
+    }
+
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
+    }
+
+    /// Complete the same translation and effect sweeps using the retained
+    /// validation, import order, and structural placement, then join prepared
+    /// module-initialization evidence against the facts' required cells.
+    pub fn evaluate<E>(
+        self,
+        facts: &[analysis::facts::StatementFacts],
+        module_initialization_evidence: CandidateModuleInitializationEvidence,
+        provider_target_evidence: CandidateProviderTargetEvidence,
+        translation_validation_visitor: Option<
+            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
+        >,
+        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<CandidateEvaluation<'a>, E> {
+        let translation_validation = self.assignment_analysis.translation_validation(
+            &self.legacy_validation,
+            &self.emitted_order,
+            translation_validation_visitor,
+        )?;
+        let candidate_assessment = self.assignment_analysis.candidate_relocation_assessment(
+            facts,
+            &translation_validation,
+            &self.emitted_order,
+            self.placement,
+            CandidatePreservationEvidence {
+                module_initialization: module_initialization_evidence,
+                provider_targets: provider_target_evidence,
+            },
+            effect_visitor,
+        )?;
+        Ok(CandidateEvaluation {
+            assignment_analysis: self.assignment_analysis,
+            legacy_validation: self.legacy_validation,
+            translation_validation,
+            candidate_assessment,
+            preparation_context: self.preparation_context,
+            assignment_identity: self.assignment_identity,
+        })
+    }
+}
+
+/// One final effect and structural assessment over the exact immutable
+/// assignment. Legacy graph and edge validation are retained only as
+/// diagnostic comparisons.
 #[derive(Debug)]
 pub struct CandidateEvaluation<'a> {
-    validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
     translation_validation: TranslationValidationResult,
     candidate_assessment: CandidateRelocationAssessment,
+    preparation_context: CandidateAssessmentContext,
+    assignment_identity: String,
+}
+
+/// Whether a candidate may be prepared in memory for the joint final-output
+/// assessment. `Ready` is not acceptance: initialization, imported-provider
+/// routes, and final binding correspondence remain Pending until the exact
+/// whole artifact has been checked.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CandidatePreparationReadiness {
+    Ready,
+    Refused(CandidateRelocationStatus),
+}
+
+/// Result of preparing a candidate for joint final-output assessment. This
+/// token only carries enough information to finish materialization; it cannot
+/// authorize validation, reconstruction, or writes.
+pub enum CandidatePreparationOutcome<'a> {
+    Prepared { linker_order: Vec<spec::ModulePath> },
+    Refused(RejectedAssignment<'a>),
 }
 
 impl<'a> CandidateEvaluation<'a> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
-        match &self.validation {
-            Ok(validated) => validated.assignment_analysis(),
-            Err(rejected) => rejected.assignment_analysis(),
-        }
-    }
-
-    pub fn validation(&self) -> &Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        &self.validation
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
     }
 
     pub fn is_rejected(&self) -> bool {
-        self.validation.is_err()
+        self.candidate_assessment.status() != CandidateRelocationStatus::AcceptedWithinCheckedScope
+    }
+
+    /// Local effects and structural placement must be complete before the
+    /// emitter can prepare syntax. Initialization and provider preservation
+    /// are deferred to the joint checker over the exact final artifact.
+    pub fn preparation_readiness(&self) -> CandidatePreparationReadiness {
+        match self.candidate_assessment.preparation_status() {
+            CandidateRelocationStatus::AcceptedWithinCheckedScope => {
+                CandidatePreparationReadiness::Ready
+            }
+            refused => CandidatePreparationReadiness::Refused(refused),
+        }
+    }
+
+    pub fn into_preparation(self) -> CandidatePreparationOutcome<'a> {
+        match self.preparation_readiness() {
+            CandidatePreparationReadiness::Ready => CandidatePreparationOutcome::Prepared {
+                linker_order: self.legacy_validation.report.linker_order.clone(),
+            },
+            CandidatePreparationReadiness::Refused(_) => {
+                CandidatePreparationOutcome::Refused(RejectedAssignment {
+                    assignment_analysis: self.assignment_analysis,
+                    validation: Box::new(self.legacy_validation),
+                })
+            }
+        }
     }
 
     pub fn report(&self) -> &AssignmentReport {
-        match &self.validation {
-            Ok(validated) => validated.report(),
-            Err(rejected) => rejected.report(),
-        }
+        &self.legacy_validation.report
     }
 
     pub fn translation_validation(&self) -> &TranslationValidationResult {
@@ -173,49 +364,38 @@ impl<'a> CandidateEvaluation<'a> {
         &self.candidate_assessment
     }
 
-    pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        self.validation
+    /// Project the final candidate result together with its private canonical
+    /// preparation provenance. The ordinary assessment report projection is
+    /// diagnostic-only and intentionally has no such provenance.
+    pub fn relocation_assessment_report(&self) -> CandidateRelocationAssessmentReport {
+        let mut report = self.candidate_assessment.report();
+        report.attach_preparation_provenance(CandidateReportProvenance {
+            candidate_document_identity: self
+                .preparation_context
+                .candidate_document_identity
+                .clone(),
+            source_context_identity: self.preparation_context.source_context_identity.clone(),
+            source_chunk_name: self.assignment_analysis.inputs.chunk_id().to_owned(),
+            source_chunk_id: self.assignment_analysis.inputs.chunk_identity(),
+            assignment_identity: self.assignment_identity.clone(),
+            report_identity: String::new(),
+        });
+        report
     }
 
-    /// Evaluate legacy translation validation and candidate effects/placement
-    /// against the same accepted or rejected assignment. The visitors stream
-    /// complete evidence without retaining a second copy of its rows.
-    pub fn evaluate<E>(
-        validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
-        facts: &[analysis::facts::StatementFacts],
-        projection: &analysis::PlacementProjection<'_>,
-        translation_validation_visitor: Option<
-            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
-        >,
-        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<Self, E> {
-        let assignment_analysis = match &validation {
-            Ok(assignment) => assignment.assignment_analysis,
-            Err(rejected) => rejected.assignment_analysis,
-        };
-        let assignment_validation = match &validation {
-            Ok(assignment) => &assignment.validation,
-            Err(rejected) => rejected.validation.as_ref(),
-        };
-        let emitted_order = assignment_analysis.candidate_emitted_order();
-        let translation_validation = assignment_analysis.translation_validation(
-            assignment_validation,
-            &emitted_order,
-            translation_validation_visitor,
-        )?;
-        let candidate_assessment = assignment_analysis.candidate_relocation_assessment(
-            assignment_validation,
-            facts,
-            &translation_validation,
-            &emitted_order,
-            projection,
-            effect_visitor,
-        )?;
-        Ok(Self {
-            validation,
-            translation_validation,
-            candidate_assessment,
-        })
+    pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
+        if self.is_rejected() {
+            Err(RejectedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: Box::new(self.legacy_validation),
+            })
+        } else {
+            Ok(ValidatedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: self.legacy_validation,
+                assessment: self.candidate_assessment,
+            })
+        }
     }
 }
 
@@ -267,8 +447,8 @@ impl StructuralPlacementCoverage {
 #[derive(Debug, Clone, Serialize)]
 pub struct StructuralPlacementAssessment {
     pub status: StructuralPlacementStatus,
-    /// Reads the same typed outcome that `EmissionPlacement::from_projection`
-    /// uses; diagnostic counts do not reconstruct the emitter's decision.
+    /// Reads the same typed projection consumed by emission; diagnostic counts
+    /// do not reconstruct the emitter's decision.
     pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
     pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
@@ -284,13 +464,353 @@ pub struct SemanticOrderSccObligation {
     pub dependency_edges: Vec<usize>,
 }
 
+/// Prepared-output guard evidence that declarative module-cell initialization
+/// remains available before dependent source bodies can execute. Callers must
+/// not infer these preserved cells from source imports.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct CandidateModuleInitializationEvidence {
+    /// Cells the prepared-output guard proved remain initialized for this candidate.
+    pub preserved_cells: BTreeSet<ModuleCellId>,
+    /// Imported primitive reads whose owner-specific binding route and provider
+    /// initialization the prepared-output guard proved for this candidate.
+    pub preserved_imported_primitive_reads: Vec<analysis::facts::RequiredImportedPrimitiveRead>,
+    /// Why the guard could not establish preservation for part of its scope.
+    pub refusal: Option<ModuleInitializationRefusal>,
+}
+
+/// Candidate proof that each conditional imported-body application still
+/// names its analyzed provider and import binding. This is independent of the
+/// provider's module-cell initialization obligations.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct CandidateProviderTargetEvidence {
+    preserved_targets: Vec<ConditionalProviderTargetKey>,
+    refusal: Option<ProviderTargetRefusal>,
+}
+
+impl CandidateProviderTargetEvidence {
+    /// Record that the candidate guard preserved the full target obligations.
+    pub fn preserved<'a>(
+        requirements: impl IntoIterator<
+            Item = &'a analysis::facts::ConditionalProviderTargetRequirement,
+        >,
+    ) -> Self {
+        Self {
+            preserved_targets: requirements.into_iter().map(provider_target_key).collect(),
+            refusal: None,
+        }
+    }
+
+    /// Record that a required target could not be proven for this candidate.
+    pub fn refused(reason: ProviderTargetRefusal) -> Self {
+        Self {
+            preserved_targets: Vec::new(),
+            refusal: Some(reason),
+        }
+    }
+}
+
+/// Why a candidate's conditional imported-body target could not be proven.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderTargetRefusal {
+    PreparedEmissionUnavailable,
+    UnsupportedCandidateScope,
+    UnknownProvider,
+    BindingRouteChanged,
+    ProviderRouteChanged,
+    UnsupportedRequest,
+    ExportIdentityChanged,
+}
+
+/// Stable report address for one successful conditional imported-body use.
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ConditionalProviderTargetAddress {
+    pub owner: SourceUnitOrdinal,
+    pub callsite_start: u32,
+    pub callsite_end: u32,
+    pub source_binding: String,
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub callable_key: u32,
+}
+
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+struct ConditionalProviderTargetKey {
+    owner: SourceUnitOrdinal,
+    callsite_start: u32,
+    callsite_end: u32,
+    source_binding: swc_ecma_ast::Id,
+    defining_module: String,
+    export: String,
+    local: String,
+    callable_key: u32,
+}
+
+fn provider_target_key(
+    requirement: &analysis::facts::ConditionalProviderTargetRequirement,
+) -> ConditionalProviderTargetKey {
+    ConditionalProviderTargetKey {
+        owner: requirement.owner,
+        callsite_start: requirement.call_span.lo.0,
+        callsite_end: requirement.call_span.hi.0,
+        source_binding: requirement.source_binding.clone(),
+        defining_module: requirement.defining_module.clone(),
+        export: requirement.export.clone(),
+        local: requirement.local.clone(),
+        callable_key: requirement.callable_key,
+    }
+}
+
+impl ConditionalProviderTargetKey {
+    fn report_address(&self) -> ConditionalProviderTargetAddress {
+        ConditionalProviderTargetAddress {
+            owner: self.owner,
+            callsite_start: self.callsite_start,
+            callsite_end: self.callsite_end,
+            source_binding: self.source_binding.0.to_string(),
+            defining_module: self.defining_module.clone(),
+            export: self.export.clone(),
+            local: self.local.clone(),
+            callable_key: self.callable_key,
+        }
+    }
+}
+
+/// Required-versus-preserved target proof for conditional imported bodies.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConditionalProviderTargetAssessment {
+    pub required_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub preserved_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub unproved_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub refusal: Option<ProviderTargetRefusal>,
+    /// Exact source obligations retained for the joint final-output assessor.
+    /// The serialized addresses above are diagnostic projections and cannot
+    /// recover hygiene identity or call-site ownership.
+    #[serde(skip)]
+    pub(crate) required_facts: Vec<analysis::facts::ConditionalProviderTargetRequirement>,
+    /// Completeness is computed from full binding identities before the
+    /// report-only string projection. Distinct hygienic Ids can share a name.
+    #[serde(skip)]
+    complete: bool,
+}
+
+impl ConditionalProviderTargetAssessment {
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+}
+
+fn assess_provider_targets(
+    required_targets: Vec<ConditionalProviderTargetKey>,
+    evidence: CandidateProviderTargetEvidence,
+) -> ConditionalProviderTargetAssessment {
+    let preserved_keys = required_targets
+        .iter()
+        .filter(|required| evidence.preserved_targets.contains(required))
+        .collect::<Vec<_>>();
+    let unproved_keys = required_targets
+        .iter()
+        .filter(|required| !evidence.preserved_targets.contains(required))
+        .collect::<Vec<_>>();
+    let complete = unproved_keys.is_empty();
+    ConditionalProviderTargetAssessment {
+        required_targets: required_targets
+            .iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        preserved_targets: preserved_keys
+            .into_iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        unproved_targets: unproved_keys
+            .into_iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        refusal: evidence.refusal,
+        required_facts: Vec::new(),
+        complete,
+    }
+}
+
+/// A typed reason the prepared-output guard could not establish preservation
+/// for some required module cells.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleInitializationRefusal {
+    /// No prepared emission was available to compare against the candidate.
+    PreparedEmissionUnavailable,
+    /// The candidate graph was outside the guard's supported comparison.
+    UnsupportedCandidateGraph,
+    /// The resolved provider set differed from the prepared-output closure.
+    ProviderClosureChanged,
+    /// A non-provider module's initialization changed relative to prepared output.
+    ForeignInitializationChanged,
+    /// A required provider was not complete at the consumer's evaluation point.
+    ProviderIncompleteAtConsumer,
+    /// The prepared body did not retain the imported binding at its read owner.
+    ImportedReadBindingChanged,
+    /// The reached imported read lacked its canonical site or consuming root.
+    ImportedReadSiteUnavailable,
+    /// The output-first request resolver selected another provider for the read.
+    ImportedReadTargetChanged,
+    /// The prepared provider closure differs from the source read capability.
+    ImportedReadClosureChanged,
+}
+
+/// Wire address for a declarative module cell. The chunk identity scopes the
+/// declaration offset, matching the module-cell effect report address.
+#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ModuleCellAddress {
+    /// Run-interned source chunk identity that scopes the declaration offset.
+    pub chunk: ChunkId,
+    /// Canonical source declaration offset for this module binding cell.
+    pub declaration_origin: u32,
+}
+
+/// Report projection for one imported primitive read requirement. The
+/// source-binding hygiene identity remains internal to the required/preserved
+/// comparison; this name is diagnostic only.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct ImportedPrimitiveReadAddress {
+    pub source_owner: SourceUnitOrdinal,
+    pub source_site: Option<analysis::facts::SourceOperationSite>,
+    pub consumer_root: Option<SourceUnitOrdinal>,
+    pub source_binding: String,
+    pub source_specifier: String,
+    pub imported_name: String,
+    pub provider_module: String,
+    pub provider_export: String,
+    pub dependency_closure: BTreeSet<String>,
+    pub provider_closure: Option<analysis::analysis_inputs::ResolvedProviderDependencyClosure>,
+    pub source_cells: BTreeSet<analysis::analysis_inputs::PrimitiveExportCell>,
+}
+
+impl From<&analysis::facts::RequiredImportedPrimitiveRead> for ImportedPrimitiveReadAddress {
+    fn from(requirement: &analysis::facts::RequiredImportedPrimitiveRead) -> Self {
+        Self {
+            source_owner: requirement.source_owner,
+            source_site: requirement.source_site.clone(),
+            consumer_root: requirement.consumer_root,
+            source_binding: requirement.source_binding.0.to_string(),
+            source_specifier: requirement.source_specifier.clone(),
+            imported_name: requirement.imported_name.clone(),
+            provider_module: requirement.provider_module.clone(),
+            provider_export: requirement.provider_export.clone(),
+            dependency_closure: requirement.dependency_closure.clone(),
+            provider_closure: requirement.provider_closure.clone(),
+            source_cells: requirement.source_cells.clone(),
+        }
+    }
+}
+
+/// Final required-versus-preserved module initialization check for a candidate.
+/// A refusal is reported separately; incompleteness is determined by required
+/// cells that the prepared-output evidence did not preserve.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleInitializationAssessment {
+    /// Module cells directly required by analyzed source bodies.
+    pub required_cells: BTreeSet<ModuleCellAddress>,
+    /// Required cells the prepared-output guard proved preserved.
+    pub preserved_cells: BTreeSet<ModuleCellAddress>,
+    /// Required cells absent from the preserved set.
+    pub unproved_cells: BTreeSet<ModuleCellAddress>,
+    /// Imported read routes and provider-before-consumer obligations observed
+    /// in reached local execution.
+    pub required_imported_primitive_reads: Vec<ImportedPrimitiveReadAddress>,
+    /// Required reads whose binding, output-first route, closure and phase
+    /// constraints all survived candidate preparation.
+    pub preserved_imported_primitive_reads: Vec<ImportedPrimitiveReadAddress>,
+    /// Required reads without the complete candidate proof above.
+    pub unproved_imported_primitive_reads: Vec<ImportedPrimitiveReadAddress>,
+    /// Guard refusal explaining why part of its preservation scope is unknown.
+    pub refusal: Option<ModuleInitializationRefusal>,
+    /// Exact fact-level cell reads needed by the joint final-output assessor.
+    /// The diagnostic address cannot identify the consumer unit or full Id.
+    #[serde(skip)]
+    pub(crate) required_cell_uses: BTreeSet<(SourceUnitOrdinal, ModuleCellId)>,
+    /// Exact imported-read obligations, including missing site/root identity,
+    /// retained for final route and provider-phase checks.
+    #[serde(skip)]
+    pub(crate) required_imported_read_facts: Vec<analysis::facts::RequiredImportedPrimitiveRead>,
+}
+
+impl ModuleInitializationAssessment {
+    pub fn is_complete(&self) -> bool {
+        self.unproved_cells.is_empty() && self.unproved_imported_primitive_reads.is_empty()
+    }
+}
+
+fn module_cell_addresses(cells: &BTreeSet<ModuleCellId>) -> BTreeSet<ModuleCellAddress> {
+    cells
+        .iter()
+        .map(|cell| ModuleCellAddress {
+            chunk: cell.chunk,
+            declaration_origin: cell.declaration_origin,
+        })
+        .collect()
+}
+
+fn assess_module_initialization(
+    required_cells: BTreeSet<ModuleCellId>,
+    required_imported_primitive_reads: Vec<analysis::facts::RequiredImportedPrimitiveRead>,
+    evidence: CandidateModuleInitializationEvidence,
+) -> ModuleInitializationAssessment {
+    let preserved_required_cells = required_cells
+        .intersection(&evidence.preserved_cells)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let unproved_cells = required_cells
+        .difference(&evidence.preserved_cells)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let preserved_read_keys = required_imported_primitive_reads
+        .iter()
+        .filter(|required| {
+            evidence
+                .preserved_imported_primitive_reads
+                .contains(required)
+        })
+        .collect::<Vec<_>>();
+    let unproved_read_keys = required_imported_primitive_reads
+        .iter()
+        .filter(|required| {
+            !evidence
+                .preserved_imported_primitive_reads
+                .contains(required)
+        })
+        .collect::<Vec<_>>();
+    ModuleInitializationAssessment {
+        required_cells: module_cell_addresses(&required_cells),
+        preserved_cells: module_cell_addresses(&preserved_required_cells),
+        unproved_cells: module_cell_addresses(&unproved_cells),
+        required_imported_primitive_reads: required_imported_primitive_reads
+            .iter()
+            .map(ImportedPrimitiveReadAddress::from)
+            .collect(),
+        preserved_imported_primitive_reads: preserved_read_keys
+            .into_iter()
+            .map(ImportedPrimitiveReadAddress::from)
+            .collect(),
+        unproved_imported_primitive_reads: unproved_read_keys
+            .into_iter()
+            .map(ImportedPrimitiveReadAddress::from)
+            .collect(),
+        refusal: evidence.refusal,
+        required_cell_uses: BTreeSet::new(),
+        required_imported_read_facts: Vec::new(),
+    }
+}
+
 /// A same-assignment candidate result. The effect assessment and its report
-/// are retained together from one sweep, beside typed structural placement
-/// obligations derived from the validation that admitted this exact analysis.
+/// are retained together from one sweep, beside typed structural placement and
+/// module-initialization obligations derived for this exact candidate.
 #[derive(Debug, Clone)]
 pub struct CandidateRelocationAssessment {
     pub placement: StructuralPlacementAssessment,
     pub effect: EffectTranslationValidationResult,
+    pub module_initialization: ModuleInitializationAssessment,
+    pub provider_targets: ConditionalProviderTargetAssessment,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -299,26 +819,386 @@ pub struct CandidateRelocationAssessmentReport {
     pub effect: EffectRelocationAssessment,
     pub status: CandidateRelocationStatus,
     pub legacy_gate_accepts: bool,
-    /// The current legacy gate still rejects semantic-order-only SCCs. This
-    /// field distinguishes that remaining veto from effect/placement blocks.
+    /// Diagnostic disagreement: the legacy graph rejects semantic-order SCCs
+    /// independently of the final effect/structural verdict.
     pub legacy_gate_ordering_veto: bool,
     pub placement: StructuralPlacementAssessment,
+    pub module_initialization: ModuleInitializationAssessment,
+    pub provider_targets: ConditionalProviderTargetAssessment,
+    /// Final source-global binding checks run only after all candidate body
+    /// rewrites. `Pending` is an in-memory preflight state, never authority to
+    /// accept a candidate; materialized reports are finalized before return or
+    /// publication.
+    pub global_resolution: CandidateGlobalResolutionEvidence,
+    /// Runtime-only seal produced only by CandidateEvaluation. Public report
+    /// fields are checked against its digest before application assembly and
+    /// again before final assessment.
+    #[serde(skip)]
+    preparation_provenance: Option<CandidateReportProvenance>,
 }
 
-/// This assessment never claims acceptance while the structural coverage
-/// declaration is incomplete. The current legacy gate remains authoritative.
+#[derive(Debug, Clone)]
+struct CandidateReportProvenance {
+    candidate_document_identity: String,
+    source_context_identity: String,
+    source_chunk_name: String,
+    source_chunk_id: ChunkId,
+    assignment_identity: String,
+    report_identity: String,
+}
+
+impl CandidateRelocationAssessmentReport {
+    fn attach_preparation_provenance(&mut self, mut provenance: CandidateReportProvenance) {
+        provenance.report_identity = self.report_identity();
+        self.preparation_provenance = Some(provenance);
+    }
+
+    fn verified_preparation_provenance(&self) -> Option<&CandidateReportProvenance> {
+        let provenance = self.preparation_provenance.as_ref()?;
+        (provenance.report_identity == self.report_identity()).then_some(provenance)
+    }
+
+    fn report_identity(&self) -> String {
+        let bytes = serde_json::to_vec(self)
+            .expect("candidate assessment report fields must serialize for provenance");
+        graph_provenance::sha256(&bytes)
+    }
+}
+
+/// Candidate-local assessment before the whole final artifact exists, or the
+/// corresponding final source-chunk result once that artifact has been checked.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "state", content = "assessment", rename_all = "snake_case")]
+pub enum CandidateGlobalResolutionEvidence {
+    Pending {
+        /// Local preflight status retained so the finalizer can restore
+        /// acceptance only after the whole emitted artifact is checked.
+        preflight_status: CandidateRelocationStatus,
+    },
+    Final(ChunkGlobalResolutionAssessment),
+}
+
+/// One application verdict with every required materialized chunk's actual
+/// candidate assessment and the final source-binding assessment across the
+/// retained source inventory. Construction rejects partial or repeated sets.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplicationRelocationAssessmentReport {
+    pub status: CandidateRelocationStatus,
+    pub chunks: BTreeMap<String, CandidateRelocationAssessmentReport>,
+    /// Whole-source inventory and aggregate result, including unchanged
+    /// pass-through chunks with no local materialization report. `None` is a
+    /// provisional state and always makes the application non-accepted.
+    pub global_resolution: Option<FinalGlobalResolutionAssessment>,
+    /// Only the joint final-output checker can set this bit. It is omitted
+    /// from reports and prevents preflight or partial finalization from
+    /// authorizing a candidate write.
+    #[serde(skip)]
+    final_output_finalized: bool,
+    /// Candidate-document identity for report-only verified CLI writes. The
+    /// checked emitted-file capability is used for program output; this
+    /// digest binds ownership-document writes to the exact candidate assessed.
+    #[serde(skip)]
+    candidate_document_identity: Option<String>,
+    /// Exact non-serialized context and report commitment assembled only from
+    /// canonical CandidateEvaluation seals. Rebuilding this value from report
+    /// JSON intentionally leaves it absent.
+    #[serde(skip)]
+    preparation_provenance: Option<ApplicationCandidateProvenance>,
+    #[serde(skip)]
+    sealed_report_identity: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ApplicationCandidateProvenance {
+    candidate_document_identity: String,
+    source_context_identity: String,
+    expected_materialized_chunks: BTreeSet<String>,
+    assignments: BTreeMap<String, (ChunkId, String)>,
+    report_identity: String,
+}
+
+#[derive(Debug, Error)]
+pub enum ApplicationAssessmentError {
+    #[error("candidate assessment contains unexpected materialized chunk {0:?}")]
+    UnexpectedChunk(String),
+    #[error("candidate assessment repeats materialized chunk {0:?}")]
+    DuplicateChunk(String),
+    #[error("candidate assessment is missing materialized chunks {0:?}")]
+    MissingChunks(Vec<String>),
+    #[error("candidate global-resolution assessment was finalized more than once")]
+    GlobalResolutionAlreadyFinalized,
+    #[error("candidate assessment report has no canonical preparation provenance")]
+    PreparationEvidenceMissing,
+    #[error("candidate assessment report changed after canonical preparation")]
+    PreparationEvidenceChanged,
+    #[error("candidate assessment reports do not share the exact preparation context")]
+    PreparationContextMismatch,
+}
+
+impl ApplicationRelocationAssessmentReport {
+    pub fn from_chunks(
+        expected: &BTreeSet<String>,
+        assessments: Vec<(String, CandidateRelocationAssessmentReport)>,
+        preparation_context: Option<CandidateAssessmentContext>,
+    ) -> Result<Self, ApplicationAssessmentError> {
+        let mut chunks = BTreeMap::new();
+        let mut assignments = BTreeMap::new();
+        for (chunk, report) in assessments {
+            if !expected.contains(&chunk) {
+                return Err(ApplicationAssessmentError::UnexpectedChunk(chunk));
+            }
+            if chunks.insert(chunk.clone(), report).is_some() {
+                return Err(ApplicationAssessmentError::DuplicateChunk(chunk));
+            }
+            let stored = chunks
+                .get(&chunk)
+                .and_then(CandidateRelocationAssessmentReport::verified_preparation_provenance);
+            if let Some(stored) = stored {
+                if stored.source_chunk_name != chunk {
+                    return Err(ApplicationAssessmentError::PreparationContextMismatch);
+                }
+                assignments.insert(
+                    chunk.clone(),
+                    (stored.source_chunk_id, stored.assignment_identity.clone()),
+                );
+            } else if preparation_context.is_some() {
+                return Err(ApplicationAssessmentError::PreparationEvidenceMissing);
+            }
+        }
+        let missing = expected
+            .iter()
+            .filter(|chunk| !chunks.contains_key(*chunk))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(ApplicationAssessmentError::MissingChunks(missing));
+        }
+        if let Some(context) = &preparation_context {
+            if &context.expected_materialized_chunks != expected
+                || assignments.len() != chunks.len()
+                || chunks.values().any(|report| {
+                    report
+                        .verified_preparation_provenance()
+                        .is_none_or(|stored| {
+                            stored.candidate_document_identity
+                                != context.candidate_document_identity
+                                || stored.source_context_identity != context.source_context_identity
+                        })
+                })
+            {
+                return Err(ApplicationAssessmentError::PreparationContextMismatch);
+            }
+        }
+        let status = aggregate_candidate_status(chunks.values().map(|report| report.status));
+        let mut application = Self {
+            // A local preflight alone is not the final whole-artifact verdict.
+            // Finalization below replaces this status only after the candidate
+            // binding assessment is available.
+            status: if status == CandidateRelocationStatus::AcceptedWithinCheckedScope {
+                CandidateRelocationStatus::Incomplete
+            } else {
+                status
+            },
+            chunks,
+            global_resolution: None,
+            final_output_finalized: false,
+            candidate_document_identity: None,
+            preparation_provenance: None,
+            sealed_report_identity: None,
+        };
+        if let Some(context) = preparation_context {
+            application.preparation_provenance = Some(ApplicationCandidateProvenance {
+                candidate_document_identity: context.candidate_document_identity,
+                source_context_identity: context.source_context_identity,
+                expected_materialized_chunks: context.expected_materialized_chunks,
+                assignments,
+                report_identity: String::new(),
+            });
+            application.refresh_preparation_identity();
+        }
+        Ok(application)
+    }
+
+    /// Join the checker result for the exact final artifact into the local
+    /// candidate reports. Missing source-chunk rows become explicit incomplete
+    /// evidence; they can never inherit application-level success.
+    pub(crate) fn finalize_global_resolution(
+        &mut self,
+        assessment: FinalGlobalResolutionAssessment,
+    ) -> Result<(), ApplicationAssessmentError> {
+        if let Some(provenance) = &self.preparation_provenance
+            && provenance.report_identity != self.report_identity()
+        {
+            return Err(ApplicationAssessmentError::PreparationEvidenceChanged);
+        }
+        if self.global_resolution.is_some() {
+            return Err(ApplicationAssessmentError::GlobalResolutionAlreadyFinalized);
+        }
+        for (chunk_id, report) in &mut self.chunks {
+            let chunk_assessment = assessment.chunks.get(chunk_id).cloned().unwrap_or_else(|| {
+                ChunkGlobalResolutionAssessment::incomplete(
+                    GlobalResolutionReason::UnmatchedMaterializedChunk,
+                )
+            });
+            report.finalize_global_resolution(chunk_assessment)?;
+        }
+        let materialized_status =
+            aggregate_candidate_status(self.chunks.values().map(|report| report.status));
+        self.status = combine_global_resolution_status(materialized_status, assessment.status);
+        self.global_resolution = Some(assessment);
+        self.refresh_preparation_identity();
+        Ok(())
+    }
+
+    /// Finalize the checker-owned runtime evidence and application digest as
+    /// one transaction. Only the final checker can construct the authority;
+    /// external mutation must still fail the preparation digest check before
+    /// any runtime evidence is replaced.
+    pub(crate) fn finalize_joint_runtime_checks(
+        &mut self,
+        _authority: FinalCandidateOutputSeal,
+        assessment: FinalGlobalResolutionAssessment,
+        apply_checks: impl FnOnce(&mut BTreeMap<String, CandidateRelocationAssessmentReport>),
+    ) -> Result<(), ApplicationAssessmentError> {
+        if let Some(provenance) = &self.preparation_provenance
+            && provenance.report_identity != self.report_identity()
+        {
+            return Err(ApplicationAssessmentError::PreparationEvidenceChanged);
+        }
+        if self.global_resolution.is_some() {
+            return Err(ApplicationAssessmentError::GlobalResolutionAlreadyFinalized);
+        }
+        apply_checks(&mut self.chunks);
+        self.refresh_preparation_identity();
+        self.finalize_global_resolution(assessment)
+    }
+
+    pub(crate) fn seal_final_output(&mut self, _seal: FinalCandidateOutputSeal) {
+        let Some(provenance) = &self.preparation_provenance else {
+            return;
+        };
+        self.final_output_finalized = true;
+        self.candidate_document_identity = Some(provenance.candidate_document_identity.clone());
+        self.sealed_report_identity = Some(self.report_identity());
+    }
+
+    pub fn final_output_matches_candidate_document(&self, identity: &str) -> bool {
+        self.final_output_is_sealed()
+            && self.candidate_document_identity.as_deref() == Some(identity)
+    }
+
+    /// Whether the gate's final checker sealed this exact report after the
+    /// complete candidate assessment. This is diagnostic state only; output
+    /// writers require the private reconstruction capability as well.
+    pub fn final_output_is_sealed(&self) -> bool {
+        self.final_output_finalized
+            && self.sealed_report_identity.as_deref() == Some(self.report_identity().as_str())
+            && self
+                .preparation_provenance
+                .as_ref()
+                .is_some_and(|provenance| provenance.report_identity == self.report_identity())
+    }
+
+    pub(crate) fn preparation_matches_source(
+        &self,
+        source_inputs: &FinalGlobalResolutionSourceInputs,
+    ) -> bool {
+        let Some(provenance) = &self.preparation_provenance else {
+            return false;
+        };
+        source_inputs.has_unchanged_context()
+            && source_inputs.context_identity() == Some(provenance.source_context_identity.as_str())
+            && provenance.expected_materialized_chunks.iter().all(|chunk| {
+                provenance
+                    .assignments
+                    .get(chunk)
+                    .is_some_and(|(source_id, _)| {
+                        source_inputs.source_chunk_names.get(source_id) == Some(chunk)
+                    })
+            })
+            && provenance.assignments.len() == self.chunks.len()
+            && self.chunks.iter().all(|(chunk_name, report)| {
+                report
+                    .verified_preparation_provenance()
+                    .is_some_and(|report_provenance| {
+                        report_provenance.source_chunk_name == *chunk_name
+                            && report_provenance.source_context_identity
+                                == provenance.source_context_identity
+                            && report_provenance.candidate_document_identity
+                                == provenance.candidate_document_identity
+                            && provenance.assignments.get(chunk_name)
+                                == Some(&(
+                                    report_provenance.source_chunk_id,
+                                    report_provenance.assignment_identity.clone(),
+                                ))
+                    })
+            })
+            && provenance.report_identity == self.report_identity()
+    }
+
+    pub(crate) fn mark_preparation_unproven(
+        &mut self,
+        assessment: FinalGlobalResolutionAssessment,
+    ) {
+        for (chunk_name, report) in &mut self.chunks {
+            if report.status == CandidateRelocationStatus::AcceptedWithinCheckedScope {
+                report.status = CandidateRelocationStatus::Incomplete;
+            }
+            report.global_resolution = CandidateGlobalResolutionEvidence::Final(
+                assessment
+                    .chunks
+                    .get(chunk_name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        ChunkGlobalResolutionAssessment::incomplete(
+                            GlobalResolutionReason::CandidatePreparationUnproven,
+                        )
+                    }),
+            );
+        }
+        if self.status == CandidateRelocationStatus::AcceptedWithinCheckedScope {
+            self.status = CandidateRelocationStatus::Incomplete;
+        }
+        self.global_resolution = Some(assessment);
+        self.final_output_finalized = false;
+        self.candidate_document_identity = None;
+        self.sealed_report_identity = None;
+        self.preparation_provenance = None;
+    }
+
+    fn report_identity(&self) -> String {
+        let bytes = serde_json::to_vec(self)
+            .expect("application assessment report fields must serialize for provenance");
+        graph_provenance::sha256(&bytes)
+    }
+
+    fn refresh_preparation_identity(&mut self) {
+        let identity = self.report_identity();
+        if let Some(provenance) = &mut self.preparation_provenance {
+            provenance.report_identity = identity;
+        }
+    }
+}
+
+/// Final relocation verdict for the assessed order. Acceptance requires complete
+/// effect, structural, initialization, provider-target, and final source-binding
+/// obligations plus actual emitter placement maps.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateRelocationStatus {
     BlockedByEffect,
     BlockedByPlacement,
     BlockedByEffectAndPlacement,
+    BlockedByBinding,
     Incomplete,
     AcceptedWithinCheckedScope,
 }
 
 impl CandidateRelocationAssessment {
-    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+    /// Status of the checks required before syntax can be prepared. Candidate
+    /// module initialization and provider routes are intentionally pending;
+    /// only the joint final-output assessor can resolve them.
+    pub fn preparation_status(&self) -> CandidateRelocationStatus {
         let effect_blocked = matches!(
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Conflict { .. }
@@ -327,13 +1207,218 @@ impl CandidateRelocationAssessment {
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Accepted { .. }
         );
+        candidate_relocation_status(effect_blocked, effect_accepted, &self.placement, true, true)
+    }
+
+    pub fn status(&self) -> CandidateRelocationStatus {
+        let effect_blocked = matches!(
+            self.effect.assessment.decision,
+            crate::realizability::EffectRelocationDecision::Conflict { .. }
+        );
+        let effect_accepted = matches!(
+            self.effect.assessment.decision,
+            crate::realizability::EffectRelocationDecision::Accepted { .. }
+        );
+        candidate_relocation_status(
+            effect_blocked,
+            effect_accepted,
+            &self.placement,
+            self.module_initialization.is_complete(),
+            self.provider_targets.is_complete(),
+        )
+    }
+
+    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+        let preflight_status = self.preparation_status();
         CandidateRelocationAssessmentReport {
-            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
+            // A local preflight cannot authorize a report by itself. Keep its
+            // status inside Pending for the late finalizer, while making any
+            // serialized provisional report visibly non-accepted.
+            status: provisional_candidate_status(preflight_status),
             legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
             legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
             effect: self.effect.assessment.clone(),
             placement: self.placement.clone(),
+            module_initialization: self.module_initialization.clone(),
+            provider_targets: self.provider_targets.clone(),
+            global_resolution: CandidateGlobalResolutionEvidence::Pending { preflight_status },
+            preparation_provenance: None,
         }
+    }
+}
+
+impl CandidateRelocationAssessmentReport {
+    /// Replace only the two explicitly provisional preparation guards with
+    /// evidence from the joint final-output checker. Exact source facts stay
+    /// on this report and are the checklist the final checker must discharge.
+    pub(crate) fn apply_joint_runtime_checks(
+        &mut self,
+        preserved_cell_uses: BTreeSet<(SourceUnitOrdinal, ModuleCellId)>,
+        preserved_imported_reads: Vec<analysis::facts::RequiredImportedPrimitiveRead>,
+        initialization_refusal: Option<ModuleInitializationRefusal>,
+        preserved_provider_facts: Vec<analysis::facts::ConditionalProviderTargetRequirement>,
+        provider_refusal: Option<ProviderTargetRefusal>,
+    ) {
+        let required_cell_uses = self.module_initialization.required_cell_uses.clone();
+        let required_cells = required_cell_uses
+            .iter()
+            .map(|(_, cell)| *cell)
+            .collect::<BTreeSet<_>>();
+        let preserved_cells = required_cells
+            .iter()
+            .filter(|cell| {
+                required_cell_uses
+                    .iter()
+                    .filter(|(_, required)| required == *cell)
+                    .all(|required_use| preserved_cell_uses.contains(required_use))
+            })
+            .copied()
+            .collect();
+        let required_reads = self
+            .module_initialization
+            .required_imported_read_facts
+            .clone();
+        self.module_initialization = assess_module_initialization(
+            required_cells,
+            required_reads.clone(),
+            CandidateModuleInitializationEvidence {
+                preserved_cells,
+                preserved_imported_primitive_reads: preserved_imported_reads,
+                refusal: initialization_refusal,
+            },
+        );
+        self.module_initialization.required_cell_uses = required_cell_uses;
+        self.module_initialization.required_imported_read_facts = required_reads;
+
+        let required_provider_facts = self.provider_targets.required_facts.clone();
+        let required_provider_keys = required_provider_facts
+            .iter()
+            .map(provider_target_key)
+            .collect::<Vec<_>>();
+        let preserved_provider_keys = preserved_provider_facts
+            .iter()
+            .map(provider_target_key)
+            .collect::<BTreeSet<_>>();
+        self.provider_targets = assess_provider_targets(
+            required_provider_keys,
+            CandidateProviderTargetEvidence {
+                preserved_targets: preserved_provider_keys.into_iter().collect(),
+                refusal: provider_refusal,
+            },
+        );
+        self.provider_targets.required_facts = required_provider_facts;
+        self.refresh_preparation_identity();
+    }
+
+    pub fn finalize_global_resolution(
+        &mut self,
+        assessment: ChunkGlobalResolutionAssessment,
+    ) -> Result<(), ApplicationAssessmentError> {
+        match &self.global_resolution {
+            CandidateGlobalResolutionEvidence::Pending { .. } => {}
+            CandidateGlobalResolutionEvidence::Final(_) => {
+                return Err(ApplicationAssessmentError::GlobalResolutionAlreadyFinalized);
+            }
+        }
+        let effect_blocked = matches!(
+            self.effect.decision,
+            crate::realizability::EffectRelocationDecision::Conflict { .. }
+        );
+        let effect_accepted = matches!(
+            self.effect.decision,
+            crate::realizability::EffectRelocationDecision::Accepted { .. }
+        );
+        let joint_local_status = candidate_relocation_status(
+            effect_blocked,
+            effect_accepted,
+            &self.placement,
+            self.module_initialization.is_complete(),
+            self.provider_targets.is_complete(),
+        );
+        self.status = combine_global_resolution_status(joint_local_status, assessment.status);
+        self.global_resolution = CandidateGlobalResolutionEvidence::Final(assessment);
+        self.refresh_preparation_identity();
+        Ok(())
+    }
+
+    fn refresh_preparation_identity(&mut self) {
+        let identity = self.report_identity();
+        if let Some(provenance) = &mut self.preparation_provenance {
+            provenance.report_identity = identity;
+        }
+    }
+
+    /// A local gate refused before this chunk could contribute to the actual
+    /// final candidate layout. Keep its known effect/placement refusal while
+    /// recording that global identity was not checked for a materialized plan.
+    pub fn mark_candidate_not_materialized(&mut self) -> Result<(), ApplicationAssessmentError> {
+        self.finalize_global_resolution(ChunkGlobalResolutionAssessment::incomplete(
+            GlobalResolutionReason::CandidateNotMaterialized,
+        ))
+    }
+}
+
+fn provisional_candidate_status(status: CandidateRelocationStatus) -> CandidateRelocationStatus {
+    if status == CandidateRelocationStatus::AcceptedWithinCheckedScope {
+        CandidateRelocationStatus::Incomplete
+    } else {
+        status
+    }
+}
+
+fn combine_global_resolution_status(
+    existing: CandidateRelocationStatus,
+    global: GlobalResolutionStatus,
+) -> CandidateRelocationStatus {
+    // A known local effect/placement refusal remains the leading diagnosis;
+    // the global component stays visible beside it. Binding changes outrank
+    // uncertainty when no earlier blocking component is known.
+    match existing {
+        CandidateRelocationStatus::BlockedByEffect
+        | CandidateRelocationStatus::BlockedByPlacement
+        | CandidateRelocationStatus::BlockedByEffectAndPlacement
+        | CandidateRelocationStatus::BlockedByBinding => existing,
+        CandidateRelocationStatus::AcceptedWithinCheckedScope
+        | CandidateRelocationStatus::Incomplete => match global {
+            GlobalResolutionStatus::Preserved => existing,
+            GlobalResolutionStatus::Changed => CandidateRelocationStatus::BlockedByBinding,
+            GlobalResolutionStatus::Incomplete => CandidateRelocationStatus::Incomplete,
+        },
+    }
+}
+
+fn aggregate_candidate_status(
+    statuses: impl IntoIterator<Item = CandidateRelocationStatus>,
+) -> CandidateRelocationStatus {
+    let mut effect_blocked = false;
+    let mut placement_blocked = false;
+    let mut binding_blocked = false;
+    let mut incomplete = false;
+    for status in statuses {
+        match status {
+            CandidateRelocationStatus::BlockedByEffect => effect_blocked = true,
+            CandidateRelocationStatus::BlockedByPlacement => placement_blocked = true,
+            CandidateRelocationStatus::BlockedByEffectAndPlacement => {
+                effect_blocked = true;
+                placement_blocked = true;
+            }
+            CandidateRelocationStatus::BlockedByBinding => binding_blocked = true,
+            CandidateRelocationStatus::Incomplete => incomplete = true,
+            CandidateRelocationStatus::AcceptedWithinCheckedScope => {}
+        }
+    }
+    match (
+        effect_blocked,
+        placement_blocked,
+        binding_blocked,
+        incomplete,
+    ) {
+        (true, true, _, _) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
+        (true, false, _, _) => CandidateRelocationStatus::BlockedByEffect,
+        (false, true, _, _) => CandidateRelocationStatus::BlockedByPlacement,
+        (false, false, true, _) => CandidateRelocationStatus::BlockedByBinding,
+        (false, false, false, true) => CandidateRelocationStatus::Incomplete,
+        (false, false, false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
     }
 }
 
@@ -341,6 +1426,8 @@ fn candidate_relocation_status(
     effect_blocked: bool,
     effect_accepted: bool,
     placement: &StructuralPlacementAssessment,
+    module_initialization_complete: bool,
+    provider_targets_complete: bool,
 ) -> CandidateRelocationStatus {
     match (
         effect_blocked,
@@ -349,9 +1436,15 @@ fn candidate_relocation_status(
         (true, true) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
         (true, false) => CandidateRelocationStatus::BlockedByEffect,
         (false, true) => CandidateRelocationStatus::BlockedByPlacement,
-        (false, false) if !effect_accepted || !placement.coverage.is_complete() => {
+        (false, false)
+            if !effect_accepted
+                || !placement.coverage.is_complete()
+                || !placement.emission_mappable =>
+        {
             CandidateRelocationStatus::Incomplete
         }
+        (false, false) if !module_initialization_complete => CandidateRelocationStatus::Incomplete,
+        (false, false) if !provider_targets_complete => CandidateRelocationStatus::Incomplete,
         (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
     }
 }
@@ -361,6 +1454,43 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
         || placement.atomic_group_obligations.iter().any(|obligation| {
             obligation.classification == AtomicGroupPlacementClass::SemanticOrderScc
         })
+}
+
+fn candidate_assignment_identity(analysis: &AssignmentAnalysis) -> String {
+    let inputs = analysis.inputs();
+    let mut parts = vec![format!(
+        "chunk:{}:{}",
+        inputs.chunk_identity().0,
+        inputs.chunk_id()
+    )];
+    for (source_unit, destination) in analysis.assignment().iter() {
+        let destination_path = inputs.planned_module_path(destination);
+        let destination_file = inputs
+            .planned_modules()
+            .get(destination.0)
+            .map(|module| module.target_file.as_str())
+            .unwrap_or("<entry>");
+        parts.push(format!(
+            "unit:{}=>{}:{}:{}",
+            source_unit.0, destination.0, destination_path, destination_file
+        ));
+    }
+    for (index, module) in inputs.planned_modules().iter().enumerate() {
+        let mut renames = module
+            .rename_map
+            .iter()
+            .map(|(id, exported)| format!("{}:{:?}=>{}", id.0, id.1, exported))
+            .collect::<Vec<_>>();
+        renames.sort();
+        parts.push(format!(
+            "module:{index}:{}:{}:{:?}:{}",
+            module.id,
+            module.target_file,
+            module.role,
+            renames.join(",")
+        ));
+    }
+    graph_provenance::sha256(parts.join("\0").as_bytes())
 }
 
 fn structural_placement_assessment(
@@ -626,11 +1756,9 @@ impl AssignmentAnalysis {
         )
     }
 
-    /// Translation validation of the emitted order beside the gate's verdict
-    /// in `report`. The gate stays authoritative. With conflicts read off the
-    /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
-    /// set a disagreement panics: it is a bug in the loader model, the sweep
-    /// or the gate.
+    /// Diagnostic edge translation validation beside the legacy graph verdict.
+    /// `DEBUNDLE_TV_ORACLE` compares these two legacy checks, independently of
+    /// the final effect/placement status.
     fn translation_validation<E>(
         &self,
         validation: &AssignmentValidation,
@@ -674,23 +1802,55 @@ impl AssignmentAnalysis {
         })
     }
 
-    /// Assess structural placement and candidate-order effects together for
-    /// this exact assignment/import order. The effect report and typed effect
-    /// assessment come from one sweep; placement consumes the already-computed
-    /// canonical validation instead of rerunning realizability.
+    /// Assess candidate-order effects for this exact assignment/import order
+    /// and join them with the structural placement retained by preflight. The
+    /// effect report and typed effect assessment come from one sweep.
     fn candidate_relocation_assessment<E>(
         &self,
-        validation: &AssignmentValidation,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
-        projection: &analysis::PlacementProjection<'_>,
+        placement: StructuralPlacementAssessment,
+        preservation: CandidatePreservationEvidence,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
-        assert!(
-            std::ptr::eq(&self.assignment, projection.assignment()),
-            "candidate placement projection must belong to this immutable assignment"
+        let required_cell_uses = facts
+            .iter()
+            .flat_map(|fact| {
+                fact.required_initialized_module_cells()
+                    .map(move |cell| (fact.ordinal, cell))
+            })
+            .collect::<BTreeSet<_>>();
+        let required_module_cells = required_cell_uses.iter().map(|(_, cell)| *cell).collect();
+        let mut required_imported_primitive_reads = Vec::new();
+        for requirement in facts
+            .iter()
+            .flat_map(analysis::facts::StatementFacts::required_imported_primitive_reads)
+        {
+            if !required_imported_primitive_reads.contains(requirement) {
+                required_imported_primitive_reads.push(requirement.clone());
+            }
+        }
+        let mut module_initialization = assess_module_initialization(
+            required_module_cells,
+            required_imported_primitive_reads.clone(),
+            preservation.module_initialization,
         );
+        module_initialization.required_cell_uses = required_cell_uses;
+        module_initialization.required_imported_read_facts = required_imported_primitive_reads;
+        let required_provider_facts: Vec<analysis::facts::ConditionalProviderTargetRequirement> =
+            facts
+                .iter()
+                .flat_map(analysis::facts::StatementFacts::required_conditional_provider_targets)
+                .cloned()
+                .collect();
+        let required_provider_targets = required_provider_facts
+            .iter()
+            .map(provider_target_key)
+            .collect();
+        let mut provider_targets =
+            assess_provider_targets(required_provider_targets, preservation.provider_targets);
+        provider_targets.required_facts = required_provider_facts;
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
@@ -703,29 +1863,10 @@ impl AssignmentAnalysis {
             visitor,
         )?;
         Ok(CandidateRelocationAssessment {
-            placement: structural_placement_assessment(
-                self.inputs.dependency_graph(),
-                validation,
-                projection,
-            ),
+            placement,
             effect,
-        })
-    }
-
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {
-        let validation = self.validate_with_verdict();
-        if !validation.verdict.is_realizable()
-            || !validation.report.atomic_group_conflicts.is_empty()
-            || !validation.report.cycles.is_empty()
-        {
-            return Err(RejectedAssignment {
-                assignment_analysis: self,
-                validation: Box::new(validation),
-            });
-        }
-        Ok(ValidatedAssignment {
-            assignment_analysis: self,
-            validation,
+            module_initialization,
+            provider_targets,
         })
     }
 
@@ -830,7 +1971,7 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, false, &placement),
+            candidate_relocation_status(false, false, &placement, true, true),
             CandidateRelocationStatus::Incomplete,
             "a semantic-order-only legacy veto is not an effect or structural block",
         );
@@ -871,8 +2012,172 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, true, &placement),
+            candidate_relocation_status(false, true, &placement, true, true),
             CandidateRelocationStatus::AcceptedWithinCheckedScope,
         );
+    }
+
+    #[test]
+    fn required_module_cells_must_be_preserved_for_candidate_acceptance() {
+        let first = ModuleCellId {
+            chunk: ChunkId(3),
+            declaration_origin: 17,
+        };
+        let second = ModuleCellId {
+            chunk: ChunkId(4),
+            declaration_origin: 23,
+        };
+        let assessment = assess_module_initialization(
+            [first, second].into_iter().collect(),
+            Vec::new(),
+            CandidateModuleInitializationEvidence {
+                preserved_cells: [first].into_iter().collect(),
+                preserved_imported_primitive_reads: Vec::new(),
+                refusal: None,
+            },
+        );
+
+        assert_eq!(
+            assessment.required_cells,
+            [
+                ModuleCellAddress {
+                    chunk: ChunkId(3),
+                    declaration_origin: 17,
+                },
+                ModuleCellAddress {
+                    chunk: ChunkId(4),
+                    declaration_origin: 23,
+                },
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert_eq!(
+            assessment.preserved_cells,
+            [ModuleCellAddress {
+                chunk: ChunkId(3),
+                declaration_origin: 17,
+            }]
+            .into_iter()
+            .collect()
+        );
+        assert_eq!(
+            assessment.unproved_cells,
+            [ModuleCellAddress {
+                chunk: ChunkId(4),
+                declaration_origin: 23,
+            }]
+            .into_iter()
+            .collect()
+        );
+        assert!(!assessment.is_complete());
+
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: true,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: BTreeSet::new(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: Vec::new(),
+            semantic_order_sccs: Vec::new(),
+        };
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement, assessment.is_complete(), true),
+            CandidateRelocationStatus::Incomplete,
+        );
+        assert_eq!(
+            candidate_relocation_status(true, false, &placement, assessment.is_complete(), true),
+            CandidateRelocationStatus::BlockedByEffect,
+            "effect blockers retain precedence over missing module-cell proof",
+        );
+        let mut placement_blocked = placement;
+        placement_blocked.status = StructuralPlacementStatus::Blocked;
+        assert_eq!(
+            candidate_relocation_status(
+                false,
+                true,
+                &placement_blocked,
+                assessment.is_complete(),
+                true,
+            ),
+            CandidateRelocationStatus::BlockedByPlacement,
+            "placement blockers retain precedence over missing module-cell proof",
+        );
+    }
+
+    #[test]
+    fn missing_imported_read_site_remains_an_unproved_candidate_requirement() {
+        let requirement = analysis::facts::RequiredImportedPrimitiveRead {
+            source_owner: SourceUnitOrdinal(11),
+            source_site: None,
+            consumer_root: None,
+            source_binding: ("answer".into(), swc_common::SyntaxContext::empty()),
+            source_specifier: "./peer.js".to_owned(),
+            imported_name: "answer".to_owned(),
+            provider_module: "static/peer".to_owned(),
+            provider_export: "answer".to_owned(),
+            dependency_closure: BTreeSet::from(["static/peer".to_owned()]),
+            provider_closure: None,
+            source_cells: BTreeSet::from([analysis::analysis_inputs::PrimitiveExportCell {
+                module: "static/peer".to_owned(),
+                export: "answer".to_owned(),
+            }]),
+        };
+        let assessment = assess_module_initialization(
+            BTreeSet::new(),
+            vec![requirement],
+            CandidateModuleInitializationEvidence::default(),
+        );
+
+        assert_eq!(assessment.required_imported_primitive_reads.len(), 1);
+        assert_eq!(
+            assessment.required_imported_primitive_reads[0].source_site,
+            None
+        );
+        assert_eq!(
+            assessment.required_imported_primitive_reads[0].consumer_root,
+            None
+        );
+        assert!(assessment.preserved_imported_primitive_reads.is_empty());
+        assert_eq!(assessment.unproved_imported_primitive_reads.len(), 1);
+        assert!(!assessment.is_complete());
+
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: true,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: BTreeSet::new(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: Vec::new(),
+            semantic_order_sccs: Vec::new(),
+        };
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement, assessment.is_complete(), true),
+            CandidateRelocationStatus::Incomplete,
+        );
+    }
+
+    #[test]
+    fn module_initialization_refusal_does_not_invent_required_cells() {
+        let assessment = assess_module_initialization(
+            BTreeSet::new(),
+            Vec::new(),
+            CandidateModuleInitializationEvidence {
+                preserved_cells: BTreeSet::new(),
+                preserved_imported_primitive_reads: Vec::new(),
+                refusal: Some(ModuleInitializationRefusal::PreparedEmissionUnavailable),
+            },
+        );
+
+        assert!(assessment.required_cells.is_empty());
+        assert_eq!(
+            assessment.refusal,
+            Some(ModuleInitializationRefusal::PreparedEmissionUnavailable)
+        );
+        assert!(assessment.is_complete());
     }
 }

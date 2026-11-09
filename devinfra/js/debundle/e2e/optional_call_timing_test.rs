@@ -55,6 +55,63 @@ fn optional_eager_calls_preserve_caught_tdz_and_reject_reordering() {
 }
 
 #[test]
+fn optional_local_member_calls_preserve_receiver_and_short_circuit_order() {
+    let statement = "console.log(skippedReceiver, skippedCallee, result, receiverCalls, getterCalls, argumentCalls, receiverThis);";
+    let source = format!(
+        "let receiverCalls = 0, getterCalls = 0, argumentCalls = 0, receiverThis = 0;\n\
+         const holder = {{ value: 40, get method() {{ getterCalls++; return function(value) {{ receiverThis += this === holder ? 1 : 100; return this.value + value; }}; }} }};\n\
+         function nextReceiver(value) {{ receiverCalls++; return value; }}\n\
+         const noMethod = {{ get method() {{ getterCalls++; return undefined; }} }};\n\
+         const skippedReceiver = nextReceiver(null)?.method((argumentCalls++, 2));\n\
+         const skippedCallee = noMethod.method?.((argumentCalls++, 2));\n\
+         const result = nextReceiver(holder)?.method?.((argumentCalls++, 2));\n\
+         {statement}\n"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("holder"),
+                Member::new("receiverCalls"),
+                Member::new("getterCalls"),
+                Member::new("argumentCalls"),
+                Member::new("receiverThis"),
+            ],
+            &[statement],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "undefined undefined 42 2 2 1 1\n");
+}
+
+#[test]
+fn optional_local_member_captures_the_callee_before_argument_mutation() {
+    let statement = "console.log(selected, target.method(), originalCalls, receiverThis);";
+    let source = format!(
+        "let originalCalls = 0, receiverThis = 0;\n\
+         const target = {{ value: 40, method: function(value) {{ originalCalls++; receiverThis += this === target ? 1 : 100; return this.value + value; }} }};\n\
+         const replacement = function() {{ return 100; }};\n\
+         const selected = target.method?.((target.method = replacement, 2));\n\
+         {statement}\n"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("target"),
+                Member::new("replacement"),
+                Member::new("selected"),
+                Member::new("originalCalls"),
+                Member::new("receiverThis"),
+            ],
+            &[statement],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "42 100 1 1\n");
+}
+
+#[test]
 fn optional_proxy_lookup_and_returned_callback_protocols_remain_conservative() {
     let provider = "export function register(callback) { return () => callback(); }\nexport const api = new Proxy({}, { get() { return callback => callback(); } });\nexport function get() { return api; }\n";
     for call in ["api.register?.(() => later)", "register?.(() => later)?.()"] {

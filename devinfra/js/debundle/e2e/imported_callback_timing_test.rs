@@ -4054,21 +4054,153 @@ fn source_record_capabilities_activate_on_later_use_and_publication() {
     }
 }
 
+#[derive(Clone, Copy)]
+enum SourceRecordExecutionExpectation {
+    Output(&'static str),
+    Error(&'static str),
+}
+
+fn assert_source_record_outcome(
+    opts: FixtureOpts<'_>,
+    case: &str,
+    expected: SourceRecordExecutionExpectation,
+) {
+    match run_fixture_observing_gate(opts) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+            let assessment = fixture.candidate_relocation_assessment();
+            assert_eq!(assessment["status"], "accepted_within_checked_scope");
+
+            let graph = fixture.dependency_graph();
+            assert_queue_has_no_returned_record_uses(&graph);
+            assert_queue_precedes_later_in_emission(&graph, &assessment);
+
+            match expected {
+                SourceRecordExecutionExpectation::Output(stdout) => {
+                    assert_preserved_entry_output(&fixture, stdout);
+                }
+                SourceRecordExecutionExpectation::Error(error) => {
+                    assert_preserved_entry_error(&fixture, error);
+                }
+            }
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(&rejected.report_root, &rejected.chunk_id, case);
+            assert_eq!(
+                rejected.status,
+                Some(1),
+                "expected gate rejection; stdout:\n{}\nstderr:\n{}",
+                rejected.stdout,
+                rejected.stderr
+            );
+            let assessment = rejected.candidate_relocation_assessment();
+            assert_ne!(assessment["status"], "accepted_within_checked_scope");
+            assert_queue_has_no_returned_record_uses(&rejected.dependency_graph());
+        }
+    }
+}
+
+fn assert_queue_has_no_returned_record_uses(graph: &analysis::DependencyGraphReport) {
+    let queue = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "queue")
+        })
+        .expect("queue initializer source-unit owner");
+    let execution = queue
+        .synchronous_execution
+        .as_ref()
+        .expect("queue initializer execution report");
+    assert!(
+        execution.returned_record_uses.is_empty(),
+        "queue initializer must not consume a returned-record capability: {execution:#?}"
+    );
+}
+
+fn assert_queue_precedes_later_in_emission(
+    graph: &analysis::DependencyGraphReport,
+    assessment: &serde_json::Value,
+) {
+    let owner_for = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .unwrap_or_else(|| panic!("missing source-unit owner for {binding}"))
+    };
+    let queue_ordinal = owner_for("queue").statement_ordinal.0 as u64;
+    let later_ordinal = owner_for("Later").statement_ordinal.0 as u64;
+    let emitted_order = assessment["emitted_order"]
+        .as_array()
+        .expect("candidate emitted order");
+    let position = |ordinal: u64| {
+        emitted_order
+            .iter()
+            .position(|emitted| emitted.as_u64() == Some(ordinal))
+            .unwrap_or_else(|| {
+                panic!("statement ordinal {ordinal} is absent from {emitted_order:?}")
+            })
+    };
+    assert!(
+        position(queue_ordinal) < position(later_ordinal),
+        "queue initializer must precede the Later class in emitted order: {emitted_order:?}"
+    );
+}
+
 #[test]
 fn source_record_factory_rejects_eager_or_unstable_capabilities() {
     let source = "import { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
-    for provider in [
-        "export function factory() { const state = new Map(); return { [readLater().name]() { return state.size; } }; }",
-        "export function factory() { const state = new Map(); return { value: ({ get value() { return readLater(); } }).value }; }",
-        "export function factory() { readLater(); const state = new Map(); return { read() { return state.size; } }; }",
-        "const Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
-        "export function factory() { const state = new Map(); return { read() { return state.size; } }; } factory = function () { return readLater(); };",
-        "Object.defineProperty(globalThis, 'Map', { value: function () { readLater(); } }); export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
-        "globalThis.Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
-        "export function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }",
+    for (case, provider, expected) in [
+        (
+            "computed-method-name",
+            "export function factory() { const state = new Map(); return { [readLater().name]() { return state.size; } }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "eager-getter-value",
+            "export function factory() { const state = new Map(); return { value: ({ get value() { return readLater(); } }).value }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "eager-factory-call",
+            "export function factory() { readLater(); const state = new Map(); return { read() { return state.size; } }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "shadowed-map-constructor",
+            "const Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "rebound-factory",
+            "export function factory() { const state = new Map(); return { read() { return state.size; } }; } factory = function () { return readLater(); };",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "defined-global-map-constructor",
+            "Object.defineProperty(globalThis, 'Map', { value: function () { readLater(); } }); export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "assigned-global-map-constructor",
+            "globalThis.Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+            SourceRecordExecutionExpectation::Error("Cannot access 'Later' before initialization"),
+        ),
+        (
+            "spread-record",
+            "export function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }",
+            SourceRecordExecutionExpectation::Output(""),
+        ),
     ] {
         let provider = format!("import {{ readLater }} from './app.js';\n{provider}\n");
-        expect_atomic_conflict_rejection(
+        assert_source_record_outcome(
             FixtureOpts::new(
                 source,
                 vec![
@@ -4077,8 +4209,8 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
                 ],
             )
             .with_extra_chunks(&[("static/peer", &provider)]),
-            &["queue", "later"],
-            &[],
+            case,
+            expected,
         );
     }
 }
@@ -4099,19 +4231,30 @@ fn source_record_factory_with_unresolved_builtin_keeps_conservative_policy() {
 #[test]
 fn source_record_factory_does_not_cross_reexports() {
     let source = "import { factory } from './bridge.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
-    expect_atomic_conflict_rejection(FixtureOpts::new(source, vec![
-        logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
-        logical_module("later", &[Member::new("Later")]),
-    ]).with_extra_chunks(&[
-        ("static/bridge", "export { factory } from './peer.js';\n"),
-        ("static/peer", "import { readLater } from './app.js';\nexport function factory() { let state = new Map(); return { read() { return state.size + readLater().name.length; } }; }\n"),
-    ]), &["queue", "later"], &[]);
+    assert_source_record_outcome(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&[
+            ("static/bridge", "export { factory } from './peer.js';\n"),
+            ("static/peer", "import { readLater } from './app.js';\nexport function factory() { let state = new Map(); return { read() { return state.size + readLater().name.length; } }; }\n"),
+        ]),
+        "cross-reexport",
+        SourceRecordExecutionExpectation::Output(""),
+    );
 }
 
 #[test]
 fn source_record_deferred_live_cell_access_preserves_the_tdz() {
     let peer = "import { later } from './app.js';\nexport function factory() { let state = new Map; return { read() { return later; }, get value() { return later; }, has(key) { return state.has(key); } }; }\n";
-    for expression in ["queue.value", "queue.read()"] {
+    for (expression, case) in [
+        ("queue.value", "live-cell-getter"),
+        ("queue.read()", "live-cell-method"),
+    ] {
         let source = format!(
             "import {{ factory }} from './peer.js';\nconst queue = factory();\nconst observed = (() => {{ try {{ return {expression}; }} catch (error) {{ return error.name; }} }})();\nexport const later = 42;\nconsole.log(observed, later);\n"
         );
@@ -4131,18 +4274,28 @@ fn source_record_deferred_live_cell_access_preserves_the_tdz() {
             .with_extra_chunks(&peers),
         );
         assert_preserved_entry_output(&together, "ReferenceError 42\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
-                    logical_module("later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&peers),
-            &["queue", "later"],
-            &[],
-        );
+        let split = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers);
+        match run_fixture_observing_gate(split) {
+            FixtureRunOutcome::Accepted(fixture) => {
+                save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+                assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+            }
+            FixtureRunOutcome::Rejected(rejected) => {
+                save_relocation_reports(&rejected.report_root, &rejected.chunk_id, case);
+                assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+                assert_ne!(
+                    rejected.candidate_relocation_assessment()["status"],
+                    "accepted_within_checked_scope"
+                );
+            }
+        }
     }
 }
 
@@ -4205,7 +4358,7 @@ fn source_record_native_integrity_preserves_closed_entries_namespace_writes() {
 
 #[test]
 fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
-    for namespace in [
+    for (index, namespace) in [
         "export function publish(key, value) { globalThis[key] = value; }",
         "const key = 'Map'; export function publish(value) { globalThis[key] = value; }",
         "let key = Symbol.for('example.registry'); export function replace() { key = 'Map'; } export function publish(value) { globalThis[key] = value; }",
@@ -4224,21 +4377,25 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; const alias = globalThis.box; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
-    ] {
-        expect_atomic_conflict_rejection(
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let case = format!("unknown-or-rebound-key-{index}");
+        assert_source_record_outcome(
             source_record_namespace_opts(&[
                 ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
                 ("static/namespace", namespace),
             ]),
-            &["queue", "later"],
-            &[],
+            &case,
+            SourceRecordExecutionExpectation::Output("0 Later\n"),
         );
     }
 }
 
 #[test]
 fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
-    for (namespace, replacement) in [
+    for (index, (namespace, replacement)) in [
         (
             "const key = Symbol.for('example.registry'); export function publish(value) { globalThis[key] = value; }",
             "export function replace() { Symbol.for = () => 'Map'; }",
@@ -4251,16 +4408,20 @@ fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
             "export function publish() { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
             "export function replace() { Array.prototype[Symbol.iterator] = function* () { yield 'Map'; }; }",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let namespace = format!("import './replacement.js';\n{namespace}");
-        expect_atomic_conflict_rejection(
+        let case = format!("other-chunk-operation-replacement-{index}");
+        assert_source_record_outcome(
             source_record_namespace_opts(&[
                 ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
                 ("static/namespace", &namespace),
                 ("static/replacement", replacement),
             ]),
-            &["queue", "later"],
-            &[],
+            &case,
+            SourceRecordExecutionExpectation::Output("0 Later\n"),
         );
     }
 }
@@ -4297,7 +4458,7 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
     ];
     let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks));
     assert_preserved_entry_output(&fixture, "ReferenceError Later\n");
-    expect_atomic_conflict_rejection(
+    assert_source_record_outcome(
         FixtureOpts::new(
             source,
             vec![
@@ -4310,7 +4471,7 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
             ],
         )
         .with_extra_chunks(&chunks),
-        &["queue", "later"],
-        &[],
+        "unknown-global-slot-mutation",
+        SourceRecordExecutionExpectation::Output("ReferenceError Later\n"),
     );
 }

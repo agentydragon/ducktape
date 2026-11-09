@@ -33,14 +33,40 @@ retains none. Anonymous selector indices refer to the original module's
 requested ownership selection, while final module contents show any bindings
 co-located by ordinary placement rules.
 
-The staged per-chunk `SynchronousCalls` fact now carries
-`non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
-cells. It is analysis input to the commuting-premise check, not a new public
-report field. `dependency_graph.json.gz` retains the existing
+The staged per-chunk `SynchronousCalls` fact carries
+`heap_access_provenance` as typed `reads` and `writes` sets of heap-content
+cells under `executed_operations`, `assumed_operations`, and
+`conservative_summaries`. All three remain ordering evidence; only
+`executed_operations` can contradict an explicit commuting premise. The
+source-unit `heap_frontier` report exposes the same distinction.
+`dependency_graph.json.gz` retains the existing
 `premise_verdict.conflict` shape with `kind: shared_cell` when the verdict is
-`known`; the cell
-may now come from a directly invoked callee. Saved analysis from an earlier
-engine must be recomputed before this field can be read.
+`known`; the primary `cell` may now come from a directly invoked callee, and
+`overlap` records both source footprints plus the address law (`exact_cell` or
+`array_contents_index_or_length`). The latter joins `array_contents` with an
+`own_property` numeric array index or `length` on the same origin. Saved
+analysis from an earlier engine must be recomputed before this field can be
+read. Saved synchronous facts require the new provenance field; older artifacts
+without it fail to decode and must be recomputed.
+
+Saved `SynchronousCalls` facts carry the required `operation_support_receipts`
+list, `[]` when no admitted own-data operation has support evidence. Saved
+`EffectCoverageFragment` facts carry the required `operation_support` field,
+`[]` when empty. Removing either field makes the saved artifact fail to
+decode. Receipts describe an own-data read or writable-own-data store and its
+mutable shape support; they do not grant effect coverage. Provider parameter
+support is substituted with the caller's actual pooled object origin before it
+enters caller effects. An unresolved provider-world origin is never compared
+with a caller ordinal and retains conservative effects.
+
+The `provider_local_birth_candidate` support kind is unresolved per-access
+evidence and carries only its provider-local `origin`. A complete normal shared
+transfer may seal it to `provider_local_birth` after checking the bounded private
+body and frame births. That sealed kind has no address fields and projects no
+caller heap cell. Parameter support retains its separate caller substitution.
+The graph's `synchronous_execution.operation_support_receipts` list exposes
+composed support evidence when present, including the address-free certificate.
+Its presence alone supplies no effect coverage or returned-value identity.
 
 ## Native input identity in saved analysis
 
@@ -53,6 +79,13 @@ chunk. Saved native input evidence uses the same source-only declaration;
 rendered reports restore the current `resolved_member` selector. Structural
 selectors remain `source_match`. Fresh analysis is required after this compiled
 schema change. The authored YAML field and its values are unchanged.
+
+Foreign callable products carry `native_operations` entries with `invocation`,
+`intrinsic` and an optional `property`. Each identifies the canonical row whose
+complete native slots must remain intact across all analyzed chunks. This
+replaces constructor-family-only metadata; it supplies no body-effect coverage.
+Engine-mismatched saved analysis must be regenerated, rather than reinterpreting
+old constructor metadata as proof of static native operations.
 
 ## Convention: `Atom`-only on the wire
 
@@ -182,7 +215,8 @@ export-reentry classification, atomic/cycle checks, rejection markers, or stderr
 ### Translation validation
 
 `effect_translation_validation.json` contains a typed effect relocation
-assessment beside the unchanged legacy gate and edge-TV reports. Its
+assessment beside the legacy graph and edge-TV comparison reports. The same
+assessment runs even when report output is disabled. Its
 `emitted_order` is the exact statement-unit order produced from the candidate
 assignment and emitter import order. `decision` describes statement-order
 commutation only: `accepted/no_reordering` is vacuous; a reordered `accepted`
@@ -191,12 +225,32 @@ one endpoint is a statement proved to have no evaluation effects. An open
 effect set is treated as Havoc against every nonempty partner, so crossing a
 proved-empty endpoint needs no assumption about the open endpoint. `conflict`
 means an uncovered modeled may-conflict or a contradiction with an existing
-premise; `incomplete` means an uncovered Havoc pair or a pair conditioned by
-an authored premise. A may-conflict does not prove a particular runtime trace
+premise; `incomplete` means an uncovered Havoc pair. Exact authored premise coverage
+can accept with `assumed_statement_order_commutation` and explicit typed
+`premise_dependencies`; observed contradictions still block. A may-conflict does not prove a particular runtime trace
 executes both accesses. The assessment does not prove cross-module rebinding,
-importability, vendor replacement, privacy or singleton behavior, and never
-changes the legacy gate. `legacy_gate_accepts` and `legacy_tv_accepts` retain
-those current verdicts.
+vendor replacement, privacy or singleton behavior. `legacy_gate_accepts` and
+`legacy_tv_accepts` retain diagnostic comparison verdicts, without a second veto.
+
+The cell set includes one shared `execution_progress` key for synchronous
+initialization across the candidate's emitted logical modules. Evaluated
+non-inert owners read it. Owners lacking exact whole-root normal-completion
+evidence write it, preserving possible outward suppression and source-unreached
+suffixes. This control relation is separate from may-effect domain closure;
+the exact initializer receipt for lazy function creation can prove normality
+without certifying its deferred body effects. Internal caught throws and
+returns do not write the outer fence when the shared root transfer proves
+normal completion. A missing normal receipt is serialized with the
+`potential_suppression` evidence basis; it remains a conservative modeled
+conflict but does not claim an observed throw or contradict a pair premise.
+Only an exact root-level outward known throw with covered abrupt-effect
+dependencies has observed progress-write evidence. The report's
+`relocation_dependencies` includes the typed conditions consumed by this
+completion projection.
+Saved synchronous facts require both `root_normal_completion` and
+`root_outward_throw` fields, using `null` when absent. A throw receipt requires
+its proof dependencies. Missing fields fail decoding; they never silently erase
+control evidence or downgrade an observed throw to potential suppression.
 
 `candidate_relocation_assessment.json` pairs the same emitted statement order
 and single effect sweep with typed structural placement obligations from the
@@ -223,16 +277,51 @@ typed projection violations in the candidate report and the same projection
 refusal in normal emission. Request planning still uses the shared destructuring
 owner classifier for fixed-point pulls when exactly one owner is explicit;
 split claims remain intact for this final check.
+`module_initialization` independently lists fact-required cells, the subset
+preserved by prepared-output evidence, and their unproved difference. Each
+address carries a scoped `chunk` ID and `declaration_origin`; `refusal` is a
+typed snake-case reason when the guard could not establish preservation.
+It also lists reached `required_imported_primitive_reads`, the preserved reads
+whose exact owner binding, output-first target, retained provider closure and
+consumer phase were checked, and the unproved difference. A refusal is
+diagnostic when both required sets are empty; missing imported-read evidence
+otherwise makes the candidate incomplete. Current refusal values include
+`prepared_emission_unavailable`, `unsupported_candidate_graph`,
+`provider_closure_changed`, `foreign_initialization_changed`,
+`provider_incomplete_at_consumer`, `imported_read_binding_changed`,
+`imported_read_site_unavailable`, `imported_read_target_changed`, and
+`imported_read_closure_changed`. A required read with no canonical site or
+consumer root remains in the unproved list with its missing identity explicit.
+`provider_targets` independently lists conditional imported-body target
+requirements, preserved targets, unproved targets, and a typed refusal. Each
+report address includes the source-unit owner and callsite span, source binding
+name, and analyzed provider module/export/local/callable identity. Internally,
+the completeness join uses the full hygiene-aware source binding identity
+before projecting a readable report name. Capture-free conditional bodies
+still require this target proof. The current proof scope is one materialized
+consumer, unchanged vendor planning, and a retained ordinary-ESM provider
+route checked against the prepared output-first resolver. The exact owner body
+must contain the canonical named-import binding for the applied call, and
+precomputed named export/import records trace that route to the analyzed
+provider. This live selected local survives dead-import pruning; a bare request
+does not establish binding preservation. Export-star routes and
+consumer-generated forwarding identities without a tracked binding remain
+unproved. The proof establishes binding target identity, not provider
+initialization chronology; that remains the separate
+`module_initialization` obligation.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
-means the effect decision or one of the required placement domains remains
-unproved. `accepted_within_checked_scope` means the effect component accepted
-and all four placement checks completed without a known structural blocker.
-It is a scoped assessment only: it does not establish vendor replacement, final
-exports, reconstruction or output validity, and it is not emission authority.
-`legacy_gate_ordering_veto` identifies semantic-order SCCs that still veto
-under the current legacy gate. Thus an ordering-only gate veto does not appear
-as a structural placement blocker, and the legacy gate remains authoritative.
+means the effect decision, a required placement domain, required module-cell
+initialization, or required provider target remains unproved.
+`accepted_within_checked_scope` means the
+effect component accepted, all four placement checks completed without a known
+structural blocker, module initialization has no unproved required cells, and
+provider targets have no unproved requirements, with
+`placement.emission_mappable: true`. This joint verdict authorizes
+relocation lowering; vendor replacement, final export and reconstruction checks
+still apply. `legacy_gate_ordering_veto` identifies semantic-order SCCs rejected
+by the diagnostic graph comparison. An ordering-only comparison veto is neither
+a structural placement blocker nor a second emission veto.
 Its flattened `decision`, `emitted_order` and `swapped_pairs` are projections
 of the same sweep reported in `effect_translation_validation.json`; the
 flattened `decision.status` describes the effect component only.
@@ -245,13 +334,42 @@ legacy report's forward-edge and placement diagnostics.
 `coverage.unknown_coverage` counts missing global/property/host domains
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
-false. Cell conflicts can include `own_property` with `origin` and `property`;
-the origin includes all runtime generations of its source allocation and
-supplies no strong-update or privacy proof. A cell conflict retains the later
-access in `cell` and adds `overlap: { left, right, law }` for both footprints.
-The current laws are `exact_cell` and `array_contents_index_or_length`, the
-same-origin alias between array contents and canonical numeric indices or
-`length`. Shape and ordinary named properties remain distinct.
+false. Cell conflicts can include `lexical_cell`, `object_shape` or `descriptor_map_contents`
+with `origin`, `own_property` with `origin` and `property`, and `private_slot`
+with `origin`, `class` and `name`. For a private slot, `origin` identifies the
+receiver allocation source, `class` identifies the private-brand source, and
+`name` preserves the private name. These source identities can represent
+multiple runtime generations and do not prove a one-shot allocation, strong
+update, or private ownership. An `own_property` origin likewise includes all
+runtime generations of its source allocation and supplies no strong-update or
+privacy proof. Each cell conflict keeps the later footprint in `cell` and
+records both footprints and their address law in `overlap`. The laws are
+`exact_cell` and `array_contents_index_or_length`, the same-origin alias of
+array contents with canonical numeric indices or `length`. Shape and ordinary
+named properties remain distinct.
+
+For `lexical_cell`, `origin` is the canonical binding declaration offset and
+required `instance` is the actual nonreused declarative-cell arena ID in this
+analyzed chunk. Distinct activations of the same declaration have different
+instances; aliases of one captured cell retain both fields unchanged. Saved
+analysis preserves these identities without rebuilding the runtime arena.
+They are not process pointers or globally comparable cross-chunk IDs, and do
+not prove cell contents, initialization, private ownership or strong-update
+permission. There is no pooled lexical-cell address: an access without an
+active cell/source correspondence retains unknown heap coverage instead.
+Immutable function-name invocation views do not emit per-call lexical-cell
+births or writes; source-checked initialized name reads have no exterior effect.
+
+`module_cell` carries `chunk` (the source artifact's interned chunk ID) and
+`declaration_origin` (the canonical binding declaration offset). Unambiguous
+simple module variable declarations and resolved named import/re-export aliases
+share this address; matching offsets in distinct chunks differ. These are
+may-access correspondences, independent of contents, initialization and body
+coverage. A report's chunk ID is scoped to its artifact. Saved effect cells and
+the required program-summary `module_cells` field encode checked source names,
+then resolve them into the reader's current chunk table; raw IDs are not restored
+across worlds. Missing namespaces/identities and duplicate saved bindings refuse.
+
 `coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate
@@ -276,23 +394,36 @@ They explain the report and do not change the certificate or coverage.
 is a diagnostic projection of the graph's decision to skip the syntactic
 at-init call fallback. Its report DTO is internally tagged by `authority` and
 has `unclassified`, `legacy_execution` (with the existing `complete` value),
-`author_source_only`, `ordered_root_initializer_uncovered`, and
-`operation_receipt` forms. The receipt reports the exact root owner, binding
-and initializer span, separate read/rebind prerequisites, and flat local call
+`author_source_only`, `ordered_root_initializer_uncovered`,
+`ordered_root_class_declaration_uncovered`, `ordered_root_expression_uncovered`,
+and `operation_receipt` forms. The receipt
+reports the exact root owner and a typed `root_kind`: `binding_initializer`
+retains its binding and initializer span; `class_declaration` retains its binding
+and declaration span; `expression_statement` retains its expression span. Each
+has separate read/rebind prerequisites and flat local call
 edges with caller/target bodies and merged conditions. The analyzer verifies
 that those edges connect to the root body. This DTO is output-only; it cannot
 be loaded as engine authority.
+Call targets distinguish `native` invocation (intrinsic and optional property)
+from `native_construction` (intrinsic). Checked empty collection construction
+can contribute the latter edge in application execution. An imported body
+retains its matched `imported_callable` edge and transports the provider's
+constructor dependencies; its internal operations are not expanded into
+application call edges. Both paths separately retain the constructor's global
+binding read.
 Staged analysis artifacts instead carry the engine-owned, externally tagged
-saved `BindingEffectCoverage` fact. Its root binding uses the same saved
-symbol and context ordinal as other staged facts. That field is required:
+saved `BindingEffectCoverage` fact. Initializer and class-declaration root
+bindings use the same saved symbol and context ordinal as other staged facts. That field is required:
 artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.
 
-`examples` retains at most twenty deterministic pairs, preferring rows with
-modeled cells and filling unused slots with the earliest Havoc-only rows. The
-selected pairs retain sweep order and each contains at most twenty conflicting
-cells with their access provenance. Each sampled pair retains its exact
+`examples` retains at most twenty deterministic pairs. It ranks rows with
+non-`execution_progress` data cells or an observed `execution_progress`
+conflict first, potential-control-only rows second, and cell-free Havoc rows
+last; earlier rows win within each tier. Each selected pair contains at most
+twenty conflicting cells with their access provenance. The full JSONL stream
+retains sweep order and every cell. Each sampled pair retains its exact
 `cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
 examples are truncated. `full_detail_export_available` is true: request
@@ -304,10 +435,15 @@ it leaves every graph, bounded summary, source input and census scope intact.
 Each JSONL line is one pair in the complete sweep order; summary examples are
 selected from this stream without changing that order. A line includes
 `runs_first`, `runs_later`, every `cells` entry
-with its later-footprint `cell`, an `overlap: { left, right, law }` witness,
-and access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+with access provenance and any full `first_operation_support_reads` /
+`later_operation_support_reads` receipts, exact `cell_count`, `havoc`, typed
+`disposition`,
 `premise_locations`, typed `premise_references`, and the report-only
-`legacy_edge_conflict` comparison.
+`legacy_edge_conflict` comparison. Each cell retains the later footprint in
+`cell` and records both footprints and their address law in `overlap`.
+`exact_cell` means identical current cells; `array_contents_index_or_length`
+joins same-origin array contents with a numeric array-index or `length`
+own-property cell. Read/read pairs remain nonconflicting.
 `first_opacity` and
 `later_opacity` retain each endpoint's unknown coverage, dataflow opacity,
 execution completeness/losses, heap opacity and an optional typed
@@ -341,8 +477,8 @@ ordinary heap, host effects, throws and reordered execution remain covered by
 the existing conservative gaps.
 
 `translation_validation.json`, beside `dependency_graph.json.gz`, is the bounded
-report-only edge-TV verdict;
-the gate remains authoritative. `gate_accepts`, `accepts` and `swapped_pairs`
+diagnostic edge-TV verdict. The joint candidate assessment is the relocation
+authority. `gate_accepts`, `accepts` and `swapped_pairs`
 are exact. `counts` contains exact `conflicts`, `forward_edges_kept`,
 `forward_edges_swapped`, `placement_splits` totals and `conflicts_by_kind`.
 Each of those four evidence fields has `{ "total": N, "examples": [...],
@@ -523,14 +659,48 @@ existing target rules.
 
 `dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
 may include `reason.ordered_call_admission_refusal` for a call whose already
-evaluated operands were declined by the ordered path. The values are
+evaluated operands were declined by the ordered path. General categories are
 `unknown_target`, `multiple_targets`, `non_local_target`,
-and `unsupported_receiver`. The reason retains only the
-first failed admission category, with the existing call source site and
-fallback reach. It does not retain target identities or alter call admission,
-effect promotion, reachability, or gate acceptance. A complete effects-only
-call uses `missing_call_result`; an incomplete invocation does not use this
-field.
+`unsupported_receiver`, and `unsupported_native_operation`. Selected array
+iteration can report first-failure pre-argument GetValue selection categories
+for a recognized indexed iteration: `array_iteration_receiver_not_singleton`,
+`array_iteration_receiver_not_object`, `array_iteration_row_shape_unsupported`,
+`array_iteration_method_slot_unavailable`,
+`array_iteration_original_method_selection_unavailable`, and
+`array_iteration_result_allocation_unavailable`. They are attached only when
+the unchanged ordinary call transfer independently returns
+`unsupported_native_operation`; they do not force a refusal. After a successful
+GetValue selection, first-failure post-argument categories are
+`array_iteration_call_kind_mismatch`,
+`array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
+`array_iteration_callback_arity_mismatch`,
+`array_iteration_callback_target_unavailable`,
+`array_iteration_generator_callback`, `array_iteration_opaque_callback`,
+`array_iteration_async_callback`,
+`array_iteration_callback_parameter_unsupported`,
+`array_iteration_callback_plan_unavailable`,
+`array_iteration_caller_unavailable`,
+`array_iteration_body_intrinsics_unavailable`,
+`array_iteration_receiver_descriptor_unavailable`,
+`array_iteration_dense_snapshot_unavailable`,
+`array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
+`array_iteration_exceeds_invocation_limit`, and
+`array_iteration_unsettled_elements`. These new categories identify checks
+at the stated phase, retain the existing call source site and fallback reach,
+and do not retain target identities or alter call admission, effect promotion,
+reachability, emitted code, or gate acceptance. Callback completion or predicate
+uncertainty keeps `unsupported_operation` without an admission reason; defensive
+result-row mismatches use `array_iteration_result_shape_mismatch`. The new
+detailed unsettled-elements refusal is a structured object keyed by
+`array_iteration_unsettled_elements_detail`, with `slot_index` and `check`.
+The legacy `array_iteration_unsettled_elements` string remains readable in
+saved reports. The check identifies the first failed slot condition: `empty_values`,
+`unavailable_value`, `unsupported_value`, `non_plain_object`,
+`object_tainted`, `object_unsettled`, `object_unknown_array_contents`,
+`object_primitive_array_marker`, `tainted_function`, or
+`borrowed_receiver_instance`. Other refusal categories remain strings. A
+complete effects-only call uses `missing_call_result`; an incomplete
+invocation does not use this field.
 
 ## Ordered local member-read refusal
 

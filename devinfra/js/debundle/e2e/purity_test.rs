@@ -722,6 +722,48 @@ export { a, C, c };
     );
 }
 
+#[test]
+fn class_static_initializer_keeps_external_mutation_ordered() {
+    // The class object itself is an allocation, but evaluating this static
+    // field also calls a function that mutates the host global. Peeling the
+    // class across the earlier side effect would reverse observable order;
+    // allocation-only evidence must not erase the initializer's effect.
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"const before = (() => 1)();
+function touch() { globalThis.touched = true; return 1; }
+class Box { static value = touch(); }
+const after = Box.value + before;
+console.log(after, globalThis.touched);
+export { before, Box, after };
+"#,
+            vec![logical_module("box_module", &[Member::new("Box")])],
+        ),
+        &["box_module", "residual"],
+    );
+}
+
+#[test]
+fn class_static_proto_key_defines_an_own_data_property() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Box {
+  static __proto__ = 7;
+}
+console.log(
+  Object.prototype.hasOwnProperty.call(Box, "__proto__"),
+  Object.getPrototypeOf(Box) === Function.prototype,
+  Box.__proto__,
+);
+export { Box };
+"#,
+            vec![logical_module("box_module", &[Member::new("Box")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_entry_output(&fixture, "true true 7\n");
+}
+
 // ---------------------------------------------------------------------------
 // OptChain purity.
 // ---------------------------------------------------------------------------

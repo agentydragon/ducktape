@@ -912,10 +912,10 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
 
 /// The blocking SCCs in a `cycles.json`; an absent file loads as empty.
 pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
-    // The pipeline and edit gate write `cycles.json` whenever the current
-    // assignment has blocking SCCs. An absent file still loads as empty, but
-    // callers can treat that as a clean result only for a complete current
-    // report set. A present-but-malformed file remains an error below.
+    // The pipeline writes `cycles.json` whenever the current assignment has
+    // blocking SCCs. An absent file still loads as empty, but callers can
+    // treat that as a clean result only for a complete current report set. A
+    // present-but-malformed file remains an error below.
     if !path.exists() {
         return Ok(Vec::new());
     }

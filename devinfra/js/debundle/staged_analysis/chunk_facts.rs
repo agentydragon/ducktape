@@ -2,9 +2,10 @@
 use super::progress::emit_debundle_progress;
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::CallableSummary;
+use analysis::facts::abstract_domain::value::{HeapModuleScope, SourceHeapResolver};
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
 use js_ast::ParsedJsModule;
@@ -31,8 +32,9 @@ pub fn analyze_logical_chunk(
         chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
     let source_path = runtime_file.metadata.source_path.clone();
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+    let structural_analysis = analysis::facts::collect_chunk_source_facts_in_chunk(
         &runtime_ast.module,
+        chunk_id_interned,
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
     );
@@ -100,6 +102,12 @@ pub fn compute_logical_chunk_facts(
         source_path,
         export_reentry_policy,
     } = context;
+    if let ChunkFacts::Compute(source) = &facts {
+        ensure!(
+            source.has_heap_scope(HeapModuleScope::Chunk(chunk_id_interned)),
+            "prepared source facts for chunk `{chunk_id}` lost their canonical heap origin"
+        );
+    }
     // `local_property_effects` selects the facts pass's local-effect policy,
     // which travels in the hints.
     let chunk_analysis_inputs = projection
@@ -127,13 +135,38 @@ pub fn compute_logical_chunk_facts(
     };
     let analysis_inputs: AnalysisInputs = {
         let mut inputs = AnalysisInputs {
+            provider_programs: program_summary.provider_programs.clone(),
+            heap_resolver: Some(SourceHeapResolver::new(HeapModuleScope::Chunk(
+                chunk_id_interned,
+            ))),
             assumptions: projection
                 .declared_assumptions
                 .get(chunk_id)
                 .cloned()
                 .unwrap_or_default(),
             native_integrity: program_summary.native_integrity.clone(),
+            global_uses: program_summary
+                .global_uses
+                .get(chunk_id)
+                .filter(|uses| uses.source_file == runtime_ast.source_file_name())
+                .cloned(),
             current_chunk_id: Some(chunk_id.to_string()),
+            module_cells: program_summary
+                .module_cells
+                .get(chunk_id)
+                .cloned()
+                .unwrap_or_default(),
+            module_cell_invariants: program_summary.module_cell_invariants.clone(),
+            source_initialized_module_cells: program_summary
+                .source_initialized_module_cells
+                .get(chunk_id)
+                .cloned()
+                .unwrap_or_default(),
+            source_initialized_host_dependencies: program_summary
+                .source_initialized_host_dependencies
+                .as_ref()
+                .and_then(|dependencies| dependencies.get(chunk_id))
+                .cloned(),
             ..AnalysisInputs::default()
         };
         inputs.assumptions.captured_value_inputs = program_summary

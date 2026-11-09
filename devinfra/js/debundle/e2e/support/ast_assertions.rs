@@ -5,8 +5,8 @@ use std::path::Path;
 use swc_common::FileName;
 use swc_common::sync::Lrc;
 use swc_ecma_ast::{
-    Decl, ExportSpecifier, Expr, Lit, Module, ModuleDecl, ModuleExportName, ModuleItem,
-    ObjectPatProp, Pat, Stmt, VarDeclKind,
+    Decl, ExportSpecifier, Expr, ImportSpecifier, Lit, Module, ModuleDecl, ModuleExportName,
+    ModuleItem, ObjectPatProp, Pat, Stmt, VarDeclKind,
 };
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
@@ -242,5 +242,37 @@ pub fn assert_export_named_specifiers(
     assert_eq!(
         actual, expected,
         "export {{ {expected_orig} ... }} `as` clauses mismatch in:\n{source}",
+    );
+}
+
+/// Check that two replaced source bindings share exactly one emitted namespace.
+pub fn assert_single_namespace_import(path: &Path, request: &str, local: &str) {
+    let source =
+        fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let module = parse_module(&source);
+    let imports = module
+        .body
+        .iter()
+        .filter_map(|item| {
+            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                return None;
+            };
+            (import.src.value.as_str() == Some(request)).then_some(import)
+        })
+        .collect::<Vec<_>>();
+    let [import] = imports.as_slice() else {
+        panic!(
+            "expected one import of {request} in {}: {source}",
+            path.display()
+        );
+    };
+    let [ImportSpecifier::Namespace(namespace)] = import.specifiers.as_slice() else {
+        panic!("expected one namespace specifier for {request}: {source}");
+    };
+    assert_eq!(
+        namespace.local.sym.as_ref(),
+        local,
+        "namespace local in {}",
+        path.display()
     );
 }

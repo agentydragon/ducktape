@@ -279,7 +279,10 @@ console.log(late);
         mixed_authored_and_generated_scc,
         "the authored path that resembles generated output must stay a distinct SCC member: {cycles:#?}"
     );
-    assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
+    assert_gate_rejected_banner(
+        &rejected.entry_path(),
+        &rejected.report_path("candidate_relocation_assessment.json"),
+    );
 }
 
 #[test]

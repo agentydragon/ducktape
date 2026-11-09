@@ -10,9 +10,10 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::execution_evidence::SourceLocation;
+use crate::facts::heap_contents::is_array_index;
 use crate::facts::{
-    CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
-    may_conflict, may_overlap,
+    CellOverlap, CellOverlapIndex, EffectCell, HeapAccessProvenance, HeapContentAccesses,
+    HeapContentCells, SourceUnitReadClosure, may_conflict,
 };
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
@@ -37,12 +38,11 @@ const HEAP_CELL_SAMPLE_LIMIT: usize = 8;
 fn report_heap_frontier(
     own_at_init: &HeapContentCells,
     composed_synchronous_calls: &HeapContentCells,
-    non_assumed_reads: &BTreeSet<EffectCell>,
-    non_assumed_writes: &BTreeSet<EffectCell>,
+    provenance: &HeapAccessProvenance,
 ) -> Option<crate::reports::schema::HeapFrontierEvidence> {
     use crate::reports::schema::{
-        HeapCellSetReport, HeapContentSummaryReport, HeapFrontierEvidence,
-        NonAssumedHeapAccessReport,
+        HeapAccessProvenanceReport, HeapAccessSetReport, HeapCellSetReport,
+        HeapContentSummaryReport, HeapFrontierEvidence,
     };
 
     let has_content = |cells: &HeapContentCells| {
@@ -53,8 +53,12 @@ fn report_heap_frontier(
     };
     if !has_content(own_at_init)
         && !has_content(composed_synchronous_calls)
-        && non_assumed_reads.is_empty()
-        && non_assumed_writes.is_empty()
+        && provenance.executed_operations.reads.is_empty()
+        && provenance.executed_operations.writes.is_empty()
+        && provenance.assumed_operations.reads.is_empty()
+        && provenance.assumed_operations.writes.is_empty()
+        && provenance.conservative_summaries.reads.is_empty()
+        && provenance.conservative_summaries.writes.is_empty()
     {
         return None;
     }
@@ -74,12 +78,17 @@ fn report_heap_frontier(
         writes: report_cells(&cells.writes),
     };
 
+    let report_accesses = |accesses: &HeapContentAccesses| HeapAccessSetReport {
+        reads: report_cells(&accesses.reads),
+        writes: report_cells(&accesses.writes),
+    };
     Some(HeapFrontierEvidence {
         own_at_init: report_content(own_at_init),
         composed_synchronous_calls: report_content(composed_synchronous_calls),
-        non_assumed_heap_accesses: NonAssumedHeapAccessReport {
-            reads: report_cells(non_assumed_reads),
-            writes: report_cells(non_assumed_writes),
+        heap_access_provenance: HeapAccessProvenanceReport {
+            executed_operations: report_accesses(&provenance.executed_operations),
+            assumed_operations: report_accesses(&provenance.assumed_operations),
+            conservative_summaries: report_accesses(&provenance.conservative_summaries),
         },
     })
 }
@@ -118,7 +127,7 @@ pub enum KnownConflict {
     /// rule emitted the edge between them.
     SharedCell {
         cell: EffectCellReport,
-        overlap: CellOverlapReport,
+        overlap: Box<CellOverlapReport>,
     },
     /// Both source units declare the shared `var` `binding`.
     CoDeclaration { binding: swc_atoms::Atom },
@@ -131,10 +140,12 @@ impl fmt::Display for KnownConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sequenced(cause) => cause.fmt(f),
-            Self::SharedCell { overlap, .. } => write!(
-                f,
-                "both summaries have an overlapping cell effect: {overlap}"
-            ),
+            Self::SharedCell { overlap, .. } => {
+                write!(
+                    f,
+                    "both summaries have an overlapping cell effect: {overlap}"
+                )
+            }
             Self::CoDeclaration { binding } => {
                 write!(f, "both declare shared `var` `{binding}`")
             }
@@ -431,12 +442,16 @@ pub fn build_dependency_graph_with(
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
+                    operation_support_receipts: calls
+                        .operation_support_receipts()
+                        .iter()
+                        .map(crate::reports::schema::OperationSupportReceiptReport::from)
+                        .collect(),
                     author_host_contract_uses: calls.author_host_contract_uses.clone(),
                     heap_frontier: report_heap_frontier(
                         &stmt.heap_contents,
                         &calls.heap_contents,
-                        &calls.non_assumed_heap_accesses.reads,
-                        &calls.non_assumed_heap_accesses.writes,
+                        &calls.heap_access_provenance,
                     ),
                 }
             }),
@@ -740,12 +755,22 @@ pub fn build_dependency_graph_with(
         .map(|(id, stmt)| {
             let mut effects = stmt.effects();
             if let Some(calls) = &stmt.synchronous_calls {
-                effects
-                    .reads
-                    .extend(calls.non_assumed_heap_accesses.reads.iter().cloned());
-                effects
-                    .writes
-                    .extend(calls.non_assumed_heap_accesses.writes.iter().cloned());
+                effects.reads.extend(
+                    calls
+                        .heap_access_provenance
+                        .executed_operations
+                        .reads
+                        .iter()
+                        .cloned(),
+                );
+                effects.writes.extend(
+                    calls
+                        .heap_access_provenance
+                        .executed_operations
+                        .writes
+                        .iter()
+                        .cloned(),
+                );
             }
             (*id, effects)
         })
@@ -781,7 +806,7 @@ pub enum PremiseVerdict {
     /// exists only as strict-chain adjacency.
     Summarized,
     /// The analysis derived a modeled conflict the premise contradicts.
-    Known { conflict: KnownConflict },
+    Known { conflict: Box<KnownConflict> },
 }
 
 /// Classify one dependency edge between the two source units of a premise
@@ -823,7 +848,9 @@ fn premise_verdict(
 ) -> Option<PremiseVerdict> {
     let from = stmt_by_source_unit[&edge.from];
     let to = stmt_by_source_unit[&edge.to];
-    let known = |conflict| PremiseVerdict::Known { conflict };
+    let known = |conflict| PremiseVerdict::Known {
+        conflict: Box::new(conflict),
+    };
     let verdict = match edge.reason.kind {
         DepKind::CoDeclaration => known(KnownConflict::CoDeclaration {
             binding: edge
@@ -883,8 +910,8 @@ fn premise_verdict(
             verdict,
             |overlap| {
                 known(KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
+                    cell: EffectCellReport::from(&overlap.right),
+                    overlap: Box::new(CellOverlapReport::from(&overlap)),
                 })
             },
         ),
@@ -905,33 +932,32 @@ fn retain_premise_verdicts(
     }
 }
 
-/// An overlapping cell footprint where one summary writes and the other reads
-/// or writes, if any.
+/// A cell one summary writes and the other reads or writes, if any.
 fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<CellOverlap> {
-    let mut b_reads = CellOverlapIndex::<()>::default();
-    let mut b_writes = CellOverlapIndex::<()>::default();
+    let mut b_cells = CellOverlapIndex::<(bool, bool)>::default();
     for cell in &b.reads {
-        b_reads.get_or_default(cell.clone());
+        b_cells.get_or_default(cell.clone()).0 = true;
     }
     for cell in &b.writes {
-        b_writes.get_or_default(cell.clone());
+        b_cells.get_or_default(cell.clone()).1 = true;
+    }
+    let mut a_reads = CellOverlapIndex::<()>::default();
+    for cell in &a.reads {
+        a_reads.insert(cell.clone(), ());
     }
     for left in &a.writes {
-        for (overlap, _) in b_writes.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, true, overlap.left(), true) {
-                return Some(conflict);
-            }
-        }
-        for (overlap, _) in b_reads.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, true, overlap.left(), false) {
-                return Some(conflict);
+        for (overlap, (right_reads, right_writes)) in b_cells.overlapping(left) {
+            if (*right_reads || *right_writes)
+                && let Some(overlap) = may_conflict(left, true, &overlap.left, *right_writes)
+            {
+                return Some(overlap);
             }
         }
     }
-    for left in &a.reads {
-        for (overlap, _) in b_writes.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, false, overlap.left(), true) {
-                return Some(conflict);
+    for right in &b.writes {
+        for (overlap, ()) in a_reads.overlapping(right) {
+            if let Some(overlap) = may_conflict(&overlap.left, false, right, true) {
+                return Some(overlap);
             }
         }
     }
@@ -971,7 +997,7 @@ fn apply_commuting_statements(
                 Some(PremiseVerdict::Known { conflict }) => conflicts.push(ContradictingEdge {
                     from: SourceUnitOrdinal(edge.from.0),
                     to: SourceUnitOrdinal(edge.to.0),
-                    conflict: conflict.clone(),
+                    conflict: conflict.as_ref().clone(),
                 }),
             }
         }
@@ -984,8 +1010,8 @@ fn apply_commuting_statements(
                 from: premise.a.source_unit,
                 to: premise.b.source_unit,
                 conflict: KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
+                    cell: EffectCellReport::from(&overlap.right),
+                    overlap: Box::new(CellOverlapReport::from(&overlap)),
                 },
             });
         }
@@ -1138,10 +1164,11 @@ fn emit_heap_content_order(
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
 
     // A hoisted or escaped callable can allocate before its lexical statement.
-    // Ordinary own-property cells likewise have no unique eager birth proof.
-    // Array length inherits the array's checked eager birth below.
-    // External storage already exists at chunk entry. Scan every observation
-    // before emitting events so its preceding opaque writers are retained too.
+    // Ordinary own-property and private-slot cells without a matching one-shot
+    // content allocation have no unique eager birth proof; array length
+    // inherits the array's checked eager birth below. External storage exists
+    // at chunk entry. Scan every observation before emitting events so earlier
+    // opaque writers are retained and constrain reads without a birth proof.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
         stmt.heap_contents.observes_external_heap
             || stmt
@@ -1162,7 +1189,11 @@ fn emit_heap_content_order(
                 .any(|cell| {
                     matches!(
                         cell,
-                        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
+                        EffectCell::OwnProperty { .. }
+                            | EffectCell::PrivateSlot { .. }
+                            | EffectCell::LexicalCell { .. }
+                            | EffectCell::ObjectShape(_)
+                            | EffectCell::DescriptorMapContents(_)
                     )
                 })
     });
@@ -1253,28 +1284,12 @@ fn heap_content_cells(
     crate::StatementEffectSummary {
         reads: reads
             .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
+            .filter(|cell| cell.is_heap_content())
             .cloned()
             .collect(),
         writes: writes
             .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
+            .filter(|cell| cell.is_heap_content())
             .cloned()
             .collect(),
     }
@@ -1528,13 +1543,14 @@ fn emit_cell_order_events(
                 .map(|cell| (cell, false))
                 .chain(effects.writes.iter().map(|cell| (cell, true)))
             {
+                let report = EffectCellReport::from(cell);
                 for (overlap, allocations) in pending_allocations.overlapping(cell) {
                     for &to in allocations {
                         depend(
                             &mut targets,
                             to,
                             CellConflict::UseAfterAllocation {
-                                cell: EffectCellReport::from(cell),
+                                cell: report.clone(),
                                 overlap: CellOverlapReport::from(&overlap),
                             },
                         );
@@ -1543,12 +1559,12 @@ fn emit_cell_order_events(
                 for (overlap, &to) in last_writer.overlapping(cell) {
                     let conflict = if is_write {
                         CellConflict::WriteAfterWrite {
-                            cell: EffectCellReport::from(cell),
+                            cell: report.clone(),
                             overlap: CellOverlapReport::from(&overlap),
                         }
                     } else {
                         CellConflict::ReadAfterWrite {
-                            cell: EffectCellReport::from(cell),
+                            cell: report.clone(),
                             overlap: CellOverlapReport::from(&overlap),
                         }
                     };
@@ -1561,7 +1577,7 @@ fn emit_cell_order_events(
                                 &mut targets,
                                 to,
                                 CellConflict::WriteAfterRead {
-                                    cell: EffectCellReport::from(cell),
+                                    cell: report.clone(),
                                     overlap: CellOverlapReport::from(&overlap),
                                 },
                             );
@@ -1570,20 +1586,22 @@ fn emit_cell_order_events(
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
-            // Checked own array slots share the uniquely eager array's birth,
-            // never a repeated site's or an ordinary record property's.
+            // Checked own array slots and their shape-support reads share the
+            // uniquely eager array's birth. The birth set already excludes
+            // deferred/repeated sites; an ordinary record has no array birth.
             if let Some(barrier) = opaque_barrier
                 && (barrier_mode != CellOrderBarrier::None
                     || effects.reads.iter().chain(&effects.writes).any(|cell| {
                         !born_after_barrier.contains(cell)
                             && !matches!(cell,
-                                    EffectCell::OwnProperty { origin, .. }
+                                    EffectCell::OwnProperty { origin, property }
+                                        if (property == "length" || is_array_index(property))
+                                            && born_after_barrier.contains(
+                                                &EffectCell::ArrayContents(*origin)))
+                            && !matches!(cell,
+                                    EffectCell::ObjectShape(origin)
                                         if born_after_barrier.contains(
-                                            &EffectCell::ArrayContents(*origin))
-                                            && may_overlap(
-                                                cell,
-                                                &EffectCell::ArrayContents(*origin),
-                                            ).is_some())
+                                            &EffectCell::ArrayContents(*origin)))
                     }))
             {
                 depend(&mut targets, barrier, CellConflict::AfterBarrier);
@@ -2244,6 +2262,18 @@ fn promote_at_init_calls(
                     continue;
                 };
                 let callee_source_unit = SourceUnitId(callee_ordinal.0);
+                if callee_source_unit == caller
+                    && direct_eager_bindings.contains(&(
+                        caller,
+                        target_source_unit,
+                        target_binding.clone(),
+                    ))
+                {
+                    // Ordered root evaluation observes the same eager read
+                    // already recorded from source. It is not a second call
+                    // promotion. Reads from a distinct callee keep their role.
+                    continue;
+                }
                 if caller == target_source_unit
                     || !emitted.insert((target_source_unit, callee_source_unit))
                 {
@@ -2265,13 +2295,14 @@ fn promote_at_init_calls(
                     complete: true,
                 }
                 | crate::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt
+                | crate::facts::sync_effects::BindingEffectAuthority::RetainedEffectClosure => {
                     continue;
                 }
                 crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
                     complete: false,
                 }
-                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
+                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootUncovered => {}
             }
         }
         if stmt.calls.eager.is_empty()
@@ -2476,8 +2507,94 @@ impl UnresolvedCallFallback {
 }
 
 #[cfg(test)]
+mod cell_overlap_premise_tests {
+    use super::*;
+    use crate::facts::CellOverlapLaw;
+    use crate::facts::abstract_domain::value::{HeapAddress, Kind};
+    use source_identity::ChunkId;
+
+    fn array_address(origin: u32) -> HeapAddress {
+        HeapAddress::module_family(ChunkId(0), Kind::Object, origin)
+    }
+
+    fn summary(reads: &[EffectCell], writes: &[EffectCell]) -> StatementEffectSummary {
+        StatementEffectSummary {
+            reads: reads.iter().cloned().collect(),
+            writes: writes.iter().cloned().collect(),
+        }
+    }
+
+    #[test]
+    fn broad_array_write_conflicts_with_exact_index_or_length_read() {
+        for property in ["0", "length"] {
+            let broad_write = summary(&[], &[EffectCell::ArrayContents(array_address(9))]);
+            let exact_read = summary(
+                &[EffectCell::OwnProperty {
+                    origin: array_address(9),
+                    property: property.into(),
+                }],
+                &[],
+            );
+            let overlap = conflicting_cell(&broad_write, &exact_read)
+                .expect("a broad array write overlaps its indexed own-property read");
+            assert_eq!(overlap.left, EffectCell::ArrayContents(array_address(9)));
+            assert_eq!(
+                overlap.right,
+                EffectCell::OwnProperty {
+                    origin: array_address(9),
+                    property: property.into(),
+                }
+            );
+            assert_eq!(overlap.law, CellOverlapLaw::ArrayContentsIndexOrLength);
+            let reverse =
+                conflicting_cell(&exact_read, &broad_write).expect("the overlap law is symmetric");
+            assert_eq!(reverse.left, overlap.right);
+            assert_eq!(reverse.right, overlap.left);
+            assert_eq!(reverse.law, overlap.law);
+        }
+    }
+
+    #[test]
+    fn shape_and_descriptor_cells_do_not_implicitly_overlap_properties() {
+        let property = EffectCell::OwnProperty {
+            origin: array_address(9),
+            property: "value".into(),
+        };
+        let property_read = summary(std::slice::from_ref(&property), &[]);
+        for broad_write in [
+            EffectCell::ObjectShape(array_address(9)),
+            EffectCell::DescriptorMapContents(array_address(9)),
+        ] {
+            assert!(conflicting_cell(&summary(&[], &[broad_write]), &property_read).is_none());
+        }
+    }
+
+    #[test]
+    fn equal_offsets_from_distinct_chunks_do_not_join_heap_cells() {
+        let first = HeapAddress::module_family(ChunkId(3), Kind::Object, 9);
+        let second = HeapAddress::module_family(ChunkId(4), Kind::Object, 9);
+        let broad_write = summary(&[], &[EffectCell::ArrayContents(first)]);
+        let indexed_read = summary(
+            &[EffectCell::OwnProperty {
+                origin: second,
+                property: "0".into(),
+            }],
+            &[],
+        );
+
+        assert!(conflicting_cell(&broad_write, &indexed_read).is_none());
+    }
+}
+
+#[cfg(test)]
 mod array_heap_frontier_tests {
     use super::*;
+    use crate::facts::abstract_domain::value::{HeapAddress, Kind};
+    use source_identity::ChunkId;
+
+    fn array_address(origin: u32) -> HeapAddress {
+        HeapAddress::module_family(ChunkId(0), Kind::Object, origin)
+    }
 
     fn heap_frontier() -> CellOrderBarrier {
         CellOrderBarrier::HeapFrontier {
@@ -2503,19 +2620,19 @@ mod array_heap_frontier_tests {
                 reads: reads
                     .iter()
                     .copied()
-                    .map(EffectCell::ArrayContents)
+                    .map(|origin| EffectCell::ArrayContents(array_address(origin)))
                     .collect(),
                 writes: writes
                     .iter()
                     .copied()
-                    .map(EffectCell::ArrayContents)
+                    .map(|origin| EffectCell::ArrayContents(array_address(origin)))
                     .collect(),
             },
             barrier,
         )
     }
 
-    fn cell_event(
+    fn property_event(
         ordinal: usize,
         reads: &[EffectCell],
         writes: &[EffectCell],
@@ -2538,36 +2655,38 @@ mod array_heap_frontier_tests {
 
     fn own_property(origin: u32, property: &str) -> EffectCell {
         EffectCell::OwnProperty {
-            origin,
+            origin: array_address(origin),
             property: property.into(),
         }
     }
 
     #[test]
-    fn narrow_array_write_keeps_broad_writer_live_for_later_index_read() {
+    fn narrow_write_keeps_broad_array_writer_live_for_later_different_index_read() {
         let events = [
-            cell_event(0, &[], &[EffectCell::ArrayContents(9)]),
-            cell_event(1, &[], &[own_property(9, "0")]),
-            cell_event(2, &[own_property(9, "1")], &[]),
+            property_event(0, &[], &[EffectCell::ArrayContents(array_address(9))]),
+            property_event(1, &[], &[own_property(9, "0")]),
+            property_event(2, &[own_property(9, "1")], &[]),
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
         emit_cell_order_events(events, &mut edges, &mut pairs, None);
+
         assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
         assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
         assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
     }
 
     #[test]
-    fn narrow_array_write_keeps_broad_reader_live_for_later_index_write() {
+    fn narrow_write_keeps_broad_array_reader_live_for_later_different_index_write() {
         let events = [
-            cell_event(0, &[EffectCell::ArrayContents(9)], &[]),
-            cell_event(1, &[], &[own_property(9, "0")]),
-            cell_event(2, &[], &[own_property(9, "1")]),
+            property_event(0, &[EffectCell::ArrayContents(array_address(9))], &[]),
+            property_event(1, &[], &[own_property(9, "0")]),
+            property_event(2, &[], &[own_property(9, "1")]),
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
         emit_cell_order_events(events, &mut edges, &mut pairs, None);
+
         assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
         assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
         assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
@@ -2634,7 +2753,7 @@ mod array_heap_frontier_tests {
             let mut effects = crate::StatementEffectSummary::default();
             effects
                 .reads
-                .insert(EffectCell::ArrayContents(array as u32));
+                .insert(EffectCell::ArrayContents(array_address(array as u32)));
             events.push((
                 SourceUnitId(array),
                 SourceUnitOrdinal(array),
@@ -2657,7 +2776,7 @@ mod array_heap_frontier_tests {
             let mut effects = crate::StatementEffectSummary::default();
             effects
                 .reads
-                .insert(EffectCell::ArrayContents(array as u32));
+                .insert(EffectCell::ArrayContents(array_address(array as u32)));
             events.push((
                 SourceUnitId(source_unit),
                 SourceUnitOrdinal(source_unit),

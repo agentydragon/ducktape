@@ -2,8 +2,40 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+fn assert_graph_only_candidate(report: &Value, graph_realizable: bool) {
+    assert_eq!(
+        report["graph_candidate_is_realizable"], graph_realizable,
+        "{report}"
+    );
+    assert_eq!(report["candidate_is_realizable"], Value::Null, "{report}");
+    assert!(report.get("candidate_assessment").is_none(), "{report}");
+}
+
+fn snapshot_module_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                visit(root, &path, files);
+            } else {
+                files.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files);
+    files
+}
 
 fn assert_emitted_layout_and_output(
     fixture: &GraphFixture,
@@ -42,7 +74,7 @@ fn assert_emitted_layout_and_output(
     debundle_e2e_support::assert_node_output(&app.join("entry.js"), expected_output, "");
 }
 
-fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
+fn decomposition_batch(report: &Value) -> tempfile::NamedTempFile {
     let assignments =
         report["modules"]
             .as_array()
@@ -67,12 +99,20 @@ fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
             .collect::<Vec<_>>();
     let batch = tempfile::NamedTempFile::new().unwrap();
     fs::write(batch.path(), serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().to_str().unwrap(),
-    ]);
+    batch
+}
+
+fn apply_decomposition(fixture: &GraphFixture, report: &Value, assessment: &Path) {
+    let batch = decomposition_batch(report);
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().to_str().unwrap(),
+        ],
+        assessment,
+    );
 }
 
 fn decomposition_path<'a>(report: &'a Value, source_unit_id: &Value) -> &'a str {
@@ -161,7 +201,7 @@ anonymous_statements:
 "#,
     )];
     modules.extend(provider);
-    GraphFixture::new(
+    GraphFixture::new_full_tree(
         r#"function decorateA(_decorators, target, key) { target[key] = "A"; }
 function decorateB(_decorators, target, key) { target[key] = "B"; }
 class Widget {}
@@ -268,15 +308,34 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
 
     let source_path = fixture.source_path();
     let source_root = source_path.parent().unwrap().to_str().unwrap();
-    let report = fixture.json(&[
-        "modules",
-        "decompose",
-        "--atomic",
-        "--preserve-selector-anchors",
-        "--source-root",
-        source_root,
-    ]);
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    let assessment = fixture.stage_analysis();
+    let module_tree_before = snapshot_module_tree(&fixture.modules);
+    let report = fixture.json_with_assessment(
+        &[
+            "modules",
+            "decompose",
+            "--atomic",
+            "--preserve-selector-anchors",
+            "--source-root",
+            source_root,
+        ],
+        &assessment,
+    );
+    assert_eq!(
+        snapshot_module_tree(&fixture.modules),
+        module_tree_before,
+        "decomposition assessment must not write module YAML"
+    );
+    assert_eq!(report["coverage_complete"], true, "{report}");
+    assert_eq!(report["atomic_group_conflicts"], json!([]), "{report}");
+    assert_eq!(report["cycles"], json!([]), "{report}");
+    assert_eq!(report["cross_rebinds"], json!([]), "{report}");
+    assert_eq!(report["graph_candidate_is_realizable"], true, "{report}");
+    assert_eq!(report["candidate_is_realizable"], false, "{report}");
+    assert_eq!(
+        report["candidate_assessment"]["status"], "blocked_by_effect",
+        "{report}"
+    );
     let relations = report["selector_anchor_relations"].as_array().unwrap();
     let relation = relations
         .iter()
@@ -302,8 +361,18 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
         "the unchanged duplicate provider keeps its original module"
     );
 
-    apply_decomposition(&fixture, &report);
-    fixture.assert_runs("A\n");
+    let batch = decomposition_batch(&report);
+    let rejected = fixture.assert_rejected_unchanged_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().to_str().unwrap(),
+        ],
+        &assessment,
+        &["BlockedByEffect"],
+    );
+    assert_eq!(rejected, report["candidate_assessment"], "{report}");
 }
 
 #[test]
@@ -315,15 +384,24 @@ fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
 
     let source_path = fixture.source_path();
     let source_root = source_path.parent().unwrap().to_str().unwrap();
-    let report = fixture.json(&[
-        "modules",
-        "decompose",
-        "--atomic",
-        "--preserve-selector-anchors",
-        "--source-root",
-        source_root,
-    ]);
+    let assessment = fixture.stage_analysis();
+    let report = fixture.json_with_assessment(
+        &[
+            "modules",
+            "decompose",
+            "--atomic",
+            "--preserve-selector-anchors",
+            "--source-root",
+            source_root,
+        ],
+        &assessment,
+    );
+    assert_eq!(report["graph_candidate_is_realizable"], true, "{report}");
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_eq!(
+        report["candidate_assessment"]["status"], "accepted_within_checked_scope",
+        "{report}"
+    );
     assert_eq!(report["selector_anchor_relations"], json!([]));
     let helper_source_unit = source_unit_id_for_binding(&fixture, "decorateA");
     assert_ne!(
@@ -332,7 +410,7 @@ fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
         "a module-neutral unique reference remains free to move"
     );
 
-    apply_decomposition(&fixture, &report);
+    apply_decomposition(&fixture, &report, &assessment);
     fixture.assert_runs("A\n");
 }
 
@@ -393,7 +471,7 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
         "rejoining must be deterministic"
     );
     assert_eq!(report["coverage_complete"], true, "{report}");
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert_eq!(report["coarsening"]["stop_reason"], "accepted");
     let rejoining = &report["coarsening"]["original_home_rejoining"];
     assert_eq!(rejoining["stop_reason"], "converged", "{report}");
@@ -402,7 +480,7 @@ fn rejoining_restores_a_safe_home_and_keeps_an_unrelated_module() {
     let mut capped_args = args.to_vec();
     capped_args.extend(["--rejoin-pair-attempt-limit", "0"]);
     let capped = fixture.json(&capped_args);
-    assert_eq!(capped["candidate_is_realizable"], true, "{capped}");
+    assert_graph_only_candidate(&capped, true);
     assert_eq!(capped["coverage_complete"], true, "{capped}");
     assert_eq!(
         capped["coarsening"]["original_home_rejoining"]["stop_reason"], "converged",
@@ -479,7 +557,7 @@ fn zero_pair_budget_still_restores_a_two_fragment_home() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(report["coverage_complete"], true, "{report}");
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     let rejoining = &report["coarsening"]["original_home_rejoining"];
     assert_eq!(rejoining["stop_reason"], "converged", "{report}");
     assert_eq!(rejoining["accepted_contractions"], 1, "{report}");
@@ -497,7 +575,7 @@ fn zero_pair_budget_still_restores_a_two_fragment_home() {
 
 #[test]
 fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
-    let fixture = GraphFixture::rejected(
+    let fixture = GraphFixture::rejected_full_tree(
         "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconst spare = 4;\nconst extra = 5;\nconsole.log(last + spare + extra);\n",
         &[
             (
@@ -523,7 +601,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(report["coverage_complete"], true, "{report}");
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
     assert_eq!(report["cross_rebinds"], serde_json::json!([]), "{report}");
     let rejoining = &report["coarsening"]["original_home_rejoining"];
@@ -563,10 +641,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(zero_passes["coverage_complete"], true, "{zero_passes}");
-    assert_eq!(
-        zero_passes["candidate_is_realizable"], true,
-        "{zero_passes}"
-    );
+    assert_graph_only_candidate(&zero_passes, true);
     let zero_rejoining = &zero_passes["coarsening"]["original_home_rejoining"];
     assert_eq!(
         zero_rejoining["stop_reason"], "whole_home_pass_limit_reached",
@@ -598,7 +673,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(one_pass["coverage_complete"], true, "{one_pass}");
-    assert_eq!(one_pass["candidate_is_realizable"], true, "{one_pass}");
+    assert_graph_only_candidate(&one_pass, true);
     assert_eq!(one_pass["cycles"], serde_json::json!([]), "{one_pass}");
     assert_eq!(
         one_pass["cross_rebinds"],
@@ -641,7 +716,7 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(capped["coverage_complete"], true, "{capped}");
-    assert_eq!(capped["candidate_is_realizable"], true, "{capped}");
+    assert_graph_only_candidate(&capped, true);
     assert_eq!(capped["cycles"], serde_json::json!([]), "{capped}");
     assert_eq!(capped["cross_rebinds"], serde_json::json!([]), "{capped}");
     let capped_rejoining = &capped["coarsening"]["original_home_rejoining"];
@@ -689,7 +764,11 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     let batch_dir = tempfile::tempdir().unwrap();
     let batch_path = batch_dir.path().join("batch.json");
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "refine", "--batch", batch_path.to_str().unwrap()],
+        &analysis,
+    );
     assert_eq!(
         middle_before,
         fs::read(fixture.modules.join("middle.yaml")).unwrap(),
@@ -742,8 +821,27 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["strategy"], "seed", "{report}");
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert_eq!(report["coverage_complete"], true, "{report}");
+
+    let text_output = fixture.command(&[
+        "modules",
+        "decompose",
+        "--graph",
+        fixture.graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        text_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text_output.stderr)
+    );
+    let text = String::from_utf8_lossy(&text_output.stdout);
+    assert!(text.contains("graph candidate is realizable"), "{text}");
+    assert!(text.contains("final candidate: not assessed"), "{text}");
 
     let bad = report["modules"]
         .as_array()
@@ -775,10 +873,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(atomic_report["strategy"], "atomic", "{atomic_report}");
-    assert_eq!(
-        atomic_report["candidate_is_realizable"], true,
-        "{atomic_report}"
-    );
+    assert_graph_only_candidate(&atomic_report, true);
     let atomic_fragments = atomic_report["modules"][0]["fragments"].as_array().unwrap();
     assert_eq!(
         atomic_fragments
@@ -822,7 +917,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
 
 #[test]
 fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
-    let fixture = GraphFixture::rejected(
+    let fixture = GraphFixture::rejected_full_tree(
         "let count = 0;\nfunction bump() { count += 1; }\nconst outside = 7;\nconsole.log(count, typeof bump, outside);\n",
         &[
             (
@@ -858,7 +953,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         fixture.modules.to_str().unwrap(),
     ]);
     assert_eq!(report["strategy"], "atomic", "{report}");
-    assert_eq!(report["candidate_is_realizable"], false, "{report}");
+    assert_graph_only_candidate(&report, false);
     let conflicts = report["atomic_group_conflicts"].as_array().unwrap();
     assert!(!conflicts.is_empty(), "{report}");
     let modules = conflicts[0]["candidate_modules"].as_array().unwrap();
@@ -875,7 +970,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(coarsened["candidate_is_realizable"], false, "{coarsened}");
+    assert_graph_only_candidate(&coarsened, false);
     assert_eq!(
         coarsened["coarsening"]["stop_reason"], "atomic_group_conflicts",
         "{coarsened}"
@@ -900,7 +995,7 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(merged["candidate_is_realizable"], true, "{merged}");
+    assert_graph_only_candidate(&merged, true);
     assert_eq!(merged["coverage_complete"], true, "{merged}");
     assert!(
         merged["atomic_group_conflicts"]
@@ -965,7 +1060,11 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         .map(|source_unit| serde_json::json!({"unit_id": source_unit, "module": target}))
         .collect();
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "refine", "--batch", batch_path.to_str().unwrap()],
+        &analysis,
+    );
     assert_eq!(
         outside_before,
         fs::read(fixture.modules.join("outside.yaml")).unwrap()
@@ -1001,7 +1100,7 @@ fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert!(
         !report["coarsening"]["atomic_conflict_merges"]
             .as_array()
@@ -1061,7 +1160,7 @@ fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
     ]);
     assert_eq!(report["strategy"], "atomic_including_residual", "{report}");
     assert_eq!(report["coverage_complete"], true, "{report}");
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
 
     let graph = fixture.dependency_graph();
     let entry_path = graph
@@ -1135,7 +1234,7 @@ fn reports_unfixed_cross_module_cycles_instead_of_calling_them_safe() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(report["candidate_is_realizable"], false, "{report}");
+    assert_graph_only_candidate(&report, false);
     assert_eq!(report["coverage_complete"], true, "{report}");
     assert!(!report["cycles"].as_array().unwrap().is_empty(), "{report}");
 }
@@ -1159,7 +1258,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(atomic["candidate_is_realizable"], false, "{atomic}");
+    assert_graph_only_candidate(&atomic, false);
     assert!(!atomic["cycles"].as_array().unwrap().is_empty(), "{atomic}");
     assert!(
         atomic["atomic_group_conflicts"]
@@ -1179,7 +1278,7 @@ fn coarsens_only_gate_blocking_sccs_and_the_reported_assignment_runs() {
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert_eq!(report["cycles"], serde_json::json!([]), "{report}");
     assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
     assert_eq!(report["coarsening"]["rounds"].as_array().unwrap().len(), 1);
@@ -1235,7 +1334,7 @@ fn coarsening_an_entry_scc_keeps_import_and_export_source_units_at_the_entry_pat
         "--modules",
         fixture.modules.to_str().unwrap(),
     ]);
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     assert_eq!(report["coarsening"]["stop_reason"], "accepted", "{report}");
     assert_eq!(report["coarsening"]["rounds"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -1321,7 +1420,7 @@ fn source_aware_coarsening_reports_all_readable_name_collisions() {
         source_root,
     ];
     let report = fixture.json(&args);
-    assert_eq!(report["candidate_is_realizable"], true, "{report}");
+    assert_graph_only_candidate(&report, true);
     let collisions = report["coarsening"]["naming_collisions"]
         .as_array()
         .expect("source-aware coarsening should list naming collisions");

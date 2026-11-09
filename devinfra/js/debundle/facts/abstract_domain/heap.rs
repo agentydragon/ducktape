@@ -20,7 +20,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use super::builtins::{self, ArgSel, Invocation};
 use super::primitive::{BindingPrims, evaluate};
-use super::value::{Kind, Value};
+use super::value::{HeapModuleScope, Kind, SourceHeapResolver, Value};
 use crate::analysis_inputs::ProofDependencies;
 use crate::analysis_provenance::InferenceUse;
 use crate::facts::{
@@ -44,6 +44,8 @@ pub enum Mutation {
     /// `[[DefineOwnProperty]]` on `target` for every own enumerable key of the
     /// `descriptors` record.
     DefineProperties { target: ArgSel, descriptors: ArgSel },
+    /// Enumerable own source values are read and written through strict `Set`.
+    AssignProperties { target: ArgSel, source: ArgSel },
     /// The fresh allocation receives the argument's own property descriptors:
     /// data values and accessor functions by identity, never invoked.
     FreshOwnDescriptorsOf(ArgSel),
@@ -145,12 +147,18 @@ fn init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> InitGroups<'a> {
 
 /// The allocation an initializer creates, keyed by its start offset as value
 /// flow keys object and array literals.
-fn site(init: &Expr) -> Value {
-    Value::Alloc(Kind::Object, init.unwrap_parens().span().lo.0)
+fn site(init: &Expr, resolver: SourceHeapResolver) -> Value {
+    Value::Alloc(
+        Kind::Object,
+        resolver.allocation(Kind::Object, init.unwrap_parens().span().lo.0),
+    )
 }
 
 /// Bindings whose every initializer is plain data, with those allocations.
-fn tracked_bindings(inits_by_name: &InitGroups<'_>) -> BTreeMap<String, BTreeSet<Value>> {
+fn tracked_bindings(
+    inits_by_name: &InitGroups<'_>,
+    resolver: SourceHeapResolver,
+) -> BTreeMap<String, BTreeSet<Value>> {
     inits_by_name
         .iter()
         .filter(|(name, inits)| {
@@ -161,7 +169,7 @@ fn tracked_bindings(inits_by_name: &InitGroups<'_>) -> BTreeMap<String, BTreeSet
         .map(|(name, inits)| {
             (
                 name.clone(),
-                inits.iter().map(|(init, _)| site(init)).collect(),
+                inits.iter().map(|(init, _)| site(init, resolver)).collect(),
             )
         })
         .collect()
@@ -186,9 +194,12 @@ fn literal_roots(
 
 /// Allocations value flow must register as candidate roots before its single
 /// solve, so the heap scan can query what reaches them.
-pub(crate) fn tracked_allocation_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
+pub(crate) fn tracked_allocation_roots(
+    body: &[TopLevelItemView<'_>],
+    resolver: SourceHeapResolver,
+) -> BTreeSet<Value> {
     let inits_by_name = init_groups(body);
-    literal_roots(&inits_by_name, &tracked_bindings(&inits_by_name))
+    literal_roots(&inits_by_name, &tracked_bindings(&inits_by_name, resolver))
 }
 
 impl ChunkHeap {
@@ -202,7 +213,7 @@ impl ChunkHeap {
         arguments: Option<&ArgumentNoEscapeFacts>,
     ) -> Self {
         let inits_by_name = init_groups(body);
-        let bindings = tracked_bindings(&inits_by_name);
+        let bindings = tracked_bindings(&inits_by_name, value_flow.heap_resolver());
         if bindings.is_empty() {
             return Self {
                 states: BTreeMap::new(),
@@ -265,13 +276,19 @@ impl ChunkHeap {
                 .collect();
             !values.is_empty()
                 && values.iter().all(|value| {
-                    matches!(value, Value::Alloc(Kind::Function, function) if this_free.0.contains(function))
+                matches!(value, Value::Alloc(Kind::Function, function)
+                    if value_flow.source_origin(*function).is_some_and(|origin| this_free.0.contains(&origin)))
                 })
         };
         scan.this_methods = inits_by_name
             .values()
             .flatten()
-            .map(|(init, _)| (site(init), this_methods(init, &this_free_binding)))
+            .map(|(init, _)| {
+                (
+                    site(init, value_flow.heap_resolver()),
+                    this_methods(init, &this_free_binding),
+                )
+            })
             .collect();
         for item in body {
             let module_item = item.as_module_item();
@@ -425,7 +442,9 @@ fn plain_array_source(expr: &Expr) -> Option<Option<String>> {
 pub(crate) fn plain_array_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
+    heap_scope: HeapModuleScope,
 ) -> BTreeSet<String> {
+    let resolver = SourceHeapResolver::new(heap_scope);
     let mut sources = Vec::new();
     let mut tracked = BTreeMap::new();
     for item in body {
@@ -433,7 +452,7 @@ pub(crate) fn plain_array_bindings(
             if kind == VarDeclKind::Const
                 && let Some(source) = plain_array_source(init)
             {
-                tracked.insert(target.clone(), BTreeSet::from([site(init)]));
+                tracked.insert(target.clone(), BTreeSet::from([site(init, resolver)]));
                 sources.push((target, source));
             }
         }
@@ -1665,13 +1684,18 @@ impl Visit for ArrayMethodScan<'_, '_> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::value::LocalAnalysisScopeId;
     use super::*;
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
 
     fn plain_data(source: &str) -> Vec<String> {
         let module = raw_js_test_support::parse(source);
         let body = top_level_item_views(&module.body);
-        let flow = ChunkValueFlow::analyze_with_candidates(&body, &tracked_allocation_roots(&body));
+        let heap_scope = HeapModuleScope::LocalAnalysis(LocalAnalysisScopeId::fresh());
+        let heap_resolver = SourceHeapResolver::new(heap_scope);
+        let candidates = tracked_allocation_roots(&body, heap_resolver);
+        let flow =
+            ChunkValueFlow::analyze_with_candidates_in_resolver(heap_resolver, &body, &candidates);
         ChunkHeap::analyze(&body, &compute_shadowed_globals(&body), &flow, None)
             .plain_data_bindings()
             .bindings
@@ -1736,7 +1760,11 @@ mod tests {
     fn primitive_arrays(source: &str) -> BTreeSet<String> {
         let module = raw_js_test_support::parse(source);
         let body = top_level_item_views(&module.body);
-        let plain = plain_array_bindings(&body, &compute_shadowed_globals(&body));
+        let plain = plain_array_bindings(
+            &body,
+            &compute_shadowed_globals(&body),
+            HeapModuleScope::LocalAnalysis(super::super::value::LocalAnalysisScopeId::fresh()),
+        );
         let prims = crate::facts::abstract_domain::primitive::collect_binding_prims(
             &body,
             &BTreeSet::new(),

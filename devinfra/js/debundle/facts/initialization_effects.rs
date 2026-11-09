@@ -1,9 +1,10 @@
-//! Read-only initialization effects for report-only translation validation.
+//! Read-only initialization effects for candidate relocation validation.
 //!
 //! Recorded accesses and domain coverage are different facts. In particular,
 //! synchronous execution completeness and purity do not certify the absence
 //! of general property, callee-global, or host effects.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,9 @@ fn not_truncated(value: &bool) -> bool {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum InitializationEffectBasis {
     Observed,
+    /// Conservative initialization-control write from missing normality
+    /// evidence; this may suppress later units but is not a proved event.
+    PotentialSuppression,
     Fallback {
         reason: AssumedEffectReason,
     },
@@ -111,14 +115,26 @@ pub struct InitializationEffects<'a> {
     pub ordinal: SourceUnitOrdinal,
     pub reads: BTreeMap<EffectCell, InitializationEffectEvidence>,
     pub writes: BTreeMap<EffectCell, InitializationEffectEvidence>,
+    /// Receipts that explain when a projected ObjectShape read supports an
+    /// admitted own-data operation. These receipts never affect coverage.
+    operation_support_reads:
+        BTreeMap<EffectCell, Vec<super::sync_effects::OperationSupportReceipt>>,
     pub allocates: BTreeSet<EffectCell>,
     /// Conditions of the exact owner's whole-evaluation coverage proof. An
     /// import or direct function declaration executes no body and needs none.
-    pub coverage_dependencies: Option<&'a ProofDependencies>,
+    pub coverage_dependencies: Option<Cow<'a, ProofDependencies>>,
+    /// Exact root dependencies used by the shared initialization progress
+    /// projection, independent of ordinary may-effect domain closure.
+    pub control_dependencies: Option<Cow<'a, ProofDependencies>>,
     /// Missing semantic domains; independent of legacy timing opacity.
     pub unknown_coverage: BTreeSet<UnknownEffectCoverage>,
+    /// Diagnostic count input before operation coverage discharges a cause.
+    pub legacy_dataflow_opaque: bool,
     pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
     pub incomplete_execution: bool,
+    /// Every retained loss is covered by this exact owner's operation proof.
+    /// Raw completeness/loss diagnostics remain available independently.
+    pub retained_effects_closed: bool,
     /// The report sweep borrows the retained statement ledger rather than
     /// duplicating every loss and its source/proof evidence for the chunk.
     pub execution_losses: &'a [ExecutionPrecisionLoss],
@@ -127,11 +143,36 @@ pub struct InitializationEffects<'a> {
 }
 
 impl InitializationEffects<'_> {
+    /// Typed reasons that an operation's mutable descriptor/shape state was
+    /// projected into this statement's read footprint.
+    pub fn operation_support_reads_for(
+        &self,
+        cell: &EffectCell,
+    ) -> &[super::sync_effects::OperationSupportReceipt] {
+        self.operation_support_reads
+            .get(cell)
+            .map_or(&[], Vec::as_slice)
+    }
+}
+
+impl<'a> InitializationEffects<'a> {
+    pub fn uncovered_execution(&self) -> bool {
+        self.incomplete_execution && !self.retained_effects_closed
+    }
+
+    pub fn uncovered_execution_losses(&self) -> &'a [ExecutionPrecisionLoss] {
+        if self.retained_effects_closed {
+            &[]
+        } else {
+            self.execution_losses
+        }
+    }
+
     pub fn has_havoc(&self) -> bool {
         !self.unknown_coverage.is_empty()
             || !self.dataflow_opacity.is_empty()
-            || self.incomplete_execution
-            || !self.execution_losses.is_empty()
+            || self.uncovered_execution()
+            || !self.uncovered_execution_losses().is_empty()
             || self.opaque_heap
     }
 
@@ -175,11 +216,15 @@ impl StatementFacts {
             ordinal: self.ordinal,
             reads: BTreeMap::new(),
             writes: BTreeMap::new(),
+            operation_support_reads: BTreeMap::new(),
             allocates: self.heap_contents.allocations.clone(),
             coverage_dependencies: None,
+            control_dependencies: None,
             unknown_coverage: BTreeSet::new(),
+            legacy_dataflow_opaque: false,
             dataflow_opacity: self.dataflow_opacity(),
             incomplete_execution: false,
+            retained_effects_closed: false,
             execution_losses: &[],
             opaque_heap: own_heap.opaque,
             owner_coverage_refusal: None,
@@ -192,9 +237,42 @@ impl StatementFacts {
             effects.opaque_heap = false;
             return effects;
         }
+        effects.legacy_dataflow_opaque = !effects.dataflow_opacity.is_empty();
         let completed = own_heap.completed_initialization;
-        effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
-        if completed.is_none() {
+        let retained = self.synchronous_calls.as_ref().and_then(|calls| {
+            calls
+                .binding_effect_coverage
+                .retained_effect_dependencies(self.ordinal, &calls.precision_losses)
+        });
+        effects.retained_effects_closed = retained.is_some();
+        let covered_dependencies = completed.map(|proof| proof.dependencies()).or(retained);
+        let operation_dependencies = covered_dependencies.and_then(|_| {
+            self.synchronous_calls
+                .as_ref()?
+                .binding_effect_coverage
+                .operation_dependencies(self.ordinal)
+        });
+        let operation_covered = operation_dependencies.is_some();
+        if operation_covered {
+            // Complete operations supersede the legacy unattributed call and
+            // member-write/alias summaries for this exact owner. Actual cells
+            // and independent dynamic/global-alias opacity remain authoritative.
+            effects
+                .dataflow_opacity
+                .remove(&DataflowOpacityCause::OpaqueAtInitCall);
+            effects
+                .dataflow_opacity
+                .remove(&DataflowOpacityCause::MemberWriteOrAlias);
+        }
+        effects.coverage_dependencies =
+            covered_dependencies.map(|proof| match operation_dependencies {
+                Some(mut dependencies) => {
+                    dependencies.extend(proof);
+                    Cow::Owned(dependencies)
+                }
+                None => Cow::Borrowed(proof),
+            });
+        if covered_dependencies.is_none() {
             effects.unknown_coverage.extend([
                 UnknownEffectCoverage::GlobalProperties,
                 UnknownEffectCoverage::GeneralHeap,
@@ -241,6 +319,15 @@ impl StatementFacts {
             record(&mut effects.writes, cell.clone(), None);
         }
         if let Some(calls) = &self.synchronous_calls {
+            for receipt in calls.operation_support_receipts() {
+                if let Some(cell) = receipt.projected_cell() {
+                    effects
+                        .operation_support_reads
+                        .entry(cell)
+                        .or_default()
+                        .push(receipt.clone());
+                }
+            }
             for (site, evidence) in &calls.evaluation_effects.global_accesses {
                 let target = match site.access {
                     GlobalAccessKind::Read => &mut effects.reads,
@@ -304,6 +391,13 @@ impl StatementFacts {
         } else {
             effects.incomplete_execution = true;
         }
+        if operation_covered {
+            // This exact owner's lexical and global/heap/host operations have
+            // complete receipts. An opaque result's contents are still opaque,
+            // but the legacy may-heap flag cannot invent an uncovered operation.
+            // Keep every recorded cell access and all other opacity/loss causes.
+            effects.opaque_heap = false;
+        }
         if !effects.unknown_coverage.is_empty() {
             let reason = match &self.synchronous_calls {
                 Some(calls) => calls
@@ -315,6 +409,37 @@ impl StatementFacts {
                 reason,
                 source_location: self.source_location.clone(),
             });
+        }
+        let normal_completion = self.synchronous_calls.as_ref().and_then(|calls| {
+            calls
+                .root_normal_completion
+                .as_ref()
+                .filter(|proof| proof.covers(self.ordinal))
+        });
+        let outward_throw = self.synchronous_calls.as_ref().and_then(|calls| {
+            calls
+                .root_outward_throw
+                .as_ref()
+                .filter(|proof| proof.covers(self.ordinal))
+        });
+        effects.control_dependencies = normal_completion
+            .map(|proof| proof.dependencies())
+            .or_else(|| outward_throw.map(|proof| proof.dependencies()))
+            .map(Cow::Borrowed);
+        // Empty source-prefix effects are not an inert certificate. Only an
+        // exact whole-owner normal receipt can establish inertness; all other
+        // evaluated owners read the shared progress cell, and owners without
+        // normal completion proof may suppress every later unit.
+        let inert = normal_completion.is_some() && effects.is_empty();
+        if !inert {
+            record(&mut effects.reads, EffectCell::ExecutionProgress, None);
+        }
+        if normal_completion.is_none() {
+            if outward_throw.is_some() {
+                record(&mut effects.writes, EffectCell::ExecutionProgress, None);
+            } else {
+                record_potential_suppression(&mut effects.writes, EffectCell::ExecutionProgress);
+            }
         }
         effects
     }
@@ -348,4 +473,16 @@ fn record(
             global_may_access_count: 0,
             global_may_accesses_truncated: false,
         });
+}
+
+fn record_potential_suppression(
+    target: &mut BTreeMap<EffectCell, InitializationEffectEvidence>,
+    cell: EffectCell,
+) {
+    target.entry(cell).or_insert(InitializationEffectEvidence {
+        basis: InitializationEffectBasis::PotentialSuppression,
+        global_may_accesses: Vec::new(),
+        global_may_access_count: 0,
+        global_may_accesses_truncated: false,
+    });
 }

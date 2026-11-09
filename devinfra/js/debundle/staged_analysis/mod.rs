@@ -15,6 +15,7 @@ use artifact::{
 };
 use chunk_facts::analyze_logical_chunk;
 use graph_provenance::GraphProvenance;
+use js_ast::ParsedGlobalUses;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
@@ -126,15 +127,18 @@ pub struct ExportReentryTarget {
 /// Hygiene-context ordinals for an analysis artifact: the analysed chunks'
 /// runtime ASTs in analysis order, every retained entry AST in chunk table
 /// order, then the cross-module pass's re-parsed entries in chunk order.
-/// `debundle analyze` and a run that loads its artifact parse the same files,
-/// retain the same ASTs and re-parse the same entries, so both number the same
-/// contexts.
-fn context_ordinals(
-    artifact: &ChunkBundle,
+/// Finally, canonical global-use binding contexts are appended in checked
+/// chunk-name and binding order. `debundle analyze` and a run that loads its
+/// artifact parse the same files, retain the same ASTs and re-parse the same
+/// entries, so both number the same contexts, including those whose original
+/// source AST was rendered away before save.
+fn context_ordinals<'a, 'manifest>(
+    artifact: &'a ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
     reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
-) -> Result<ContextOrdinals> {
+    canonical_global_uses: impl IntoIterator<Item = &'manifest ParsedGlobalUses>,
+) -> Result<ContextOrdinals<'a>> {
     let mut modules = Vec::new();
     for chunk_id in analysed_chunk_ids {
         let interned = artifact
@@ -154,7 +158,13 @@ fn context_ordinals(
         }
     }
     modules.extend(reparsed.values().map(|entry| &entry.parsed.module));
-    Ok(ContextOrdinals::new(modules))
+    Ok(ContextOrdinals::new_with_bindings(
+        modules,
+        &artifact.chunk_table,
+        canonical_global_uses
+            .into_iter()
+            .flat_map(|manifest| manifest.uses.keys()),
+    ))
 }
 
 fn chunk_source_digests(provenance: &GraphProvenance) -> BTreeMap<String, String> {
@@ -202,8 +212,73 @@ pub fn load_analysis(
                 .join(", ")
         );
     }
-    let ordinals = context_ordinals(artifact, analysed_chunk_ids, file, reparsed)?;
-    let body = analysis_artifact::read_body(body, &ordinals)?;
+    let indexes = ArtifactIndexes::build(artifact)?;
+    let prepared_chunk_ids =
+        indexes.selected_static_import_closure(artifact, analysed_chunk_ids)?;
+    let prepared_chunk_names: BTreeSet<_> = prepared_chunk_ids
+        .iter()
+        .map(|chunk_id| artifact.chunk_table.name(*chunk_id).to_string())
+        .collect();
+    let fresh_global_uses = prepared_chunk_names
+        .iter()
+        .map(|chunk_name| {
+            let chunk_id = artifact
+                .chunk_table
+                .get(chunk_name)
+                .with_context(|| format!("prepared global-use chunk is unknown: {chunk_name}"))?;
+            let manifest = artifact
+                .chunk(chunk_id)?
+                .analysis
+                .runtime_facts
+                .global_uses
+                .as_deref();
+            Ok((chunk_name.clone(), manifest))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let canonical_global_uses = fresh_global_uses
+        .iter()
+        .map(|(chunk_name, manifest)| {
+            manifest
+                .as_deref()
+                .with_context(|| format!("fresh source context is unavailable for {chunk_name}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let ordinals = context_ordinals(
+        artifact,
+        analysed_chunk_ids,
+        file,
+        reparsed,
+        canonical_global_uses,
+    )?;
+    let canonical_source_inventories = prepared_chunk_ids
+        .iter()
+        .map(|chunk_id| {
+            let chunk_name = artifact.chunk_table.name(*chunk_id).to_string();
+            let file_override = analysed_chunk_ids
+                .iter()
+                .any(|analysed| analysed == &chunk_name)
+                .then_some(file)
+                .flatten();
+            let (_, _, runtime_ast) =
+                chunk_runtime_entry(artifact, &chunk_name, *chunk_id, file_override)?;
+            let source =
+                analysis::facts::analyze_chunk_structural(&runtime_ast.module, None, |_| None);
+            let locations = analysis::facts::canonical_source_inventory(&source);
+            let inventory = analysis_artifact::provider_source_inventory(
+                &chunk_name,
+                *chunk_id,
+                &runtime_ast,
+                locations,
+            )?;
+            Ok((chunk_name, inventory))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let body = analysis_artifact::read_body(body, &ordinals, &canonical_source_inventories)?;
+    saved_program_summary::validate_global_uses(
+        &body.program_summary.global_uses,
+        &fresh_global_uses,
+        &prepared_chunk_names,
+    )?;
     Ok((header, body))
 }
 
@@ -256,11 +331,8 @@ pub fn analyze_program(
         .iter()
         .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
         .collect();
-    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
-        &artifact,
-        &artifact_indexes,
-        &selected_chunk_ids,
-    )?;
+    let program_summary_chunk_closure =
+        artifact_indexes.selected_static_import_closure(&artifact, &selected_chunk_ids)?;
     let projection = spec.projection(resolved_export_purity.as_ref());
     let reparsed = program_summary::reparse_unretained_entries(
         &artifact,
@@ -286,6 +358,10 @@ pub fn analyze_program(
         &selected_chunk_ids,
         spec.entry_file.as_deref(),
         &reparsed,
+        program_summary
+            .global_uses
+            .values()
+            .map(|manifest| manifest.as_ref()),
     )?;
     drop(reparsed);
     let chunks = GLOBALS
@@ -323,11 +399,12 @@ pub fn analyze_program(
             .collect(),
         chunks,
     };
-    // Facts and context ordinals own everything encoding needs. Release the
-    // parsed program and its indexes before allocating the encoded artifact.
+    // The ordinal codec borrows the artifact's checked chunk namespace through
+    // encoding. The import indexes are no longer needed.
     drop(artifact_indexes);
+    let encoded = analysis_artifact::write_artifact(&header, &body, &ordinals);
     drop(artifact);
-    analysis_artifact::write_artifact(&header, &body, &ordinals)
+    encoded
 }
 
 pub fn export_reentry_reports(

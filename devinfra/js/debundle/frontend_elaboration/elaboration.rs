@@ -296,11 +296,7 @@ fn resolve_analysis_source_sites(
     BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 )> {
     let indexes = ArtifactIndexes::build(artifact)?;
-    let provider_closure = analysis_projection::selected_static_import_closure(
-        artifact,
-        &indexes,
-        selected_chunk_ids,
-    )?;
+    let provider_closure = indexes.selected_static_import_closure(artifact, selected_chunk_ids)?;
     let mut source_sites = AnalysisSourceSites::default();
     let mut native_operation_inputs = BTreeMap::new();
 
@@ -951,8 +947,12 @@ fn prepare_chunk<'a>(
         }
     }
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+    // The resolved chunk facts flow into later semantic analysis. Keep the
+    // canonical chunk identity from this boundary; a local-analysis scope
+    // would disagree with AnalysisInputs and cannot be serialized as origin.
+    let structural_analysis = analysis::facts::collect_chunk_source_facts_in_chunk(
         &runtime_ast.module,
+        chunk_id_interned,
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
     );

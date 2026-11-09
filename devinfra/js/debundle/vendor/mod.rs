@@ -23,10 +23,16 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::list_chunk_file_paths;
 use binding_targets::declaration_ids;
-pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
+pub use emission::{
+    EmissionRewriteResult, apply_emission_rewrites_in_place, write_planned_vendor_outputs,
+};
 use export_surface::collect_local_idents_by_export_name;
 pub use import_rewrites::{
     DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites,
+};
+pub use import_rewrites::{
+    VendorUseRewriteObservation, VendorUseRewriteTarget, checked_boundary_rename_action,
+    checked_vendor_replacement_action,
 };
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
@@ -222,6 +228,8 @@ fn seed_bundled_partial_swap_self_rewrites(
         outputs.prelude_imports.push(DeferredImport::Default {
             source: import_source,
             local,
+            local_ctxt: SyntaxContext::empty(),
+            source_span: DUMMY_SP,
         });
     }
 }
@@ -496,6 +504,7 @@ mod tests {
             parsed.module.visit_mut_with(&mut PartialSwapIdentRewriter {
                 bindings: &bindings,
                 references_by_symbol: &mut references_by_symbol,
+                observations: None,
             });
 
             let emitted = emit_js_module(&parsed, &[]).unwrap();

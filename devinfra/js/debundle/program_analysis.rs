@@ -1,11 +1,13 @@
 use artifact::runtime_resources::{RuntimeResourceKind, RuntimeResourceUse};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
 use analysis::facts::module_has_top_level_await;
 use analysis_model::PrimKinds;
 use analysis_model::StableExportValue;
-use swc_common::{Span, Spanned, SyntaxContext};
+use source_identity::StatementId;
+use swc_common::{Span, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -14,15 +16,17 @@ use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
     ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord, InteropUse,
     InteropUseKind, KeptTopLevelDeclarationRecord, LoaderBinding, LoaderBindingUse,
-    LoaderBindingUses, NamespaceRequest, SitePhase, StaticModuleRequest, StaticModuleRequestMode,
-    TopLevelDeclarationKind,
+    LoaderBindingUses, NamespaceRequest, ParsedSourceExport, ParsedSourceImportBinding,
+    ParsedSourceImportUseSite, ParsedSourceImports, ParsedSourceReExport, ParsedSourceRequest,
+    SitePhase, SourceReExportKind, SourceStaticRequestKind, StaticModuleRequest,
+    StaticModuleRequestMode, TopLevelDeclarationKind,
 };
 use binding_targets::{
     DeclShape, TargetAccessRecorder, binding_names, decl_shape, declaration_name_strings,
     member_root_sym, module_export_name, record_assign_target, record_pat_write,
     record_update_target,
 };
-use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
+use js_ast::{ParsedGlobalUses, ParsedJsModule, SourceLineIndex, str_value};
 
 mod loader_phase;
 mod loader_reach;
@@ -174,6 +178,45 @@ fn named_export_has_runtime_request(export: &NamedExport) -> bool {
                 ExportSpecifier::Named(named) => !named.is_type_only,
                 ExportSpecifier::Default(_) | ExportSpecifier::Namespace(_) => true,
             }))
+}
+
+/// Classify one static ESM module declaration for the ordered runtime request
+/// inventory shared by source analysis and candidate emission.
+pub fn static_module_request_for_decl(decl: &ModuleDecl) -> Option<StaticModuleRequest> {
+    let (source, mode) = match decl {
+        ModuleDecl::Import(import) if import_decl_has_runtime_request(import) => (
+            &import.src,
+            if matches!(&import.phase, ImportPhase::Evaluation) && import.with.is_none() {
+                StaticModuleRequestMode::OrdinaryEsm
+            } else {
+                StaticModuleRequestMode::Unsupported
+            },
+        ),
+        ModuleDecl::ExportNamed(export) if named_export_has_runtime_request(export) => {
+            let source = export.src.as_ref()?;
+            (
+                source,
+                if export.with.is_none() {
+                    StaticModuleRequestMode::OrdinaryEsm
+                } else {
+                    StaticModuleRequestMode::Unsupported
+                },
+            )
+        }
+        ModuleDecl::ExportAll(export) if !export.type_only => (
+            &export.src,
+            if export.with.is_none() {
+                StaticModuleRequestMode::OrdinaryEsm
+            } else {
+                StaticModuleRequestMode::Unsupported
+            },
+        ),
+        _ => return None,
+    };
+    Some(StaticModuleRequest {
+        specifier: str_value(source),
+        mode,
+    })
 }
 
 fn module_decl_is_runtime_esm(decl: &ModuleDecl) -> bool {
@@ -468,9 +511,18 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         resources,
         binding_declarations,
         binding_writes,
+        mut unresolved_uses,
         dynamic_scope,
         ..
     } = module_scan;
+    for spans in unresolved_uses.values_mut() {
+        spans.sort_unstable_by_key(|span| (span.lo.0, span.hi.0));
+    }
+    let global_uses = Arc::new(ParsedGlobalUses {
+        source_file: parsed.source_file_name(),
+        uses: unresolved_uses,
+        dynamic_scope,
+    });
     let has_cjs_interop = visitor_has_cjs_interop
         || parsed.module.body.iter().any(|item| {
             matches!(
@@ -567,6 +619,8 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         })
         .collect();
     let mut runtime_facts = ChunkRuntimeFacts {
+        global_uses: Some(global_uses),
+        parsed_source_imports: Some(parsed_source_imports(parsed)),
         resources,
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
@@ -600,18 +654,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
+        if let ModuleItem::ModuleDecl(decl) = item
+            && let Some(request) = static_module_request_for_decl(decl)
+        {
+            runtime_facts.static_requests.push(request);
+        }
         collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
-            if import_decl_has_runtime_request(decl) {
-                runtime_facts.static_requests.push(StaticModuleRequest {
-                    specifier: str_value(&decl.src),
-                    mode: if matches!(&decl.phase, ImportPhase::Evaluation) && decl.with.is_none() {
-                        StaticModuleRequestMode::OrdinaryEsm
-                    } else {
-                        StaticModuleRequestMode::Unsupported
-                    },
-                });
-            }
             if !decl.type_only
                 && matches!(&decl.phase, ImportPhase::Evaluation)
                 && decl.with.is_none()
@@ -642,37 +691,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
-            && named_export_has_runtime_request(named)
-            && let Some(source) = &named.src
-        {
-            runtime_facts.static_requests.push(StaticModuleRequest {
-                specifier: str_value(source),
-                mode: if named.with.is_none() {
-                    StaticModuleRequestMode::OrdinaryEsm
-                } else {
-                    StaticModuleRequestMode::Unsupported
-                },
-            });
-        }
-
-        if let ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export_all)) = item
-            && !export_all.type_only
-        {
-            runtime_facts.static_requests.push(StaticModuleRequest {
-                specifier: str_value(&export_all.src),
-                mode: if export_all.with.is_none() {
-                    StaticModuleRequestMode::OrdinaryEsm
-                } else {
-                    StaticModuleRequestMode::Unsupported
-                },
-            });
-        }
-
-        if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
             && !named.specifiers.is_empty()
         {
             for specifier in &named.specifiers {
-                if let ExportSpecifier::Named(named_specifier) = specifier {
+                if let ExportSpecifier::Named(named_specifier) = specifier
+                    && !named.type_only
+                    && !named_specifier.is_type_only
+                {
                     export_aliases.push(ExportAliasRecord {
                         exported: module_export_name(
                             named_specifier
@@ -682,6 +707,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                         ),
                         line: line_index.line_for_span(named.span),
                         local: Some(module_export_name(&named_specifier.orig)),
+                        source: named.src.as_ref().map(|source| str_value(source)),
                     });
                 }
             }
@@ -693,6 +719,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 exported: "default".to_string(),
                 line: line_index.line_for_span(default_decl.span),
                 local: export_default_decl_name(default_decl),
+                source: None,
             });
             continue;
         }
@@ -702,6 +729,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 exported: "default".to_string(),
                 line: line_index.line_for_span(default_expr.span),
                 local: None,
+                source: None,
             });
             continue;
         }
@@ -763,6 +791,295 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         observable_module_effect,
         has_rewritable_specifier,
         runtime_facts,
+    }
+}
+
+fn parsed_source_imports(parsed: &ParsedJsModule) -> ParsedSourceImports {
+    let mut requests = Vec::new();
+    let mut bindings = Vec::new();
+    let mut reexports = Vec::new();
+    let mut exports = Vec::new();
+    for (statement_index, item) in parsed.module.body.iter().enumerate() {
+        let statement = StatementId(statement_index);
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                let request = str_value(&import.src);
+                let mode = static_module_request_for_decl(&ModuleDecl::Import(import.clone()))
+                    .map(|request| request.mode)
+                    .unwrap_or(StaticModuleRequestMode::Unsupported);
+                requests.push(ParsedSourceRequest {
+                    statement,
+                    declaration_span: import.span,
+                    request: request.clone(),
+                    mode,
+                    kind: SourceStaticRequestKind::Import,
+                    specifier_spans: import
+                        .specifiers
+                        .iter()
+                        .map(|specifier| specifier.span())
+                        .collect(),
+                    type_only: import.type_only
+                        || (!import.specifiers.is_empty()
+                            && import.specifiers.iter().all(|specifier| match specifier {
+                                ImportSpecifier::Named(named) => named.is_type_only,
+                                ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => {
+                                    false
+                                }
+                            })),
+                });
+                for (specifier_index, specifier) in import.specifiers.iter().enumerate() {
+                    let (local, local_span, imported_name, kind, specifier_type_only) =
+                        match specifier {
+                            ImportSpecifier::Named(named) => {
+                                let imported = match &named.imported {
+                                    Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                                    Some(ModuleExportName::Str(string)) => str_value(string),
+                                    None => named.local.sym.to_string(),
+                                };
+                                (
+                                    named.local.to_id(),
+                                    named.local.span,
+                                    imported,
+                                    ImportSpecifierKind::Named,
+                                    named.is_type_only,
+                                )
+                            }
+                            ImportSpecifier::Default(default) => (
+                                default.local.to_id(),
+                                default.local.span,
+                                "default".to_owned(),
+                                ImportSpecifierKind::Default,
+                                false,
+                            ),
+                            ImportSpecifier::Namespace(namespace) => (
+                                namespace.local.to_id(),
+                                namespace.local.span,
+                                "*".to_owned(),
+                                ImportSpecifierKind::Namespace,
+                                false,
+                            ),
+                        };
+                    bindings.push(ParsedSourceImportBinding {
+                        statement,
+                        specifier_index,
+                        local,
+                        local_span,
+                        declaration_span: import.span,
+                        request: request.clone(),
+                        imported_name,
+                        kind,
+                        type_only: import.type_only || specifier_type_only,
+                        use_spans: Vec::new(),
+                        use_sites: Vec::new(),
+                    });
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
+                if let Some(source) = &export.src {
+                    let mode =
+                        static_module_request_for_decl(&ModuleDecl::ExportNamed(export.clone()))
+                            .map(|request| request.mode)
+                            .unwrap_or(StaticModuleRequestMode::Unsupported);
+                    requests.push(ParsedSourceRequest {
+                        statement,
+                        declaration_span: export.span,
+                        request: str_value(source),
+                        mode,
+                        kind: SourceStaticRequestKind::NamedReExport,
+                        specifier_spans: export
+                            .specifiers
+                            .iter()
+                            .map(|specifier| specifier.span())
+                            .collect(),
+                        type_only: export.type_only
+                            || (!export.specifiers.is_empty()
+                                && export.specifiers.iter().all(|specifier| match specifier {
+                                    ExportSpecifier::Named(named) => named.is_type_only,
+                                    ExportSpecifier::Namespace(_) | ExportSpecifier::Default(_) => {
+                                        false
+                                    }
+                                })),
+                    });
+                    for (specifier_index, specifier) in export.specifiers.iter().enumerate() {
+                        let (imported_name, exported_name, kind, specifier_type_only) =
+                            match specifier {
+                                ExportSpecifier::Named(named) => (
+                                    Some(binding_targets::module_export_name(&named.orig)),
+                                    Some(binding_targets::module_export_name(
+                                        named.exported.as_ref().unwrap_or(&named.orig),
+                                    )),
+                                    SourceReExportKind::Named,
+                                    named.is_type_only,
+                                ),
+                                ExportSpecifier::Namespace(namespace) => (
+                                    None,
+                                    Some(binding_targets::module_export_name(&namespace.name)),
+                                    SourceReExportKind::Namespace,
+                                    false,
+                                ),
+                                ExportSpecifier::Default(default) => (
+                                    Some("default".to_owned()),
+                                    Some(default.exported.sym.to_string()),
+                                    SourceReExportKind::Default,
+                                    false,
+                                ),
+                            };
+                        reexports.push(ParsedSourceReExport {
+                            statement,
+                            specifier: Some(specifier_index),
+                            specifier_span: Some(specifier.span()),
+                            declaration_span: export.span,
+                            request: str_value(source),
+                            imported_name,
+                            exported_name,
+                            kind,
+                            type_only: export.type_only || specifier_type_only,
+                        });
+                    }
+                } else {
+                    for specifier in &export.specifiers {
+                        if let ExportSpecifier::Named(named) = specifier {
+                            let ModuleExportName::Ident(local) = &named.orig else {
+                                continue;
+                            };
+                            exports.push(ParsedSourceExport {
+                                statement,
+                                specifier_span: Some(named.span),
+                                declaration_span: export.span,
+                                local: Some(local.to_id()),
+                                public_name: binding_targets::module_export_name(
+                                    named.exported.as_ref().unwrap_or(&named.orig),
+                                ),
+                                type_only: export.type_only || named.is_type_only,
+                            });
+                        }
+                    }
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export)) => {
+                requests.push(ParsedSourceRequest {
+                    statement,
+                    declaration_span: export.span,
+                    request: str_value(&export.src),
+                    mode: static_module_request_for_decl(&ModuleDecl::ExportAll(export.clone()))
+                        .map(|request| request.mode)
+                        .unwrap_or(StaticModuleRequestMode::Unsupported),
+                    kind: SourceStaticRequestKind::ExportAll,
+                    specifier_spans: Vec::new(),
+                    type_only: export.type_only,
+                });
+                reexports.push(ParsedSourceReExport {
+                    statement,
+                    specifier: None,
+                    specifier_span: None,
+                    declaration_span: export.span,
+                    request: str_value(&export.src),
+                    imported_name: None,
+                    exported_name: None,
+                    kind: SourceReExportKind::All,
+                    type_only: export.type_only,
+                });
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                for local in binding_targets::declaration_ids(&export.decl) {
+                    exports.push(ParsedSourceExport {
+                        statement,
+                        specifier_span: None,
+                        declaration_span: export.span,
+                        public_name: local.0.to_string(),
+                        local: Some(local),
+                        type_only: false,
+                    });
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
+                let local = match &export.decl {
+                    DefaultDecl::Fn(function) => function.ident.as_ref().map(|ident| ident.to_id()),
+                    DefaultDecl::Class(class) => class.ident.as_ref().map(|ident| ident.to_id()),
+                    DefaultDecl::TsInterfaceDecl(_) => None,
+                };
+                exports.push(ParsedSourceExport {
+                    statement,
+                    specifier_span: None,
+                    declaration_span: export.span,
+                    local,
+                    public_name: "default".to_owned(),
+                    type_only: matches!(&export.decl, DefaultDecl::TsInterfaceDecl(_)),
+                });
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
+                exports.push(ParsedSourceExport {
+                    statement,
+                    specifier_span: None,
+                    declaration_span: export.span,
+                    local: None,
+                    public_name: "default".to_owned(),
+                    type_only: false,
+                });
+            }
+            _ => {}
+        }
+    }
+    let imported_ids: HashSet<Id> = bindings
+        .iter()
+        .map(|binding| binding.local.clone())
+        .collect();
+    let mut occurrences = SourceImportOccurrenceCollector {
+        imported_ids,
+        statement: StatementId(0),
+        sites_by_id: HashMap::new(),
+    };
+    for (statement_index, item) in parsed.module.body.iter().enumerate() {
+        occurrences.statement = StatementId(statement_index);
+        item.visit_with(&mut occurrences);
+    }
+    for binding in &mut bindings {
+        let mut sites = occurrences
+            .sites_by_id
+            .remove(&binding.local)
+            .unwrap_or_default();
+        sites.retain(|site| {
+            site.span.lo != binding.local_span.lo || site.span.hi != binding.local_span.hi
+        });
+        sites.sort_by_key(|site| (site.span.lo, site.span.hi));
+        sites
+            .dedup_by(|left, right| left.span.lo == right.span.lo && left.span.hi == right.span.hi);
+        binding.use_spans = sites.iter().map(|site| site.span).collect();
+        binding.use_sites = sites
+            .into_iter()
+            .map(|site| ParsedSourceImportUseSite {
+                statement: site.statement,
+                span: site.span,
+            })
+            .collect();
+    }
+    ParsedSourceImports {
+        source_file: parsed.source_file_name(),
+        requests,
+        bindings,
+        reexports,
+        exports,
+    }
+}
+
+struct SourceImportOccurrenceCollector {
+    imported_ids: HashSet<Id>,
+    statement: StatementId,
+    sites_by_id: HashMap<Id, Vec<ParsedSourceImportUseSite>>,
+}
+
+impl Visit for SourceImportOccurrenceCollector {
+    fn visit_ident(&mut self, ident: &Ident) {
+        let id = ident.to_id();
+        if self.imported_ids.contains(&id) {
+            self.sites_by_id
+                .entry(id)
+                .or_default()
+                .push(ParsedSourceImportUseSite {
+                    statement: self.statement,
+                    span: ident.span,
+                });
+        }
     }
 }
 
@@ -910,6 +1227,7 @@ struct ModuleScanVisitor {
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
+    unresolved_uses: BTreeMap<Id, Vec<Span>>,
     dynamic_scope: bool,
 }
 
@@ -972,8 +1290,21 @@ impl Visit for ModuleScanVisitor {
         node.visit_children_with(self);
     }
 
+    fn visit_labeled_stmt(&mut self, labeled: &LabeledStmt) {
+        // Labels have their own namespace; keep walking the statement body.
+        labeled.body.visit_with(self);
+    }
+
+    fn visit_break_stmt(&mut self, _break_stmt: &BreakStmt) {}
+
+    fn visit_continue_stmt(&mut self, _continue_stmt: &ContinueStmt) {}
+
     fn visit_ident(&mut self, node: &Ident) {
         if node.ctxt == self.unresolved_context {
+            self.unresolved_uses
+                .entry(node.to_id())
+                .or_default()
+                .push(node.span);
             let kind = match node.sym.as_ref() {
                 "require" => Some(InteropUseKind::UnboundRequire),
                 "module" | "exports" => {
@@ -1180,7 +1511,9 @@ impl Visit for ModuleScanVisitor {
         if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
+        // Import specifiers only name the provider interface and establish
+        // local bindings; neither is a lexical read in this module. Static
+        // request/path facts are handled above and by the request inventory.
     }
 
     fn visit_named_export(&mut self, node: &NamedExport) {
@@ -1190,14 +1523,23 @@ impl Visit for ModuleScanVisitor {
         {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
+        // A local named export reads its original local binding. Public
+        // aliases and every name in a re-export are interface syntax.
+        if node.src.is_none() && !node.type_only {
+            for specifier in &node.specifiers {
+                if let ExportSpecifier::Named(named) = specifier
+                    && !named.is_type_only
+                {
+                    named.orig.visit_with(self);
+                }
+            }
+        }
     }
 
     fn visit_export_all(&mut self, node: &ExportAll) {
         if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
     }
 }
 
@@ -1205,6 +1547,117 @@ impl Visit for ModuleScanVisitor {
 mod tests {
     use super::*;
     use swc_common::GLOBALS;
+
+    #[test]
+    fn records_all_and_only_resolver_unbound_identifier_sites() {
+        GLOBALS.set(&Default::default(), || {
+            let parsed = js_ast::parse_js_module(
+                "fixture/chunk.js",
+                r#"
+import { imported } from './dep.js';
+const local = 1;
+const undefined = 2;
+const beforeInitialization = later;
+let later = 3;
+function f(parameter) {
+    return missing + missing + local + imported + parameter + undefined + later;
+}
+eval('dynamicRead');
+"#,
+            )
+            .expect("parse");
+            let analysis = analyze_program_shallow(&parsed);
+            let global_uses = analysis
+                .runtime_facts
+                .global_uses
+                .expect("parsed shallow analysis records an inventory");
+            let names = global_uses
+                .uses
+                .keys()
+                .map(|(name, context)| {
+                    assert_eq!(
+                        *context,
+                        SyntaxContext::empty().apply_mark(parsed.unresolved_mark)
+                    );
+                    name.to_string()
+                })
+                .collect::<BTreeSet<_>>();
+
+            assert_eq!(global_uses.source_file, "fixture/chunk.js");
+            assert_eq!(
+                names,
+                BTreeSet::from(["eval".to_string(), "missing".to_string()])
+            );
+            assert_eq!(
+                global_uses
+                    .uses
+                    .iter()
+                    .find(|((name, _), _)| name.as_ref() == "missing")
+                    .map(|(_, spans)| spans.len()),
+                Some(2)
+            );
+            assert!(global_uses.dynamic_scope);
+
+            let empty = js_ast::parse_js_module("empty.js", "const local = 1;").expect("parse");
+            let empty_analysis = analyze_program_shallow(&empty);
+            let complete_empty = empty_analysis
+                .runtime_facts
+                .global_uses
+                .expect("parsed empty inventory is present");
+            assert!(complete_empty.uses.is_empty());
+            assert!(ChunkRuntimeFacts::default().global_uses.is_none());
+        });
+    }
+
+    #[test]
+    fn global_use_inventory_tracks_lexical_refs_not_interface_names_or_labels() {
+        GLOBALS.set(&Default::default(), || {
+            let parsed = js_ast::parse_js_module(
+                "fixture/module-interfaces.js",
+                r#"
+import { remoteImport as localImport } from './dep.js';
+const local = actualRead;
+const shorthand = { shorthandRead };
+const imported = localImport;
+export { local as publicLocal };
+export { plainMissing };
+export { missingLocal as publicUnresolved };
+export { remoteName as publicReexport } from './reexport.js';
+export * as publicNamespace from './namespace.js';
+export default defaultRead;
+scopeLabel: for (;;) {
+    if (condition) continue scopeLabel;
+    if (shouldBreak) break scopeLabel;
+}
+"#,
+            )
+            .expect("parse");
+            let analysis = analyze_program_shallow(&parsed);
+            let uses = analysis
+                .runtime_facts
+                .global_uses
+                .expect("parsed shallow analysis records an inventory");
+            let names = uses
+                .uses
+                .keys()
+                .map(|(name, _)| name.to_string())
+                .collect::<BTreeSet<_>>();
+
+            assert_eq!(
+                names,
+                BTreeSet::from([
+                    "actualRead".to_string(),
+                    "condition".to_string(),
+                    "defaultRead".to_string(),
+                    "missingLocal".to_string(),
+                    "plainMissing".to_string(),
+                    "shouldBreak".to_string(),
+                    "shorthandRead".to_string(),
+                ])
+            );
+            assert!(uses.uses.values().all(|spans| !spans.is_empty()));
+        });
+    }
 
     #[test]
     fn folds_constant_string_expressions() {

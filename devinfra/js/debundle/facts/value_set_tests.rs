@@ -2,27 +2,39 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use super::{
     ArrowExpr, ChunkValueFlow, Decl, ModuleItem, Stmt, Visit, VisitWith,
-    abstract_domain::value::{Kind, Value},
+    abstract_domain::value::{ClassDefinitionId, HeapAddress, HeapModuleScope, Kind, Value},
     value_flow::{OriginTable, Values},
 };
+use source_identity::ChunkId;
+
+const fn allocation(kind: Kind, origin: u32) -> Value {
+    let module = HeapModuleScope::Chunk(ChunkId(0));
+    let address = match kind {
+        Kind::Class => HeapAddress::ClassObject {
+            class: ClassDefinitionId { module, origin },
+        },
+        _ => HeapAddress::in_scope(module, kind, origin),
+    };
+    Value::Alloc(kind, address)
+}
 
 const DOMAIN: [Value; 10] = [
-    Value::Alloc(Kind::Function, 0),
-    Value::Alloc(Kind::Function, 7),
-    Value::Alloc(Kind::Function, u32::MAX),
-    Value::Alloc(Kind::Class, 0),
-    Value::Alloc(Kind::Class, 19),
-    Value::Alloc(Kind::Class, u32::MAX),
-    Value::Alloc(Kind::Object, 0),
-    Value::Alloc(Kind::Object, 23),
-    Value::Alloc(Kind::Object, u32::MAX),
+    allocation(Kind::Function, 0),
+    allocation(Kind::Function, 7),
+    allocation(Kind::Function, u32::MAX),
+    allocation(Kind::Class, 0),
+    allocation(Kind::Class, 19),
+    allocation(Kind::Class, u32::MAX),
+    allocation(Kind::Object, 0),
+    allocation(Kind::Object, 23),
+    allocation(Kind::Object, u32::MAX),
     Value::Top,
 ];
 
 const ABSENT: [Value; 3] = [
-    Value::Alloc(Kind::Function, 6),
-    Value::Alloc(Kind::Class, 18),
-    Value::Alloc(Kind::Object, 22),
+    allocation(Kind::Function, 6),
+    allocation(Kind::Class, 18),
+    allocation(Kind::Object, 22),
 ];
 
 fn origin_table() -> Arc<OriginTable> {
@@ -72,15 +84,15 @@ fn values_operations_match_btree_set_for_all_origins_and_input_orders() {
         DOMAIN.into_iter().rev().collect(),
         vec![
             Value::Top,
-            Value::Alloc(Kind::Function, 7),
+            allocation(Kind::Function, 7),
             Value::Top,
-            Value::Alloc(Kind::Object, 23),
-            Value::Alloc(Kind::Function, 7),
-            Value::Alloc(Kind::Class, 19),
-            Value::Alloc(Kind::Object, 0),
-            Value::Alloc(Kind::Class, 0),
-            Value::Alloc(Kind::Function, 0),
-            Value::Alloc(Kind::Function, u32::MAX),
+            allocation(Kind::Object, 23),
+            allocation(Kind::Function, 7),
+            allocation(Kind::Class, 19),
+            allocation(Kind::Object, 0),
+            allocation(Kind::Class, 0),
+            allocation(Kind::Function, 0),
+            allocation(Kind::Function, u32::MAX),
         ],
     ];
 
@@ -143,7 +155,7 @@ fn union_reports_whether_the_oracle_gains_any_values() {
         &empty,
     ));
 
-    let initial = values_from(&origins, [Value::Top, Value::Alloc(Kind::Function, 7)]);
+    let initial = values_from(&origins, [Value::Top, allocation(Kind::Function, 7)]);
     assert!(assert_union_matches_oracle(
         &mut actual,
         &mut expected,
@@ -164,10 +176,7 @@ fn union_reports_whether_the_oracle_gains_any_values() {
 
     let mixed = values_from(
         &origins,
-        [
-            Value::Alloc(Kind::Function, 7),
-            Value::Alloc(Kind::Class, 19),
-        ],
+        [allocation(Kind::Function, 7), allocation(Kind::Class, 19)],
     );
     assert!(assert_union_matches_oracle(
         &mut actual,
@@ -186,52 +195,49 @@ fn union_reports_whether_the_oracle_gains_any_values() {
 #[test]
 fn shared_bitmaps_detach_only_when_known_origins_grow() {
     let origins = origin_table();
-    let mut left = values_from(&origins, [Value::Alloc(Kind::Function, 7), Value::Top]);
+    let mut left = values_from(&origins, [allocation(Kind::Function, 7), Value::Top]);
     let mut right = left.clone();
     assert!(left.shares_bitmap(&right));
 
-    let subset = values_from(&origins, [Value::Alloc(Kind::Function, 7)]);
+    let subset = values_from(&origins, [allocation(Kind::Function, 7)]);
     assert!(!right.union_with(&subset));
     assert!(left.shares_bitmap(&right));
     assert!(!right.insert(Value::Top));
     assert!(left.shares_bitmap(&right));
 
-    assert!(right.insert(Value::Alloc(Kind::Class, 19)));
+    assert!(right.insert(allocation(Kind::Class, 19)));
     assert!(!left.shares_bitmap(&right));
     assert_matches_oracle(
         &left,
-        &BTreeSet::from([Value::Alloc(Kind::Function, 7), Value::Top]),
+        &BTreeSet::from([allocation(Kind::Function, 7), Value::Top]),
     );
     assert_matches_oracle(
         &right,
         &BTreeSet::from([
-            Value::Alloc(Kind::Function, 7),
-            Value::Alloc(Kind::Class, 19),
+            allocation(Kind::Function, 7),
+            allocation(Kind::Class, 19),
             Value::Top,
         ]),
     );
-    assert!(left.insert(Value::Alloc(Kind::Object, 23)));
-    assert!(!right.contains(&Value::Alloc(Kind::Object, 23)));
+    assert!(left.insert(allocation(Kind::Object, 23)));
+    assert!(!right.contains(&allocation(Kind::Object, 23)));
 }
 
 #[test]
 fn union_adopts_a_shared_superset_without_losing_unknown() {
     let origins = origin_table();
-    let mut destination = values_from(&origins, [Value::Alloc(Kind::Function, 7), Value::Top]);
+    let mut destination = values_from(&origins, [allocation(Kind::Function, 7), Value::Top]);
     let source = values_from(
         &origins,
-        [
-            Value::Alloc(Kind::Function, 7),
-            Value::Alloc(Kind::Class, 19),
-        ],
+        [allocation(Kind::Function, 7), allocation(Kind::Class, 19)],
     );
     assert!(destination.union_with(&source));
     assert!(destination.shares_bitmap(&source));
     assert_matches_oracle(
         &destination,
         &BTreeSet::from([
-            Value::Alloc(Kind::Function, 7),
-            Value::Alloc(Kind::Class, 19),
+            allocation(Kind::Function, 7),
+            allocation(Kind::Class, 19),
             Value::Top,
         ]),
     );
@@ -274,14 +280,14 @@ fn generated_value_sequences_match_btree_set_after_each_operation() {
 
 fn boundary_domain() -> Vec<Value> {
     let mut domain: Vec<_> = (0..=1_024)
-        .map(|site| Value::Alloc(Kind::Function, site))
+        .map(|site| allocation(Kind::Function, site))
         .collect();
     domain.extend([
-        Value::Alloc(Kind::Function, u32::MAX),
-        Value::Alloc(Kind::Class, 0),
-        Value::Alloc(Kind::Class, u32::MAX),
-        Value::Alloc(Kind::Object, 0),
-        Value::Alloc(Kind::Object, u32::MAX),
+        allocation(Kind::Function, u32::MAX),
+        allocation(Kind::Class, 0),
+        allocation(Kind::Class, u32::MAX),
+        allocation(Kind::Object, 0),
+        allocation(Kind::Object, u32::MAX),
         Value::Top,
     ]);
     domain.sort_unstable();
@@ -311,18 +317,18 @@ fn dense_rank_boundaries_round_trip_in_owned_and_borrowed_iteration() {
     let domain = boundary_domain();
     let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
     let selected = [
-        Value::Alloc(Kind::Function, 0),
-        Value::Alloc(Kind::Function, 63),
-        Value::Alloc(Kind::Function, 64),
-        Value::Alloc(Kind::Function, 65),
-        Value::Alloc(Kind::Function, 127),
-        Value::Alloc(Kind::Function, 128),
-        Value::Alloc(Kind::Function, 129),
-        Value::Alloc(Kind::Function, 1_023),
-        Value::Alloc(Kind::Function, 1_024),
-        Value::Alloc(Kind::Function, u32::MAX),
-        Value::Alloc(Kind::Class, u32::MAX),
-        Value::Alloc(Kind::Object, u32::MAX),
+        allocation(Kind::Function, 0),
+        allocation(Kind::Function, 63),
+        allocation(Kind::Function, 64),
+        allocation(Kind::Function, 65),
+        allocation(Kind::Function, 127),
+        allocation(Kind::Function, 128),
+        allocation(Kind::Function, 129),
+        allocation(Kind::Function, 1_023),
+        allocation(Kind::Function, 1_024),
+        allocation(Kind::Function, u32::MAX),
+        allocation(Kind::Class, u32::MAX),
+        allocation(Kind::Object, u32::MAX),
         Value::Top,
     ];
 
@@ -334,9 +340,9 @@ fn dense_rank_boundaries_round_trip_in_owned_and_borrowed_iteration() {
 
     assert_matches_domain(&actual, &expected, &domain);
     for absent in [
-        Value::Alloc(Kind::Function, 1_025),
-        Value::Alloc(Kind::Class, 1),
-        Value::Alloc(Kind::Object, 1),
+        allocation(Kind::Function, 1_025),
+        allocation(Kind::Class, 1),
+        allocation(Kind::Object, 1),
     ] {
         assert!(!actual.contains(&absent), "unexpected {absent:?}");
     }
@@ -352,16 +358,16 @@ fn union_handles_different_rank_lengths_and_reports_new_values() {
     let domain = boundary_domain();
     let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
     let low = [
-        Value::Alloc(Kind::Function, 0),
-        Value::Alloc(Kind::Function, 63),
+        allocation(Kind::Function, 0),
+        allocation(Kind::Function, 63),
     ];
     let high = [
-        Value::Alloc(Kind::Function, 64),
-        Value::Alloc(Kind::Function, 1_023),
-        Value::Alloc(Kind::Function, 1_024),
-        Value::Alloc(Kind::Function, u32::MAX),
-        Value::Alloc(Kind::Class, u32::MAX),
-        Value::Alloc(Kind::Object, u32::MAX),
+        allocation(Kind::Function, 64),
+        allocation(Kind::Function, 1_023),
+        allocation(Kind::Function, 1_024),
+        allocation(Kind::Function, u32::MAX),
+        allocation(Kind::Class, u32::MAX),
+        allocation(Kind::Object, u32::MAX),
         Value::Top,
     ];
 
@@ -390,30 +396,30 @@ fn sparse_high_rank_sets_compose_reuse_and_union_in_any_order() {
     const INTERMEDIATE_RANK: u32 = 6_400;
 
     let mut domain: Vec<_> = (0..=HIGH_RANK)
-        .map(|site| Value::Alloc(Kind::Function, site))
+        .map(|site| allocation(Kind::Function, site))
         .collect();
     domain.extend([
-        Value::Alloc(Kind::Function, u32::MAX),
-        Value::Alloc(Kind::Class, u32::MAX),
-        Value::Alloc(Kind::Object, u32::MAX),
+        allocation(Kind::Function, u32::MAX),
+        allocation(Kind::Class, u32::MAX),
+        allocation(Kind::Object, u32::MAX),
         Value::Top,
     ]);
     let origins = Arc::new(OriginTable::from_origins(domain.iter().copied()));
 
-    let source_value = Value::Alloc(Kind::Function, HIGH_RANK);
+    let source_value = allocation(Kind::Function, HIGH_RANK);
     let source = values_from(&origins, [source_value]);
     assert_eq!(source.iter().collect::<Vec<_>>(), [source_value]);
 
-    let sparse_source = values_from(&origins, [Value::Alloc(Kind::Function, 0), source_value]);
+    let sparse_source = values_from(&origins, [allocation(Kind::Function, 0), source_value]);
     assert_eq!(sparse_source.occupied_word_indices(), &[0, 194]);
 
     let low = [
-        Value::Alloc(Kind::Function, 0),
-        Value::Alloc(Kind::Function, 64),
-        Value::Alloc(Kind::Function, 128),
-        Value::Alloc(Kind::Function, 192),
+        allocation(Kind::Function, 0),
+        allocation(Kind::Function, 64),
+        allocation(Kind::Function, 128),
+        allocation(Kind::Function, 192),
     ];
-    let intermediate = Value::Alloc(Kind::Function, INTERMEDIATE_RANK);
+    let intermediate = allocation(Kind::Function, INTERMEDIATE_RANK);
     let low_values = values_from(&origins, low);
 
     let mut accumulated = Values::empty(origins.clone());
@@ -472,11 +478,11 @@ fn sparse_high_rank_sets_compose_reuse_and_union_in_any_order() {
 }
 
 #[derive(Default)]
-struct ArrowOrigins(BTreeSet<Value>);
+struct ArrowOrigins(BTreeSet<u32>);
 
 impl Visit for ArrowOrigins {
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
-        self.0.insert(Value::Alloc(Kind::Function, arrow.span.lo.0));
+        self.0.insert(arrow.span.lo.0);
         arrow.visit_children_with(self);
     }
 }
@@ -503,8 +509,18 @@ fn deep_logical_and_conditional_unions_append_each_origin_once() {
     expression.visit_with(&mut expected);
     assert_eq!(expected.0.len(), leaf_count);
 
-    let (actual, appended_items) =
-        ChunkValueFlow::default().evaluate_value_expr_for_test(expression);
+    let flow = ChunkValueFlow::default();
+    let (actual, appended_items) = flow.evaluate_value_expr_for_test(expression);
+    let expected: BTreeSet<_> = expected
+        .0
+        .into_iter()
+        .map(|origin| {
+            Value::Alloc(
+                Kind::Function,
+                flow.heap_resolver().allocation(Kind::Function, origin),
+            )
+        })
+        .collect();
     assert_eq!(appended_items, leaf_count);
-    assert_eq!(actual.iter().collect::<BTreeSet<_>>(), expected.0,);
+    assert_eq!(actual.iter().collect::<BTreeSet<_>>(), expected);
 }

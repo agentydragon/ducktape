@@ -71,13 +71,18 @@ first query over a high-fanout family.
 ## Workflow: reorganizing existing modules
 
 Use `modules decompose --atomic` to plan a complete assignment of existing
-source units. Review semantic destinations, selector anchors, and the full
-candidate verdict; optional coarsening and original-home rejoining are
-described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
+source units. Its default `graph_candidate_is_realizable` reports graph checks;
+`candidate_is_realizable` is null until the candidate is fully assessed. For the
+same final verdict that gates a validated edit, add `--analysis` with the full
+tree transform context; the read-only report then includes `candidate_assessment`
+and sets `candidate_is_realizable` from the canonical assessment status. The graph
+result remains a separate planning diagnostic.
+Optional coarsening and original-home rejoining are described in
+[the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
 
 Apply a reviewed `{unit_id, module}` map of already-claimed non-residual
-source units with `modules refine --dry-run`, then `modules refine`. Both resolve
-the full scoped spec and validate the requested assignment before any write.
+source units with `modules refine --dry-run`, then `modules refine`. The refine
+command rebuilds and assesses that exact candidate before any write.
 The [source-unit assignment guide](cli.md#applying-reviewed-source-unit-assignments-modules-refine)
 defines batch fields, multi-chunk paths, and excluded source-unit kinds. Residual
 extraction uses the proposal workflow below; focused binding moves use
@@ -240,12 +245,13 @@ becomes a reference, or makes its template `invalid` when several modules export
 it (<../SPEC.md> § Matching). Rerun source-only `spec validate` afterwards and
 check its outcomes and `templates` listing.
 
-## Workflow: fixing an atom-split rejection
+## Workflow: investigating an atom-split pipeline rejection
 
-When `bindings assign` rejects with an "atom split" diagnostic, the
-realizability gate found that the requested move would split an
-indivisible source-unit set. The diagnostic names the split atom, its source units,
-and the destinations each member would land in.
+When `debundle run` rejects with an "atom split" diagnostic, the pipeline's
+atomic-group check found that the assignment splits a source-unit group. The
+diagnostic names the group, its source units, and the destinations each member
+would land in. Verified ownership edits are assessed through the canonical
+candidate assessment and do not emit this pipeline diagnostic.
 
 1. **Read the diagnostic.** It names the atom, lists each source unit's
    current and proposed module, and the `DepKind` causes (eager_use,
@@ -449,20 +455,21 @@ debundle modules merge --target runtime/plugins runtime/widgets
 Source-module comments and notes are composed as described in
 § Comments and notes below.
 
-The edit gate checks direct claims against the dependency graph and, for typed
-`kind` pins, the original source before checking the post-merge assignment.
+The preflight resolves direct claims against the dependency graph and, for
+typed `kind` pins, the original source. Verified ownership changes then pass
+through the canonical candidate assessment before any YAML is written.
 Pass `--graph <dependency_graph.json.gz>` for the chunk's edge topology and
 `--source-root <dir>` when the graph's relative source paths are not otherwise
-resolvable. It rejects missing or ambiguous local claims, mismatched typed
-claims, and merges that would create cross-module cycles or split an atomic
-group. `--dry-run` runs these checks without writing. Use `--no-verify` to
-skip validation (e.g. during multi-step refactors where an intermediate state
-is intentionally invalid).
+resolvable. It rejects missing or ambiguous local claims and mismatched typed
+claims, then the candidate assessment checks the planned ownership change.
+`--dry-run` runs these checks without writing. Use `--no-verify` to skip
+validation (e.g. during multi-step refactors where an intermediate state is
+intentionally invalid).
 
-A successful edit gate covers source claims, the post-merge assignment, and
-realizability checks. It does not establish complete reconstruction
-acceptance; `debundle run` remains the end-to-end acceptance path for vendor
-boundaries, exports, reconstruction, and browser planning.
+A successful candidate assessment covers the checked ownership change. It does
+not establish complete reconstruction acceptance; `debundle run` remains the
+end-to-end acceptance path for vendor boundaries, exports, reconstruction,
+and browser planning.
 The source-claim check recognizes named, default, and namespace imports as
 import specifiers, while module emission currently supports moving named
 imports only (`lowering/imports/imports_runtime.rs`).
@@ -560,8 +567,8 @@ To disable a module, a non-`.yaml` suffix makes the compiler skip the file:
 mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugins.yaml.disabled
 ```
 
-The next mutating command (or `debundle run`) re-validates and
-surfaces any resulting atom split as a gate diagnostic.
+`debundle run` revalidates the assignment and reports any atom split. Verified
+mutating commands use the canonical candidate assessment for admission.
 
 ## YAML text preservation
 

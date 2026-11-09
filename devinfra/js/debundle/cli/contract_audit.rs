@@ -74,6 +74,7 @@ enum ContractKind {
     NoReentryMembers,
     NoReentryRecordMembers,
     NamespaceIndependentMembers,
+    SourceCallableMembers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -529,6 +530,7 @@ fn select_targets(
     add_members!(NoReentryMembers, no_reentry_members);
     add_members!(NoReentryRecordMembers, no_reentry_record_members);
     add_members!(NamespaceIndependentMembers, namespace_independent_members);
+    add_members!(SourceCallableMembers, source_callable_members);
     add_signatures!(
         RetainedCallbackFactoryExports,
         retained_callback_factory_exports
@@ -598,7 +600,16 @@ fn remove_one(
             remove_member(&mut policy.no_reentry_record_members, target)
         }
         ContractKind::NamespaceIndependentMembers => {
-            remove_member(&mut policy.namespace_independent_members, target)
+            let removed = remove_member(&mut policy.namespace_independent_members, target);
+            if removed {
+                // A source-callable identity claim requires this lookup
+                // contract, so an audit probe cannot retain it on its own.
+                remove_member(&mut policy.source_callable_members, target);
+            }
+            removed
+        }
+        ContractKind::SourceCallableMembers => {
+            remove_member(&mut policy.source_callable_members, target)
         }
         ContractKind::RetainedCallbackFactoryExports => {
             remove_signature(&mut policy.retained_callback_factory_exports, target)

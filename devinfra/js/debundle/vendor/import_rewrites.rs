@@ -8,22 +8,253 @@
 //! paths and unsupported namespace/export-star consumers; do not rewrite Module files
 //! a second time with the pass-through rewriter (renames and counts are not idempotent).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use analysis::local_namespace_iife_target;
+use artifact::reports::{CandidateVendorDestination, CandidateVendorPlanAction, OutputFileAddress};
 use js_ast::{is_binding_identifier, member_property};
 use source_identity::ChunkId;
-use swc_common::DUMMY_SP;
+use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use crate::VendorImportAction;
+use crate::VendorResolutionPlan;
+
+/// Build the typed correspondence premise from the same checked action and
+/// plan entry that drive AST construction. A mismatch or missing plan row is
+/// unsupported; callers must not reconstruct an action from emitted strings.
+pub fn checked_vendor_replacement_action(
+    plan: &VendorResolutionPlan,
+    provider_chunk: ChunkId,
+    source_export: &str,
+    action: &VendorImportAction,
+    emitted_request: &str,
+) -> Option<(CandidateVendorPlanAction, CandidateVendorDestination)> {
+    if let Some(partial) = plan.partial_swaps.get(&provider_chunk) {
+        let symbol = partial.resolution.symbols.get(source_export)?;
+        match action {
+            VendorImportAction::PackageMember {
+                package,
+                namespace,
+                upstream_export,
+            } => {
+                let coords = partial.resolution.packages.get(package)?;
+                if symbol.package != *package
+                    || symbol.kind != spec::PartialSwapKind::Member
+                    || coords.namespace.as_deref() != Some(namespace.as_str())
+                    || symbol.upstream_export.as_deref() != Some(upstream_export.as_str())
+                    || emitted_request != package
+                {
+                    return None;
+                }
+                return Some((
+                    CandidateVendorPlanAction::PartialPackageMember {
+                        provider_chunk,
+                        source_export: source_export.to_owned(),
+                        package: package.clone(),
+                        version: coords.version.clone(),
+                        subpath: coords.subpath.clone(),
+                        namespace: namespace.clone(),
+                        upstream_export: upstream_export.clone(),
+                    },
+                    CandidateVendorDestination::Package {
+                        request: emitted_request.to_owned(),
+                        package: package.clone(),
+                    },
+                ));
+            }
+            VendorImportAction::PackageNamespace { package } => {
+                let coords = partial.resolution.packages.get(package)?;
+                if symbol.package != *package
+                    || symbol.kind != spec::PartialSwapKind::Namespace
+                    || emitted_request != package
+                {
+                    return None;
+                }
+                return Some((
+                    CandidateVendorPlanAction::PartialPackageNamespace {
+                        provider_chunk,
+                        source_export: source_export.to_owned(),
+                        package: package.clone(),
+                        version: coords.version.clone(),
+                        subpath: coords.subpath.clone(),
+                    },
+                    CandidateVendorDestination::Package {
+                        request: emitted_request.to_owned(),
+                        package: package.clone(),
+                    },
+                ));
+            }
+            VendorImportAction::PackageDefault { package } => {
+                let coords = partial.resolution.packages.get(package)?;
+                if symbol.package != *package
+                    || symbol.kind != spec::PartialSwapKind::Default
+                    || emitted_request != package
+                {
+                    return None;
+                }
+                return Some((
+                    CandidateVendorPlanAction::PartialPackageDefault {
+                        provider_chunk,
+                        source_export: source_export.to_owned(),
+                        package: package.clone(),
+                        version: coords.version.clone(),
+                        subpath: coords.subpath.clone(),
+                    },
+                    CandidateVendorDestination::Package {
+                        request: emitted_request.to_owned(),
+                        package: package.clone(),
+                    },
+                ));
+            }
+            VendorImportAction::PackageNamed {
+                package,
+                upstream_export,
+            } => {
+                let coords = partial.resolution.packages.get(package)?;
+                if symbol.package != *package
+                    || symbol.kind != spec::PartialSwapKind::Named
+                    || symbol.upstream_export.as_deref() != Some(upstream_export.as_str())
+                    || emitted_request != package
+                {
+                    return None;
+                }
+                return Some((
+                    CandidateVendorPlanAction::PartialPackageNamed {
+                        provider_chunk,
+                        source_export: source_export.to_owned(),
+                        package: package.clone(),
+                        version: coords.version.clone(),
+                        subpath: coords.subpath.clone(),
+                        upstream_export: upstream_export.clone(),
+                    },
+                    CandidateVendorDestination::Package {
+                        request: emitted_request.to_owned(),
+                        package: package.clone(),
+                    },
+                ));
+            }
+            VendorImportAction::FacadeMember { .. } | VendorImportAction::FacadeDefault { .. } => {
+                return None;
+            }
+        }
+    }
+
+    let bundled = plan.bundled_partial_swaps.get(&provider_chunk)?;
+    let symbol = bundled.resolution.symbols.get(source_export)?;
+    match action {
+        VendorImportAction::FacadeMember {
+            package,
+            facade_app_path,
+            namespace,
+            property_path,
+        } => {
+            let coords = bundled.resolution.packages.get(package)?;
+            if symbol.package != *package
+                || !matches!(
+                    symbol.kind,
+                    spec::PartialSwapKind::Member | spec::PartialSwapKind::Named
+                )
+                || coords.generated_facade_path.as_deref() != Some(facade_app_path.as_str())
+                || coords.namespace.as_deref() != Some(namespace.as_str())
+                || crate::plan::upstream_property_path(
+                    symbol.kind,
+                    symbol.upstream_export.as_deref()?,
+                ) != *property_path
+            {
+                return None;
+            }
+            return Some((
+                CandidateVendorPlanAction::BundledFacadeMember {
+                    provider_chunk,
+                    source_export: source_export.to_owned(),
+                    symbol_kind: symbol.kind,
+                    package: package.clone(),
+                    version: coords.version.clone(),
+                    subpath: coords.subpath.clone(),
+                    bundle_path: bundled.resolution.bundle.source_path.clone(),
+                    bundle_export: coords.bundle_export.clone(),
+                    facade_app_path: facade_app_path.clone(),
+                    namespace: namespace.clone(),
+                    property_path: property_path.clone(),
+                },
+                CandidateVendorDestination::Facade {
+                    app_path: facade_app_path.clone(),
+                    emitted_request: emitted_request.to_owned(),
+                },
+            ));
+        }
+        VendorImportAction::FacadeDefault { facade_app_path } => {
+            let coords = bundled.resolution.packages.get(&symbol.package)?;
+            if !matches!(
+                symbol.kind,
+                spec::PartialSwapKind::Namespace | spec::PartialSwapKind::Default
+            ) || coords.generated_facade_path.as_deref() != Some(facade_app_path.as_str())
+            {
+                return None;
+            }
+            return Some((
+                CandidateVendorPlanAction::BundledFacadeDefault {
+                    provider_chunk,
+                    source_export: source_export.to_owned(),
+                    symbol_kind: symbol.kind,
+                    package: symbol.package.clone(),
+                    version: coords.version.clone(),
+                    subpath: coords.subpath.clone(),
+                    bundle_path: bundled.resolution.bundle.source_path.clone(),
+                    bundle_export: coords.bundle_export.clone(),
+                    facade_app_path: facade_app_path.clone(),
+                },
+                CandidateVendorDestination::Facade {
+                    app_path: facade_app_path.clone(),
+                    emitted_request: emitted_request.to_owned(),
+                },
+            ));
+        }
+        VendorImportAction::PackageMember { .. }
+        | VendorImportAction::PackageNamespace { .. }
+        | VendorImportAction::PackageDefault { .. }
+        | VendorImportAction::PackageNamed { .. } => None,
+    }
+}
+
+pub fn checked_boundary_rename_action(
+    plan: &VendorResolutionPlan,
+    provider_chunk: ChunkId,
+    source_export: &str,
+    public_export: &str,
+    output: OutputFileAddress,
+) -> Option<(CandidateVendorPlanAction, CandidateVendorDestination)> {
+    if plan.boundary_public_export_name(provider_chunk, source_export)? != public_export {
+        return None;
+    }
+    Some((
+        CandidateVendorPlanAction::BoundaryRename {
+            provider_chunk,
+            source_export: source_export.to_owned(),
+            public_export: public_export.to_owned(),
+        },
+        CandidateVendorDestination::BoundaryOutput {
+            output,
+            export: public_export.to_owned(),
+        },
+    ))
+}
 
 #[derive(Default)]
 pub struct VendorImportRewrites {
     pub body_rewrites: BTreeMap<Id, IdentRewriteTarget>,
     pub references_rewritten: BTreeMap<(ChunkId, String), usize>,
-    emitted_shared_import_for: BTreeSet<String>,
+    emitted_shared_import_for: BTreeMap<String, DeferredImportMarker>,
+    pub(crate) materialized_request_markers: BTreeMap<Id, Vec<DeferredImportMarker>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DeferredImportMarker {
+    pub source_span: Span,
+    pub request: String,
+    pub local: Id,
 }
 
 impl VendorImportRewrites {
@@ -37,7 +268,31 @@ impl VendorImportRewrites {
         chunk_export: String,
         facade_source: impl Fn(&str) -> String,
     ) -> Vec<DeferredImport> {
+        self.materialize_at(
+            action,
+            local_id,
+            chunk,
+            chunk_export,
+            DUMMY_SP,
+            facade_source,
+        )
+    }
+
+    /// Construct the same replacement while retaining the source specifier
+    /// span and selected candidate-local syntax context. Emission uses this
+    /// when it can tie a generated directive to one exact source binding.
+    pub fn materialize_at(
+        &mut self,
+        action: VendorImportAction,
+        local_id: Id,
+        chunk: ChunkId,
+        chunk_export: String,
+        source_span: Span,
+        facade_source: impl Fn(&str) -> String,
+    ) -> Vec<DeferredImport> {
         let mut imports = Vec::new();
+        let source_local = local_id.clone();
+        let mut request_markers = Vec::new();
         match action {
             VendorImportAction::PackageMember {
                 package,
@@ -53,20 +308,40 @@ impl VendorImportRewrites {
                         chunk_export,
                     },
                 );
-                if self
+                let marker = if let Some(marker) = self
                     .emitted_shared_import_for
-                    .insert(format!("package:{package}"))
+                    .get(&format!("package:{package}"))
                 {
+                    marker.clone()
+                } else {
+                    let marker = DeferredImportMarker {
+                        source_span,
+                        request: package.clone(),
+                        local: Ident::new_no_ctxt(namespace.clone().into(), source_span).to_id(),
+                    };
+                    self.emitted_shared_import_for
+                        .insert(format!("package:{package}"), marker.clone());
                     imports.push(DeferredImport::Namespace {
-                        source: package,
-                        local: namespace,
+                        source: package.clone(),
+                        local: namespace.clone(),
+                        local_ctxt: SyntaxContext::empty(),
+                        source_span,
                     });
-                }
+                    marker
+                };
+                request_markers.push(marker);
             }
             VendorImportAction::PackageNamespace { package } => {
+                request_markers.push(DeferredImportMarker {
+                    source_span,
+                    request: package.clone(),
+                    local: local_id.clone(),
+                });
                 imports.push(DeferredImport::Namespace {
                     source: package,
                     local: local_id.0.to_string(),
+                    local_ctxt: local_id.1,
+                    source_span,
                 });
                 *self
                     .references_rewritten
@@ -74,9 +349,16 @@ impl VendorImportRewrites {
                     .or_insert(0) += 1;
             }
             VendorImportAction::PackageDefault { package } => {
+                request_markers.push(DeferredImportMarker {
+                    source_span,
+                    request: package.clone(),
+                    local: local_id.clone(),
+                });
                 imports.push(DeferredImport::Default {
                     source: package,
                     local: local_id.0.to_string(),
+                    local_ctxt: local_id.1,
+                    source_span,
                 });
                 *self
                     .references_rewritten
@@ -94,10 +376,26 @@ impl VendorImportRewrites {
                 } else {
                     local_id.0.to_string()
                 };
+                let candidate_local = if local_id.0.as_ref() == local {
+                    local_id.clone()
+                } else {
+                    Ident::new_no_ctxt(local.clone().into(), source_span).to_id()
+                };
+                request_markers.push(DeferredImportMarker {
+                    source_span,
+                    request: package.clone(),
+                    local: candidate_local,
+                });
                 imports.push(DeferredImport::Named {
                     source: package,
                     local: local.clone(),
+                    local_ctxt: if local_id.0.as_ref() == local {
+                        local_id.1
+                    } else {
+                        SyntaxContext::empty()
+                    },
                     upstream_export,
+                    source_span,
                 });
                 if local_id.0.as_ref() != local {
                     self.body_rewrites.insert(
@@ -131,21 +429,41 @@ impl VendorImportRewrites {
                         chunk_export,
                     },
                 );
-                if self
+                let marker = if let Some(marker) = self
                     .emitted_shared_import_for
-                    .insert(format!("facade:{package}"))
+                    .get(&format!("facade:{package}"))
                 {
+                    marker.clone()
+                } else {
+                    let marker = DeferredImportMarker {
+                        source_span,
+                        request: source.clone(),
+                        local: Ident::new_no_ctxt(namespace.clone().into(), source_span).to_id(),
+                    };
+                    self.emitted_shared_import_for
+                        .insert(format!("facade:{package}"), marker.clone());
                     imports.push(DeferredImport::Default {
                         source,
-                        local: namespace,
+                        local: namespace.clone(),
+                        local_ctxt: SyntaxContext::empty(),
+                        source_span,
                     });
-                }
+                    marker
+                };
+                request_markers.push(marker);
             }
             VendorImportAction::FacadeDefault { facade_app_path } => {
                 let source = facade_source(&facade_app_path);
+                request_markers.push(DeferredImportMarker {
+                    source_span,
+                    request: source.clone(),
+                    local: local_id.clone(),
+                });
                 imports.push(DeferredImport::Default {
                     source,
                     local: local_id.0.to_string(),
+                    local_ctxt: local_id.1,
+                    source_span,
                 });
                 *self
                     .references_rewritten
@@ -153,6 +471,8 @@ impl VendorImportRewrites {
                     .or_insert(0) += 1;
             }
         }
+        self.materialized_request_markers
+            .insert(source_local, request_markers);
         imports
     }
 }
@@ -162,48 +482,81 @@ impl VendorImportRewrites {
 /// `ImportDecl` per value so both application sites emit identical AST.
 pub enum DeferredImport {
     /// `import * as <local> from "<source>"`
-    Namespace { source: String, local: String },
+    Namespace {
+        source: String,
+        local: String,
+        local_ctxt: SyntaxContext,
+        source_span: Span,
+    },
     /// `import <local> from "<source>"`
-    Default { source: String, local: String },
+    Default {
+        source: String,
+        local: String,
+        local_ctxt: SyntaxContext,
+        source_span: Span,
+    },
     /// `import { <upstream_export> as <local> } from "<source>"`,
     /// or `import { <name> } from "<source>"` when local == upstream.
     Named {
         source: String,
         local: String,
+        local_ctxt: SyntaxContext,
         upstream_export: String,
+        source_span: Span,
     },
 }
 
 impl DeferredImport {
     pub fn into_module_item(self) -> ModuleItem {
-        let (source, specifier) = match self {
-            DeferredImport::Namespace { source, local } => (
+        let (source, source_span, specifier) = match self {
+            DeferredImport::Namespace {
                 source,
+                local,
+                local_ctxt,
+                source_span,
+            } => (
+                source,
+                source_span,
                 ImportSpecifier::Namespace(ImportStarAsSpecifier {
-                    span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                    span: source_span,
+                    local: Ident::new(local.into(), source_span, local_ctxt),
                 }),
             ),
-            DeferredImport::Default { source, local } => (
+            DeferredImport::Default {
                 source,
+                local,
+                local_ctxt,
+                source_span,
+            } => (
+                source,
+                source_span,
                 ImportSpecifier::Default(ImportDefaultSpecifier {
-                    span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                    span: source_span,
+                    local: Ident::new(local.into(), source_span, local_ctxt),
                 }),
             ),
             DeferredImport::Named {
                 source,
                 local,
+                local_ctxt,
                 upstream_export,
-            } => (
-                source,
-                js_ast::named_import_specifier(
-                    Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                source_span,
+            } => (source, source_span, {
+                let mut specifier = js_ast::named_import_specifier(
+                    Ident::new(local.into(), source_span, local_ctxt),
                     &upstream_export,
-                ),
-            ),
+                );
+                if let ImportSpecifier::Named(named) = &mut specifier {
+                    named.span = source_span;
+                }
+                specifier
+            }),
         };
-        js_ast::import_decl_module_item(vec![specifier], &source)
+        let mut item = js_ast::import_decl_module_item(vec![specifier], &source);
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = &mut item {
+            import.span = source_span;
+        }
+        item
     }
 }
 
@@ -226,6 +579,24 @@ pub enum IdentRewriteTarget {
     },
 }
 
+/// One actual identifier replacement observed by the shared AST visitor.
+/// Callers add source/output request identities and join `source_span` to
+/// the canonical parsed import-use manifest; this observation alone grants
+/// no source correspondence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VendorUseRewriteObservation {
+    pub source_span: swc_common::Span,
+    pub before_local: Id,
+    pub after_span: swc_common::Span,
+    pub result: VendorUseRewriteTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VendorUseRewriteTarget {
+    LocalIdentifier { local: Id },
+    MemberPath { namespace: Id, path: Vec<String> },
+}
+
 /// Rewrites references to a partial-swap import local into the
 /// replacement facade access. `bindings` is keyed by the import
 /// local's hygiene-preserving `Id` (`(atom, SyntaxContext)`), captured
@@ -239,6 +610,7 @@ pub enum IdentRewriteTarget {
 pub struct PartialSwapIdentRewriter<'a> {
     pub bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
     pub references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
+    pub observations: Option<&'a mut Vec<VendorUseRewriteObservation>>,
 }
 
 impl VisitMut for PartialSwapIdentRewriter<'_> {
@@ -311,34 +683,58 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         let Some(target) = self.bindings.get(&ident.to_id()) else {
             return;
         };
-        let (chunk_id, chunk_export) = match target {
+        let source_span = ident.span;
+        let before_local = ident.to_id();
+        let (chunk_id, chunk_export, result) = match target {
             IdentRewriteTarget::Member {
                 namespace,
                 property_path,
                 chunk_id,
                 chunk_export,
             } => {
-                *expr = property_path.iter().fold(
-                    Expr::Ident(Ident::new_no_ctxt(namespace.clone().into(), DUMMY_SP)),
-                    |obj, segment| {
+                let root = Ident::new_no_ctxt(namespace.clone().into(), source_span);
+                let namespace_id = root.to_id();
+                *expr = property_path
+                    .iter()
+                    .fold(Expr::Ident(root), |obj, segment| {
                         Expr::Member(MemberExpr {
-                            span: DUMMY_SP,
+                            span: source_span,
                             obj: Box::new(obj),
                             prop: member_property(segment),
                         })
+                    });
+                (
+                    *chunk_id,
+                    chunk_export,
+                    VendorUseRewriteTarget::MemberPath {
+                        namespace: namespace_id,
+                        path: property_path.clone(),
                     },
-                );
-                (*chunk_id, chunk_export)
+                )
             }
             IdentRewriteTarget::Rename {
                 upstream_export,
                 chunk_id,
                 chunk_export,
             } => {
-                *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
-                (*chunk_id, chunk_export)
+                let local = Ident::new_no_ctxt(upstream_export.clone().into(), source_span);
+                let local_id = local.to_id();
+                *expr = Expr::Ident(local);
+                (
+                    *chunk_id,
+                    chunk_export,
+                    VendorUseRewriteTarget::LocalIdentifier { local: local_id },
+                )
             }
         };
+        if let Some(observations) = self.observations.as_deref_mut() {
+            observations.push(VendorUseRewriteObservation {
+                source_span,
+                before_local,
+                after_span: source_span,
+                result,
+            });
+        }
         *self
             .references_by_symbol
             .entry((chunk_id, chunk_export.clone()))
@@ -383,7 +779,7 @@ mod tests {
         );
         let imports = rewrites.materialize(facade(), local("c"), ChunkId(1), "c".into(), resolve);
         assert!(
-            matches!(&imports[..], [DeferredImport::Default { source, local }] if source == "../facades/pkg.js" && local == "facade_ns")
+            matches!(&imports[..], [DeferredImport::Default { source, local, .. }] if source == "../facades/pkg.js" && local == "facade_ns")
         );
         assert!(
             rewrites
@@ -416,7 +812,7 @@ mod tests {
                 |_| unreachable!(),
             );
             assert!(
-                matches!(&imports[..], [DeferredImport::Named { source, local, upstream_export }] if source == "pkg" && local == "value" && upstream_export == "value")
+                matches!(&imports[..], [DeferredImport::Named { source, local, upstream_export, .. }] if source == "pkg" && local == "value" && upstream_export == "value")
             );
         }
         assert_eq!(

@@ -17,10 +17,10 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, export_policies, normalized_chunk_ids,
     prune_artifact_to_chunk_ids,
 };
-use gate::CandidateRelocationAssessmentReport;
+use gate::{CandidateRelocationAssessmentReport, FinalGlobalResolutionSourceInputs};
 
+use gate::{ChunkGateRejection, UnmatchedSpecClaim};
 use output_layout::MODULES_REPORT;
-use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
 
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, LogicalModule, UnassignedMode,
@@ -28,6 +28,7 @@ use spec::{
 
 mod anonymous;
 mod body_facts;
+mod candidate_emission;
 mod chunk_renames;
 mod commuting_statements;
 mod exports;
@@ -35,12 +36,12 @@ mod imports;
 mod io;
 mod lower;
 mod materialize;
+mod module_initialization;
 mod module_output;
 mod naturalize;
 pub mod ownership_subset;
 mod placement;
 mod plans;
-mod rebind_fold;
 mod reentry_report;
 pub mod rename_ledger;
 #[cfg(test)]
@@ -50,12 +51,31 @@ mod scope_names;
 mod util;
 mod visitors;
 
+pub use candidate_emission::{CandidateEmissionDraft, FinalizedCandidateEmissionDraft};
 pub use imports::naturalize_cross_chunk_imports;
 use ownership_subset::{OwnershipSubset, SelectedModule};
 
 use imports::VendorReimportOracle;
 use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
 
+/// Write the finalized per-chunk candidate assessments after the whole output
+/// artifact has been rewritten and its global-binding result joined.
+pub fn write_final_candidate_assessment_reports(
+    report_out_dir: &Path,
+    assessments: &[(String, CandidateRelocationAssessmentReport)],
+) -> anyhow::Result<()> {
+    for (chunk_id, report) in assessments {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            output_layout::CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
+            report,
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) use materialize::raw_source_correspondence;
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, FinishedLogicalChunk, GraphConstructionContext,
     MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
@@ -68,9 +88,9 @@ use staged_analysis::{
 use util::normalize_optional_relative_dir;
 
 pub struct MaterializeLogicalModulesResult {
-    /// Finalized lowered and pass-through files, kept outside a bundle until
-    /// the remaining post-lowering passes need their legacy input.
-    pub output: EmissionChunkOutputs,
+    /// Canonical post-materialization draft. Its files and source routes stay
+    /// privately owned until the fixed final rewrite sequence is complete.
+    pub output: CandidateEmissionDraft,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     /// Per-symbol counts of vendor-swap rewrites applied at
@@ -93,6 +113,9 @@ pub struct MaterializeLogicalModulesResult {
     /// [`GateRejectionPolicy::LowerUnrunnable`]; empty under
     /// [`GateRejectionPolicy::Refuse`], which fails the run instead.
     pub gate_rejections: Vec<ChunkGateRejection>,
+    /// Per-chunk local assessment retained until the whole rewritten artifact
+    /// supplies the final global-binding verdict.
+    pub candidate_assessments: Vec<(String, CandidateRelocationAssessmentReport)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -262,6 +285,14 @@ pub enum GateRejectionPolicy {
 pub struct MaterializeLogicalModulesOptions {
     pub ownership_subset: Option<OwnershipSubset>,
     pub graph_provenance: Option<graph_provenance::GraphProvenance>,
+    /// Opaque canonical source/document identity shared with every chunk
+    /// candidate report produced during this materialization.
+    pub candidate_assessment_context: gate::CandidateAssessmentContext,
+    /// Exact source snapshot captured by the canonical pipeline before
+    /// materialization. The materializer recomputes it when graph provenance
+    /// is available and checks it against the actual source input before
+    /// retaining it in the output draft.
+    pub candidate_source_inputs: gate::FinalGlobalResolutionSourceInputs,
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
     pub keep_going: bool,
@@ -274,7 +305,7 @@ pub struct MaterializeLogicalModulesOptions {
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
-    /// Stop materialization after the report-only effect relocation sweep for
+    /// Stop materialization after the complete candidate relocation assessment for
     /// each finalized assignment plan. This requires loaded staged analysis
     /// facts and is used by the assessment-only CLI path.
     pub assessment_only: bool,
@@ -300,6 +331,10 @@ pub enum AnalysisMode {
 /// A materialization's result.
 pub enum Materialized {
     Lowered(Box<MaterializeLogicalModulesResult>),
+    AssessedAndLowered {
+        result: Box<MaterializeLogicalModulesResult>,
+        assessments: Vec<(String, CandidateRelocationAssessmentReport)>,
+    },
     Assessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
@@ -342,6 +377,60 @@ pub fn materialize_logical_modules(
     }
     let target_dir = normalize_optional_relative_dir(&options.config.target_dir)?;
     let selected_chunk_ids = normalized_chunk_ids(&options.chunk_ids)?;
+    let pre_prune_indexes = ArtifactIndexes::build(&artifact)?;
+    let excluded_source_chunks = vendor_plan.full_swap_chunk_ids();
+    let emission_scope = if options.config.prune_other_chunks {
+        Some(
+            selected_chunk_ids
+                .iter()
+                .map(|chunk| {
+                    artifact
+                        .chunk_table
+                        .get(chunk)
+                        .with_context(|| format!("unknown materialized source chunk {chunk}"))
+                })
+                .collect::<Result<BTreeSet<_>>>()?,
+        )
+    } else {
+        None
+    };
+    let expected_source_chunks = artifact
+        .chunks
+        .iter()
+        .map(|chunk| chunk.chunk_id)
+        .filter(|chunk| {
+            !excluded_source_chunks.contains(chunk)
+                && emission_scope
+                    .as_ref()
+                    .is_none_or(|scope| scope.contains(chunk))
+        })
+        .collect::<BTreeSet<_>>();
+    let canonical_source_inputs = if let Some(provenance) = options.graph_provenance.as_ref() {
+        let captured = FinalGlobalResolutionSourceInputs::capture(
+            &artifact,
+            &pre_prune_indexes,
+            &excluded_source_chunks,
+            emission_scope.as_ref(),
+            provenance,
+        );
+        ensure!(
+            captured.same_context_as(&options.candidate_source_inputs),
+            "candidate source snapshot differs from the canonical prepared artifact"
+        );
+        captured
+    } else {
+        options.candidate_source_inputs.clone()
+    };
+    ensure!(
+        canonical_source_inputs.matches_artifact(
+            &artifact,
+            &pre_prune_indexes,
+            &expected_source_chunks,
+        ) && options
+            .candidate_assessment_context
+            .matches_source_inputs(&canonical_source_inputs),
+        "candidate assessment context does not match the canonical source artifact"
+    );
     if let Some(subset) = &options.ownership_subset {
         ensure!(
             !options.graph_reports.enabled(),
@@ -377,16 +466,30 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    let materialized_chunk_ids = selected_chunk_ids
+        .iter()
+        .map(|chunk| {
+            artifact
+                .chunk_table
+                .get(chunk)
+                .with_context(|| format!("unknown materialized chunk {chunk}"))
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    let vendor_unchanged = !vendor_plan.has_boundary_renames()
+        && !vendor_plan.has_partial_swaps()
+        && !vendor_plan.has_bundled_partial_swaps()
+        && vendor_plan.full_swap_chunk_ids().is_empty()
+        && artifact
+            .chunks
+            .iter()
+            .all(|chunk| !vendor_plan.is_suppressed(chunk.chunk_id));
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
     // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
     // through their bundled bodies (SPEC.md § Vendor swap equivalence).
-    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
-        &artifact,
-        &artifact_indexes,
-        &selected_chunk_ids,
-    )?;
+    let program_summary_chunk_closure =
+        artifact_indexes.selected_static_import_closure(&artifact, &selected_chunk_ids)?;
     let reparsed = program_summary::reparse_unretained_entries(
         &artifact,
         Some(&program_summary_chunk_closure),
@@ -499,6 +602,8 @@ pub fn materialize_logical_modules(
                                     ownership_subset: options.ownership_subset.as_ref(),
                                     artifact: artifact_ref,
                                     artifact_indexes: &artifact_indexes,
+                                    materialized_chunks: &materialized_chunk_ids,
+                                    vendor_unchanged,
                                     chunk_id,
                                     target_dir: &target_dir,
                                     keep_going: options.keep_going,
@@ -539,8 +644,25 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
     let completed =
         |base: &AnalysisSpec| frontend_elaboration::complete_analysis_spec(base, &projection);
-    let (program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
-        (AnalysisMode::Load { base, .. }, Some((header, body))) => {
+    let collect_current_program_summary = || {
+        program_summary::collect_program_summary(
+            &artifact,
+            &artifact_indexes,
+            &projection,
+            program_summary::ProgramSummaryOptions {
+                graph_provenance: options.graph_provenance.as_ref(),
+                vendor_plan: Some(vendor_plan),
+                replacement_packages: &vendor_plan.replacement_packages(),
+            },
+            Some(&program_summary_chunk_closure),
+            &reparsed,
+        )
+    };
+    let (program_summary, mut loaded_chunks, reanalyze_loaded_chunks) = match (
+        &options.analysis,
+        loaded,
+    ) {
+        (AnalysisMode::Load { base, .. }, Some((header, mut body))) => {
             let completed = completed(base)?;
             if completed.encode()? != header.projection {
                 let differences =
@@ -550,23 +672,43 @@ pub fn materialize_logical_modules(
                     differences.join(", ")
                 );
             }
-            (body.program_summary, Some(body.chunks))
+            // Current provider execution needs the complete canonical native,
+            // host and bundle-global preparation, including its fixed points.
+            // Recompute this shared pass only after exact projection admission;
+            // optimizing the load cost requires profiling this same boundary.
+            let current = collect_current_program_summary()?;
+            current
+                .provider_programs
+                .validate_transfers(&body.program_summary.imported_callables)?;
+            current
+                .provider_programs
+                .validate_saved_provider_call_targets(
+                    &body.program_summary.imported_callables,
+                    &body.chunks,
+                )?;
+            let reanalyze_loaded_chunks = body
+                .chunks
+                .iter()
+                .filter_map(|(chunk, facts)| {
+                    facts.has_provider_callable_targets().then(|| chunk.clone())
+                })
+                .collect::<BTreeSet<_>>();
+            // Imported provider-body receipts are proof inputs too, so always
+            // replace their saved copies with the already prepared current
+            // summaries. A saved caller site proves only that the operation
+            // existed in this source; it does not prove which provider
+            // callable that operation selected. Reuse the claimed chunks'
+            // retained structural facts to regenerate those call edges
+            // through the ordinary current-source kernel below.
+            body.program_summary.provider_programs = current.provider_programs;
+            body.program_summary.imported_callables = current.imported_callables;
+            (
+                body.program_summary,
+                Some(body.chunks),
+                reanalyze_loaded_chunks,
+            )
         }
-        _ => (
-            program_summary::collect_program_summary(
-                &artifact,
-                &artifact_indexes,
-                &projection,
-                program_summary::ProgramSummaryOptions {
-                    graph_provenance: options.graph_provenance.as_ref(),
-                    vendor_plan: Some(vendor_plan),
-                    replacement_packages: &vendor_plan.replacement_packages(),
-                },
-                Some(&program_summary_chunk_closure),
-                &reparsed,
-            )?,
-            None,
-        ),
+        _ => (collect_current_program_summary()?, None, BTreeSet::new()),
     };
     let claimed = claimed
         .into_iter()
@@ -582,6 +724,11 @@ pub fn materialize_logical_modules(
                     })
                 })
                 .transpose()?;
+            let facts = if reanalyze_loaded_chunks.contains(chunk.chunk_id()) {
+                None
+            } else {
+                facts
+            };
             Ok((chunk, facts))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -615,30 +762,35 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
-    if options.assessment_only {
-        let assessments = chunk_results
-            .into_iter()
-            .map(|result| match result {
+    let expected_results = chunk_results.len();
+    let mut assessments = Vec::new();
+    let mut lowered = Vec::with_capacity(expected_results);
+    for result in chunk_results {
+        match (options.assessment_only, result) {
+            (
+                true,
                 FinishedLogicalChunk::Assessed {
                     chunk_id,
                     assessment,
-                } => Ok((chunk_id, *assessment)),
-                FinishedLogicalChunk::Lowered(_) => {
-                    bail!("assessment-only materialization unexpectedly lowered a chunk")
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+                },
+            ) => {
+                assessments.push((chunk_id, *assessment));
+            }
+            (true, FinishedLogicalChunk::AssessedAndLowered { chunk, assessment })
+            | (false, FinishedLogicalChunk::Lowered { chunk, assessment }) => {
+                assessments.push((
+                    artifact.chunk_table.name(chunk.chunk_id).to_owned(),
+                    *assessment,
+                ));
+                lowered.push(*chunk);
+            }
+            _ => bail!("materialization result differs from the requested assessment mode"),
+        }
+    }
+    if options.assessment_only && lowered.len() != expected_results {
         return Ok(Materialized::Assessed(assessments));
     }
-    let chunk_results = chunk_results
-        .into_iter()
-        .map(|result| match result {
-            FinishedLogicalChunk::Lowered(chunk) => Ok(*chunk),
-            FinishedLogicalChunk::Assessed { .. } => {
-                bail!("normal materialization unexpectedly returned an assessment")
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let chunk_results = lowered;
 
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
@@ -662,17 +814,45 @@ pub fn materialize_logical_modules(
             *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
         }
     }
-    let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    let candidate_assessments = assessments.clone();
+    let output = collect_materialized_logical_chunks(
+        artifact,
+        &target_dir,
+        chunk_results,
+        Some(program_summary),
+    )?;
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
-    Ok(Materialized::Lowered(Box::new(
-        MaterializeLogicalModulesResult {
-            output,
-            selected_lowerings: applied,
-            module_count,
-            vendor_reference_rewrites,
-            unmatched_spec_claims,
-            gate_rejections,
-        },
-    )))
+    let required_chunks = options
+        .candidate_assessment_context
+        .expected_materialized_chunks()
+        .clone();
+    let output = CandidateEmissionDraft::materialized(
+        output,
+        required_chunks,
+        candidate_assessments.clone(),
+        options.candidate_assessment_context.clone(),
+        canonical_source_inputs,
+        vendor_plan,
+        applied.clone(),
+        vendor_reference_rewrites.clone(),
+        module_count,
+    )?;
+    let result = Box::new(MaterializeLogicalModulesResult {
+        output,
+        selected_lowerings: applied,
+        module_count,
+        vendor_reference_rewrites,
+        unmatched_spec_claims,
+        gate_rejections,
+        candidate_assessments,
+    });
+    Ok(if options.assessment_only {
+        Materialized::AssessedAndLowered {
+            result,
+            assessments,
+        }
+    } else {
+        Materialized::Lowered(result)
+    })
 }

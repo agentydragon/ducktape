@@ -86,15 +86,25 @@ capture list. Conflicting notes or overlapping local captures remain separate.
 The combined document passes the same production selector resolution and edit
 gate before writing; regrouping does not bypass source-unit identity checks.
 
-`modules refine --dry-run --analysis` may additionally report statement-order
-commutation for its exact complete post-edit module map, after drained modules
-are removed. This opt-in assessment requires a verified staged artifact and
-the full-tree transform context for one graph chunk; its source and output
-roots must be supplied explicitly rather than inherited from environment
-defaults. It is report-only: the
-existing complete identity, realizability, and atomic-group gates remain
-authoritative, and the assessment does not establish replacement, privacy, or
-singleton guarantees.
+Ownership-changing edits (`bindings assign`/`unassign`, `modules apply`/
+`refine`/`merge`, and non-empty `modules delete --force`) require the canonical
+candidate relocation assessment before a verified write. This assessment uses a
+verified staged artifact and explicit full-tree transform context. An edit may
+address the full authored tree or one configured subtree belonging to its graph
+chunk. Canonical tree compilation overlays those exact candidate documents and
+preserves documents outside the graph chunk, including other configured roots.
+The full tree must match the verified graph's authored root. The joint report
+contains every required materialized chunk under `chunks`; its overall `status`
+accepts only when all chunk effect/placement assessments accept and the concrete
+reconstruction passes the normal cross-chunk rewrites and final program
+validation. Missing or duplicate chunk assessments cannot authorize a write.
+Validated ownership candidates require an authored module tree without symlink
+entries, since aliased entries cannot be treated as independent documents.
+Graph-only dry runs check claims and selectors and report
+`needs_full_assessment`; they cannot authorize a verified write. Explicit
+`--no-verify` remains an unvalidated write where the command supports it.
+Names-only edits and assignment-invariant no-ops keep their existing checks.
+The assessment does not establish replacement, privacy, or singleton guarantees.
 
 `modules merge --batch` composes all requested whole-module merges before one
 edit-gate check. Rejected plans and gate failures leave every source and target
@@ -221,13 +231,15 @@ positionally aligned with `binding_names`.
 
 For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
 each emitted when their corresponding evidence is nonempty, and may coexist.
-An atomic-group conflict remains the primary gate verdict when both are present;
-the cycle report is secondary evidence. `graph_summary.json` records both
+These are legacy structural diagnostic projections; when both are present,
+the atomic-group conflict is shown first. `graph_summary.json` records both
 counts. A missing `cycles.json` means zero blocking SCCs only when the current
-report set completed successfully. Edit-gate writers apply the same report
-selection to the post-edit assignment and replace prior rejection artifacts
-after graph, assignment and shared validation complete. A preflight error leaves
-the last completed gate result intact.
+pipeline report set completed successfully. These reports describe the
+pipeline assignment and do not provide a separate verified-edit verdict.
+Verified ownership admission uses the canonical candidate assessment, which
+combines structural obligations with effect, placement, and
+module-initialization evidence. Ownership edits do not rewrite the pipeline's
+graph reports.
 
 Each atomic conflict report includes a deterministic witness between the first
 claim and the first later claim assigned to a different module. It records a
@@ -267,6 +279,12 @@ only emission and optional graph-export actions and forwards the supplied
 assignment gates and translation validation remain mandatory. Each consumer
 declares its complete current inputs. Tree config and vendor marks accept source
 or generated file labels; module YAML inputs remain declared in `spec_tree_inputs`.
+
+Saved analysis retains the canonical unresolved-identifier inventory from source
+preparation, including binding identities, all use spans and dynamic-scope status.
+Loading checks it against the current prepared source facts; missing source context
+and a complete empty inventory remain distinct. These facts grant no host-global
+value, effect or normal-completion authority.
 
 The public `debundle_pipeline` rule's `analysis_threads` attr defaults to zero,
 omitting the override so `DebundleAnalyze` uses inherited `RAYON_NUM_THREADS`
@@ -460,7 +478,7 @@ edge-based translation validator. `gate_accepts`, `accepts` and `swapped_pairs`
 are exact. `counts` contains exact totals for conflicts, forward-kept,
 forward-swapped and placement-split edges, plus conflict totals by dependency
 kind. Each corresponding list is `{total, examples, truncated}` with at most
-twenty deterministic examples. Acceptance and the gate oracle use complete
+twenty deterministic examples. Legacy comparisons use complete
 category totals; effect-set comparison receives the complete legacy conflict
 pair set, including pairs beyond the samples. Forward-swapped edges retain
 their existing report-only role. Bounds never narrow checks or source scope.
@@ -483,27 +501,65 @@ only to the final Pipeline action; analysis artifacts/projections are unchanged.
 Every final candidate is assessed against its exact emitted order and structural
 placement, including runs that suppress reports. Report selection controls the
 serialization and full-detail sinks, not which assessment is computed. The
-ordinary assignment gate remains the acceptance authority; effect coverage is
-report-only while whole-owner coverage is incomplete. A future authority cutover
-must preserve structural and rebinding obligations, reject uncovered crossings,
-and retain existing accepted-behavior controls through sound coverage producers.
+joint effect, structural, initialization, provider-target and final binding
+assessment authorizes relocation. It preserves
+structural and rebinding obligations and rejects uncovered crossings; an
+incomplete owner can remain accepted when its effects do not cross another
+nonempty statement.
+
+The assessed assignment retains explicit named-module ownership and the
+configured `unassigned_mode`. A rebind constraint never implicitly moves an
+unclaimed writer or declaration into a named module. A partial claim that
+leaves the other endpoint elsewhere is assessed as that split and refused;
+the author must claim the complete group or retain its shared fallback destination.
 
 Full per-chunk report emission also writes
-`effect_translation_validation.json`: report-only effect conflicts for the
-emitter's exact statement order, derived from staged facts. It leaves the
-legacy gate and edge-TV oracle unchanged. Unknown global/property/host
+`effect_translation_validation.json`: effect conflicts for the emitter's exact
+statement order, derived from staged facts. The same assessment is mandatory
+for relocation validation even when report files are suppressed; legacy graph
+and edge-TV verdicts are diagnostic comparisons. Unknown global/property/host
 coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
-pair-premise disposition; observed contradictions are diagnostics only.
+pair-premise disposition; observed contradictions block acceptance.
+Each reported cell retains the later footprint in `cell` and records both
+source footprints and their address law in `overlap`. The current laws are
+`exact_cell` and `array_contents_index_or_length`, the latter joining same-origin
+array contents with numeric array-index or `length` own-property cells. No
+implicit `object_shape`/property or descriptor-map/property alias is inferred;
+a producer that may change shape records its `object_shape` write explicitly.
+Read/read pairs do not conflict. The same sweep projects one shared
+`execution_progress` cell for synchronous initialization across every logical
+module in the exact chunk candidate. Each evaluated non-inert owner reads it; an
+owner without exact whole-root normal-completion evidence writes it because it
+may suppress later execution.
+Unknown or abrupt completion remains suppressing. A known caught throw or
+callable return does not write the outer fence by itself. An empty
+source-prefix ledger is not an inert certificate: skipping the read requires
+both exact normal completion and an otherwise empty semantic footprint.
+Missing normal-completion evidence creates a conservative potential-suppression
+write, not an observed event that contradicts an authored pair premise. Only
+an exact root-level outward known throw with covered abrupt-effect
+dependencies is marked as an observed progress write; absent or incomplete
+abrupt proof remains potential suppression.
+Existing completed-initializer evidence may prove a lazy function's creation
+normal even while its deferred parameters or body have unknown effect domains;
+that normality evidence does not close those effect domains. This bounded
+interference check does not change design assumption A6 or claim general
+uncaught-error equivalence; an outward-throw/unreached-suffix crossing remains
+refused unless the existing modeled effects and control projection prove it
+safe.
 Local export lists (`export { value }`, including aliases) link live bindings
 without evaluating their values or initializing a binding. Their initialization
 effect footprint is empty. Dependency-bearing re-exports (`export ... from`)
 retain conservative dependency-evaluation coverage; default export expressions
 and declarations retain their normal evaluation effects. Structural facts,
 heap and synchronous analyses, and saved analysis share this classification.
-Twenty deterministic examples bound default output: rows with modeled cells
-are preferred, then the earliest Havoc-only rows fill unused slots; selected
-rows retain sweep order. Truncation and coverage limitations remain explicit.
+Twenty deterministic examples bound default output. They rank rows with
+non-`execution_progress` data cells or an observed `execution_progress`
+conflict first, potential-control-only rows second, and cell-free Havoc rows
+last. Earlier rows win within each tier; examples are emitted in tier order.
+Truncation and coverage limitations remain explicit, and the full JSONL stream
+retains the complete sweep order and every cell.
 `run --effect-conflicts-jsonl` additionally streams every pair, cell, access
 provenance (including both footprints and their overlap law), premise
 disposition and endpoint opacity
@@ -523,6 +579,85 @@ Full per-chunk report emission also writes
 statement order from the existing single sweep with typed cross-destination
 rebind and split-atomic-group obligations from the same assignment validation,
 plus typed source/destination projection evidence from the final plan.
+Its `module_initialization` component independently lists fact-required module
+cells, preserved required cells, and unproved required-minus-preserved cells,
+each addressed by scoped chunk ID and declaration origin. It reports any typed
+prepared-output refusal; source imports alone do not establish preservation.
+It also lists reached imported primitive reads, the subset whose exact owner
+binding, candidate target, provider closure and phase were preserved, and the
+unproved difference. Missing required cells or imported reads make an otherwise
+unblocked candidate incomplete; a refusal with neither requirement remains
+diagnostic.
+Its `provider_targets` component independently lists every successfully
+applied conditional imported-body use, the subset whose exact source binding
+and provider route remain present in the prepared candidate, and the unproved
+difference. Addresses retain the source owner/callsite, hygiene-aware binding
+identity internally, and analyzed provider module/export identity; report
+addresses project those values for diagnostics. A capture-free body still
+requires this target proof. The first checked scope is one materialized
+consumer with unchanged vendor planning and a retained ordinary-ESM provider
+closure: the exact owner body must contain the canonical named-import binding
+for the applied call, and precomputed named export/import records trace its
+export to the analyzed provider. Candidate requests resolve output-first, so a
+new logical file cannot silently replace that route. The selected import is
+live in that body and survives dead-import pruning; an unrelated bare request
+does not discharge it. Retained provider aliases are unchanged under this
+scope, while export-star routes and consumer-generated forwarding identities
+without a tracked binding remain unproved. This target check proves identity
+only; it does not establish provider initialization order or shared-cell
+chronology, which remain the separate `module_initialization` obligation.
+Its `global_resolution` component is finalized after both emission rewrite/prune
+passes, against the exact candidate files. The source inventory comes from the
+prepared parse and retains every unresolved hygienic identifier and use span,
+including complete empty inventories. Each retained site must still resolve as
+the same unresolved name. Missing, duplicate or unaddressable evidence is
+`incomplete`; capture by a candidate binding is `changed`. Dynamic-scope
+evidence from `eval` or `with` is `incomplete` for transformed AST candidates
+because the static use inventory does not describe names resolved through
+those constructs. A unique unchanged raw entry may preserve that lexical scope
+only when its captured chunk, source path and parser-file identity match and its
+bytes match the input digest. Checked vendor elisions retain exact source-site
+receipts and separate preserved/elided counts. This check establishes binding
+correspondence only; host-global read values, effects and normal completion
+remain separate obligations.
+
+The final checker accounts for every emitted static import and re-export.
+A module specifier outside the route representation remains an incomplete
+request in that census. Boundary renames require the planned public export,
+actual emitted request and every recorded source use to resolve to the same
+canonical provider binding. A present consumer-cell claim must agree with the
+provider's source export and cell. Each mapped use of a tracked provider cell
+also requires source initialization evidence and provider-before-use ordering
+in the final output graph. Request accounting, imported reads and initialization
+consume this same verified route; a public-name change grants no value or effect
+facts.
+
+Local candidate reports carry `global_resolution.state=pending` until this
+whole-artifact check joins their scoped result as `state=final`. Pending reports
+cannot report final acceptance. The expected source-chunk inventory follows the
+configured emission scope: pass-through chunks remain required when they are
+retained, while nonempty materialization with `prune_other_chunks` checks the
+explicitly selected chunk IDs. Full-swap exclusions still apply. This expected
+set comes from the configured source selection, never from the final files, so
+an accidentally missing entry remains incomplete. A changed binding makes an
+otherwise unblocked candidate `blocked_by_binding`; missing evidence keeps it
+incomplete. Normal emission and verified CLI writes require the joined verdict;
+nonaccepted candidates cannot reach final program validation. Requested rejected
+output remains a marked inspection tree.
+Conditional-body discovery specializes canonical ordinary imported calls with
+literal record layouts. A discovered layout may also serve a later nested
+call, which must check its actual input and retain its own callsite obligation.
+Named import/re-export forwarding is resolved through canonical source facts;
+the derived body retains the ultimate provider identity, while its summary is
+published at the import-facing export. Missing or cyclic routes remain unknown.
+The shared source-analysis closure follows canonical static requests, including
+export-from dependencies of re-export-only modules. Frontend premise resolution,
+the provider writer/native census and saved analysis use that same closure;
+including a provider does not discharge request-mode or initialization checks.
+When an ordinary foreign-return summary supplies an independently closed body
+receipt, execution uses that receipt and its dependencies directly; it does not
+apply an unused conditional specialization or attach that specialization's
+candidate obligations. Existing vendor-equivalence premises remain explicit.
 Candidate assessment and normal lowering share one checked projection over the
 retained source-unit layout, whole-statement requests, binding catalogue,
 destructuring and nested-`var` groups, and stable Set intervals. Its maps are
@@ -546,12 +681,18 @@ names the structural checks whose complete input domain was unavailable:
 destructuring-declarator grouping, source-unit-to-body mapping, binding and
 shared-var destination projection, and whole-statement destination projection.
 Completeness is derived from an empty unresolved set. `accepted_within_checked_scope`
-requires an accepted effect decision and all four placement checks complete
-without a known structural blocker; it is not overall acceptance. The candidate
-status names effect and placement blockers separately. An ordering-only veto
-from the still-authoritative legacy gate is reported by
-`legacy_gate_ordering_veto` and does not count as a structural blocker; the
-legacy gate remains the authority to emit runnable output.
+requires an accepted effect decision, all four placement checks complete
+without a known structural blocker, emitter maps, complete initialization and
+provider-target obligations, no unproved required module cells or imported
+primitive reads, and preserved final source bindings. Vendor, export, and
+final-program checks still apply. The candidate status retains the known
+blocking component. An ordering-only veto
+from the legacy graph is reported by `legacy_gate_ordering_veto` and does not
+count as a structural blocker or a second emission veto. Local preflight mints
+the immutable assignment capability consumed by lowering; the resulting files
+must then pass the whole-artifact binding check before emission is authorized.
+Rejected output requested with `--emit-on-rejection` remains marked inspection
+material and exits with status 3.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
 The report's `full_semantic_precision: false` is a policy-level field, not a
@@ -566,63 +707,33 @@ statement proved to have no evaluation effects. Open effect sets are Havoc
 against every nonempty partner, so an open statement crossing a proved-empty
 statement needs no assumption about the open side. An uncovered modeled
 may-conflict or contradictory premise is `conflict`; an uncovered Havoc pair
-or a pair conditioned by an authored premise is `incomplete`. The assessment
+is `incomplete`. A pair covered by an exact authored commuting premise can
+accept conditionally as `assumed_statement_order_commutation`; its typed
+premise dependency remains explicit. Observed contradictions still block. The assessment
 retains typed `relocation_dependencies` for covered owners among inverted
 participants and typed `premise_dependencies` for premises used by conflicting
-pairs. It does not replace the legacy gate and does not establish cross-rebind,
-importability, vendor replacement, privacy or singleton obligations.
+pairs. The effect component alone does not establish structural placement, vendor
+replacement, privacy or singleton obligations.
 
-`bindings assign` and `bindings unassign` can return this assessment for their
-exact in-memory post-edit candidates with `--dry-run --analysis <artifact>`.
-They require the saved graph plus the full tree transform context, with
-`--modules` and `--tree-modules` resolving to the same root. The implementation
-supports exactly one materialized graph chunk and a tree config whose full
-module tree belongs to that chunk
-(empty or absent `module_roots`). It recomputes the candidate through the
-normal selector, analysis-load and `ChunkPlanBuilder` path; the graph report is
-never decoded as effect facts. The engine, source digests and completed
-analysis projection must match before the assessment is returned, and any
-failure occurs before YAML writes. The result remains diagnostic: it does not
-change the edit gate or authorize an otherwise rejected assignment. Omitting
-`--analysis` preserves the ordinary graph-backed editor behavior.
+All ownership-changing CLI consumers assess their exact complete in-memory
+candidate through the normal selector, analysis-load and `ChunkPlanBuilder`
+path. Saved graph claims remain selector and identity evidence; the graph report
+is never decoded as effect facts. The engine, source digests and completed
+analysis projection must match before assessment, and failures leave YAML
+untouched. Full context supports exactly one materialized graph chunk and a tree
+config whose full module tree belongs to it (empty or absent `module_roots`),
+with `--modules` and `--tree-modules` resolving to the same root. Auxiliary tree
+inputs must be explicit. Scoped graph-only proposals remain available as
+previews requiring full assessment.
 
-`modules merge --dry-run --analysis <artifact>` uses the same explicit full
-tree context and verified staged-artifact boundary. It composes one complete
-candidate module map from the current YAML documents plus each exact in-memory
-`MergePlan` target document, removes merged sources, and uses that same map for
-the legacy edit gate and the report-only effect assessment. The assessment
-therefore sees the candidate `ChunkPlanBuilder` order that a subsequent run
-over the applied YAML emits. Full-tree single-chunk scope, `--modules` /
-`--tree-modules` equality, identity checks and failure-before-write behavior
-match `bindings assign`; omitting `--analysis` preserves ordinary merge
-behavior.
-
-`modules delete --dry-run --analysis <artifact>` uses that same full-context
-boundary for the exact set of resolved module files scheduled for deletion.
-Their paths are mapped once to the logical keys in the complete typed module
-snapshot, then those same keys are removed for both the legacy edit gate and
-the report-only effect assessment. The assessment therefore sees the candidate
-`ChunkPlanBuilder` order produced by applying the deletion. Non-empty deletion
-still requires `--force`; full-tree single-chunk scope, `--modules` /
-`--tree-modules` equality, identity checks and failure-before-write behavior
-match the other opt-in edit assessments. Omitting `--analysis` preserves the
-ordinary deletion and gate behavior.
-
-`modules apply --analysis <artifact>` assesses the exact typed module
-documents after selected residual proposals and their selectors are applied in
-memory. It uses the existing `--modules` and `--tree-config` arguments as the
-transform root and config, then runs after the expected-member and realizability
-gates pass but before YAML writes. The assessment requires a verified staged
-artifact, full-tree context for exactly one materialized graph chunk, and
-explicit auxiliary tree inputs (`modules apply` does not inherit the
-`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT` defaults). Its effect commutation
-result remains report-only and the ordinary graph gate remains authoritative.
-When `--analysis` is supplied on an actual write, the canonical placement
-projection must yield emitter maps; otherwise the command leaves YAML untouched.
-Omitting `--analysis` preserves ordinary and scoped apply behavior and explicitly
-reports that the effect assessment was unavailable.
-`bindings assign --analysis <artifact>` uses the same final-candidate placement
-decision before writing. Its ordinary graph-only path remains available.
+Assign/unassign assess the complete post-batch documents. Merge applies every
+in-memory target document and removes drained sources. Delete removes the exact
+resolved module paths and still requires `--force` for non-empty modules.
+Apply resolves selected proposal members and structural selectors; refine
+resolves the complete requested source-unit map. Each command retains these
+claim checks, then uses the same joint relocation verdict before writing. A
+rejection carries the actual typed candidate assessment in JSON and text;
+legacy SCC and atom comparisons do not veto an otherwise accepted candidate.
 
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
@@ -636,22 +747,51 @@ may-accesses into these reports, retaining lexical source-operation sites,
 proof dependencies and conservative callback assumptions. They do not alter
 legacy global cells or graph edges. Indexed, conditional and prejoined lanes
 remain may-access evidence and cannot establish observed contradictions or
-domain completeness. Unchecked owners retain their unknown-coverage obligations.
+domain completeness. When an ordered plan stops, its remaining direct local
+callees retain indexed may-access sites through their settled module bindings
+and captured lexical values, without executing those callees. These accesses
+carry the fallback assumption; they cannot seal the stopped initializer.
+Unchecked owners retain their unknown-coverage obligations.
 Default examples retain twenty source operations per cell access, with exact
 counts and explicit truncation; full JSONL borrows and streams all retained
 operation provenance.
 
-An original, non-exported direct class declaration may close global-property,
-general-heap and host-effect coverage only for an inert class shape: no
-heritage, class or member decorators, computed names, static fields or blocks,
-accessors, auto-accessors, private members, or ambient declarations. Its
-members are plain methods, an ordinary constructor and public instance fields.
-Method and constructor bodies and instance field values remain lazy. The exact
-class evaluation must finish and initialize its binding before the certificate
-is sealed. The certificate covers class declaration evaluation only; later
-construction and property observations retain their ordinary effects and
-coverage requirements. The existing binding write and allocation facts remain
-projected.
+An original direct class declaration uses a canonical class-creation operation
+through the shared local interpreter. Definition-time admission excludes heritage,
+class or parameter/member decorators, computed names, private static elements,
+auto-accessors, ambient declarations and unsupported static-block statements.
+Statically named methods/accessors and instance fields create no eager user-code
+step. Public static fields and expression-only static blocks run through the
+shared local transfer in source order, after the complete class element census;
+static fields use the class object's own-data definition operation, so a field
+named `__proto__` is an ordinary own data property. The static name `prototype`
+is rejected as the language's class early error, not modeled as a runtime throw.
+Exact field completion also requires a path-local ordinary-class descriptor witness. An
+unknown or possibly reentrant static prefix invalidates that witness and leaves
+the remaining class suffix opaque. A static RHS or block may advance to its
+following DefineField or source suffix only on exact-normal completion; an
+opaque possible-normal result refuses the remaining class plan. Typed runtime
+families carry each RHS world through the shared continuation stack: only normal
+leaves define the field and advance to later static elements; thrown leaves
+unwind to the enclosing catch with their actual payload and world. Each leaf
+owns its class descriptor witness, class roots and saved outer receiver. Cleanup
+restores that receiver and drops the witness on normal, abrupt and refused exits.
+Scalar provider adapters drive the same stack and refuse a fork before advancing
+either alternative. The class witness authorizes only the current DefineField;
+it never certifies future fields as present in the pooled object surface.
+Class self-references are refused until the
+inner class-name lexical environment is represented; the outer declaration
+binding is initialized only after normal completion. Constructor bodies,
+parameter defaults and instance field values remain deferred. Imported/provider
+contexts without the class-object store refuse classes that need static steps.
+No construction or ordinary-object shape proof is implied.
+
+The exact class root must finish normally and initialize its binding before its
+lexical/global/heap/host operation receipt is sealed. Its root retains a
+`class_declaration` identity and declaration span, separately from variable
+initializer spans. The existing binding write, allocation, exports and later
+callback reachability remain projected. Construction and property observations
+retain their own effects and coverage requirements.
 
 An original simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
@@ -673,13 +813,14 @@ evaluated operand, while `!` applies JavaScript's non-invoking `ToBoolean`.
 Every evaluated operand, including a discarded sequence operand, composes its
 access/coverage judgment and possible abrupt outcome. A normally completing
 last value does not discharge an earlier unproved read or throw.
-In a supported ordered callable body, an untagged template evaluates each
-substitution once and converts it to String before the next substitution.
-Known non-Symbol primitives use the scalar conversion transfer. Symbol
-alternatives retain possible abrupt completion; object or unknown values
-retain ordinary coercion fallback and cannot close operation coverage. The
-String result alone never certifies the substitution reads or effects. Tagged
-templates remain outside this transfer.
+Untagged templates retain their canonical substitution expressions in the
+ordered kernel. Each substitution evaluates once, followed immediately by
+its `ToString` before the next substitution. Non-Symbol primitives share the
+scalar conversion transfer; Symbol alternatives keep abrupt/incomplete
+coverage, and objects keep their ordinary coercion fallback. A String result
+alone supplies no coverage for the substitutions. Tagged templates remain
+unsupported by this transfer. Evaluation order follows
+[template evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-template-literals-runtime-semantics-evaluation).
 All operand binding reads remain subject to the initialized-local check. Array
 creation does not consult the global `Array` binding or iterate the element
 values. Every source binding read, including one in an overwritten duplicate
@@ -729,25 +870,194 @@ defaults, destructuring and rest, remain lazy together with the body. Async
 and generator function creation follow the same rule. This certifies no call:
 later parameter evaluation, iterator/getter access, bodies and scheduling
 retain their ordinary effects and coverage requirements.
-Assignments, templates, default export expressions, destructured variable bindings, class expressions,
+Assignments, templates, default export expressions, unsupported destructured variable bindings, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
 functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
 variable initializers.
+An executed ordered module-binding assignment uses source-proved mutability
+and initialized-cell evidence independently of its evaluated RHS. Hoisted local
+function declarations supply their own mutable-cell source fact. A root store
+replaces the current prefix value and retains the callable selected by its
+actual RHS, transporting its existing selection and proof dependencies rather
+than deriving selection from a known value. Invocation queries preserve their
+weak/no-call alternatives. Missing mutation or initialization evidence keeps possible normal stores,
+callback effects and abrupt alternatives without a complete receipt. It never
+classifies missing declaration metadata as a definitely failing assignment or
+leaves only a superseded callable available to later proofs.
+
+A single original direct variable declarator can also initialize a shallow
+object binding through the shared ordered kernel. Static identifier or string
+property names select identifier targets, including shorthand without defaults.
+The RHS executes once; each present ordinary own-data property is read at its
+current prefix and its target is initialized in source order. Callable values
+retain their actual captures and selection evidence. The same operation handles
+callable-local declarations. Missing fields, getters, proxies, computed keys,
+defaults, rest and nested patterns retain conservative execution and no complete
+root certificate. A refused later property retains prior target stores and
+property effects, plus possible normal/abrupt suffix values and capabilities;
+it never replays the RHS or seals an initialized prefix as the whole owner.
+The root receipt records the original owner, declarator, pattern and RHS spans
+and every ordered property/target. Saved analysis remaps every target binding.
+Only normal execution with all targets initialized and all operation domains
+covered can seal it. Split or directly exported declaration owners retain their
+existing source-provenance restrictions.
+
 The source-covered expression is retained from canonical lowering. Dedicated
 initializer execution uses that exact expression and shared child transfers;
 generic values or an empty ledger cannot mint coverage. Composed child judgments
 never propagate a whole-owner certificate, and invocation memos carry none.
+The ordered interpreter carries an explicit source throw separately from
+unknown abrupt results and TDZ reads. A selected local call transports its
+actual thrown value to a represented `try`/`catch` region. The handler creates
+and initializes its catch binding only when reached; normal return bypasses
+it. Calls whose bodies were skipped stay in the canonical inventory with
+distinct evidence naming their caller, region, completion frontier and
+dependencies. An entered throwing callable retains its invocation edge.
+New structured bodies check their complete source call inventory, including
+dead suffixes and handler calls, before granting effect authority. Saved
+analysis preserves the invocation and skipped-call rows.
+
+The shared local kernel carries a typed, resumable continuation for calls,
+arguments, binary operands, conditional and logical operands, optional member
+receivers, template substitutions, parameter defaults, assignments, initializers,
+returns and lexical regions. Callee selection and completed operands are retained;
+resuming a child result never evaluates that prefix again. A member receiver and an assignment
+reference are selected before their arguments or RHS; they travel separately
+from lexical `this` captures. Body declarations are instantiated after parameter
+defaults finish. Runtime invocation families retain
+separate worlds for normal and thrown outcomes through caller suffixes and
+handlers. A return becomes a caller value on that leaf only. An exact throw
+enters catch with its actual mutated world; an unknown throw binds its retained
+payload, or `Top` when the payload is unavailable. Unresolved completion and
+possible divergence do not manufacture a catchable throw or normal continuation.
+
+An abstract `if` or conditional expression forks after evaluating its test. Logical
+operators retain the selected left value or evaluate the right operand, with the
+operand's nullish or truthiness partition carried by each leaf. Optional receiver
+and optional callee checks are separate: the former can skip GetValue and arguments,
+while the latter skips arguments after GetValue. A skipped optional leaf returns
+`undefined`. No completed receiver, callee or operand is evaluated again. Each
+selected arm and following continuation executes in its own world. The scalar
+expression adapter refuses a fork it cannot represent. Branch expansion is
+bounded; exhaustion retains the completed prefix and summarizes the remainder
+once. For source-covered `if` statements, branch-specific skipped-call receipts
+are attached to the exact `IfTest` and arm sites on each feasible leaf. Joining
+a symbolic predicate's leaves can therefore account for a call that executes
+in one arm and is skipped in the other without asserting either arm globally.
+This requires a closed predicate prefix and canonical source sites; otherwise
+that leaf retains incomplete effect coverage. It does not change arm completion
+or promote a branch-only invocation to a definite call. Conditional expressions
+that lack this statement-region receipt path remain conservative.
+
+Only a fully consumed owner may request the checked terminal state projection.
+Unmigrated scalar call consumers explicitly refuse a multi-world result. `finally`,
+destructured catch parameters and expression forms without a resumable child
+adapter retain conservative execution. Thrown values keep the conservative
+publication policy even when caught; catching alone proves no fresh heap ownership.
+
+An ordered local binary expression can produce a typed abrupt completion when
+both nonempty operand sets contain only supported primitive kinds, neither
+contains an unavailable alternative, and the shared primitive transfer proves
+there is no normal result for any represented operand pair. Its already
+evaluated operands keep their effects and state exactly once. The local executor
+records a `KnownThrow` only when the prior frame has no return/unknown marker or
+existing throw and its completion is exactly normal. Source-frontier and
+covered-domain checks separately govern exact skipped-region receipts. A mixed/value-sensitive operation, unknown operand, or
+unknown prior completion remains conservative, including inside a catch.
+Within the supported synchronous `try`/`catch` path, a sequence advances only
+after `Next`. A known throw retains the already-mutated frame and execution
+context, skips the rest of that try body, and enters its handler; only normal
+handler completion resumes the enclosing sequence. Handler returns and throws
+propagate outward, while unknown completion keeps the prefix and falls back
+without speculative execution or rollback.
+Allocation/value adapters without an ordered completion carrier keep this
+typed abrupt result opaque. Updates and template conversions retain their
+existing conservative completion behavior.
+
 The owner certificate survives staged analysis. Binding/allocation cells, other opacity
-flags, purity and the authoritative legacy gates retain their existing rules.
+flags and purity retain their existing rules; the joint relocation assessment
+consumes the resulting effect coverage.
 Coverage certificates retain the composed transfer's typed proof dependencies,
 including exact-site native identity inputs. The effect report projects their
 union as `coverage.covered_owner_dependencies`; an empty access ledger does
 not erase the conditions of an absence proof.
 
 An ordered simple variable initializer can separately compose effect-domain
-receipts from exact initialized module-local cell reads and direct ordinary
-top-level function-declaration calls with zero actual and formal arguments.
+receipts from exact initialized module-local cell reads, canonical primitive
+literals, and direct ordinary top-level function-declaration calls.
+Inline function/arrow callees also use the shared ordered creation and call
+transfers: create the exact canonical closure before evaluating arguments,
+evaluate each argument once, then invoke that selected closure. Creation alone
+does not certify a body, parameter prologue, capture read or completion. Actual
+captured cells retain their independent effects; async, generator, implicit
+receiver and unsupported-body calls cannot acquire coverage from this callee
+form. Provider and retained queries still require their own invocation proof.
+Actual creation and successful initialization of noncaptured parameter and local
+`let`/`const` cells have no global, heap or host effects. Arguments, selected
+defaults and declaration initializers compose their own effects separately.
+Successful static own-data reads and writable own-data writes also compose
+these domains after the shared slot proof. Their actual property cells remain
+in the heap ledger; closed coverage does not make a heap access effect-free.
+For a checked local base-class construction, a completed constructor activation
+may carry its actually defined public own data fields onto the constructed
+instance value. A later singleton read uses that descriptor witness and the
+current settled class-origin heap value. Projected members, incomplete
+construction, escapes, possible mutation, accessors and absent fields do not
+inherit the witness. It proves neither a distinct instance allocation nor a
+writable slot.
+The receipt retains current-prefix proof dependencies, while receiver, callee,
+argument and RHS evaluation compose their own effects. Accessors, missing or
+inherited slots, unsettled receivers and unproved writable descriptors do not
+receive this coverage.
+Each admitted own-data read or writable-own-data store also reads the target's
+`object_shape` region in the same relocation footprint as its `own_property`
+cell. The origin denotes every runtime generation of that source allocation,
+not one birth or singleton. Unmapped or unresolved support retains conservative
+effects; opaque descriptor/prototype mutations remain overlapping unknown
+invalidators. Support receipts are evidence and read footprints only: they do
+not close coverage or extend reasoning to absent/inherited slots or
+extensibility.
+A provider-local support read may instead carry a private-birth certificate
+without a caller heap address. The shared transfer checks a fresh, nonborrowed
+frame birth at each own-data operation. This bounded proof admits only a complete
+straight-line body within the existing allocation-query grammar, with simple
+parameters, local let/const operations, ordinary data records and one terminal
+return, whether primitive or an allocated record. Calls, native operations,
+closures, captured writes, unproved operations and omitted
+post-terminal statements exclude it.
+Only normal complete transfer with closed effects seals the candidate evidence;
+an unsealed candidate remains unresolved. Final return may expose the completed
+local graph, whose imported value remains opaque. Sealed evidence carries no
+provider ordinal and establishes no caller identity, distinctness or descriptor
+state. Source and saved reports retain the operation and its proof dependencies.
+A canonical in-range array-index read uses the same own-data transfer when the
+current prefix retains a settled, first-generation dense array-literal witness
+and the actual stored element value. Source operands are not reevaluated to
+recover that value. Holes, unsupported spreads, out-of-range indices, pooled
+allocation reuse, mutation and accessors retain fallback. Provider-only and
+retained queries require their own prefix witness; the read proof grants no
+array-write capability.
+An own `length` read uses that transfer only when the same checked prefix
+witness proves the array's present data slot. It returns the `NUMBER` abstract
+value and records the exact `OwnProperty(origin, length)` cell that checked native
+`push` writes. This remains read-only: array length assignment never uses the
+ordinary writable-slot path because truncation has distinct semantics.
+Ordinary-object accessors, sparse or unknown arrays, unsettled or reused
+allocations, and retained queries without their own current prefix remain
+conservative.
+The property cell shares a uniquely eager array's birth proof against older
+opaque heap operations. An intervening opaque operation or a repeated
+allocation site retains the conservative frontier.
+When the same exact root has both a lexical operation receipt and complete
+global/heap/host coverage, its represented effects discharge the relocation
+projection's `opaque_at_init_call` and unattributed `member_write_or_alias`
+fallbacks. The coverage dependencies include both receipts. Actual reads/writes,
+independent dynamic/global-alias opacity, incomplete execution, precision losses
+and opaque result contents remain.
+Legacy completion and source-only assertions cannot discharge this fallback.
+The report's legacy dataflow-opacity count still describes the original
+classifier; pair diagnostics show any remaining opacity.
 The invocation prologue must use no `arguments`, implicit receiver or captured
 cells. The existing ordered kernel composes each executed operation's receipt,
 independently for global properties, general heap and host effects; missing
@@ -758,8 +1068,8 @@ target-selection conditions as prerequisites; those conditions alone cannot
 create coverage. Child outcomes and invocation memos carry only nonterminal
 receipts. Only the root owner can seal normal,
 fully covered execution against its exact canonical owner, binding and
-initializer span after its result binding becomes initialized. Parameters,
-actual arguments, captures, local stores, property/native/global operations,
+initializer span after its result binding becomes initialized. Captures,
+later local stores, other property/native/global operations,
 unsupported transfers and abrupt completion remain uncovered by this route.
 A non-exported comma-split variable declarator may also use this route when its
 checked original initializer composes to one plain binding read. Its canonical
@@ -774,19 +1084,92 @@ When an ordered root initializer has both normal values and an abrupt
 alternative, only its normal values enter the module binding on the normal
 continuation. Its effects remain incomplete. An initializer with no normal
 result retains its unavailable value and cannot certify a later binding read.
-Deferred function/method/accessor creation, record and array creation, named
-function self scopes, and activation-local declarations have no operation
-receipts in this route; successful allocation does not close their effects.
+Checked deferred function/method/accessor creation composes the same creation
+effects in application execution and source-provider queries. Canonical
+creation identity, capture availability and retained references remain checked;
+the body and parameter defaults are not executed. A factory can obtain a
+complete body-effect fragment from these operations without proving any later
+invocation of its returned callable. Missing operand or other body effects
+still prevent whole-owner coverage. Fresh record creation separately covers
+static method/getter/setter descriptor definitions when their ordered canonical
+tags match; each callable child still supplies its own creation fragment.
+Defining an accessor does not invoke it. Computed keys, opaque definitions and
+the data-property `__proto__` form remain outside this definition proof.
+Constructor arrows that use lexical `this`, including nested arrow chains,
+retain the actual receiver separately from source home-object containment and
+lexical binding cells. Capture identity includes that receiver. Its class
+capability, constructor inputs and weak pooled heap remain reachable through
+publication, cell retention and bounded fallback. Invocation supplies the
+captured receiver to the shared kernel; reading an available receiver executes
+no user code. A missing receiver, meta property or unsupported receiver operation
+keeps conservative fallback. Ordinary functions establish their own receiver
+boundary. Capturing a receiver never transfers the constructor activation's
+freshness, descriptor or private-slot proof to another invocation.
+Base-class provider queries also retain their actual shared constructor-body
+fragment independently of the fresh-instance and retained-argument proof. The
+shared kernel executes field initializers, including implicit `undefined`
+definitions, before the simple parameter prologue and constructor body. A fresh
+ordinary receiver and a normally completing allocation-only prefix prove public
+own data definitions, without consulting inherited setters. Private definitions
+install class-qualified slots; a private assignment requires its exact slot
+already present. Public `this.field = value` assignment requires the exact public own data field
+already present and writable at that prefix. It evaluates its RHS once and keeps
+its effects; missing own fields and prototype setters remain unsupported.
+Public descriptors and private slots remain disjoint. Stored values retain weak
+pooled-allocation semantics and callback reachability.
+Each initializer/RHS and actual parameter operation composes its own effects.
+These proofs grant no field-read, result-shape or prototype guarantee. Heritage,
+defaults, borrowed access and instance private methods remain unsupported.
+Checked array-literal creation also composes the same operation effects in
+both contexts: creating the fresh array and defining its own indices and length
+executes no user code. Each element's effects compose in source order. Holes
+remain absent own properties and receive no dense-array or iterator proof. A
+spread element must obtain the existing native iterable receipt for its exact
+operand and source span. Exact yielded slots can preserve dense-array knowledge;
+qualitative primitive-only yields retain no exact slots and are recorded only
+for a fresh allocation site with the receipt's dependencies. Named function
+self scopes and `var`/function hoisting retain their existing admission;
+successful allocation alone does not close their effects.
 Existing leaf/value initializer proofs keep their independent admission.
+An exact native-constructor initializer can consume its existing constructor
+certificate from ordered execution. The applied native New dispatch must match
+the original owner, call span, constructor kind and argument form; its actual
+result and normal completion feed the source initializer proof without replay.
+That certificate retains its native dependencies and grants no lexical receipt.
 These three domains do not establish completeness of source binding reads or
 rebinds. Closing them does not discharge unresolved-call closure or authorize
 skipping its binding-effect fallback.
 
 The ordered root can separately seal lexical read and rebind coverage from
-receipts produced by the shared local-operation interpreter. Covered lexical
+receipts produced by the shared local-operation interpreter. Binding initializers,
+class declarations and supported anonymous expression statements retain their
+exact source owner, span and root kind in the same canonical root plan and receipt.
+Expression statements discard their value after executing their child operations;
+they create no artificial binding. These roots use the same property, call
+and operator transfers, completion and dependency checks, and call-edge
+connectivity proof. Supported global-store expressions also use the ordered root
+plan. Eligible source plans select call targets after evaluating their callee
+and arguments in source order. A refused call retains the prefix's effects and
+summarizes its remainder without replaying operands or gaining a root receipt.
+An opaque getter's shared transfer retains conservative effects and a possible
+abrupt result while its unknown normal result permits argument evaluation.
+That result grants no target selection or effect proof; strict provider queries
+still refuse it. Unknown calls consume evaluated callback capabilities through
+the same bounded opaque-call protocol before the caller is summarized.
+When that protocol consumed the entire call expression statement and no caller
+activation is active, execution stops with its unknown effects and uncovered
+root intact. There is no caller remainder to publish again; the call's argument
+callback policy remains authoritative. Calls inside initializers, callable
+returns or larger expressions retain ordinary remainder fallback.
+An unproved global store retains incomplete execution, an uncovered root
+authority and conservative fallback; global lookup effects remain independent.
+Initial name lists cannot
+close their independent descriptor and host effects. Validated whole-expression
+publication and metadata models retain their timing/capability premises without
+acquiring operation coverage. Covered lexical
 operations include initialized module-cell reads, canonical primitive
-literal operations, exact deferred-function creation with no captured cells
-or unsupported body mode, successful static own-data reads, and guarded
+literal operations, exact source-checked deferred-function creation,
+successful static own-data reads (including direct binding initializers), and guarded
 own-data writes through initialized non-imported module bindings. A module
 slot write requires separate monotonic writable-at-prefix evidence from its
 literal definition; an own-data read or current value alone does not prove
@@ -795,27 +1178,159 @@ unsettled reach invalidate that evidence. A successful selected direct local
 call records its exact caller body, source call-site, target body, and
 consumed prefix prerequisites, including each memo-reused use. A static
 module-slot callee retains its GetValue receipt before argument evaluation.
+A direct call through a replaced hoisted binding may use the executed RHS's
+matching callable selection and its dependencies. Only the shortcut that uses
+the source hoisted declaration requires the target to equal that declaration;
+an unknown later store cannot reuse the replacement's earlier selection.
+Closure-allocation root initializers use the same kernel and retain the actual
+creation's callable-selection receipt when publishing their binding; a stored
+function value alone cannot establish that provenance. Creation defers bodies
+and parameter prologues even for opaque, async and generator callables; their
+later invocation must independently establish its operation effects.
+Capturing an available lexical cell does not read its value. The shared kernel
+records actual cell creation, initialization, initialized reads and mutable
+stores for simple captured parameters and local `let`/`const` bindings. Effects
+address `lexical_cell` by its canonical declaration offset and actual arena
+instance. Cell IDs are local to one analyzed chunk, never reused, and preserved
+through captured aliases, memoized effects and saved analysis. Different
+activations have different cells; reader/writer closures from the same
+activation retain the same cell, including through nested factories. These
+addresses prove neither private ownership nor contents or strong-update
+permission. A missing active cell or source correspondence preserves possible
+values and normal continuation while refusing heap-domain coverage; there is
+no origin-only summary address alongside the instance addresses. Opaque escape
+and recursive fallback retain their unknown heap effects. Object and Set heap
+allocation sites remain pooled independently of declarative-cell identity.
+
+Whole-program analysis also preserves address correspondence for unambiguous
+simple module variable declarations and resolved named imports/re-exports.
+Their `module_cell` address combines the defining source chunk and canonical
+declaration offset. Provider initialization, local accesses and importer aliases
+retain that address alongside existing binding effects; identical offsets in
+different chunks remain distinct. Saved analysis resolves checked source names
+into the loading artifact's chunk namespace. Missing or ambiguous correspondence
+adds no address. This records may-accesses only: it grants no value, initialization,
+normal-completion or captured-body authority.
+
+An actual reached `GetValue` may consume a source-derived `ImportedPrimitiveRead`
+only when its normal value matches the recorded primitive kinds. The fact is not
+candidate authority by itself: `SynchronousCalls` carries a
+`RequiredImportedPrimitiveRead` with the full source import binding, canonical
+operation site, consuming root, first-hop request/export, provider closure and
+primitive cells. Feasible alternatives union these may-read requirements. The
+candidate module-initialization check joins the owner and binding to the exact
+prepared request, resolves that request through the complete output-first
+candidate layout, and requires the unchanged retained provider closure to finish
+before every consumer body. A new output that shadows the original source path,
+an altered forwarding route, an unsupported closure, or a foreign context that
+can re-enter the provider leaves the read unproved. The check is independent of
+`module_cell` requirements: a pure hoisted function declaration does not need a
+fabricated read or blanket provider-evaluated token. Missing canonical read-site or consumer-root evidence remains an explicit
+unproved read requirement and makes candidate initialization incomplete; it never
+grants the imported-read coverage receipt.
+
+The retained provider closure distinguishes analyzed artifact modules from
+external host leaves. A host leaf is recorded only when the exact static
+specifier resolves through the configured `HostBehavior.reentry_free_module`
+lookup; its record keeps the source module, request spelling, host module, and
+the consumed reentry-free premise. This admits only the source closure route:
+it supplies no host body, value, or effect facts. Final candidate assessment
+must preserve the exact request as the same admitted external leaf. Missing
+legacy closure evidence remains unproved rather than becoming an empty host set.
+
+Named function-expression environments are initialized at function-object
+creation, rather than on each call. Their immutable invocation views do not
+emit fresh-cell allocations or writes. A direct or descendant closure's name
+read requires the canonical self binding, initialized immutable view and the
+matching original selected function value with its dependencies; this proves
+the declarative read has no exterior effect. Missing correspondence remains
+uncovered and attempted name writes retain their abrupt result.
+TDZ, possibly initialized cells and
+immutable stores retain their abrupt or uncovered result. Callable selection
+travels only with its actual stored receipt; mutation or mutable-cell havoc
+discards it. A settled present own-data read does not
+require fresh-local ownership, while mutation retains its separate ownership
+and writability checks. Accessors, proxies and receiver TDZ keep fallback.
+An inferred native callee whose canonical builtin row declares
+`NoExteriorAccess` likewise snapshots its exact intrinsic and prerequisites
+before argument evaluation. The same kernel evaluates every operand and consumes
+the existing row transfer once. A native call edge records its intrinsic family
+and property in the lexical receipt. Only checked nonthrowing primitive coercions
+close this operation; primitive return kinds, identity alone, authored identity
+inputs, or unknown body effects do not. Direct, zero-argument construction of
+an inferred intact `Map`, `Set`, `WeakMap` or `WeakSet` also uses the shared
+allocation transfer and composes its effect fragment through this kernel.
+Its lexical receipt records a distinct native-construction edge. The adapter
+checks the constructor's global binding separately and records that read;
+the fresh allocation alone supplies no operation coverage. Application execution
+keeps its conservative opaque value projection until a corresponding native
+heap and retained-reference model exists; a private provider allocation identity
+does not supply those capabilities. Other argument forms, outer-spread
+arguments, aliases, shadowed and replaced constructors retain conservative
+paths.
+Other native proof families retain their existing paths. Anonymous global publication still needs its own root and
+descriptor/host proof.
 Ordinary simple parameters initialize from already evaluated arguments in
 source order; supported selected defaults execute once in the same kernel.
 All parameter cells exist in TDZ before defaults run, and each successful
-initialization and noncaptured parameter read has its own lexical receipt.
-Ordinary noncaptured local `let`/`const` declarations likewise compose receipts
+initialization and initialized parameter read has its own lexical receipt.
+The shared continuation retains the actual activation transfer separately from
+the body transfer. Only completed parameter and declaration initialization, or
+its exact abrupt completion, supplies activation coverage and dependencies;
+whole-body opacity does not erase an independently completed activation.
+An incomplete default never supplies that proof, and a throwing default skips
+the body while retaining its payload and evaluated prefix.
+Ordinary local `let`/`const` declarations likewise compose receipts
 for actual TDZ-cell creation, successful initialization and subsequent reads.
 Initializer effects compose separately; an abrupt initializer never marks its
 binding initialized. Prebound values do not establish these receipts. Local
-declaration receipts do not certify captured cells, `var`/function hoisting,
-later assignments, or global/heap/host coverage, and cannot manufacture callable
+declaration receipts do not certify `var`/function hoisting
+or an initializer's other effects, and cannot manufacture callable
 selection evidence from a stored value.
+A terminal source `throw` contributes no implicit fall-through `undefined` to
+the callable's return projection. Explicit normal return alternatives remain
+separate from throwing outcomes and incomplete body effects. An unavailable
+initializer cannot manufacture a normally stored value for a later alias read.
+At the invocation boundary, an ordinary callable with neither a source return
+nor a fall-through path retains no successful value from an opaque child
+operation. Those values keep conservative throw publication; unknown abrupt
+coverage and existing known-throw payloads remain distinct. Async/generator
+invocation objects and explicit empty returns are outside this refusal.
 Default-bearing bodies with body `var` or function declarations retain the
 compatibility path until separate parameter and body environments are modeled.
-Live captured-cell, rest/destructuring, `arguments`, async and generator
-prologues remain outside this receipt family. Argument evaluation keeps its
-own effects, including surplus arguments.
+Final simple rest parameters use the same ordered activation transfer and
+array allocation kernel. Unsupported destructuring, `arguments`, async and
+generator activations remain outside this receipt family. A represented
+activation enters before body-operation support is decided, including native
+array callbacks; a later unsupported operation retains the reached prefix and
+summarizes one remainder. An unrepresented default-bearing activation is
+summarized before entry instead of evaluating defaults in a separate scalar
+path. Argument evaluation keeps its own effects, including surplus arguments.
+Selected `Function.prototype.call` and `apply` normalize already evaluated
+operands once. The method GetValue precedes arguments, and `.apply` requires
+nullish or current exact dense own-data input. Provider execution checks its
+own source sites and uses the same value/store protocol proofs; it never
+resolves provider offsets in the caller program. Method receivers currently
+require caller-owned ordinary synchronous function values. Provider closure,
+async and generator method receivers retain conservative refusal.
+An ordinary named function expression transports its actual invoked function
+value, with its original captured-cell identities, into the immutable name
+environment before parameter defaults execute. The shared kernel records this
+establishment separately from parameter initialization. A captured name uses an
+immutable activation view containing that same function value; it does not
+recursively add the view to the function's identity. Initialized reads and
+deferred captures use the existing lexical-cell transfers. Shadowing parameters
+retain distinct bindings, and assignment to the name remains abrupt. Source
+identity alone, strict provider queries and retained-only queries do not
+establish this environment or supply a receipt. This models the immutable name
+environment initialized with the closure by
+[named function expression evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-runtime-semantics-instantiateordinaryfunctionexpression).
 The root checks that its exact root call-site set matches and that the flat
 call edges connect back to its exact body without expanding root-to-leaf paths.
 
 Ordered root execution also includes an exact initializer containing one
-ordinary identifier call with zero actual arguments. Its actual call result
+ordinary call through an initialized binding or checked static own-data member.
+Its callee and actual arguments retain independent operation coverage. Its actual call result
 travels with the child effects through the shared local kernel; the old
 effect-only call and later value projection do not execute alongside it.
 An actual own-data read or deferred callable creation can retain a callable
@@ -839,22 +1354,39 @@ receivers, computed keys, missing native evidence, provider-only queries and
 retained suffixes keep their ordinary read paths. Reading the reference certifies
 no later invocation through it.
 
-Within those existing ordered-root profiles, a direct function or arrow
-expression may be the callee. The local kernel creates that closure before
-evaluating arguments, and the call transfer requires the selected singleton
-closure's source key to match the canonical `Alloc(Function, key)` at that
-call-site. This extends the callee form only; it adds no root-initializer
-profile. Existing callable-body, parameter-prologue, capture, synchronous
-callable, supported-operation, exact-call-site and normal-completion checks
-still govern receipts. Named function-expression self scopes remain unproved
-because this route does not instantiate their `NamedSelf` cell; runtime
-execution alone does not produce an operation receipt.
-
 If that exact single-call root receives an incomplete local child result, it
 retains the child effects and losses, unknown coverage, and unavailable/unknown
 return possibilities without inventing a caller remainder. Only a singleton
 ordinary nonopaque, nonasync, nongenerator target can use this terminal stop.
-Compound roots and suffix operands retain their conservative remainder path.
+Uncovered compound roots and suffix operands retain their conservative remainder path.
+When the child's complete retained-effect proof covers every loss and its
+result has a nonempty primitive envelope, the caller may instead continue
+through the shared kernel. Each following operation must independently prove
+its operands, normal completion and effects; the child remains incomplete and
+supplies no concrete result value.
+
+At an actual invocation-depth loss, a retained-effect query may close the
+suffix through the same ordered operation kernel and prefix-read adapter.
+Its worklist is bounded by the existing invocation expansion limit and refuses
+active targets, cycles, unresolved selection, captures, parameters, globals,
+imports, property operations, writes and unmodeled operations. Terminal returns
+may compose direct zero-argument calls, primitive literals and initialized
+module-cell reads through binary and sequence operations, with no activation
+bindings. The shared operator transfer must prove normal completion without
+user coercion; syntax admission alone supplies no coverage. Every reached
+operation must supply complete lexical/global/heap/host coverage. A primitive
+return envelope is checked separately; a returned callable or heap capability
+keeps conservative fallback. No application prefix is mutated by a failed query.
+
+The exact ordered root can then seal a distinct `RetainedEffectClosure` with
+its lexical call/read receipt, all-domain dependencies and the exact covered
+loss sites. `complete` remains false and the original depth loss remains in
+diagnostics. This proof neither creates `CompletedInitialization` nor supplies
+a normal execution value. The graph consumes represented reads and skips only
+the redundant syntactic closure. Effect relocation consumes the same root
+proof, retaining raw execution diagnostics while removing uncertainty covered
+by those exact loss sites. Other opacity, unknown domains and heap effects
+remain independent.
 
 The lexical read and rebind domains retain the conditions used to select each
 operation. Values, `complete`, and the existing three effect domains cannot
@@ -870,7 +1402,7 @@ syntactic fallback. Children and memo entries cannot seal a parent.
 
 The graph first emits all existing observed and assumed read/rebind
 contributions, then skips only its remaining syntactic call fallback when an
-ordered-root lexical receipt seals. This migration applies only to source
+ordered-root lexical receipt or complete retained-effect closure seals. This migration applies only to source
 owners that actually enter ordered root-initializer execution. Applied
 `initializer_binding_effects: source_only` remains explicit author authority.
 Owners outside the migrated path temporarily retain the named
@@ -901,6 +1433,19 @@ separately modeled effect cell; its identity becomes available only at the
 binding write, and later observations remain opaque or need their own existing
 proof. Existing direct-NewTarget and fixed-prototype boundaries still apply.
 
+Ordered native construction also covers the exact original
+`FinalizationRegistry` constructor with one known ordinary source function or
+closure. A checked shared operation proves the row's exact construction,
+callability, fresh internal state and callback retention. Callee selection and
+each operand still supply their own effects. The constructor's immutable own
+prototype data property excludes NewTarget getter dispatch. Host callback
+metadata is captured only in the fresh hidden record; an ordinary source
+callback establishes its own script context on later invocation. The result
+remains opaque and retains callback reachability. This grants no prototype,
+property or method proof and does not certify builtin `eval`, unknown operands,
+spreads, subclass construction or a replaced constructor. The general native
+body-effect flag stays unknown; only this checked operation supplies coverage.
+
 The same root-owner certificate admits a direct zero-argument
 `new TextEncoder()` when its exact Construct/Unknown/Never row is selected with
 no coercions, writes, invocations, or mutations. Identity must come from the
@@ -929,6 +1474,20 @@ zero-argument constructors. A present argument (including `[]` or `undefined`),
 spread, aliases, qualified constructors, sequence/assignment wrappers, shadowed
 or replaced globals, and other shapes remain outside those forms; use another
 explicitly specified input form when applicable.
+
+The ordered local root also admits a direct `new Set(arrayLiteral)` whose array
+contains a spread element, when the root's exact split-initializer identity
+matches the original binding and initializer span. It evaluates array elements
+in source order through the shared array transfer, requires the native iterable
+receipt for each spread, then consumes the same Set Construct/Fresh/Never row
+and `SetIterableProof` for the constructor's array argument. The constructor
+receipt seals only after normal complete root execution. Native operation input
+or inference dependencies remain attached; native global identity, lexical
+reads, heap-content dependencies, interval checks, throws, initialization
+identity, and fresh allocation-site checks retain their existing guards. The result proves this owner's ordered
+construction and allocation origin, not the Set's contents, prototype, or later
+method behavior. Outer-spread arguments, aliases, wrapped expressions, stale
+allocation sites, and any unproved iterable keep the conservative path.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
@@ -1007,8 +1566,12 @@ after verifying the complete copy. Existing destinations are refused.
 
 The snapshot includes source chunks, the complete captured spec/config input
 set, dependency inputs, the graph, and a manifest describing the starting
-state. Its returned regeneration argument vector names the worker's copied
-engine, inputs and output directory. The returned `graph_package_roots` map
+state. Its returned `analysis_input_args` names the relocated source/package
+inputs for native analysis; `transform_context_args` composes those inputs with
+the complete tree config, modules, vendor marks and output root. These argument
+vectors come from the verified snapshot manifest and are refreshed on
+verification after relocation. The regeneration argument vector uses the same
+transform context with the copied engine and run-only options. The returned `graph_package_roots` map
 supplies each global `--graph-package-root NAME=DIR` override for graph-backed
 queries and edits, including the `__packages_root__` fallback name. Separate
 snapshots share no writable
@@ -1020,6 +1583,10 @@ the snapshot is created.
 `snapshot verify` checks the starting graph, engine, input contents and YAML
 membership. After a worker edits its spec, this baseline check fails; running
 the returned regeneration command produces analysis for the edited state.
+The shipped worker recipe stages a projection and matching native analysis
+with the copied engine, then supplies the full context and artifact to both
+preview and validated apply. Graph provenance alone does not authorize a
+relocation. Preview and apply consume the same common candidate assessment.
 
 Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
 Embedded source and vendor-bundle paths must be relative to the configured
@@ -1065,18 +1632,26 @@ that chunk. The planner adopts only currently unclaimed source units of atoms
 with exactly one authored owner, and only when that owner is listed. Atoms with
 multiple authored owners remain split for the ordinary gate to reject.
 
-An atomic group contains source units that must stay together. Explicit claims
-are retained; selecting a destination policy does not relax the complete
-assignment's realizability checks. The generated-module policies preserve
+An atomic group contains source units grouped by conservative dependency
+constraints. Explicit claims are retained; selecting a destination policy does
+not relax the complete assignment's effect or structural checks. The generated-module policies preserve
 every binding and anonymous statement in its source unit. Coarse grouping is a
 deterministic placement heuristic. Its cycle refinement uses the normal
 complete-assignment gate's typed actual mutual-SCC diagnosis and merges only
 whole SCCs whose members all have generated-residual provenance. It preserves
-authored plans and their existing claims; the explicit completion option adds
-only otherwise-unclaimed members to one named sole owner. Authored owner
-completion is recorded in `modules.json`. The ordinary gate remains
-authoritative after placement and rejects mixed-owner atomic groups, authored or
-mixed SCCs, and any remaining actual eager TDZ cycle.
+authored plans, destinations, bindings, anonymous source units, and atomic
+groups, together with their existing claims, are preserved. The explicit
+completion option adds only otherwise-unclaimed members to one named sole owner.
+The complete authored roster and sole-owner snapshot are validated before
+ownership-subset filtering, so filtering cannot grant a removed or imported
+request ownership or make a mixed-owner atom eligible. Each completion is
+reported in `modules.json` under `atomic_group_owner_completions`, including its
+complete and adopted source-unit sets. Adopted ownership flows unchanged
+through the existing planned-module projection, canonical preflight and
+emission preparation, and final joint assessment. The final assessment remains
+authoritative after placement and refinement: mixed-owner atomic groups,
+authored or mixed SCCs, actual eager TDZ cycles, uncovered effect crossings,
+and structural blockers still reject the candidate.
 
 ## Entities
 
@@ -1320,6 +1895,17 @@ source unit before coalescing the candidate groups. A module-neutral unique refe
 does not force co-location. The option is read-only and the complete candidate
 still passes the shared structural and realizability gates.
 
+`modules decompose` reports `graph_candidate_is_realizable` by default, while
+`candidate_is_realizable` is null until the complete candidate is assessed. With
+`--analysis` and the full tree transform context, it assesses the exact final
+source-unit assignment through the canonical candidate assessment used by
+`modules refine`; then `candidate_is_realizable` mirrors the canonical assessment
+status. `graph_candidate_is_realizable` remains a separate planning diagnostic
+and does not combine with or override the canonical verdict. Coarsening and
+original-home rejoining still use the graph gate to choose groups, and the final
+assignment is assessed after those steps. The assessment reports a refusal or
+incomplete result without writing the spec.
+
 ## Readable names and the chunk public surface
 
 `name:` on a member and the name assigned to `source_matches[].bindings[]`
@@ -1408,6 +1994,10 @@ indirect callees, and ambiguous declarations are rejected. Prepared comma-list
 declarations may select one declarator; sibling declarators gain no assertion.
 The provider's resolved ordinary static dependency closure must finish before
 the importer, without an importer backedge or ambiguous/nonordinary request.
+A static host request inside that closure is retained only as an exact admitted
+`HostBehavior` leaf; it does not provide an analyzed host body or extend the
+callable's value/effect authority. Candidate assessment checks that the emitted
+request still resolves to the same external host module.
 
 The `resolved_member` key names logical ownership, not a stable claim ID.
 Module/member renames, moves, merges, and deletions must update or remove
@@ -1574,6 +2164,19 @@ host whose list also holds Bun's own globals: `Bun`, `HTMLRewriter`,
 chain outside the standard list. `unknown` asserts nothing. The author checks
 that the audited executable, its preloads and any script loaded before the
 program add no other global.
+
+This constrains initial property definitions; it is not an operation-effect or
+no-reentry certificate for a later global store. Under `unknown`, a preexisting
+setter may invoke an assigned closure synchronously. A complete store proof
+still needs the actual receiver/reference, descriptor and prototype at the
+execution prefix, normal completion, and retained capability effects.
+[Host-defined exotic global objects](https://tc39.es/ecma262/2024/multipage/executable-code-and-execution-contexts.html#sec-initializehostdefinedrealm)
+are separate from the property-name lists.
+Even when the property-name list is closed, a host prototype with no own keys
+can have an exotic `[[Set]]` that invokes an assigned closure. Adding such a
+prototype preserves the existing definitions and the absence of a new property;
+the name-list contract does not prove ordinary prototype operations. Consequently
+`standard` alone cannot authorize moving a later initializer ahead of publication.
 
 ### Synchronous module loader
 
@@ -2023,14 +2626,35 @@ binding observations retain callback-path provenance through ordinary outcome
 composition and invocation memos. Thrown capabilities remain conservatively
 published. The value operations use the shared literal-allocation transfers.
 
+The ordered transfer carries completion with its values, reached effects,
+coverage and proof dependencies. Exact normal completion, an exact abrupt
+completion, and an opaque result that may complete normally are distinct.
+An unavailable or empty value projection does not prove that execution stops.
+An opaque call that may return retains the interference of its possible suffix;
+it cannot certify a normally completed owner or make a later throw the sole
+completion. A handler consumes only a proved abrupt continuation, preserving
+the prefix state and effects. Unrepresentable alternative states retain
+conservative effects and refusal rather than choosing one path.
+
+Source execution, provider derivation and summary application use this same
+completion product. Returned values are separate from capabilities retained
+for fallback reachability. Allocation precision, a returned primitive kind,
+structural execution coverage and an empty effect ledger do not independently
+prove normal completion. Persisted provider body evidence requires its typed
+completion provenance; missing or inconsistent provenance is not restored as
+normal execution.
+
 Identifier `++` and `--` in such a body read the binding, apply `ToNumeric`,
 and store through the same local or captured-cell path as assignment. Prefix
 and postfix results retain only possible Number or BigInt kinds; the analysis
 does not infer exact old or new values. A proved primitive Number conversion
 can carry a local binding-effect receipt when the target is an initialized,
-uncaptured mutable `let` or parameter. `var`, captured stores, const/TDZ errors,
-possible Symbol or BigInt throws, and object coercion remain uncovered or take
-the conservative fallback. Member updates are outside this ordered subset.
+mutable `let` or parameter and its cell operation is covered. An uncaptured
+activation-local cell has no exterior effects; actual captured cells require
+their own checked initialization and recorded read/write footprints. Unknown
+cell state, `var`, const/TDZ errors, possible Symbol or BigInt throws, and
+object coercion remain uncovered or take the conservative fallback. Member
+updates are outside this ordered subset.
 Static field assignments through a local or parameter binding also execute in
 order when the receiver is one settled ordinary record allocated during this
 invocation and the field is an existing own data property. This permits local
@@ -2045,15 +2669,16 @@ ordered execution and conservatively summarizes the remaining body, retaining
 input, local and newly allocated capabilities and possible setter effects.
 Its precision loss identifies the assignment's source span.
 An incomplete, already-executed local call in an exact terminal `return call(...)`
-of a callable stops ordered execution without publishing the caller's entire
-frame: there is no remaining caller operation to summarize. This sufficient
+of a callable, or an entire initializer or expression statement, stops ordered
+execution without publishing the caller's entire frame: there is no remaining
+caller operation to summarize. This sufficient
 condition requires a directly selected, singleton ordinary source function,
 excluding opaque, async and generator bodies, and a child value transfer. Child
 effects, escapes, precision losses and incomplete execution remain; partial
 returns are widened to include unknown normal and abrupt completion, and no
 effect coverage is issued. A selected callee with neither a source return nor
-a fall-through path retains only its abrupt result; this terminal fallback
-cannot reintroduce a normal value that the invocation boundary excluded.
+a fall-through path retains only its abrupt result; this fallback cannot
+reintroduce a normal value excluded by the invocation boundary.
 Nonterminal calls, operand failures, unknown targets and missing-result
 transfers retain ordinary fallback.
 Calls, member reads, computed writes, branches, unknown free bindings, dynamic
@@ -2191,6 +2816,18 @@ the conservative path records one typed reason in
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
 
+For admitted local classes with represented captures, application construction
+runs instance fields and then the constructor body through the same ordered kernel as provider queries.
+A normal constructed value is separate from operation coverage. Each selected
+`new` retains an exact construction edge, including nested field/body calls;
+constructor parameters, public own writes and class-qualified private slots
+retain their actual effects. Bare public assignments still require the existing
+property-specific prototype-absence proof after their RHS. Complete effects
+alone do not prove an unexposed receiver. Unsupported lexical-`this` captures,
+`new.target`, constructor shapes and partial execution keep conservative reach
+and issue no complete construction receipt. A partially executed kernel is
+never retried through a compatibility interpreter.
+
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
 chunk, without inheritance, decorators, an explicit constructor, computed
@@ -2299,6 +2936,16 @@ provider effects or general ESM completion. Until that completion is modeled,
 raw primitive kinds do not stand in for a normal imported value or its read
 effects.
 
+A comma-split plain identifier initializer can enter the ordered scalar root
+through its checked original declarator identity, as a binary initializer can.
+The shared read transfer must cover the actual binding read, including the
+imported capability above or an initialized local cell, and the root must
+finish and initialize that declarator's binding before its exact operation
+receipt seals. Each sibling declarator remains a separate source-order owner;
+an earlier throw or uncovered read cannot be discharged by a later sibling's
+receipt. Unknown imports, globals and possibly uninitialized reads retain
+their conservative fallback.
+
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts
 and operand shapes they admit, their allocations, writes and return shapes are
@@ -2344,6 +2991,11 @@ a policy label, never a fabricated chunk ID. Filters `--kind`, `--export`,
 `--member`, and `--signature` select exact targets; signatures use the typed
 JSON object with `argument_count` and `callback_arguments`. Every selected
 target beyond the budget is reported as `budget_skipped`.
+
+When a probe removes a `namespace_independent_members` member, it also removes
+the matching dependent `source_callable_members` assertion so the candidate
+spec retains the required subset relation. Probing a source-callable member
+removes only that identity assertion.
 
 `removable_under_remaining_assumptions` means only that the configured source,
 spec, and assignment still pass full acceptance after this one removal while
@@ -2439,6 +3091,51 @@ object, under its key; a bundle-owned global's value (§ Bundle-owned globals)
 reaches none. A11 remains an author obligation for hidden
 native-alias paths, including a descriptor method called through an alias.
 Key precision grants no call, purity, throw or return summary.
+
+### Single-spread ordinary object copies
+
+The shared ordered literal transfer can copy one spread property when an
+existing ordered root initializer or local body admits the containing record.
+The record must contain exactly one property, `...source`. Its value proof is
+independent of the child's effect-coverage judgment: the selected allocation
+must be one settled ordinary literal or previously proven ordinary copy with a
+complete named payload, no dynamic keys, data descriptors only, and a
+nonempty abstract value without an abrupt alternative for every property.
+This does not cover the child's missing effects or grant an owner receipt. If
+the child lacks complete coverage but the value and exact enumeration are
+proven, the reached shape and property reads are retained, the result remains
+incomplete, and the actual suffix continues in order. Mixed literals,
+accessors, opaque or unsettled objects, and uncertain source completion keep
+the generic conservative path. A root initializer still passes the existing
+canonical initialization and ordered-root admission; spread syntax adds no
+authority or acceptance rule.
+
+The copy records an `ObjectShape` read and a read of each copied
+`OwnProperty`, with the execution's assumption provenance. Integer-index keys retain JavaScript's numeric ordering before
+other string keys, and a computed own data key `"__proto__"` remains a copied
+data property. Copied values retain their identities, including functions;
+the transfer never invokes them. Later own-data reads can use the destination's
+runtime shape and copied values.
+
+Allocation sites are pooled across executions. Exact destination shape remains
+available only while every observed copy has the same full key order and no
+earlier opaque state. Exact enumerable membership is tracked separately from
+named data payloads: a modeled descriptor-map change or unknown-enumerability
+copy can keep proven named values available without certifying the copied key
+set. Such a copy retains the possible payload under an unknown key, claims no
+exact shape/read receipt or certified normal completion, and does not invoke
+stored data callbacks merely because enumeration is uncertain. A conflicting shape or
+unmodeled write, delete, escape, or taint permanently revokes the applicable
+prefix proof. The prefix revision advances when enumeration changes even if
+stored Values stay equal. Descriptor-map application revokes exact enumeration
+because its enumerable bits are not represented in the ordinary value heap;
+generic `Object.defineProperty` and other opaque mutations keep their existing
+taint fallback. A dynamic or unresolved receiver also invalidates named-value
+settlement for every possible target, while a concretely tracked static value
+write updates its payload and still invalidates exact enumeration. Compatibility
+execution retains a dynamic-write receiver only as syntax, so it never
+reevaluates that receiver and instead conservatively invalidates all candidate
+records.
 
 ## Captured ordinary-object values
 
@@ -2784,13 +3481,18 @@ admission still checks the evaluated operand, source identity, prefix mutation
 and escape state, and protocol proof. The operation receipt covers its modeled
 body only; operand effects, abrupt completion and terminal initialization
 coverage remain separate.
+Checked ordered Set-spread roots evaluate each operand once and compose array,
+iteration and construction fragments. Inferred integrity and an exact validated
+`set_from_set_spread` input use this same transfer. The input supplies native
+identity and protocol evidence; actual operands and normal completion remain
+checked, and the selected input reference stays in the construction receipt.
 
 The newly inferred protected Set spread admits only the canonical identifier
 operand naming its earlier checked constructor. It cannot infer this contract
 for a Call, New, getter/member read or arbitrary computed spread source. Generic
-ArraySpread still uses the existing flattened operand/value projection boundary:
-those projections are separate runtime requests, with no cached operand reuse
-or proof of a single abstract evaluation. Unsupported effectful sources retain
+ArraySpread outside a checked ordered root still uses the flattened operand/value
+projection boundary: those projections are separate runtime requests, with no
+cached operand reuse or proof of a single abstract evaluation. Unsupported effectful sources retain
 conservative fallback; preserving one observable Node invocation does not prove
 the interpreter projected that source only once.
 
@@ -3059,12 +3761,14 @@ effect-set conflict, read from each `sequenced` edge's retained cause
 whose two binding effects are both `observed`; two summaries sharing a cell (a
 binding, a static `globalThis` property, array or Set contents) with at least
 one write; or a shared `var` declaration.
-For this premise check, each summary includes the statement's own effect cells
-and heap-content reads and writes of callees invoked on non-assumed paths.
-These are modeled may-accesses; the check does not assert that every call or
-access executes at runtime. Callee cells contributed only by an assumed
-callback or fallback path remain conservative ordering evidence and do not
-contradict a premise. Fresh allocations are separate from content writes.
+For this premise check, each summary includes the statement's own source-known
+effect cells and heap-content reads and writes whose interpreter operation
+actually ran. A guarded provider transfer can contribute executed-operation
+evidence only after its selected call, substitutions, and prerequisites are
+validated. Heap cells from assumed operations and conservative fallback,
+barrier, or static-callable summaries remain may-ordering evidence but do not
+by themselves contradict a premise. All three categories remain in the
+composed heap frontier. Fresh allocations are separate from content writes.
 
 A `cell_order` edge carrying only barrier relations (`after_barrier`,
 `barrier_after_prior`, `frontier_after_cell`), a `strict_chain` edge with
@@ -3174,26 +3878,73 @@ retain literal creation order. The index never uses `BTreeMap` order as source
 property order. Inspection does not read property values or invoke getters.
 Argument evaluation and effects still occur eagerly, and the call's possible
 throw remains represented. Its return/timing certificate does not establish
-purity or exception freedom. Proxy objects, shadowed bindings, native
+purity or exception freedom by itself. Ordered execution can independently
+close the native body after proving this exact ordinary prefix, normal native
+protocol execution, and the callee's inferred identity. Names read an
+`object_shape` heap cell; descriptor capture also reads each captured data
+`own_property` and allocates `descriptor_map_contents`. Applying a valid carrier
+to an eligible ordinary target reads the carrier and target shape and writes the
+target shape and named properties. Callee and operand execution keep separate
+coverage obligations. The builtin rows retain unknown unconditional body effects.
+An imported callable derives the same native transfers through its isolated
+provider heap and the shared local interpreter. Its native-operation requirements
+are checked across every chunk, including descriptor-application protocol slots.
+Opaque symbolic parameters prove no ordinary receiver shape. Returned descriptor
+carriers and applied accessor targets retain their stored values and callbacks;
+allocation-only retention never supplies effect coverage on its own.
+For a direct imported call with a literal record argument, the canonical call
+index can demand a conditional provider-body summary for that record's complete
+descriptor layout. The same local interpreter executes the provider with scoped
+symbolic property values; input shape and property reads remain parameterized
+until the caller checks its actual current descriptors after operand evaluation.
+The instantiated summary supplies body effects and normal completion separately
+from the existing returned descriptor graph. Only this independent closed body
+proof removes the projection's conservative possible-provider-throw branch;
+argument throws and failed return-graph installation remain conservative.
+Provider module-cell effects, unknown invoked callables, unsupported input
+layouts and native mutations decline this conditional summary.
+Proxy objects, shadowed bindings, native
 replacement, escaped sources and unsupported mutations remain conservative.
 
-The descriptor-map carrier has no general readable shape. The only modeled
-composition is a direct, guarded `Object.defineProperties` call using that live
-carrier and an untainted, currently empty fresh ordinary target. Captured data
-values and accessor callbacks are applied to the target's existing identity,
-so aliases observe the update. A repeated capture callsite with conflicting
-source identity or descriptor values is invalidated rather than joined. Map
-member access/mutation, return, escape or opaque consumption invalidates
-application but retains the callback graph. A copied accessor read promotes
-its getter; opaque target use retains getter, setter and method callbacks.
-With the exact unmodified native identity and intact Object prototype guards,
-the result expression may retain the first argument's target identity even
-when application eligibility is not proved; it also retains a possible throw.
-This result-shape fact does not authorize descriptor application or suppress
-the opaque timing/effect fallback.
-Returned/readable maps, arbitrary descriptor edits, `Object.assign`, imported
-wrapper bodies, general purity and exception-free behavior remain outside the
-contract.
+The descriptor-map carrier has no general readable shape. A guarded
+`Object.defineProperties` consumes a live carrier and a settled, extensible
+ordinary target. An uninterrupted first literal execution proves the initial
+attributes of its existing data properties; each overwritten property must be
+configurable. Native descriptor capture preserves known attributes and retains
+unknown attributes as unknown. Integrity changes, escape and pooled reentry
+revoke the literal witness. Captured data values and accessor callbacks are
+weakly applied to the target's existing identity, so aliases observe the update
+without acquiring a singleton or strong-update proof. Repeated capture with
+conflicting source identity, values or attributes invalidates the carrier while
+retaining its callback graph. Recapture through a stale literal Data shape after
+an applied accessor remains conservative.
+
+A successful native definition returns a descriptor postcondition attached to
+that selected value. It is valid only for the same target and current heap
+epoch; argument evaluation can invalidate it. Const-local aliases can retain
+it, but ordinary callable boundaries drop it. Every consumed definition advances
+the epoch, including definitions that change only attributes. The postcondition
+never installs an exact shape for all objects at a pooled allocation origin.
+Author-asserted wrapper projections do not create this native proof.
+
+The shared native transfer also models two-argument `Object.assign` when the
+source has a checked ordinary literal shape with enumerable own data properties.
+Each existing target slot must be writable data; an absent slot requires the
+extensible target and intact ordinary Object prototype. The absent `__proto__`
+case remains unsupported. Source getters, target setters, proxies, unknown
+attributes and failed strict writes retain fallback. The transfer reads source
+shape and data cells and target shape, and writes target shape and named cells.
+It composes with native definition postconditions through the same application
+and provider interpreter, preserving callee-before-arguments ordering. The
+canonical row retains unknown unconditional body effects.
+
+Map member access/mutation, return, escape or opaque consumption invalidates
+application but retains callbacks. A copied accessor read promotes its getter;
+opaque target use retains getter, setter and method callbacks. Retaining a
+native result's target identity without an eligible application does not
+suppress possible throws or supply effect coverage. Readable maps, arbitrary
+descriptor edits, general imported wrapper-body coverage, general purity and
+exception-free behavior remain outside this contract.
 
 ## Inferred FinalizationRegistry callback retention
 
@@ -3204,7 +3955,13 @@ function origin or closure. The constructor retains that callback in its new
 registry; it does not invoke it during construction. The successful result is
 opaque and retains the callback and its captures. Later use or opaque
 consumption promotes those callbacks through the ordinary retained-value
-analysis.
+analysis. The retained callback is represented as a native internal-slot
+reference, not an ordinary own property. Repeated executions of one pooled
+allocation site union their known callbacks; an opaque mutation keeps those
+references and adds an unknown-retained-reference marker, which widens
+reachability conservatively when traversed. Broad unknown heap effects also
+leave a sticky marker that future instances inherit, so a later execution at a
+pooled site cannot rehabilitate an earlier unmodeled instance.
 
 The bare global and `globalThis` binding must be undeclared and unshadowed.
 `globalThis` support is limited to direct static dot-member callees, including
@@ -3282,6 +4039,13 @@ or identity. `void` evaluates its operand before discarding its value. A
 conditional retains its test and joins both possible arms, currently restricted
 to direct parameter reads or primitive literals, without truthiness refinement.
 Unsupported compound arms decline centrally without retrying another evaluator.
+Strict arithmetic, relational and loose-equality expressions retain their
+operator and evaluate their operands once, from left to right. The shared
+primitive result and throw rules apply only after both completing operand
+values are known to be primitive. Unproved object coercions retain conservative
+callback effects, consuming the already evaluated operands without replay;
+Symbol conversion, mixed numeric kinds and potentially
+throwing BigInt operations cannot obtain a complete normal-effect receipt.
 The canonical lowering retains complete
 source coverage before value lowering can erase syntax. This narrow
 `CoveredAllocationOnly` certificate excludes external access/write,
@@ -3290,6 +4054,36 @@ values: forwarding/storing/returning one proves no input kind, property shape,
 native identity or coercion behavior. Any unsupported input access or transfer
 declines the summary. A failed migrated query does not retry a different
 evaluator. Other supported bodies retain their existing strict source proof.
+
+Conditional body summaries are separate from that allocation-only contract.
+For a stable hoisted provider with one simple parameter without a default, the canonical imported
+call census can request finite ordinary-record layouts observed at literal
+arguments. The same ordered interpreter queries the body under each layout;
+data values and accessor identities remain scoped symbolic paths. A present
+data-field read and supported descriptor operations contribute parameterized
+reads. They supply no caller allocation identity or private status for inputs.
+The consumer checks the actual complete descriptor layout and literal attributes
+after all operands execute, substitutes its real object/property cells, and
+composes only a closed normal body receipt. Getter-invoking reads, missing fields, changed
+attributes, taint, unsupported callbacks, exterior writes and other unproved
+operations retain conservative paths. Provider module captures still require
+their own qualified cell footprints. Native identity and protocol integrity
+remain independent requirements. This body evidence can compose with an audited
+descriptor-wrapper result capability; it does not replace that capability or
+infer a call result from effects. Saved summaries retain the input conditions,
+parameterized reads, source identity and dependencies, without query-scope IDs.
+
+The same guarded execution may carry an optional complete result projection for
+exact formal argument zero, a checked data property of argument zero, or proved
+primitive kinds. All alternatives must be representable; a fresh allocation,
+capture, accessor payload, unavailable value, or other unsupported alternative
+removes the whole projection. After operands run, one checked body application
+instantiates both its effects and result: argument results retain the caller's
+existing value identities, and property results use the current shared
+own-data read. This projection creates no provider or caller heap identity and
+does not encode ordered stores. Independently closed ordinary foreign-call
+results retain priority; candidate provider-target and initialization
+obligations remain required before relocation is accepted.
 
 Covered straight-line bodies use the same ordered local-operation executor as
 application execution. This includes local declarations and assignments,
@@ -3306,41 +4100,51 @@ non-exported declarator can also use the shared ordered local-operation plan
 when its whole initializer lowers into that grammar, combines at least two
 calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
-Every call must initially select a synchronous local callable;
-member callees require a present ordinary data slot and
-an unused implicit receiver. Native and imported whole-owner proof families
-retain their established dispatch until their value transfers accept evaluated
-operands. Evaluated return values pass directly to initializer publication;
+A simple binary initializer can also use this plan when exported, if its
+canonical source covers every child and its only indexed call operations are
+implicit coercions. Each operand read still requires its actual initialized
+local-cell receipt. The scalar operation contributes no effects only after
+the shared primitive rules exclude coercion hooks and abrupt completion; the
+whole-owner certificate still requires closed effects in every domain.
+Every admitted call selects a synchronous local callable or a matched imported
+source-body summary. Local member callees require a present ordinary data slot
+and an unused implicit receiver; imported members require their explicit normal
+selection premise. Native whole-owner proof families retain their established
+dispatch until their value transfers accept evaluated operands. Evaluated return values pass directly to initializer publication;
 the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
-summarize the remainder without retrying. Keyed-collection construction,
-split declarations, applied accessors, unsupported operators, numeric array
-element reads and missing/inherited fields retain their existing conservative
+summarize the remainder without retrying. Unproved collection construction,
+split declarations, applied accessors, unsupported operators, unproved array
+slots and missing/inherited fields retain their existing conservative
 paths.
+Supported primitive and own-descriptor native operations use a checked plan
+that contains no completion receipt. The shared executor checks the plan's
+prefix revision before mutation, commits its prevalidated operation once, and
+only then returns values, effects, dependencies and any refreshed postcondition
+with exact normal completion. A stale plan refuses before mutation; a transfer
+that cannot preflight every modeled failure remains conservative rather than
+returning a not-entered result after changing the prefix. Caller operand
+completion composes independently and can keep the whole call opaque.
 Root present-slot reads remain opaque allocation judgments and confer no
 whole-owner effect-coverage certificate. The operation records an `own_property` heap cell identified
 by allocation origin and static property. This cell includes every runtime
 generation of that source allocation; it proves neither a strong update nor
 privacy. Opaque heap barriers and uncovered effect domains remain authoritative.
+An unproved ordinary property store may change own keys or descriptors and also
+writes the object's shape region. Only the actual checked operation on a known
+existing writable own data property may retain a value-only write footprint;
+one successful execution does not certify other executions of the same site.
+The top-level syntax census can omit its duplicate late enumerability barrier
+only when the executed root carries a receipt from that same canonical
+`FieldPutValue` site: the shared transfer captured one actual ordinary-object
+receiver and completed `ReplaceExistingWritableData` for the matching static
+key. Missing, ambiguous, unrun, dynamic, delete, descriptor, or other
+unmodeled writes keep the conservative barrier. Receipts survive an alternative
+join only when every alternative carries the same receiver, site, key, and
+replacement postcondition; this cutover removes a duplicate invalidation and
+does not certify execution on paths without that receipt.
 
-At a root initializer's current prefix, an exact static `length` read may
-consume the own `length` data slot of one settled, first-generation dense
-array literal. This read yields the static numeric kind and records the exact
-`OwnProperty` cell, so ordering it against a later native `push` observes the
-same length slot that `push` writes. The proof requires the array literal's
-single settled dense-allocation witness and an existing own data value; pooled
-or reused allocation sites, holes, unknown or multiple receivers, unsettled
-descriptors, and accessors remain conservative. This is a root-initializer
-read only: it does not admit callable/provider/retained queries or new array
-mutation behavior. A canonical literal index key can read an in-range
-element under the same witness, using the stored heap value and recording its
-exact `OwnProperty(origin, index)` cell. Dynamic keys, holes, out-of-range
-indices, mutations and pooled sites retain fallback; the slot proof grants no
-write or prototype-read capability.
-Length and checked index cells share a uniquely eager array's existing birth
-proof against older opaque heap operations. An intervening opaque operation
-or a repeated allocation site retains the conservative frontier.
 A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding
@@ -3349,14 +4153,111 @@ input mutation, bindings outside that capture rule, unproved field reads/writes 
 possible abrupt completion decline the summary. Argument retention is derived by traversing the returned graph,
 including cycles. The query uses no additional source parse or AST evaluator.
 
+Hoisted direct function exports and explicitly audited source members (§ Source
+callable identity for namespace members) can carry the actual ordered body-effect
+fragment for a synchronous allocation-only body with simple parameters and no
+parameter defaults. This product is independent of its allocation judgment:
+every reached operation must cover global properties, general heap, host effects
+and lexical reads/rebinds, with normal completion. Static ordinary data-record
+creation has its own operation receipt; child evaluation composes separately.
+Parameter and local let/const creation, initialization and reads use actual frame
+initialization. A mutable private parameter/let store supplies its own receipt
+after the shared kernel checks initialization and immutability; captured stores
+remain separate. Simple binding prefix/postfix increment and decrement use
+the same actual read, primitive ToNumeric rules and checked store operation.
+The application adapter also covers stores to source-declared module `var` and
+initialized module `let` cells through this operation. It records the binding
+write, preserves weak value joins and invalidates stale callable selections.
+Imports, immutable bindings, lexical TDZ and unknown references supply no normal
+store receipt. An ordered expression root performs its assignments once;
+the later flat value projection does not replay their right-hand sides.
+Complete shared invocations retain their transferred module values across call
+merging. Incomplete, assumed or uncovered invocations still widen possible
+rebinds. A legacy flat body cannot supply whole-body operation coverage from
+the receipt of its last child call. It also cannot certify whole-body normal
+or abrupt completion from flattened returns and effects. Its possible result
+values remain available with opaque completion and an explicit precision loss
+until the shared kernel models the body's completion transform.
+Their scalar abstraction retains numeric kinds for both the returned old/new
+value and the stored value; emission preserves the original update syntax.
+Object coercions, Symbol conversion, possible BigInt size-limit failure, TDZ
+and immutable stores do not acquire normal effect coverage. Captured updates
+record both accesses on the same captured lexical cell and invalidate old callable
+selection through the ordinary store. Provider module-cell initialization and
+cross-module effect qualification remain independent obligations.
+`void`, strict equality and logical negation compose their
+evaluated children's effects before their own noncoercing operations. Checked
+empty native collection construction carries the shared allocation and operation
+effect products. Its summary retains constructor dependencies and the native
+families whose global bindings the consuming invocation must read. Arrays,
+other native construction, closures, var/hoisted local bindings
+and unsupported operations retain unknown domains in this bounded producer.
+
+Reads of direct module `var` declarations and simple `var` cells in an actual
+lexical ancestor's callable scope may carry initialization evidence. Module
+instantiation initializes module var cells; selecting an actual source closure
+requires its enclosing environments to exist. The canonical lexical-parent chain
+and declaration scopes establish the latter relationship. These proofs give no
+concrete value kind, privacy, immutability or initialized RHS value. Imported,
+lexical, parameter/default-scope and dynamic captures acquire no such proof.
+Whole-body free reads and captured writes remain authoritative, including
+expressions whose values are discarded.
+
+A separate value-kind proof refines an eligible var capture only when it has
+one simple declaration, no hoisted function value or subsequent writes, and an
+initializer whose normal primitive kinds the shared primitive evaluator covers.
+The canonical collector retains that candidate from the original initializer
+syntax; an erased assignment in the value projection supplies no such proof.
+Native return kinds require the actual unshadowed binding and every required
+slot to remain intact under the completed census. Their dependencies guard both
+the allocation summary and any body-effect fragment. The kind set includes
+`undefined` because the var cell can be read before its initializer executes.
+These kinds establish no initializer effects, completion, or execution order.
+A proved primitive capture retains no callback capability; unknown captures keep
+the ordinary opaque retention path. Returned fields remain opaque to importers.
+
+Ordinary calls and imported class constructions consume this fragment only
+after the same shared kernel has evaluated the selected callee and every
+argument once in source order. The invocation kind remains explicit; a class
+summary never licenses an ordinary call, and a function summary never licenses
+construction. Construction retains its opaque instance/callback projection,
+without granting own-field, prototype or later-method effects.
+
+A class constructor's closed body does not establish its binding's GetValue.
+An independent source proof covers that read only when the provider consists
+of that one stable class declaration and local named exports, and the canonical
+class definition has no static field/block, computed method key or other
+unproved eager operation. Every emitted consumer then depends on a
+non-reentrant leaf. Other class providers keep possible TDZ
+completion, including cycles. A replaced provider's initialization proof
+retains its vendor-swap equivalence condition. Saved summaries preserve this
+initialization proof separately from the actual body fragment and its dependencies.
+
+An invocation's receipt records a module/export/member/callable edge.
+A direct function import is initialized at module instantiation, including in an
+ESM cycle; a member's normal selection requires its explicit identity assertion.
+Results retain the existing opaque capability/alias projection, and an abrupt
+operand cannot seal the root. Consumed member identity and vendor substitution
+are distinct `source_callable_members` and `vendor_swap_equivalences` proof
+dependencies. Timing assertions and allocation-only summaries without a complete
+fragment supply no body-effect receipt.
+
+The exact owner's combined lexical and global/heap/host operation proof also
+supersedes its legacy opaque-heap fallback in the relocation projection. Its
+result contents remain opaque and every recorded cell access, independent
+dataflow opacity and execution loss remains. An allocation judgment or completed
+value without that complete operation proof cannot discharge the fallback.
+
+The allocation-only capture projection outside that body-effect lane retains
+its narrower rule:
 A private capture must resolve to simple `var` declarations in one enclosing
 callable scope with simple parameters, and must not redeclare a parameter.
 Imports, module-scope bindings, lexical declarations, parameter/default scopes
 and dynamic scope do not acquire this proof. Function-scope `var` initialization
 proves that reading the cell has no TDZ or getter behavior; it proves no value
-kind, immutability or heap locality. Captures have scoped symbolic identities
-distinct from arguments. A capture forwarded directly as the return value
-still declines the summary. A capture stored in a returned fresh graph is
+kind, immutability or heap locality. Unknown captures have scoped symbolic
+identities distinct from arguments. An unknown capture forwarded directly as
+the return value still declines the summary. An unknown capture stored in a returned fresh graph is
 reported under `retained_provider_captures` and retains opaque foreign
 capabilities. All actual arguments remain reachable in that case because the
 capture can alias one of them. Later opaque use promotes possible importer
@@ -3394,28 +4295,43 @@ that still reevaluate source operands cannot serve an ordered caller; their
 operands and results must first enter the shared transfer.
 Member lookup keeps the shared field-read guard and the canonical callee's
 existing native or namespace lookup certificates. An unproved getter truncates
-before the arguments. Local method results also require the existing
-unused-receiver check, including nested callable implicit captures; source
-methods requiring `this` stay conservative. Invocation and fallback use the
-captured receiver even if an argument rebinds its source cell. Computed or
-dynamic receivers, optional calls, spread arguments and direct eval remain
-outside this ordered grammar.
+before the arguments. Source member calls carry the selected receiver as `this`,
+separately from lexical captures. Invocation and fallback use that receiver even
+if an argument rebinds its source cell. Static member receivers may themselves
+contain supported expressions and suspend nested calls. Optional receiver lookup
+and optional invocation use separate nullish checks on the retained values;
+mixed normal operands fork before lookup or arguments. A nullish path returns
+`undefined` without invoking the callee. Computed members, continuing optional
+chains, spread arguments and direct `eval` retain conservative source refusal.
+Skipping a source operation does not itself grant skipped-call effect coverage.
+Unknown non-nullish targets retain the ordinary conservative invocation transfer.
 
-Eager binary expressions in these ordered callable bodies evaluate their left
-and right operands once, in source order. When both results are known
-primitives, the shared primitive transfer supplies the result kind and records
-a no-effect operation fragment only when the operation cannot throw for those
-kinds. A possible Symbol or BigInt throw leaves effect and completion coverage
-unknown. If either operand is an object or unknown value, the existing
-coercion fallback receives both already evaluated operands, so user coercion
-runs after the right operand and is not replayed. Short-circuit operators,
-`in`, `instanceof`, and strict equality remain outside this transfer. This
-does not admit a binary root initializer or a provider summary containing
-calls.
+Guarded dense-array `forEach`, `map`, `filter`, `some` and `every` capture the
+native method before arguments execute only when the checked array receiver
+still has its original `%Array.prototype%` lookup and no own method override.
+Receiver descriptors and, for result arrays, constructor/species premises are
+checked after the operands. The shared invocation kernel runs each reached
+callback with the element, numeric index and captured receiver.
+Callback effects, dependencies, normal returns and possible throws compose
+independently; complete timing alone supplies no effect coverage. A known
+callback throw stops later indices only when the shared receipt proves no
+normal continuation. Mixed completion keeps the reached prefix and leaves the
+suffix conservative; later callbacks are not treated as definitely reached.
+The flat compatibility caller transports direct, single-call top-level
+`forEach` binding-initializer and expression-statement operands into this same
+selected transfer. Other flattened `forEach` shapes retain opaque fallback.
+`forEach` returns `undefined` and ignores callback returns. `map` retains
+callback results. `filter` retains original elements only when the predicate is
+truthy; abstract primitive truthiness keeps the fresh result's contents unknown
+instead of inventing exact dense slots.
+An invalidated source or unsupported child preserves reached effects and
+returned capabilities for conservative remainder handling, without replaying
+source operands or restarting the native operation. Other iteration rows
+retain their existing conservative value paths.
 
 Guarded dense-array `push` consumes that captured receiver and evaluated
-primitive arguments. An uninterrupted first dense literal allocation without
-spreads supplies a separate descriptor witness: original prototype,
+primitive arguments. An uninterrupted first dense allocation supplies a
+separate descriptor witness: original prototype,
 extensibility, writable own length and no own method replacement. The shared
 transfer rechecks this witness
 and the native prototype guards after argument evaluation, checks the resulting
@@ -3539,7 +4455,7 @@ Only the executable prefix through a return runs; full canonical declaration
 facts still govern hoisting, initialization and TDZ in that prefix.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
-interpolated template syntax, other operators,
+interpolated template syntax, operators outside the supported primitive subset,
 nested/computed/optional member reads, computed/spread/accessor/prototype fields,
 member/optional/spread calls, direct `eval` and
 unsupported control-flow statements. A source-covered throw still prevents the
@@ -3567,7 +4483,110 @@ are outside this admission. It may construct an argument-free
 chunk's census. The shared provider operation accepts only a direct
 zero-argument `new` of that unshadowed global binding and retains the native-row
 proof dependencies in the summary; argumentful, aliased, shadowed or replaced
-constructors remain uncovered. A class may also define instance fields and
+constructors remain uncovered.
+
+Each foreign summary retains its `native_operations`: invocation kind, intrinsic
+family and optional static property. Before consuming a summary, every analyzed
+chunk must leave every slot required by each canonical native row intact.
+An intact global alone does not prove a static method's identity. These are
+operation prerequisites, independent of return values and body-effect coverage;
+reported semantic derivations come from the transfers actually consumed.
+
+The application executor retains a checked native operation's heap footprint
+alongside its result, completion and dependencies. Strict provider summaries
+persist parameterized input reads without exporting raw provider heap cells.
+Parameterized reads are admitted only for argument zero when the active body
+query has the corresponding checked input shape. Opaque or external heap
+footprints refuse before commit.
+
+Provider native heap effects are checked before the shared native plan commits.
+The checked commit supplies descriptor-carrier or dense-array birth evidence;
+completed literal records supply a separate invocation-local birth witness.
+An address appearing in a result or a raw heap cell is not a birth proof.
+Object shape/property, array contents and descriptor-map cells must match an
+owned birth in their exact domain. Borrowed, foreign, lexical, private-slot,
+Set, global-registry and unclassified cells refuse this private discharge;
+parameter reads and qualified module cells retain their existing caller-world
+transports. Native retained-slot commits remain unsupported here.
+
+The provider retains admitted private heap effects as an internal proof debt
+until each exact normal or source-witnessed throw completion. Its final graph
+check follows object and array contents, descriptors, final lexical closure
+captures and completion-payload aliases.
+Unknown contents refuse. A nonescaping graph discharges without a caller heap
+footprint. An escaping graph requires a correlated retained projection with
+formal heap and lexical-cell slots rather than provider heap addresses.
+Repeated object references and shared closure cells retain the same slots;
+own-data, getter, setter, array-element, descriptor and conservative retention
+edges remain explicit. Caller arguments and descriptor entries are substituted
+only after the complete input-shape proof, and the graph stays with that checked
+completion. Saved transport checks each graph and completion against the same
+source summary and requires its branch-local proof sidecars. Matching serialized graph copies establishes
+transport correspondence only: it does not establish that a node was allocated
+by the source or that a closure key is executable. The existing prepared-source
+operation registry still checks the enclosing effect receipts. The opaque
+carrier retains its defining provider identity and never resolves a closure key
+in the caller's source index. Precise instantiation must independently verify
+birth/capture recipes against the current canonical provider program.
+
+Conditional provider transfers retain a nonempty family of exact normal or
+source-witnessed throw alternatives. Each alternative owns its value projection
+or retained graph, reads, native operations, module-cell footprint, effects and
+dependencies. The importer checks the complete family against one current
+canonical provider execution before preparing every alternative. A missing
+operand, module-cell premise or unrepresentable alternative refuses the whole
+specialization; it never discards a leaf or converts uncertainty into a definite
+throw. The runtime then forks the post-operand caller world and instantiates each
+payload in its own leaf before the existing call continuation reaches catch or a
+normal-only suffix. A graph lacking a precise store representation retains its
+opaque carrier and roots in that same completion leaf.
+
+Exact runtime throws carry the executing program's scope together with the
+canonical origin operation. Crossing a call boundary changes only the current
+continuation frontier. Provider sites are checked in the current immutable
+provider registry, never as caller source coordinates. Saved source sites,
+callable keys and module-cell proof coordinates restore once through the recorded
+provider module, source digest and range into the current canonical source
+inventory. The complete-family verifier then reexecutes and authenticates that
+restored family before runtime qualification.
+
+The runtime instantiates a retained graph only after the current canonical
+provider program reexecutes the shared transfer and verifies its completion,
+effects, dependencies, allocation origins and capture cells. Serialized closure
+coordinates relocate only through the checked provider source digest and range.
+One substitution preserves all object aliases and shared lexical cells. Record
+installation requires the current shared store's checked ordered descriptor
+layout and its proof dependencies; retained may-edges alone establish neither
+presence nor attributes. The same certificate serves source literals, native
+operations and provider instantiation. Installation observes the complete
+generation before weakly joining its data and accessor payloads. A committed exact-normal
+native result may additionally project its matching returned record at the
+current world epoch. This operation-local projection reads current payloads
+without installing or restoring pooled authority; other graph nodes still need
+independent store evidence. The witness follows descriptor and value updates
+in native operation order; its selected payload must remain contained in the
+current store's retained payload. A later overwrite changes only the selected
+generation, while the pooled heap keeps all earlier may-values. Retained graph
+projection uses that selected generation consistently for every alias of its
+returned record. An intervening operation expires the witness. Recipe addresses
+remain pooled by consuming call and producer slot. Only runtime-verified birth
+origins narrow their overlap with producer source allocations; saved and wire
+transport erase that narrowing. Repeated generations weakly join payloads and
+cannot revive invalidated descriptor authority.
+
+Supported returned closures execute the same continuation kernel in the caller
+world with a separate provider lexical activation and the retained provider
+index. Their keys never select caller syntax or caller top-level bindings.
+Every leaf retains its completion, world, capture cells and suspended caller.
+A complete foreign-body effect projection checks the provider's own current
+source sites and exact call inventory, then replaces internal source observations
+with one caller-site receipt identifying the provider module, digest and relative
+callable origin. Missing call or branch evidence leaves coverage incomplete.
+Unsupported graph domains, layouts or activations retain the opaque graph and
+all substituted caller roots. Allocation-only result authority remains opaque;
+current runtime values and operation proofs do not imply that certificate.
+
+A class may also define instance fields and
 write its declared private fields. Straight-line statements only. A class
 qualifies only without
 `extends`, decorators, parameter properties or an explicit `return`. Any other
@@ -4071,6 +5090,35 @@ function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter
 with no arguments. Reassigned bindings and dynamic scopes remain opaque.
 
+### Source callable identity for namespace members
+
+`chunk_export_purity.<defining chunk>.source_callable_members` maps namespace
+exports to static members whose lookup during an importing chunk's synchronous
+initialization is audited to resolve to one source callable. Every listed
+member must also appear under the same export in
+`namespace_independent_members`; that separate contract protects lookup from
+foreign code and namespace mutation.
+
+For each matching direct static lookup that execution reaches, the author
+asserts that receiver evaluation reads an initialized namespace binding,
+lookup completes normally, and the result is the unique source function
+selected for that exported object member by canonical structural property-value
+flow. The lookup must use an ordinary own data property or an inert forwarding
+getter that reads only an initialized provider declarative binding. The getter
+cannot read or write heap, global, or host state, invoke foreign code, or have
+another observable effect.
+If the provider member is vendor-swapped, the existing replacement-equivalence
+contract remains a separate requirement for the callable used at runtime.
+
+This asserts identity only, not body behavior. The body still runs through
+shared `LocalTransfer` with the actual initialized-binding proof; the identity
+assertion establishes no body effects, purity, no-throw behavior, retention,
+or operand completion. Structural value flow gives possible origins only: it
+does not prove that a member is present on every runtime path or that a
+conditional or dead assignment executes. Authors must not assert identity when
+an altered alias/getter or conditional assignment leaves lookup behavior
+uncertain, or when source flow has multiple or unknown callable origins.
+
 ### Deferred browser-global publication
 
 `chunk_analysis_options.<chunk>.deferred_global_publications` names audited
@@ -4242,8 +5290,45 @@ the rest of the body; a result transfer using the already evaluated operands is
 required to continue. A call rejected by the ordered operand path retains its
 `unsupported_operation` / `opaque_execution` reason and may carry the typed
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
-`non_local_target`, or `unsupported_receiver`. It names
-the first ordered admission check that refused the already evaluated operands.
+`non_local_target`, `unsupported_receiver`, or `unsupported_native_operation`.
+For an indexed array-iteration candidate, the field may identify either the
+first failed pre-argument GetValue selection check:
+`array_iteration_receiver_not_singleton`, `array_iteration_receiver_not_object`,
+`array_iteration_row_shape_unsupported`, `array_iteration_method_slot_unavailable`,
+`array_iteration_original_method_selection_unavailable`, or
+`array_iteration_result_allocation_unavailable`. This selection attempt does
+not replace the ordinary member read or force a call refusal. It is attached
+only if that ordinary call transfer independently returns
+`unsupported_native_operation`. After a successful GetValue selection, the
+field can instead name the first failed post-argument body-admission check:
+`array_iteration_call_kind_mismatch`,
+`array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
+`array_iteration_callback_arity_mismatch`,
+`array_iteration_callback_target_unavailable`,
+`array_iteration_generator_callback`, `array_iteration_opaque_callback`,
+`array_iteration_async_callback`,
+`array_iteration_callback_parameter_unsupported`,
+`array_iteration_callback_plan_unavailable`,
+`array_iteration_caller_unavailable`,
+`array_iteration_body_intrinsics_unavailable`,
+`array_iteration_receiver_descriptor_unavailable`,
+`array_iteration_dense_snapshot_unavailable`,
+`array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
+`array_iteration_exceeds_invocation_limit`, or
+`array_iteration_unsettled_elements`. These categories retain check order after
+callee and argument evaluation. The new detailed unsettled-elements refusal
+is serialized as an object keyed by
+`array_iteration_unsettled_elements_detail`, with `slot_index` and a typed
+`check` category identifying the first failed dense slot condition. The legacy
+`array_iteration_unsettled_elements` string remains readable in saved reports;
+other refusal categories remain strings. The text explanation
+labels pre-argument selection versus post-argument body admission or iteration
+transfer and shows the unsettled slot and category. Callback
+completion or predicate uncertainty keeps `unsupported_operation` without an
+admission reason; defensive result-row mismatches use
+`array_iteration_result_shape_mismatch`. The reason names the first ordered
+admission check that failed at its stated phase; a pre-argument selection
+reason does not suppress argument evaluation.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.
@@ -4290,8 +5375,9 @@ escaped-pool, then export order. Typed path edges reuse the callback walk's
 stored-reference carriers; array elements are reported only for canonical
 array-index property keys when the abstract reference has an array allocation
 kind. Object-backed array-literal storage remains a stored-property edge
-because its array shape is not represented on the retained reference. The path
-omits runtime allocation identities and indices into abstract value sets. If a
+because its array shape is not represented on the retained reference. Private
+slot edges preserve the class-brand source and private name. The path omits
+runtime allocation identities and indices into abstract value sets. If a
 path cannot be rooted, it is reported as
 `unknown` with a reason. This is one valid abstract path, not a unique cause of
 publication. The optional `bounded_fallback_callsite` separately locates the
@@ -4442,14 +5528,18 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   `incomplete_synchronous_execution`, `callee_heap_effects`}. Each conflict is `read_after_write`,
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
-  `array_contents`, `set_contents`, or `own_property` with `origin` and
-  `property`). The first four conflict kinds also carry `overlap: {left, right,
-law}` preserving both source footprints; `law` is `exact_cell` or
-  `array_contents_index_or_length` (same-origin array contents versus a
-  canonical numeric index or `length`). Shape and ordinary named properties
-  remain distinct. Barrier conflicts carry no overlap witness. The conflict's
-  `cell` remains the later access footprint. `after_barrier` / `barrier_after_prior`
-  for the opaque-barrier dependence. `source`, `target` and `observation` are
+  `array_contents`, `set_contents`, `global_symbol_registry`, `lexical_cell`,
+  `module_cell` with `chunk` and `declaration_origin`,
+  `object_shape`, `descriptor_map_contents`, or `own_property` with `origin`
+  and `property`), `private_slot` with `origin`, `class` and `name`, or
+  `after_barrier` / `barrier_after_prior`
+  for the opaque-barrier dependence. Explicit cell conflicts also carry
+  `overlap: {left, right, law}`, preserving both producer footprints and the
+  symmetric address law; `exact_cell` means identical cells and
+  `array_contents_index_or_length` joins same-origin array contents with a
+  canonical numeric index or `length`. Shape and ordinary named properties
+  remain distinct. Barrier conflicts carry no overlap witness. The conflict
+  `cell` remains the later footprint for existing report consumers. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
   naming the conservative path; the `explanation` text names each assumed
@@ -4470,14 +5560,24 @@ prove zero heap effects.
 
 When non-empty, `heap_frontier` on a source-unit synchronous report and its
 sequenced endpoint context separates `own_at_init` from
-`composed_synchronous_calls`, and includes `non_assumed_heap_accesses`. Those
-heap accesses were recorded outside an active `AssumedEffectReason` path at
-the recording or merge point; other premises, including program and
-native-input premises, may still have been consumed. Each cell set reports its
-unique count and a stable sample of at most eight exact cells. The existing
-opaque bit has no per-operation provenance; exact escaped cells remain
-independent evidence alongside it. This diagnostic does not prove heap
-locality and changes no ordering or gate verdict.
+`composed_synchronous_calls`, and includes `heap_access_provenance` with
+`executed_operations`, `assumed_operations`, and
+`conservative_summaries`. Each category reports its exact reads and writes.
+Every category remains in ordering evidence; only the executed-operation
+category can add heap cells to the explicit pair-premise conflict check.
+Fresh allocations remain separate from content writes, and the existing
+opaque bit still has no per-operation provenance.
+
+The source-covered `MemberValueWrite` transfer also records a possible
+`own_property` write when its already-evaluated receiver is exactly one ordinary
+object allocation and its key is static (except `__proto__`). The cell uses the
+same receiver snapshot as the heap mutation; it does not re-evaluate the source
+binding. This is a may-write footprint, not proof that the write definitely
+runs, targets a writable own data descriptor, or completes the source owner.
+The existing `member_write_or_alias` opacity and conservative fallback remain
+in force, including for dynamic or non-singleton receivers. Recorded cells feed
+the existing heap ordering and shared-cell premise checks; the report itself
+grants no locality or completion authority.
 
 The explanation is retained when the dependency graph is built
 (`dependency_graph.json.gz` `edges[].sequenced_cause` for `sequenced` edges; the
@@ -4497,6 +5597,40 @@ its swapped-package ownership path and its residual liveness path. Ownership
 traces distinguish dependencies of stripped exports from dependent items absorbed
 into the package island. These explain the stripper's conservative classification;
 they do not assert that every reported dependency executes synchronously.
+
+## Checked ordinary object spread
+
+The shared allocation kernel handles the canonical literal `{ ...source }`
+when `source` is a settled ordinary object with a complete, known set of own
+data properties. It evaluates the source operand once, checks the own-key
+shape, enumerable data descriptors, and values at that prefix, then creates
+the destination's own data properties in ECMAScript key order. Integer-index
+keys sort first in ascending order; other string keys keep their creation
+order. Copying a function value retains its identity without calling it.
+Destination writes use `CreateDataProperty`, so a copied own key named
+`__proto__` is data and does not invoke the legacy prototype setter. Since the
+ordinary heap does not retain every descriptor attribute, a descriptor-map
+mutation invalidates the spread-specific enumerability witness and makes a
+later copy conservative; ordinary own-property reads keep their separate
+proofs.
+
+The operation receipt carries the source shape and own-property reads. A
+repeated source site joins its pooled destination properties and invalidates
+the exact shape when later executions may have different keys. Accessors,
+proxies, unknown or escaped sources, unsettled descriptors, and unsupported
+literal syntax take the conservative ObjectSpread path. That path preserves
+the already evaluated source's effects, possible throw, and reachable callable
+capabilities; it never evaluates the operand again. Application and local
+execution use the same copy transfer. A summary adapter without the same
+source and descriptor evidence refuses the operation rather than supplying a
+separate copy rule.
+
+When a normal source reaches the conservative path, its `unsupported_operation`
+precision loss may include `object_spread_refusal`, naming the first failed
+copy check: exact syntax, receiver cardinality/kind/settlement, retained shape
+and own-value correspondence, enumerable-key settlement, or source operation
+support. This is diagnostic evidence only; it does not change the fallback,
+copy admission, or effect coverage.
 
 ## Native collection callback effects
 
@@ -4518,19 +5652,40 @@ ordinary eager dependencies, effects, and ordering remain.
 Bounded synchronous analysis can execute a known callback for a direct
 `forEach`, `map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex` or
 `reduce` call over a retained untainted dense ordinary array: one callback, no
-`thisArg`, no spread; `reduce` also takes an initial value. The callback runs
-once per element, in index order, with the retained element, a primitive index
-and the source array (`reduce` passes the accumulator first). Its reads,
-writes, coercions and publication are observed effects of the statement.
+`thisArg`, no spread; `reduce` may take an initial value. The callback runs
+in index order for each reached own element, with the retained element, a
+primitive index and the source array (`reduce` passes the accumulator first).
+Its reads, writes, coercions and publication are observed effects of the
+statement.
 
-- **Early exit.** `some`, `every`, `find` and `findIndex` can stop at any
-  element. The analysis still runs the callback for every element: effects
-  only join, so the extra invocations add possible effects and remove none.
-- **Results.** `map`, `filter` and `flatMap` return a fresh array that retains
-  the element and callback-result aliases. A `flatMap` result whose positions
-  are unknown keeps its values as contents and is not iterated precisely
-  later. `find` returns an element or `undefined`; `reduce` returns the last
-  accumulator, and on an empty array without an initial value it throws.
+Callback completion remains path-specific through the caller: normal leaves
+that do not satisfy the row's short-circuit continue to the next reached
+element, while exact abrupt leaves retain their world and result for the
+surrounding catch. A mixed callback is not collapsed into a single normal or
+throw result. If the transfer cannot preserve its remaining normal suffix, it
+uses one conservative remainder after the already executed prefix without
+replaying the callback or call operands.
+
+- **Early exit.** `some`, `every`, `find` and `findIndex` use shared abstract
+  truthiness to stop at a definitely matching predicate. An undecidable
+  predicate can split into stop and continue alternatives only after a
+  definitely normal callback with closed, read-only effects; later callbacks
+  execute only on the continue alternative. Branch-only callback invocations
+  remain possible obligations, not definite call receipts. If callback effects
+  or world-state joins cannot preserve both alternatives, the operation takes
+  its conservative remainder without executing a possibly unreachable suffix.
+- **Results.** `forEach` returns `undefined` and ignores callback returns.
+  `map`, `filter` and `flatMap` return fresh arrays: `map` retains callback
+  results, `filter` retains the original elements whose predicate is truthy,
+  and `flatMap` retains flattened callback results. A filter predicate with
+  abstract truthiness keeps possible elements as unknown contents, not exact
+  dense slots. A `flatMap` result whose positions are unknown likewise keeps
+  its values as contents and is not iterated precisely later. `find` returns
+  an element or `undefined`; `findIndex` returns a Number; `some` and `every`
+  return Booleans without a result-array allocation or species read. `reduce`
+  returns the last accumulator. An empty array without an initial value is an
+  abrupt row; where that throw cannot be represented by the selected transfer,
+  the row remains conservative.
   Iteration and spread of a result do not invoke stored functions.
 - **Constructed class inputs.** A dense input slot may carry a checked local
   base-class construction while its class, receiver and array protocol remain
@@ -4579,6 +5734,10 @@ operations use the conservative path rather than stale pre-push slots.
 The independent descriptor/length witness can admit subsequent primitive pushes
 through the shared ordered transfer described above; it cannot restore element
 snapshots or certify other array methods.
+The ordered root also admits standalone top-level calls through this checked
+transfer. Whole-owner coverage still requires method selection, argument
+evaluation and the post-argument descriptor/prototype checks to compose their
+actual operation receipts.
 
 ## Runtime resource destinations
 

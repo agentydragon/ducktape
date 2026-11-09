@@ -57,6 +57,7 @@ pub enum IntrinsicOp {
     ObjectGetOwnPropertyDescriptors,
     ObjectGetOwnPropertyNames,
     ObjectDefineProperties,
+    ObjectAssign,
     ObjectFreeze,
     RegExp,
     Error,
@@ -99,6 +100,7 @@ impl IntrinsicOp {
             Self::ObjectGetOwnPropertyDescriptors => ("Object", Some("getOwnPropertyDescriptors")),
             Self::ObjectGetOwnPropertyNames => ("Object", Some("getOwnPropertyNames")),
             Self::ObjectDefineProperties => ("Object", Some("defineProperties")),
+            Self::ObjectAssign => ("Object", Some("assign")),
             Self::ObjectFreeze => ("Object", Some("freeze")),
             Self::RegExp => ("RegExp", None),
             Self::Error => ("Error", None),
@@ -148,6 +150,20 @@ pub enum Throws {
     OnValue,
 }
 
+/// Declared body effects after the row's separately listed coercions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeBodyEffects {
+    /// The table supplies no complete exterior-effect summary.
+    Unknown,
+    /// After its listed coercions, the body accesses no application global,
+    /// heap or host state. Callee lookup and operand evaluation are separate.
+    NoExteriorAccess,
+    /// `%Symbol.for%` reads the agent-local global symbol registry and inserts
+    /// the key when absent. The operation cannot call application code; its
+    /// only source-observable result is the returned key-unique Symbol.
+    SymbolRegistryReadWrite,
+}
+
 /// One builtin's summary.
 #[derive(Debug)]
 pub struct Row {
@@ -170,6 +186,7 @@ pub struct Row {
     pub mutates: &'static [Mutation],
     pub returns: Return,
     pub throws: Throws,
+    pub body_effects: NativeBodyEffects,
     /// Whether syntactic purity may take the callee's identity from A11 and
     /// an unshadowed spelling alone. Otherwise purity reaches the operation
     /// only through a certificate proving `requires`: the census or a
@@ -188,6 +205,27 @@ impl Row {
     pub fn family(&self) -> Option<NativeIntrinsic> {
         self.requires.first().map(|slot| slot.family())
     }
+
+    /// Additional integrity needed by the supported body protocol, after
+    /// callee lookup. Operand and completion proofs remain separate.
+    pub fn protocol_requires(&self) -> &'static [IntrinsicSlot] {
+        match self.op {
+            // FromPropertyDescriptor creates ordinary records;
+            // ToPropertyDescriptor observes their inherited get/set fields.
+            IntrinsicOp::ObjectDefineProperties | IntrinsicOp::ObjectAssign => {
+                &[IntrinsicSlot::Prototype(NativeIntrinsic::Object)]
+            }
+            _ => &[],
+        }
+    }
+
+    pub fn operation_requires(&self) -> Vec<IntrinsicSlot> {
+        self.requires
+            .iter()
+            .chain(self.protocol_requires())
+            .copied()
+            .collect()
+    }
 }
 
 /// Every argument count.
@@ -204,6 +242,7 @@ const PRIMITIVE_UNARY_MATH: Row = Row {
     mutates: &[],
     returns: Return::Prim(PrimKinds::NUMBER),
     throws: Throws::Never,
+    body_effects: NativeBodyEffects::NoExteriorAccess,
     assumed_intact: false,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Math),
@@ -222,6 +261,7 @@ const EMPTY_KEYED_COLLECTION: Row = Row {
     mutates: &[],
     returns: Return::Fresh,
     throws: Throws::Never,
+    body_effects: NativeBodyEffects::Unknown,
     assumed_intact: true,
     requires: &[IntrinsicSlot::Global(NativeIntrinsic::Map)],
 };
@@ -238,6 +278,7 @@ const INSPECTS_NO_OPERAND: Row = Row {
     mutates: &[],
     returns: Return::Prim(PrimKinds::BOOLEAN),
     throws: Throws::Never,
+    body_effects: NativeBodyEffects::Unknown,
     assumed_intact: true,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Array),
@@ -261,6 +302,7 @@ const OWN_ENUMERABLE: Row = Row {
     mutates: &[],
     returns: Return::Fresh,
     throws: Throws::Never,
+    body_effects: NativeBodyEffects::Unknown,
     assumed_intact: true,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Object),
@@ -280,6 +322,7 @@ const EMPTY_HOST_OBJECT: Row = Row {
     mutates: &[],
     returns: Return::Unknown,
     throws: Throws::Never,
+    body_effects: NativeBodyEffects::Unknown,
     assumed_intact: true,
     requires: &[],
 };
@@ -296,10 +339,12 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::NoExteriorAccess,
         assumed_intact: true,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Symbol)],
     },
-    // The GlobalSymbolRegistry is agent-local and unobservable from source.
+    // Registry contents are not directly enumerable or removable; the
+    // returned key-unique identity remains observable to the source program.
     Row {
         op: IntrinsicOp::SymbolFor,
         invocation: &[Invocation::Call],
@@ -311,6 +356,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::SymbolRegistryReadWrite,
         assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Symbol),
@@ -365,6 +411,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshRetains(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::UnlessCallable(ArgSel::Arg(0)),
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::FinalizationRegistry)],
     },
@@ -429,6 +476,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
@@ -449,6 +497,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshOwnKeysOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
@@ -457,7 +506,8 @@ pub const ROWS: &[Row] = &[
     },
     // ObjectDefineProperties reads every enumerable own descriptor of the
     // record, converts it with ToPropertyDescriptor, then defines it on the
-    // target.
+    // target. Native descriptor records inherit Object.prototype; inherited
+    // get/set fields can affect ToPropertyDescriptor (§ 6.2.6.5).
     Row {
         op: IntrinsicOp::ObjectDefineProperties,
         invocation: &[Invocation::Call],
@@ -478,10 +528,39 @@ pub const ROWS: &[Row] = &[
         }],
         returns: Return::Arg(ArgSel::Arg(0)),
         throws: Throws::UnlessObjects(&[ArgSel::Arg(0)]),
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperties"),
+        ],
+    },
+    Row {
+        op: IntrinsicOp::ObjectAssign,
+        invocation: &[Invocation::Call],
+        cite: "sec-object.assign",
+        arity: 2..=2,
+        coerces: &[
+            (ArgSel::Arg(0), CoerceOp::ToObject),
+            (ArgSel::Arg(1), CoerceOp::ToObject),
+            (ArgSel::Arg(1), CoerceOp::OwnPropertyKeys),
+            (ArgSel::Arg(1), CoerceOp::GetOwnProperty),
+            (ArgSel::Arg(1), CoerceOp::Get),
+            (ArgSel::Arg(0), CoerceOp::Set),
+        ],
+        invokes: &[],
+        allocates: None,
+        mutates: &[Mutation::AssignProperties {
+            target: ArgSel::Arg(0),
+            source: ArgSel::Arg(1),
+        }],
+        returns: Return::Arg(ArgSel::Arg(0)),
+        throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
+        assumed_intact: false,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "assign"),
         ],
     },
     // SetIntegrityLevel(frozen): the stored data values are never invoked. A
@@ -502,6 +581,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::Integrity(ArgSel::Arg(0))],
         returns: Return::Arg(ArgSel::Arg(0)),
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: true,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
@@ -527,6 +607,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Unknown,
         throws: Throws::OnValue,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::RegExp)],
     },
@@ -550,6 +631,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Unknown,
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Error)],
     },
@@ -663,6 +745,7 @@ pub const ROWS: &[Row] = &[
     EMPTY_HOST_OBJECT,
     Row {
         op: IntrinsicOp::TextEncoder,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::TextEncoder)],
         cite: "https://encoding.spec.whatwg.org/#dom-textencoder",
@@ -694,6 +777,7 @@ pub const ROWS: &[Row] = &[
         ],
         returns: Return::Fresh,
         throws: Throws::UnlessObjects(&[ArgSel::Arg(0), ArgSel::Arg(1)]),
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: true,
         requires: &[],
     },
@@ -713,6 +797,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Prim(PrimKinds::STRING),
         throws: Throws::Never,
+        body_effects: NativeBodyEffects::Unknown,
         assumed_intact: true,
         requires: &[],
     },
@@ -944,9 +1029,9 @@ pub enum IterationResult {
     /// A fresh array of the callback results, an array result spread one
     /// level through `IsArray`, `length` and index reads.
     FlatMapped,
-    /// A Boolean. This and the next two may stop at any element; the
-    /// interpreter still invokes the callback for every element, since
-    /// effects join and the extra invocations only add possible effects.
+    /// A Boolean. Predicate rows may stop once callback truthiness proves
+    /// their result; undecidable predicates need path alternatives or a
+    /// conservative remainder.
     Boolean,
     /// An element, or `undefined`.
     Element,
@@ -959,10 +1044,11 @@ pub enum IterationResult {
 }
 
 /// An `%Array.prototype%` method that calls its callback synchronously,
-/// once per index from 0 below the initial `length` that the receiver has
-/// as an own property. The callback receives `(element, index, array)`, or
+/// in index order below the initial `length` for indices the receiver has as
+/// own properties. The callback receives `(element, index, array)`, or
 /// `(accumulator, element, index, array)` for `Accumulated`, with `this`
-/// undefined: `thisArg` is not admitted.
+/// undefined: `thisArg` is not admitted. Predicate rows may short circuit,
+/// so later invocation depends on earlier results.
 #[derive(Debug)]
 pub struct IterationRow {
     pub member: &'static str,

@@ -32,11 +32,15 @@ pub enum InferenceRule {
     OwnPropertySourceOrigin,
     OwnPropertyShape,
     OwnPropertyPrefixState,
+    /// A complete ordered descriptor surface read from the shared semantic
+    /// store after its current pooled-generation certificate was checked.
+    OwnPropertyStoreLayout,
     OwnPropertyNamesProjection,
     OwnPropertyDescriptorProjection,
     DescriptorCopyProvider,
     DescriptorCopyFactory,
     ForeignCallSummary,
+    ConditionalForeignBody,
 }
 
 /// Provenance actually consumed by one source-derived inference.

@@ -3,12 +3,12 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::write_text_file;
+use debundle_e2e_support::{assert_potential_suppression_rejection, read_json, write_text_file};
 use serde_yaml::Value;
 
 #[test]
 fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const a = 1; const b = 2; console.log(a + b);",
         &[
             (
@@ -41,12 +41,16 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
         .collect();
     let mut preview = args.to_vec();
     preview.push("--dry-run");
-    assert_eq!(fixture.json(&preview)["gate"], "passed");
+    let analysis = fixture.stage_analysis();
+    assert_eq!(
+        fixture.json_with_assessment(&preview, &analysis)["gate"],
+        "passed"
+    );
     for (path, bytes) in paths.iter().zip(before) {
         assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
     }
     assert!(!fixture.modules.join("models/Beta.yaml").exists());
-    let outcome = fixture.json(&args);
+    let outcome = fixture.json_with_assessment(&args, &analysis);
     assert_eq!(outcome["files_written"].as_array().unwrap().len(), 2);
     assert_eq!(outcome["files_deleted"].as_array().unwrap().len(), 2);
     assert_eq!(outcome["targets"].as_array().unwrap().len(), 2);
@@ -81,7 +85,14 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
 
 #[test]
 fn merge_batch_gate_failure_leaves_every_target_and_source_unchanged() {
-    let fixture = GraphFixture::dependency_chain();
+    let fixture = GraphFixture::new_full_tree(
+        "const beta = 1; const gamma = beta + 1; const alpha = gamma + 1; console.log(alpha);",
+        &[
+            ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]"),
+            ("b.yaml", "members: [{selector: {binding: {name: beta}}}]"),
+            ("c.yaml", "members: [{selector: {binding: {name: gamma}}}]"),
+        ],
+    );
     let batch = fixture.modules.join("merge.json");
     write_text_file(
         &batch,
@@ -90,9 +101,11 @@ fn merge_batch_gate_failure_leaves_every_target_and_source_unchanged() {
       {"target":"a.yaml","sources":["b.yaml"]}
     ]"#,
     );
-    fixture.assert_rejected_unchanged(
+    let analysis = fixture.stage_analysis();
+    fixture.assert_rejected_unchanged_with_assessment(
         &["modules", "merge", "--batch", batch.to_str().unwrap()],
-        &["unrealizable"],
+        &analysis,
+        &["candidate relocation"],
     );
     fixture.assert_runs("3\n");
 }
@@ -164,7 +177,13 @@ fn merge_batch_rejects_ambiguous_plans_without_writes() {
 
 #[test]
 fn merge_batch_allows_case_only_relocation() {
-    let fixture = GraphFixture::acyclic_pair();
+    let fixture = GraphFixture::new_full_tree(
+        "const beta = 1; const alpha = beta + 1; console.log(alpha);",
+        &[
+            ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]"),
+            ("b.yaml", "members: [{selector: {binding: {name: beta}}}]"),
+        ],
+    );
     let batch = fixture.modules.join("merge.json");
     write_text_file(
         &batch,
@@ -173,7 +192,11 @@ fn merge_batch_allows_case_only_relocation() {
       {"target":"models/Beta.yaml","sources":["b.yaml"]}
     ]"#,
     );
-    fixture.assert_success(&["modules", "merge", "--batch", batch.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "merge", "--batch", batch.to_str().unwrap()],
+        &analysis,
+    );
     assert!(fixture.modules.join("A.yaml").exists());
     assert!(!fixture.modules.join("a.yaml").exists());
     fixture.assert_runs("2\n");
@@ -185,13 +208,21 @@ fn single_merge_rejects_untouched_symlink_aliases_without_writes() {
         ("alias.yaml", "target.yaml", "target"),
         ("alias-dir", "nested", "nested/target"),
     ] {
-        let fixture = GraphFixture::acyclic_pair();
+        let fixture = GraphFixture::new_full_tree(
+            "const beta = 1; const alpha = beta + 1; console.log(alpha);",
+            &[
+                ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]"),
+                ("b.yaml", "members: [{selector: {binding: {name: beta}}}]"),
+            ],
+        );
         write_text_file(&fixture.modules.join("target.yaml"), "members: []");
         write_text_file(&fixture.modules.join("nested/target.yaml"), "members: []");
         std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
         fixture.refresh_graph();
-        fixture.assert_rejected_unchanged(
+        let analysis = fixture.stage_analysis();
+        fixture.assert_error_unchanged_with_assessment(
             &["modules", "merge", "--target", destination, "a"],
+            &analysis,
             &["does not support symlink entries"],
         );
         assert_eq!(
@@ -261,7 +292,10 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         let target = format!(
             "{metadata}members: [{{selector: {{binding: {{name: a}}}}}}]\nanonymous_statements: [{{match: 'console.log(\"first\");'}}]"
         );
-        let fixture = GraphFixture::new(
+        // The original split moves a console call across another module's
+        // initializers. The merge repairs that unproved order while preserving
+        // every claim and metadata field below.
+        let fixture = GraphFixture::rejected_full_tree(
             "const a = 1; const b = 2; const c = 3; const d = 4; console.log(\"first\"); console.log(\"second\"); console.log(a + b + c + d);",
             &[
                 ("ui/target.yaml", &target),
@@ -280,6 +314,17 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
                 ("ui/empty.yaml", "members: []"),
             ],
         );
+        let baseline: serde_json::Value = read_json(
+            &fixture
+                .graph
+                .with_file_name("candidate_relocation_assessment.json"),
+        );
+        let effects: serde_json::Value = read_json(
+            &fixture
+                .graph
+                .with_file_name("effect_translation_validation.json"),
+        );
+        assert_potential_suppression_rejection(&baseline, &effects, "blocked_by_effect");
         let sibling = fixture.modules.join("ui/target.yaml.tmp");
         write_text_file(&sibling, "unrelated data\n");
         let paths = [
@@ -309,7 +354,11 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         ];
         let mut preview = args.to_vec();
         preview.push("--dry-run");
-        let out = fixture.command(&preview);
+        let analysis = fixture.stage_analysis();
+        let out = fixture
+            .process_with_assessment(&preview, &analysis)
+            .output()
+            .unwrap();
         assert!(
             out.status.success(),
             "{}",
@@ -318,7 +367,10 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         for (path, bytes) in paths.iter().zip(before) {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
-        let out = fixture.command(&args);
+        let out = fixture
+            .process_with_assessment(&args, &analysis)
+            .output()
+            .unwrap();
         assert!(
             out.status.success(),
             "{}",
@@ -384,7 +436,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
 
 #[test]
 fn merge_preserves_anonymous_only_modules_and_runtime_order() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "console.log(\"first\"); console.log(\"second\");",
         &[
             (
@@ -397,7 +449,11 @@ fn merge_preserves_anonymous_only_modules_and_runtime_order() {
             ),
         ],
     );
-    fixture.assert_success(&["modules", "merge", "--target", "target", "source"]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "merge", "--target", "target", "source"],
+        &analysis,
+    );
     assert!(!fixture.modules.join("source.yaml").exists());
     let doc: Value =
         serde_yaml::from_slice(&fs::read(fixture.modules.join("target.yaml")).unwrap()).unwrap();
@@ -443,7 +499,7 @@ fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
             ["annotated", "first.yaml"],
         ),
     ] {
-        let fixture = GraphFixture::new(
+        let fixture = GraphFixture::new_full_tree(
             "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
             &[
                 ("target.yaml", "members: [{selector: {binding: {name: a}}}]"),

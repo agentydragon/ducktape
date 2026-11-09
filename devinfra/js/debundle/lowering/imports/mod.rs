@@ -1,5 +1,8 @@
 // Keep these helpers as separate modules; expose their internal API to the
 // lowering crate root without adding them to its public API.
+use artifact::reports::StaticModuleRequest;
+use swc_ecma_ast::ModuleItem;
+
 pub(super) mod cross_chunk_imports;
 pub(super) mod import_emit;
 pub(super) mod imports_cross;
@@ -15,16 +18,23 @@ pub(super) use imports_cross::{
     final_module_exports, phantom_side_effect_imports, residual_entry_imports_for_moved_body,
 };
 pub(super) use imports_runtime::{
-    group_specifiers_into_import_decls, resolve_imported_binding,
+    PreparedImportDecl, group_specifiers_into_import_decls, resolve_imported_binding,
     source_chunk_imports_for_moved_body,
 };
 pub(super) use plan_references::{
-    ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds,
+    ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeReimport,
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
 pub(super) use runtime_imports::{
     imported_binding_named_specifier, runtime_reimport_named_specifier, runtime_reimport_specifier,
 };
 pub(super) use vendor_imports::{
-    PlannedVendorReimports, VendorReimportOracle, plan_vendor_reimports,
+    MaterializedVendorIntent, PlannedVendorReimports, VendorReimportOracle, plan_vendor_reimports,
 };
+
+pub(super) fn static_request_for_item(item: &ModuleItem) -> Option<StaticModuleRequest> {
+    match item {
+        ModuleItem::ModuleDecl(decl) => program_analysis::static_module_request_for_decl(decl),
+        ModuleItem::Stmt(_) => None,
+    }
+}

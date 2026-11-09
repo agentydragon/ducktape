@@ -4,7 +4,7 @@ use crate::analysis_inputs::NativeIntrinsic;
 use crate::analysis_provenance::InferenceRule;
 use crate::facts::abstract_domain::builtins::Row;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, SourceHeapResolver, Value};
 use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
 use crate::facts::value_flow::Values;
 use crate::inference::CertificateContext;
@@ -27,14 +27,21 @@ pub(crate) struct NamespaceWrapperCandidateFacts {
 pub(crate) struct CallableInferenceInputs {
     pub(crate) functions: BTreeMap<Id, FunctionBindingFacts>,
     pub(crate) namespace_wrappers: BTreeMap<u32, NamespaceWrapperCandidateFacts>,
+    pub(crate) heap_resolver: Option<SourceHeapResolver>,
 }
 
 impl CallableInferenceInputs {
     pub(crate) fn keys(&self) -> Vec<SemanticKey> {
+        let Some(resolver) = self.heap_resolver else {
+            return Vec::new();
+        };
         let mut keys = Vec::new();
         for (binding, facts) in &self.functions {
             for value in facts.values.iter() {
                 let Value::Alloc(Kind::Function, function) = value else {
+                    continue;
+                };
+                let Some(function) = resolver.source_origin(function) else {
                     continue;
                 };
                 keys.push(SemanticKey::StableFunction {
@@ -66,13 +73,17 @@ impl CallableInferenceInputs {
         collections: &BTreeMap<Id, &'static Row>,
         consulted: &mut BTreeSet<InferenceRule>,
     ) -> Option<SemanticFact> {
+        let resolver = self.heap_resolver?;
         match key {
             SemanticKey::StableFunction { binding, function } => self
                 .functions
                 .get(binding)?
                 .values
                 .iter()
-                .eq([Value::Alloc(Kind::Function, *function)])
+                .eq([Value::Alloc(
+                    Kind::Function,
+                    resolver.allocation(Kind::Function, *function),
+                )])
                 .then_some(SemanticFact::Function(*function)),
             SemanticKey::StableProvider { binding, function } => {
                 let source = self.functions.get(binding)?;

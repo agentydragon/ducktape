@@ -8,14 +8,12 @@
 > record "this source unit uses that binding" plus source-order
 > side-effect constraints. The spec assigns bindings and anonymous
 > statements to output destinations.
-> The validator quotients the dependency graph by that assignment to
-> derive the imports graph `I` plus side-effect ordering graph
-> `S` and runs a two-pass realizability gate: Pass 1 rejects any
-> cycle among the constraining edges (at-init reads and `S`);
-> Pass 2 accepts a cycle that also runs through lazy reads only if
-> an ESM evaluation simulator, run over the emitted import order,
-> proves every constraining edge's target evaluates before its
-> source. The emit is source-order: each logical module's body is
+> The planner quotients the dependency graph to derive imports and a candidate
+> ESM evaluation order. One mandatory assessment checks every actual statement
+> inversion using effect coverage and verifies the same source/destination maps
+> consumed by lowering. Only its joint accepted verdict authorizes relocation;
+> the historical two-pass graph gate and edge-TV checker remain diagnostic
+> comparisons. The emit is source-order: each logical module's body is
 > its assigned statements in original chunk order, with explicit
 > `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
@@ -29,6 +27,14 @@
 > named-binding companions when the closure requires it, but the
 > spec is still explicit — the author writes the selector, no
 > closure pass infers it.
+
+Graph-backed ownership edits compile the exact post-edit module documents with
+the canonical tree compiler and assess the complete application. A single joint
+verdict includes every required materialized chunk's effect and placement
+assessment. Accepted concrete candidates continue through the same in-memory
+cross-chunk rewrites and final program validation as normal emission before a
+validated YAML write is authorized. Per-chunk reports do not certify another
+chunk, and a selected graph does not permit silently editing sibling documents.
 
 ## Mission
 
@@ -47,8 +53,10 @@ top-level statements and a granular dependency graph between source
 units derived from them. Binding claims and anonymous-statement
 selectors determine each source unit's output destination. Collapsing
 source units with the same destination yields a module dep graph; the
-validator checks that this quotient graph admits an ESM evaluation
-order observationally equivalent to the input.
+planner derives the candidate order from that quotient. The final relocation
+assessment checks effect commutation for that exact order and complete structural
+placement. Legacy graph constraints remain useful conservative diagnostics and
+proposal inputs; their ordering verdict is not an independent acceptance rule.
 
 Each invocation uses one exact spec and one configured input program (possibly
 with several chunks). Selector resolution stays within the spec's declared
@@ -879,8 +887,12 @@ globalThis`) marks the bindings it flows into (transitively,
     of them only as the base of static-key member reads, those
     reads are `GlobalProp` cells and the bail is lifted.
 
-  The graph also keeps a heap-content timeline over `ArrayContents(origin)`
-  and `SetContents(origin)` cells (`facts/heap_contents.rs`). Each body's
+  The graph also keeps a heap-content timeline over `ArrayContents(origin)`,
+  `SetContents(origin)`, and `PrivateSlot(origin, class, name)` cells
+  (`facts/heap_contents.rs`). A private-slot cell keeps the receiver
+  allocation source, class-brand source, and private name distinct; the source
+  identities aggregate runtime generations and do not grant strong updates or
+  privacy proofs. Each body's
   cells are syntax over the chunk value-flow identities: a statement's own
   at-init syntax and each callable's first-order pre-await body. A
   statement's cells are its own plus those of every callable its synchronous
@@ -925,6 +937,21 @@ globalThis`) marks the bindings it flows into (transitively,
   Suppressing one certified `new` does not suppress another invocation of its
   callee, argument evaluation, or unrelated operations in that statement.
   Deferred methods, callbacks and getters retain their later-use obligations.
+
+  The shared native kernel also checks FinalizationRegistry construction with
+  one known ordinary source callable. Exact native NewTarget identity makes
+  its nonconfigurable, nonwritable own prototype data property inert. The body
+  checks callability and writes only fresh internal slots. Its job-callback
+  hook captures execution metadata without invoking the callback; the admitted
+  ordinary callback establishes its own script context when invoked, and
+  builtin eval is excluded. The
+  [ECMAScript constructor](https://tc39.es/ecma262/multipage/managing-memory.html#sec-finalization-registry-cleanup-callback),
+  [default host hook](https://tc39.es/ecma262/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback)
+  and [HTML host hook](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+  ground this scoped operation. It composes native construction receipts with
+  actual callee/operand effects while leaving the general table body flag
+  unknown. Returned values keep the existing opaque retained-callback carrier;
+  an effect receipt cannot erase it or supply an ordinary-object shape.
 
   The legacy own-syntax opacity bit can also be omitted when the statement
   carries a `CompletedInitialization` receipt for that exact source owner. The
@@ -1520,6 +1547,22 @@ graph only after the complete operation sequence has an allocation-only
 judgment. Throws, TDZ/const errors and unproved writes refuse certification
 without retrying the legacy source evaluator. Application execution continues
 to supply its ordinary effect/provenance, publication and fallback adapters.
+Base-class provider queries retain the shared constructor body's actual effect
+fragment independently of its fresh-instance and retention judgments. The shared
+kernel executes instance initializers before the simple parameter prologue and
+constructor body. Its fresh ordinary receiver starts extensible with no own
+fields or private slots. Public definitions create configurable writable own data
+properties without consulting the prototype; private definitions install distinct
+class-qualified slots, and private assignments require those slots already present.
+Public `this` assignments require the exact existing own data descriptor to be
+writable at the receiver's current prefix; they never create a missing field or
+consult a prototype setter. Their RHS executes once before the write, with its
+own effects and normal-completion checks.
+Each operation requires a normally completing allocation-only prefix, composes
+its initializer/RHS effects, and weakly stores retained values in the shared heap.
+Neither descriptor/brand state nor weak retained values authorize later field reads,
+strong updates or result-shape proofs. Defaults, heritage, borrowed accesses and
+instance private methods remain outside this constructor projection.
 Retained private captures produce an opaque foreign capability in the returned
 carrier. They may alias actual arguments, so those identities stay retained
 too. Later opaque use conservatively promotes importer reads and rebinds and
@@ -2156,12 +2199,12 @@ Pure-lazy I-cycles (no constraining edge inside the SCC) skip
 pass 2's simulator and pass. The simulator and the emitter share
 ONE ordering implementation — `esm_import_order::EsmImportOrder`,
 built from the canonical `ChunkConstrainingEdgeSet` — so the
-import order the gate simulates is structurally the order
-`lowering::lower_chunk` emits: the entry's import list and every
-module's merged intra-chunk import list (cross-module binding
-imports, phantom side-effect imports, and the residual-entry
-import, interleaved by one sort) come from the same two sort
-rules the simulator's DFS uses for its neighbor order. A spec
+import order the gate simulates is structurally the order built by
+`lowering::prepare_candidate_emission_plan` for the entry import list and
+`lowering::module_output::prepare_module_emission` for each module's merged
+intra-chunk import list (cross-module binding imports, phantom side-effect
+imports, and the residual-entry import, interleaved by one sort). Both use the
+same two sort rules the simulator's DFS uses for its neighbor order. A spec
 accepted by the gate is one the emitted ESM bundle actually
 evaluates without TDZ.
 
@@ -2637,14 +2680,14 @@ resulting DFS post-order is `L`. ∎
 above) computes `L` from the constraining-edge subgraph's toposort,
 reversed within each `I ∪ S` SCC so that the cycle dependent is
 imported first and DFS unwinds through the dependency.
-`lowering::lower_chunk` sorts entry's emitted `import` directives
+`lowering::prepare_candidate_emission_plan` sorts entry's emitted `import` directives
 with `sort_entry_imports` and every module's merged intra-chunk
 import list with `sort_module_imports`; the realizability gate's
 evaluation simulator applies the same two sorts to its DFS neighbor
 order, so the simulated linker order and the emitted one cannot
 diverge. The validator rejects any spec the primitive's tightened
 clause-3 rule does not accept, so every spec the materializer
-reaches `lower_chunk` for has an `L` Lemma 2 can realize.
+prepares for emission has an `L` Lemma 2 can realize.
 
 The remaining principled gap is the `(at-init forward, lazy back)`
 shape **where entry itself is a cycle member**. Lemma 2's
@@ -2881,10 +2924,10 @@ The pipeline has three stages with different inputs and responsibilities:
   derives `DependencyGraphAndAtomicGroups` from those facts, `GraphOptions` and
   the chunk's resolved commuting contracts; graph inputs do not reach facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
-  spec's binding claims, run the realizability gate, lower to ESM. This is
+  spec's binding claims, assess its effects and structural placement, lower to ESM. This is
   `lowering::materialize_logical_modules`. Lowering applies the frontend's
   resolved claims to its assignment state, then `finish_logical_chunk` performs
-  chunk analysis, assignment assembly, the gate, and lowering.
+  chunk analysis, assignment assembly, candidate assessment, and lowering.
 
 The materializer composes these stages. Analysis (the cross-module
 pass and each chunk's facts) reads the spec only through the contract model
@@ -3139,7 +3182,7 @@ The trade-off doesn't pay off in practice:
 
 **Design rule.** The spec's ownership claims are explicit. Every owned binding
 is named in a logical module or routed by `unassigned_mode`: to the entry,
-the catchall file, or a generated per-atomic-group module.
+the catchall file, a generated per-atomic-group module, or a coarse residual module.
 Empty-`declared` (anonymous) statements default to the entry destination
 unless explicitly claimed by a logical module's `anonymous_statements`
 shape selector or routed to a catchall or generated atomic-group plan.
@@ -3148,13 +3191,19 @@ atomic group or planner proposal includes anonymous statements, the spec author
 normally copies their source into `anonymous_statements` (one entry per claimed
 statement). The narrow exception is the explicit
 `coarse_atomic_groups.complete_partial_atomic_groups_for` array: a listed
-authored module may adopt only the currently unclaimed source units of an atom
-for which it is the sole authored owner. Mixed-owner atoms remain unchanged and
-the ordinary gate rejects them. `per_atomic_group` may place an unclaimed whole
-atomic group, including anonymous statements, into a generated plan.
-`coarse_atomic_groups` applies the named-owner completions after rebind-fold
-destinations are known, then begins residual synthesis from the remaining
-wholly-unclaimed atomic groups. It assigns each
+module may adopt only currently unclaimed source units of an atom for which it
+was the sole authored owner in the complete authored roster. The owner list is
+validated and the sole-owner snapshot is made before ownership-subset filtering,
+so filtering cannot make a removed or imported module eligible or turn a mixed
+atom into a sole-owner atom. Mixed-owner atoms remain unchanged and the ordinary
+gate rejects them. `per_atomic_group` may place an unclaimed whole atomic group,
+including anonymous statements, into a generated plan.
+`coarse_atomic_groups` routes each named-owner completion once after the
+residual sweep and current derived placement, before synthesizing remaining
+wholly-unclaimed atomic groups or finalizing the plan. The resulting ownership
+continues through the existing planned-module projection, canonical preflight
+and emission preparation, and final joint assessment; completion changes
+placement only and does not bypass effect or structural gates. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then initially groups atoms with equal reachable nonvirtual owners
 in the canonical strict constraining module projection and the same interval
@@ -3570,12 +3619,15 @@ for the final projection. Nested-`var` planning and projection share the classif
 over retained statement identities, explicit binding owners and whole-statement
 requests; a wholly unclaimed statement uses its completed source projection.
 Consistent whole-statement routing keeps its existing behavior. A
-legacy-gate-rejected but mappable candidate can still produce
-marked inspection output. This scoped candidate result is not emission
-authority: the existing realizability gate remains the only authority to emit
-runnable output until later coverage domains are closed. The candidate's effect
-assessment is computed once for that same assignment and import order; it does
-not rerun realizability or source analysis.
+candidate rejected by the joint assessment but still mappable can produce
+marked inspection output. Every normal run computes the same mandatory
+assessment once for that immutable assignment and import order, including when
+reports are suppressed. Only an accepted effect decision plus complete,
+unblocked structural placement and actual emitter maps authorizes lowering as
+accepted output. Graph and edge-TV disagreements remain comparison evidence.
+Exact authored commuting premises retain typed dependencies and conditional
+acceptance scope; uncovered Havoc remains incomplete and observed contradictions
+remain blocking.
 
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and
@@ -3859,6 +3911,20 @@ where emission discovers new graph edges or silently mutates the
 assignment, because that reintroduces hidden closure behavior and
 makes diagnostics disagree with emitted output.
 
+### Canonical provider source ownership
+
+Preparation retains the original SWC parse for the complete static-request
+closure of materialized chunks and source-premise roots. The closure uses the
+same `ArtifactIndexes` resolver as frontend and staged analysis, including
+export-from requests. Retention grants source identity, not initialization or
+execution authority. Vendor-only retention does not extend this analysis scope.
+
+An entry retained only for analysis keeps its original source representation;
+`SourceWithAst` releases that syntax at the emission boundary without changing
+pass-through bytes or source-marker matching. Legacy reparsed entries can supply
+nonexecution summaries, but cannot register provider definitions, executable body
+effects, conditional provider transfers, or source module-cell proofs.
+
 ### Contract-audit preparation reuse
 
 `ContractAudit` retains one immutable preparation within an invocation: parsed
@@ -4123,6 +4189,16 @@ The implementation must maintain:
    so the I-graph it judges matches the linker's view. There is no
    opt-out path that bypasses the dep graph.
 
+The effect interpreter also records each reached `GetValue` that consumes a
+source-derived imported primitive. This is a may-execution requirement with a
+canonical operation site, owner/root, source binding and provider closure. The
+candidate check joins it to the exact prepared import, resolves the emitted
+request output-first, and checks that the retained provider closure completes
+before every consumer body. A provider path shadow, changed forwarding route,
+reentry context or unsupported linked graph leaves the read unproved. This
+obligation is separate from module-cell reads: pure hoisted declarations do
+not require a synthetic provider-evaluated token.
+
 ## Unrealizable splits
 
 Examples of splits that the realizability gate refuses.
@@ -4201,18 +4277,30 @@ Statement facts feed the dependency graph (stored on `AssignmentInputs`), and th
 module dep graph is a quotient of that dependency graph under the current spec
 assignment (stored on `AssignmentAnalysis`). `AssignmentAnalysis::inputs()`
 returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
-the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
-the accepted analysis while lowering projects its emission placement.
+the derived module graph. `CandidatePreflight` retains the analysis while
+lowering projects candidate placement before effect assessment;
+`ValidatedAssignment::assignment_analysis()` exposes the accepted analysis to
+post-gate consumers.
 
-`AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
-when atomic-group, schedule, and cross-destination rebinding checks pass. Lowering
-requires this immutable borrow of the checked assignment. Assignment inputs and
+`CandidatePreflight::prepare` derives and retains the legacy graph verdict,
+emitted order, and structural placement before effect assessment. Lowering
+projects its mappable placement and prepares candidate bodies from those same
+facts; `CandidatePreflight::evaluate` then runs the existing translation and
+effect sweeps and joins their result with the retained placement and typed
+module-initialization evidence from the prepared-output guard. Required module
+cells come from statement facts; imported bindings alone do not establish
+preservation. The final report retains required, preserved and unproved scoped
+cell addresses plus any typed guard refusal.
+`CandidateEvaluation::into_validation` returns a `ValidatedAssignment` only
+when the joint status is `AcceptedWithinCheckedScope`. Candidate body preparation
+uses the same immutable assignment through the preflight; final output emission
+still follows gate resolution. Assignment inputs and
 derived graph views are private and exposed only through immutable accessors, so
 callers cannot change the assignment independently of its cached import order or
-quotient. Rejection reports remain
-available to diagnostics without constructing an emission capability. This checks
-the assignment and shared import order; vendor consumer and final export checks
-still run on the emitted files.
+quotient. Assessment-only rejection reports remain available without requiring
+candidate emission preparation to succeed. This checks the assignment and shared
+import order; vendor consumer and final export checks still run on the emitted
+files.
 
 `BindingId` carries the interned source `ChunkId` together with the full SWC
 `Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity

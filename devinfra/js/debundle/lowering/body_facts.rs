@@ -3,7 +3,10 @@
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
+use artifact::reports::{ImportSpecifierKind, StaticModuleRequest};
 use frontend_elaboration::chunk_ast::{binding_names, top_level_declaration_ids};
+use program_analysis::static_module_request_for_decl;
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -23,6 +26,129 @@ pub(super) struct ModuleBodyFacts {
     /// appears here under the post-rename `(sym, ctxt)` (the rename
     /// mutates `sym` in place; `ctxt` is preserved).
     pub(super) referenced_idents: HashSet<Id>,
+    /// Static requests in item order, with their original module-item index.
+    pub(super) static_requests: Vec<IndexedStaticModuleRequest>,
+    /// Static requests among the leading import declarations.
+    pub(super) leading_static_import_requests: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct IndexedStaticModuleRequest {
+    pub(super) item_index: usize,
+    pub(super) request: StaticModuleRequest,
+    pub(super) targets: Vec<PreparedImportTarget>,
+    pub(super) bindings: Vec<PreparedImportBinding>,
+}
+
+/// One named import binding carried by the canonical request constructor.
+/// `source_binding` remains the analyzed source Id across naturalization and
+/// import-local renames; target facts are checked against the candidate path
+/// projection before they are exposed as preserved evidence.
+#[derive(Debug, Clone)]
+pub(super) struct PreparedImportBinding {
+    pub(super) source_binding: Id,
+    pub(super) candidate_binding: Id,
+    pub(super) imported_name: String,
+    pub(super) kind: ImportSpecifierKind,
+    pub(super) exported_name: Option<String>,
+    pub(super) target: PreparedImportTarget,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum PreparedImportTarget {
+    /// The original source request is resolved by the canonical artifact
+    /// source resolver, then compared with candidate output-first resolution.
+    OriginalSource { specifier: String },
+    /// The source route is known, but this request forwards exports whose
+    /// names are not carried by the request inventory. Target-only checks can
+    /// still detect route changes and must refuse it when it enters a proved
+    /// provider closure.
+    UnsupportedOriginalSource { specifier: String },
+    /// A generated import targets a concrete file in this candidate chunk.
+    CandidateOutput { chunk: ChunkId, file: String },
+    /// A generated or rewritten request has no checked artifact target.
+    Unsupported,
+}
+
+/// Exact request sequence and the source binding/import-name facts produced
+/// at the same construction site. Candidate checks consume this value rather
+/// than rescanning a prepared AST.
+#[derive(Debug, Clone)]
+pub(super) struct PreparedStaticRequest {
+    pub(super) request: StaticModuleRequest,
+    /// Source/candidate target intents contributed to this exact emitted
+    /// request. Grouped imports can contain bindings that were rebased from
+    /// different source spellings, so this stays a sequence alongside them.
+    pub(super) targets: Vec<PreparedImportTarget>,
+    pub(super) bindings: Vec<PreparedImportBinding>,
+}
+
+pub(super) fn source_request_targets(item: &ModuleItem) -> Vec<PreparedImportTarget> {
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+            vec![PreparedImportTarget::OriginalSource {
+                specifier: js_ast::str_value(&import.src),
+            }]
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => export
+            .src
+            .as_ref()
+            .map(|source| {
+                vec![PreparedImportTarget::UnsupportedOriginalSource {
+                    specifier: js_ast::str_value(source),
+                }]
+            })
+            .unwrap_or_default(),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export)) => {
+            vec![PreparedImportTarget::UnsupportedOriginalSource {
+                specifier: js_ast::str_value(&export.src),
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub(super) fn source_import_bindings(item: &ModuleItem) -> Vec<PreparedImportBinding> {
+    let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+        return Vec::new();
+    };
+    let specifier = js_ast::str_value(&import.src);
+    import
+        .specifiers
+        .iter()
+        .map(|import_specifier| {
+            let (local, imported_name) = match import_specifier {
+                ImportSpecifier::Named(named) => {
+                    let imported = match &named.imported {
+                        Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                        Some(ModuleExportName::Str(string)) => js_ast::str_value(string),
+                        None => named.local.sym.to_string(),
+                    };
+                    (named.local.to_id(), imported)
+                }
+                ImportSpecifier::Default(default) => (default.local.to_id(), "default".to_owned()),
+                ImportSpecifier::Namespace(namespace) => (namespace.local.to_id(), "*".to_owned()),
+            };
+            PreparedImportBinding {
+                source_binding: local,
+                candidate_binding: match import_specifier {
+                    ImportSpecifier::Named(named) => named.local.to_id(),
+                    ImportSpecifier::Default(default) => default.local.to_id(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.to_id(),
+                },
+                imported_name,
+                kind: match import_specifier {
+                    ImportSpecifier::Named(_) => ImportSpecifierKind::Named,
+                    ImportSpecifier::Default(_) => ImportSpecifierKind::Default,
+                    ImportSpecifier::Namespace(_) => ImportSpecifierKind::Namespace,
+                },
+                exported_name: None,
+                target: PreparedImportTarget::OriginalSource {
+                    specifier: specifier.clone(),
+                },
+            }
+        })
+        .collect()
 }
 
 /// One reference after naturalization. `source_id` is present only when the
@@ -54,6 +180,8 @@ pub(super) struct NaturalizedBodyFacts {
     imported_locals: HashSet<Id>,
     provided_locals: HashSet<Id>,
     binding_uses: HashSet<BindingUse>,
+    static_requests: Vec<IndexedStaticModuleRequest>,
+    leading_static_import_requests: usize,
 }
 
 impl NaturalizedBodyFacts {
@@ -75,10 +203,25 @@ impl NaturalizedBodyFacts {
                 emitted_id,
             })
             .collect();
+        let static_requests = facts
+            .static_requests
+            .into_iter()
+            .map(|mut indexed| {
+                for binding in &mut indexed.bindings {
+                    binding.source_binding = source_by_emitted
+                        .get(&binding.source_binding)
+                        .cloned()
+                        .unwrap_or_else(|| binding.source_binding.clone());
+                }
+                indexed
+            })
+            .collect();
         Self {
             imported_locals: facts.imported_locals,
             provided_locals: facts.provided_locals,
             binding_uses,
+            static_requests,
+            leading_static_import_requests: facts.leading_static_import_requests,
         }
     }
 
@@ -92,6 +235,14 @@ impl NaturalizedBodyFacts {
 
     pub(super) fn imports(&self, emitted_id: &Id) -> bool {
         self.imported_locals.contains(emitted_id)
+    }
+
+    pub(super) fn static_requests(&self) -> &[IndexedStaticModuleRequest] {
+        &self.static_requests
+    }
+
+    pub(super) fn leading_static_import_requests(&self) -> usize {
+        self.leading_static_import_requests
     }
 }
 
@@ -197,8 +348,30 @@ impl RefCollector {
 pub(super) fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
     let mut facts = ModuleBodyFacts::default();
     let mut ref_collector = RefCollector::default();
-    for item in body {
+    let mut leading_import_prefix = true;
+    for (item_index, item) in body.iter().enumerate() {
         item.visit_with(&mut ref_collector);
+        let request = match item {
+            ModuleItem::ModuleDecl(decl) => static_module_request_for_decl(decl),
+            ModuleItem::Stmt(_) => None,
+        };
+        if leading_import_prefix {
+            if matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))) {
+                if request.is_some() {
+                    facts.leading_static_import_requests += 1;
+                }
+            } else {
+                leading_import_prefix = false;
+            }
+        }
+        if let Some(request) = request {
+            facts.static_requests.push(IndexedStaticModuleRequest {
+                item_index,
+                request,
+                targets: source_request_targets(item),
+                bindings: source_import_bindings(item),
+            });
+        }
         facts
             .provided_locals
             .extend(top_level_declaration_ids(item));

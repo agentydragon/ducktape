@@ -7,6 +7,23 @@
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
+/// Why a source call site was proved not to invoke its callee.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkippedCallReason {
+    KnownThrow,
+    KnownReturn,
+    HandlerNotEntered,
+    /// This call belongs to the conditional arm excluded by an IfTest result
+    /// on this feasible execution leaf. Alternative leaves retain their own
+    /// call/skip evidence and are joined before any body coverage is consumed.
+    IfConsequentNotSelected,
+    /// This call belongs to the alternate arm excluded by an IfTest result on
+    /// this feasible execution leaf. This is path-relative evidence, not a
+    /// claim that the predicate is globally truthy.
+    IfAlternateNotSelected,
+}
+
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub source_path: String,
@@ -57,9 +74,51 @@ pub enum OrderedFieldReadRefusal {
     MissingHeapValue,
 }
 
-/// The first ordered call admission condition that rejected the evaluated
-/// target and receiver. This describes the refusal only; it does not change
-/// target classification or the conservative fallback.
+/// The first source or support check that kept an ordinary object spread on
+/// the conservative path. This is diagnostic evidence only; it does not alter
+/// transfer admission.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectSpreadRefusal {
+    ExactCopySyntaxUnavailable,
+    ReceiverNotSingleton,
+    ReceiverNotOrdinaryObject,
+    ReceiverUnsettled,
+    MissingShape,
+    MissingOwnProperties,
+    ShapePropertyCountMismatch,
+    OwnPropertyCountMismatch,
+    NonDataDescriptor,
+    AccessorProperty,
+    MissingShapeProperty,
+    MissingOwnProperty,
+    EmptyOwnPropertyValue,
+    MissingHeapValue,
+    UnavailableOwnPropertyValue,
+    EnumerationNotSettled,
+    SupportReceiptUnavailable,
+}
+
+/// The failed element check for one dense-array slot in an iteration.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArrayIterationElementSettlementCheck {
+    EmptyValues,
+    UnavailableValue,
+    UnsupportedValue,
+    NonPlainObject,
+    ObjectTainted,
+    ObjectUnsettled,
+    ObjectUnknownArrayContents,
+    ObjectPrimitiveArrayMarker,
+    TaintedFunction,
+    BorrowedReceiverInstance,
+}
+
+/// The first diagnosed condition on an ordered call. Array-iteration variants
+/// distinguish pre-argument GetValue selection from post-argument body
+/// admission. This describes evidence only; it does not change target
+/// classification or the conservative fallback.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderedCallAdmissionRefusal {
@@ -67,6 +126,110 @@ pub enum OrderedCallAdmissionRefusal {
     MultipleTargets,
     NonLocalTarget,
     UnsupportedReceiver,
+    UnsupportedNativeOperation,
+    /// An independently closed-normal body contradicts a usable provider
+    /// specialization with an exact throw. Neither receipt may win by order.
+    InconsistentProviderCompletion,
+    /// First failed check after an array iteration's callee and arguments
+    /// have already been evaluated. These are evidence only; they preserve
+    /// the existing conservative fallback and do not describe GetValue or
+    /// callback-prefix failures.
+    ArrayIterationCallKindMismatch,
+    ArrayIterationCallSiteMismatch,
+    ArrayIterationResultShapeMismatch,
+    ArrayIterationCallbackArityMismatch,
+    ArrayIterationCallbackTargetUnavailable,
+    ArrayIterationGeneratorCallback,
+    ArrayIterationOpaqueCallback,
+    ArrayIterationAsyncCallback,
+    ArrayIterationCallbackParameterUnsupported,
+    ArrayIterationCallbackPlanUnavailable,
+    ArrayIterationCallerUnavailable,
+    ArrayIterationAlternativeJoinUnavailable,
+    ArrayIterationBodyIntrinsicsUnavailable,
+    ArrayIterationReceiverDescriptorUnavailable,
+    ArrayIterationDenseSnapshotUnavailable,
+    ArrayIterationLengthUnrepresentable,
+    ArrayIterationLengthMismatch,
+    ArrayIterationExceedsInvocationLimit,
+    /// Legacy refusal shape retained for previously saved execution reports.
+    ArrayIterationUnsettledElements,
+    /// The first dense slot whose already-captured abstract values fail the
+    /// existing post-argument element-settlement predicate.
+    ArrayIterationUnsettledElementsDetail {
+        slot_index: usize,
+        check: ArrayIterationElementSettlementCheck,
+    },
+    /// First failed check while a recognized array-iteration method's
+    /// GetValue is being selected, before argument evaluation. These are
+    /// evidence only and do not replace ordinary member-read or call
+    /// fallbacks.
+    ArrayIterationReceiverNotSingleton,
+    ArrayIterationReceiverNotObject,
+    ArrayIterationRowShapeUnsupported,
+    ArrayIterationMethodSlotUnavailable,
+    ArrayIterationOriginalMethodSelectionUnavailable,
+    ArrayIterationResultAllocationUnavailable,
+}
+
+impl OrderedCallAdmissionRefusal {
+    fn array_iteration_phase(&self) -> Option<&'static str> {
+        match self {
+            Self::ArrayIterationReceiverNotSingleton
+            | Self::ArrayIterationReceiverNotObject
+            | Self::ArrayIterationRowShapeUnsupported
+            | Self::ArrayIterationMethodSlotUnavailable
+            | Self::ArrayIterationOriginalMethodSelectionUnavailable
+            | Self::ArrayIterationResultAllocationUnavailable => {
+                Some("pre-argument GetValue selection")
+            }
+            Self::ArrayIterationResultShapeMismatch => Some("post-argument iteration transfer"),
+            Self::ArrayIterationCallKindMismatch
+            | Self::ArrayIterationCallSiteMismatch
+            | Self::ArrayIterationCallbackArityMismatch
+            | Self::ArrayIterationCallbackTargetUnavailable
+            | Self::ArrayIterationGeneratorCallback
+            | Self::ArrayIterationOpaqueCallback
+            | Self::ArrayIterationAsyncCallback
+            | Self::ArrayIterationCallbackParameterUnsupported
+            | Self::ArrayIterationCallbackPlanUnavailable
+            | Self::ArrayIterationCallerUnavailable
+            | Self::ArrayIterationAlternativeJoinUnavailable
+            | Self::ArrayIterationBodyIntrinsicsUnavailable
+            | Self::ArrayIterationReceiverDescriptorUnavailable
+            | Self::ArrayIterationDenseSnapshotUnavailable
+            | Self::ArrayIterationLengthUnrepresentable
+            | Self::ArrayIterationLengthMismatch
+            | Self::ArrayIterationExceedsInvocationLimit
+            | Self::ArrayIterationUnsettledElements
+            | Self::ArrayIterationUnsettledElementsDetail { .. } => {
+                Some("post-argument body admission")
+            }
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ArrayIterationElementSettlementCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let check = serde_json::to_value(self)
+            .expect("array iteration settlement checks serialize as strings");
+        f.write_str(check.as_str().expect("unit variant"))
+    }
+}
+
+impl std::fmt::Display for OrderedCallAdmissionRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::ArrayIterationUnsettledElementsDetail { slot_index, check } = self {
+            return write!(
+                f,
+                "array_iteration_unsettled_elements (slot {slot_index}, check {check})"
+            );
+        }
+        let refusal = serde_json::to_value(self)
+            .expect("ordered call admission refusals serialize as strings");
+        f.write_str(refusal.as_str().expect("unit variant"))
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -106,6 +269,8 @@ pub enum ExecutionPrecisionLossReason {
         ordered_field_read_refusal: Option<OrderedFieldReadRefusal>,
         #[serde(skip_serializing_if = "Option::is_none")]
         ordered_call_admission_refusal: Option<OrderedCallAdmissionRefusal>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        object_spread_refusal: Option<ObjectSpreadRefusal>,
     },
     /// `new` of a local class whose construction proof failed. The rejection
     /// names the first failed check, not every check that would fail.
@@ -209,6 +374,7 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                 operation,
                 ordered_field_read_refusal,
                 ordered_call_admission_refusal,
+                object_spread_refusal,
             } => {
                 let operation = serde_json::to_value(operation)
                     .expect("execution operations serialize as strings");
@@ -227,11 +393,20 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                     )?;
                 }
                 if let Some(refusal) = ordered_call_admission_refusal {
+                    write!(f, "; ordered_call_admission_refusal: {refusal}")?;
+                    if let Some(phase) = ordered_call_admission_refusal
+                        .as_ref()
+                        .and_then(OrderedCallAdmissionRefusal::array_iteration_phase)
+                    {
+                        write!(f, " ({phase})")?;
+                    }
+                }
+                if let Some(refusal) = object_spread_refusal {
                     let refusal = serde_json::to_value(refusal)
-                        .expect("ordered call admission refusals serialize as strings");
+                        .expect("object spread refusals serialize as strings");
                     write!(
                         f,
-                        "; ordered_call_admission_refusal: {}",
+                        "; object_spread_refusal: {}",
                         refusal.as_str().expect("unit variant")
                     )?;
                 }
@@ -277,6 +452,10 @@ pub enum AssumedEffectReason {
     /// The synchronous read/rebind closure of a callback, class or foreign
     /// record exposed to opaque code, promoted without executing it.
     EscapedCallbackClosure,
+    /// A nested may-effect merged from a transfer that did not preserve
+    /// ordered source-operation authority. Its effects remain available for
+    /// conservative ordering, but do not contradict author premises.
+    ConservativeSummary,
     /// The lazy body of an accessor owner whose setter a property write or
     /// `Object.assign` may trigger on a receiver of unknown shape.
     PossibleSetter,
@@ -307,6 +486,9 @@ impl std::fmt::Display for AssumedEffectReason {
             }
             Self::EscapedCallbackClosure => {
                 f.write_str("an escaped callback's closure (`escaped_callback_closure`)")
+            }
+            Self::ConservativeSummary => {
+                f.write_str("a conservative transfer summary (`conservative_summary`)")
             }
             Self::PossibleSetter => f.write_str("a possible setter (`possible_setter`)"),
             Self::PossibleGetter { lookup, promotion } => {
@@ -393,4 +575,114 @@ pub enum ExecutionOperation {
     GeneratorParameters,
     CallableInputs,
     ArrayIteration,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ArrayIterationElementSettlementCheck, ExecutionOperation, ExecutionPrecisionLossReason,
+        ObjectSpreadRefusal, OrderedCallAdmissionRefusal,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn array_iteration_unsettled_refusal_keeps_legacy_and_detailed_wire_shapes() {
+        let legacy = OrderedCallAdmissionRefusal::ArrayIterationUnsettledElements;
+        let legacy_json = json!("array_iteration_unsettled_elements");
+        assert_eq!(serde_json::to_value(legacy).unwrap(), legacy_json);
+        assert_eq!(
+            serde_json::from_value::<OrderedCallAdmissionRefusal>(legacy_json).unwrap(),
+            legacy
+        );
+        assert_eq!(
+            legacy.array_iteration_phase(),
+            Some("post-argument body admission")
+        );
+
+        let detailed = OrderedCallAdmissionRefusal::ArrayIterationUnsettledElementsDetail {
+            slot_index: 1,
+            check: ArrayIterationElementSettlementCheck::ObjectUnsettled,
+        };
+        let detailed_json = json!({
+            "array_iteration_unsettled_elements_detail": {
+                "slot_index": 1,
+                "check": "object_unsettled"
+            }
+        });
+        assert_eq!(serde_json::to_value(detailed).unwrap(), detailed_json);
+        assert_eq!(
+            serde_json::from_value::<OrderedCallAdmissionRefusal>(detailed_json).unwrap(),
+            detailed
+        );
+        assert_eq!(
+            detailed.to_string(),
+            "array_iteration_unsettled_elements (slot 1, check object_unsettled)"
+        );
+        assert_eq!(
+            detailed.array_iteration_phase(),
+            Some("post-argument body admission")
+        );
+
+        let reason = ExecutionPrecisionLossReason::UnsupportedOperation {
+            operation: ExecutionOperation::ArrayIteration,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: Some(detailed),
+            object_spread_refusal: None,
+        };
+        assert!(reason.to_string().contains(
+            "ordered_call_admission_refusal: array_iteration_unsettled_elements (slot 1, check object_unsettled) (post-argument body admission)"
+        ));
+    }
+
+    #[test]
+    fn object_spread_refusal_keeps_legacy_and_detailed_wire_shapes() {
+        let legacy = ExecutionPrecisionLossReason::UnsupportedOperation {
+            operation: ExecutionOperation::ObjectSpread,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: None,
+            object_spread_refusal: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&legacy).unwrap(),
+            json!({
+                "code": "unsupported_operation",
+                "operation": "object_spread"
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<ExecutionPrecisionLossReason>(json!({
+                "code": "unsupported_operation",
+                "operation": "object_spread"
+            }))
+            .unwrap(),
+            legacy
+        );
+
+        let detailed = ExecutionPrecisionLossReason::UnsupportedOperation {
+            operation: ExecutionOperation::ObjectSpread,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: None,
+            object_spread_refusal: Some(ObjectSpreadRefusal::SupportReceiptUnavailable),
+        };
+        assert_eq!(
+            serde_json::to_value(&detailed).unwrap(),
+            json!({
+                "code": "unsupported_operation",
+                "operation": "object_spread",
+                "object_spread_refusal": "support_receipt_unavailable"
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<ExecutionPrecisionLossReason>(
+                serde_json::to_value(&detailed).unwrap()
+            )
+            .unwrap(),
+            detailed
+        );
+        assert!(
+            detailed
+                .to_string()
+                .contains("object_spread_refusal: support_receipt_unavailable")
+        );
+    }
 }

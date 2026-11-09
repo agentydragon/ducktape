@@ -2,6 +2,7 @@
 //! barrier while unrelated heap writes and retained callback use remain live.
 
 use analysis::analysis_provenance::InferenceRule;
+use analysis::reports::schema::CallbackFactoryUseKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
@@ -63,6 +64,8 @@ const PROVIDER_INLINE_FACTORY: &str = "export function wrap(callback) {\n\
 }\n";
 const EXTRA_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
 const EAGER_CHUNKS: &[(&str, &str)] = &[("static/peer", EAGER_PROVIDER)];
+const EXTRA_CHUNKS_WITHOUT_RESULT_SUMMARY: &[(&str, &str)] =
+    &[("static/peer", PROVIDER_WITHOUT_RESULT_SUMMARY)];
 const EFFECTIVE_BUNDLE: &str = "const bundleWrap = callback => {\n\
   const record = { callback };\n\
   return { invoke() { return record.callback(); } };\n\
@@ -94,6 +97,16 @@ fn input(source: &str, binding: &str) -> InitializerCallEffectInputContract {
     }
 }
 
+fn input_without_result_summary(binding: &str) -> InitializerCallEffectInputContract {
+    let mut contract = input(SOURCE, binding);
+    contract.audited_provider_sha256 = digest(PROVIDER_WITHOUT_RESULT_SUMMARY);
+    contract.note = Some(
+        "Audited conditional wrapper has no provider writes; its result lacks the straight-line source summary."
+            .into(),
+    );
+    contract
+}
+
 fn modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
@@ -121,6 +134,24 @@ fn opts<'a>(purity: &'a [(&'a str, ChunkExportPurity)], asserted_calls: usize) -
     } else {
         opts
     }
+}
+
+fn without_result_summary_opts<'a>(
+    purity: &'a [(&'a str, ChunkExportPurity)],
+    asserted_calls: usize,
+) -> FixtureOpts<'a> {
+    let opts = FixtureOpts::new(SOURCE, modules())
+        .with_extra_chunks(EXTRA_CHUNKS_WITHOUT_RESULT_SUMMARY)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_chunk_export_purity(purity);
+    if asserted_calls == 0 {
+        return opts;
+    }
+    let mut inputs = vec![input_without_result_summary("first")];
+    if asserted_calls == 2 {
+        inputs.push(input_without_result_summary("second"));
+    }
+    opts.with_initializer_call_effect_inputs("static/app", inputs)
 }
 
 #[test]
@@ -275,11 +306,66 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         .with_pure_exports(&["wrap"])
         .with_callback_factories(&["wrap"])
         .build()];
-    let no_input = run_rejection_fixture(opts(&purity, 0));
+    let no_input = run_rejection_fixture(without_result_summary_opts(&purity, 0));
     assert!(
         !no_input.cycles().is_empty(),
         "callback timing and provider purity do not cover the initializer operation"
     );
+
+    // The straight-line provider has an independent source-derived return
+    // summary. It remains a valid route when no operation input is supplied.
+    let straightline_no_input = run_fixture(opts(&purity, 0));
+    assert_preserved_entry_output(&straightline_no_input, "initial later 2\n");
+    let straightline_report = straightline_no_input.effect_translation_validation();
+    assert!(
+        straightline_report["swapped_pairs"]
+            .as_u64()
+            .unwrap_or_default()
+            > 0,
+        "the independently summarized provider must permit a real initializer inversion: {straightline_report:#}"
+    );
+    assert_eq!(
+        straightline_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::Value::Null,
+        "the straight-line source-summary route must not consume operation inputs"
+    );
+    let straightline_graph = straightline_no_input.dependency_graph();
+    let imported_factory = straightline_graph
+        .imported_callable_summaries
+        .iter()
+        .find(|summary| summary.imported_local == "wrap")
+        .expect("the audited wrap import summary");
+    for binding in ["first", "second"] {
+        let owner_id = source_unit_for_binding(&straightline_graph, binding);
+        let owner = straightline_graph
+            .nodes
+            .iter()
+            .find(|node| node.id == owner_id)
+            .expect("source-inferred wrapper owner");
+        let execution = owner
+            .synchronous_execution
+            .as_ref()
+            .expect("wrapper execution evidence");
+        assert!(
+            execution
+                .inference_uses
+                .iter()
+                .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary),
+            "{binding} needs independent source-derived result evidence"
+        );
+        for kind in [
+            CallbackFactoryUseKind::CallTiming,
+            CallbackFactoryUseKind::ReturnShape,
+            CallbackFactoryUseKind::ClosedResultRoot,
+        ] {
+            assert!(
+                execution.callback_factory_uses.iter().any(|proof_use| {
+                    proof_use.summary_ref == imported_factory.id && proof_use.kind == kind
+                }),
+                "{binding} must preserve {kind:?} callback-factory evidence"
+            );
+        }
+    }
 
     let source_inferred = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
@@ -344,12 +430,15 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
     ];
     let without_initializer_purity = run_rejection_fixture(
         FixtureOpts::new(SOURCE, no_initializer_purity)
-            .with_extra_chunks(EXTRA_CHUNKS)
+            .with_extra_chunks(EXTRA_CHUNKS_WITHOUT_RESULT_SUMMARY)
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
             .with_initializer_call_effect_inputs(
                 "static/app",
-                vec![input(SOURCE, "first"), input(SOURCE, "second")],
+                vec![
+                    input_without_result_summary("first"),
+                    input_without_result_summary("second"),
+                ],
             ),
     );
     assert!(
@@ -363,7 +452,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "missing initializer purity must not consume the operation inputs"
     );
 
-    let first_only = run_rejection_fixture(opts(&purity, 1));
+    let first_only = run_rejection_fixture(without_result_summary_opts(&purity, 1));
     assert_eq!(
         first_only.cycles().len(),
         1,
@@ -376,7 +465,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "the first exact call must earn ordinary root coverage: {first_report:#}"
     );
 
-    let both = run_fixture(opts(&purity, 2));
+    let both = run_fixture(without_result_summary_opts(&purity, 2));
     // `invoke` runs after the neighbor mutation; the callback and its later
     // heap read must remain reachable through the returned opaque wrapper.
     assert_preserved_entry_output(&both, "initial later 2\n");

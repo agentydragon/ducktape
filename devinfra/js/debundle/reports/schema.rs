@@ -14,7 +14,9 @@ use crate::atomic_groups::{
 };
 use crate::execution_evidence::SourceLocation;
 use crate::execution_evidence::{ConstructionRejection, ExecutionPrecisionLoss};
-use crate::graph::{DependencyEdge, DependencyEdgeId, EdgeRole, EffectCellReport};
+use crate::graph::{
+    DependencyEdge, DependencyEdgeId, EdgeRole, EffectCellReport, HeapAddressReport,
+};
 use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{SourceUnitClass, StatementKind};
@@ -583,13 +585,20 @@ pub struct HeapContentSummaryReport {
     pub writes: HeapCellSetReport,
 }
 
-/// Heap accesses recorded outside an active `AssumedEffectReason` path at the
-/// recording or merge point. Other premises, including program and native-input
-/// premises, may still have been consumed.
+/// Heap accesses separated by proof authority. Every group remains a may
+/// effect for conservative ordering; only executed operations may contradict
+/// an explicit pair premise.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NonAssumedHeapAccessReport {
+pub struct HeapAccessSetReport {
     pub reads: HeapCellSetReport,
     pub writes: HeapCellSetReport,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeapAccessProvenanceReport {
+    pub executed_operations: HeapAccessSetReport,
+    pub assumed_operations: HeapAccessSetReport,
+    pub conservative_summaries: HeapAccessSetReport,
 }
 
 /// Existing own and composed heap summaries projected for bounded diagnosis.
@@ -597,7 +606,7 @@ pub struct NonAssumedHeapAccessReport {
 pub struct HeapFrontierEvidence {
     pub own_at_init: HeapContentSummaryReport,
     pub composed_synchronous_calls: HeapContentSummaryReport,
-    pub non_assumed_heap_accesses: NonAssumedHeapAccessReport,
+    pub heap_access_provenance: HeapAccessProvenanceReport,
 }
 
 impl fmt::Display for HeapCellSetReport {
@@ -626,7 +635,7 @@ impl fmt::Display for HeapFrontierEvidence {
             f,
             "own-at-init opaque={} allocations={} reads={} writes={}; \
              composed synchronous calls opaque={} allocations={} reads={} writes={}; \
-             non-assumed reads={} writes={}",
+             executed reads={} writes={}; assumed reads={} writes={}; summary reads={} writes={}",
             self.own_at_init.opaque,
             self.own_at_init.allocations,
             self.own_at_init.reads,
@@ -635,8 +644,12 @@ impl fmt::Display for HeapFrontierEvidence {
             self.composed_synchronous_calls.allocations,
             self.composed_synchronous_calls.reads,
             self.composed_synchronous_calls.writes,
-            self.non_assumed_heap_accesses.reads,
-            self.non_assumed_heap_accesses.writes,
+            self.heap_access_provenance.executed_operations.reads,
+            self.heap_access_provenance.executed_operations.writes,
+            self.heap_access_provenance.assumed_operations.reads,
+            self.heap_access_provenance.assumed_operations.writes,
+            self.heap_access_provenance.conservative_summaries.reads,
+            self.heap_access_provenance.conservative_summaries.writes,
         )
     }
 }
@@ -683,11 +696,101 @@ pub struct SynchronousExecutionReport {
     pub callback_factory_uses: Vec<CallbackFactoryUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
+    /// Own-data operation prerequisites retained by composed synchronous
+    /// bodies. Provider-local birth entries are diagnostic only and carry no
+    /// caller heap address.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_support_receipts: Vec<OperationSupportReceiptReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
     /// Bounded attribution of the existing own and composed heap summaries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heap_frontier: Option<HeapFrontierEvidence>,
+}
+
+/// Report-only form of a source-family own-data prerequisite. Heap addresses
+/// retain their qualified scope for diagnostics, while only the checked saved
+/// codec can transport these receipts back into analysis authority.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OperationSupportReceiptReport {
+    pub operation: crate::facts::OperationSupportOperation,
+    pub support: OperationSupportLocationReport,
+    pub dependencies: Box<crate::analysis_inputs::ProofDependencies>,
+}
+
+/// Public report projection of a provider parameter's heap read. The
+/// analysis input remains crate-private; this type preserves its serialized
+/// `kind`/field shape without exposing an internal proof carrier.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ParameterHeapReadReport {
+    ObjectShape { argument: usize },
+    OwnProperty { argument: usize, property: String },
+}
+
+impl ParameterHeapReadReport {
+    pub(crate) fn from_analysis_input(read: &crate::analysis_inputs::ParameterHeapRead) -> Self {
+        match read {
+            crate::analysis_inputs::ParameterHeapRead::ObjectShape { argument } => {
+                Self::ObjectShape {
+                    argument: *argument,
+                }
+            }
+            crate::analysis_inputs::ParameterHeapRead::OwnProperty { argument, property } => {
+                Self::OwnProperty {
+                    argument: *argument,
+                    property: property.clone(),
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum OperationSupportLocationReport {
+    PooledObjectShape { origin: HeapAddressReport },
+    ProviderWorldObjectShape { origin: HeapAddressReport },
+    ProviderLocalBirthCandidate { origin: HeapAddressReport },
+    ProviderLocalBirth,
+    ParameterHeapRead { read: ParameterHeapReadReport },
+}
+
+impl From<&crate::facts::OperationSupportReceipt> for OperationSupportReceiptReport {
+    fn from(receipt: &crate::facts::OperationSupportReceipt) -> Self {
+        use crate::facts::sync_effects::OperationSupportLocation;
+
+        let support = match &receipt.support {
+            OperationSupportLocation::PooledObjectShape { origin } => {
+                OperationSupportLocationReport::PooledObjectShape {
+                    origin: (*origin).into(),
+                }
+            }
+            OperationSupportLocation::ProviderWorldObjectShape { origin } => {
+                OperationSupportLocationReport::ProviderWorldObjectShape {
+                    origin: (*origin).into(),
+                }
+            }
+            OperationSupportLocation::ProviderLocalBirthCandidate { origin } => {
+                OperationSupportLocationReport::ProviderLocalBirthCandidate {
+                    origin: (*origin).into(),
+                }
+            }
+            OperationSupportLocation::ProviderLocalBirth => {
+                OperationSupportLocationReport::ProviderLocalBirth
+            }
+            OperationSupportLocation::ParameterHeapRead { read } => {
+                OperationSupportLocationReport::ParameterHeapRead {
+                    read: ParameterHeapReadReport::from_analysis_input(read),
+                }
+            }
+        };
+        Self {
+            operation: receipt.operation,
+            support,
+            dependencies: receipt.dependencies.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -702,12 +805,35 @@ pub enum BindingEffectAuthorityReport {
     LegacyExecution { complete: bool },
     /// The exact source-only initializer assertion was applied.
     AuthorSourceOnly,
+    /// Complete operation effects, including a retained depth-limited suffix.
+    /// Execution and returned-value precision remain incomplete.
+    RetainedEffectClosure {
+        receipt: Box<LexicalBindingEffectReceipt>,
+        dependencies: Box<crate::analysis_inputs::ProofDependencies>,
+        precision_losses: Vec<ExecutionPrecisionLoss>,
+    },
     /// Ordered root execution started, but did not seal typed lexical proof.
     OrderedRootInitializerUncovered {
         owner: SourceUnitOrdinal,
         binding: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         initializer_span: Option<swc_common::Span>,
+    },
+    OrderedRootObjectBindingUncovered {
+        owner: SourceUnitOrdinal,
+        pattern_span: swc_common::Span,
+        declarator_span: swc_common::Span,
+        initializer_span: swc_common::Span,
+        targets: Vec<ObjectBindingTarget>,
+    },
+    OrderedRootClassDeclarationUncovered {
+        owner: SourceUnitOrdinal,
+        binding: String,
+        declaration_span: swc_common::Span,
+    },
+    OrderedRootExpressionUncovered {
+        owner: SourceUnitOrdinal,
+        expression_span: swc_common::Span,
     },
     /// Typed operation evidence sealed for the exact ordered root owner/body.
     OperationReceipt {
@@ -718,14 +844,47 @@ pub enum BindingEffectAuthorityReport {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LexicalBindingEffectReceipt {
     pub owner: SourceUnitOrdinal,
-    pub binding: String,
-    pub initializer_span: Option<swc_common::Span>,
+    #[serde(flatten)]
+    pub root: LexicalEffectRoot,
     pub read_dependencies: crate::analysis_inputs::ProofDependencies,
     pub rebind_dependencies: crate::analysis_inputs::ProofDependencies,
     /// Flat exact call edges retain each consuming call-site, caller body,
     /// resolved target body, and merged prerequisites, including memo-reused
     /// invocations. The analyzer checks connectivity from the root body.
     pub calls: Vec<LexicalBindingEffectCall>,
+    /// Source call sites proved not to invoke because of a known completion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_calls: Vec<LexicalBindingEffectSkippedCall>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "root_kind", rename_all = "snake_case")]
+pub enum LexicalEffectRoot {
+    BindingInitializer {
+        binding: String,
+        initializer_span: swc_common::Span,
+    },
+    ObjectBindingInitializer {
+        pattern_span: swc_common::Span,
+        declarator_span: swc_common::Span,
+        initializer_span: swc_common::Span,
+        targets: Vec<ObjectBindingTarget>,
+    },
+    ClassDeclaration {
+        binding: String,
+        declaration_span: swc_common::Span,
+    },
+    ExpressionStatement {
+        expression_span: swc_common::Span,
+    },
+}
+
+/// One property read and target initialization in source order.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObjectBindingTarget {
+    pub property: String,
+    pub binding: String,
+    pub span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -735,13 +894,42 @@ pub enum LexicalBindingEffectBody {
         owner: SourceUnitOrdinal,
         initializer_span: swc_common::Span,
     },
+    RootClassDeclaration {
+        owner: SourceUnitOrdinal,
+        declaration_span: swc_common::Span,
+    },
+    RootExpression {
+        owner: SourceUnitOrdinal,
+        expression_span: swc_common::Span,
+    },
     Callable {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    Construction {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
+    ImportedCallable {
+        defining_module: String,
+        export: String,
+        local: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        member: Option<String>,
+        key: u32,
+    },
+    ProviderCallable {
+        defining_module: String,
+        source_sha256: String,
+        source_origin: u32,
+    },
     Native {
         intrinsic: crate::analysis_inputs::NativeIntrinsic,
+        #[serde(skip_serializing_if = "Option::is_none")]
         property: Option<String>,
+    },
+    NativeConstruction {
+        intrinsic: crate::analysis_inputs::NativeIntrinsic,
     },
 }
 
@@ -750,6 +938,16 @@ pub struct LexicalBindingEffectCall {
     pub caller: LexicalBindingEffectBody,
     pub call_span: swc_common::Span,
     pub target: LexicalBindingEffectBody,
+    pub dependencies: crate::analysis_inputs::ProofDependencies,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LexicalBindingEffectSkippedCall {
+    pub caller: LexicalBindingEffectBody,
+    pub call_span: swc_common::Span,
+    pub region_span: swc_common::Span,
+    pub frontier_span: swc_common::Span,
+    pub reason: crate::execution_evidence::SkippedCallReason,
     pub dependencies: crate::analysis_inputs::ProofDependencies,
 }
 
@@ -873,8 +1071,8 @@ pub enum BoundedInvocationFallbackInputPath {
 
 /// One of the exact root groups supplied to the bounded fallback's existing
 /// callback-value union. If a value occurs in several groups, the witness
-/// follows the first matching group in argument, captured-binding, escaped
-/// pool, export-callback order.
+/// follows the first matching group in argument, captured-binding, captured
+/// receiver, escaped pool, export-callback order.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackSeed {
@@ -887,6 +1085,7 @@ pub enum BoundedInvocationFallbackSeed {
     CapturedBinding {
         binding: String,
     },
+    CapturedReceiver,
     EscapedCallbackPool,
     AvailableExportBinding {
         binding: String,
@@ -909,12 +1108,18 @@ pub enum BoundedInvocationFallbackPathEdge {
     AppliedGetter { property: Option<String> },
     AppliedSetter { property: Option<String> },
     ClosureHomeObject,
+    ClosureReceiver,
     ClosureSnapshot { binding: String },
     ClosureCell { binding: String },
     InstanceRetainedValue,
+    NativeInternalRetainedValue,
+    OpaqueNativeInternalReferences,
     DeferredCallbackRetainedValue,
     AuditedResultRetainedValue,
     DescriptorMapRetainedValue,
+    OpaqueRetainedGraphInput,
+    ProviderClosureRetainedValue,
+    PrivateSlot { class: u32, name: String },
     EscapedCallbackPoolExpansion,
     ClassMembersCapability,
 }

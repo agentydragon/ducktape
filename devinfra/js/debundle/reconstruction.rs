@@ -9,14 +9,15 @@
 
 use source_identity::ChunkId;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use artifact::EmissionFiles;
 use artifact::reports::write_json;
-use serde::Serialize;
+use gate::ApplicationRelocationAssessmentReport;
+use gate::{ChunkGateRejection, UnmatchedSpecClaim};
+use lowering::FinalizedCandidateEmissionDraft;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     VendorResolutionPlan, VendorSwapsReport, validate_partial_swap_consumers,
@@ -34,6 +35,111 @@ pub struct VendorManifestOutput {
     report: VendorSwapsReport,
 }
 
+/// Exact final files whose canonical source and candidate obligations passed.
+/// The only constructor is `assess_final_candidate_emission`, which consumes
+/// the private finalized lowering product and runs the joint checker.
+pub struct AcceptedCandidateEmission {
+    files: EmissionFiles,
+    vendor_plan: Arc<VendorResolutionPlan>,
+    assessment: ApplicationRelocationAssessmentReport,
+}
+
+impl AcceptedCandidateEmission {
+    pub fn files(&self) -> &EmissionFiles {
+        &self.files
+    }
+
+    pub fn assessment(&self) -> &ApplicationRelocationAssessmentReport {
+        &self.assessment
+    }
+}
+
+/// Exact final files that failed or could not complete the joint check. This
+/// capability is inspection-only and is consumed by `RejectedPlan`.
+pub struct RefusedCandidateEmission {
+    files: EmissionFiles,
+    assessment: ApplicationRelocationAssessmentReport,
+}
+
+impl RefusedCandidateEmission {
+    pub fn files(&self) -> &EmissionFiles {
+        &self.files
+    }
+
+    pub fn assessment(&self) -> &ApplicationRelocationAssessmentReport {
+        &self.assessment
+    }
+}
+
+pub enum CandidateEmissionOutcome {
+    Accepted(AcceptedCandidateEmission),
+    Refused(RefusedCandidateEmission),
+}
+
+impl CandidateEmissionOutcome {
+    pub fn files(&self) -> &EmissionFiles {
+        match self {
+            Self::Accepted(candidate) => candidate.files(),
+            Self::Refused(candidate) => candidate.files(),
+        }
+    }
+
+    pub fn assessment(&self) -> &ApplicationRelocationAssessmentReport {
+        match self {
+            Self::Accepted(candidate) => candidate.assessment(),
+            Self::Refused(candidate) => candidate.assessment(),
+        }
+    }
+
+    pub fn into_accepted(self) -> Option<AcceptedCandidateEmission> {
+        match self {
+            Self::Accepted(candidate) => Some(candidate),
+            Self::Refused(_) => None,
+        }
+    }
+
+    pub fn into_refused(self) -> Option<RefusedCandidateEmission> {
+        match self {
+            Self::Accepted(_) => None,
+            Self::Refused(candidate) => Some(candidate),
+        }
+    }
+}
+
+/// The canonical reconstruction boundary consumes a finalized, file-owning
+/// lowerer product. Public reports and raw `EmissionFiles` cannot mint either
+/// candidate capability.
+pub fn assess_final_candidate_emission(
+    draft: FinalizedCandidateEmissionDraft,
+) -> CandidateEmissionOutcome {
+    let (files, assessment, source_inputs, source_correspondence, global_use_elisions, vendor_plan) =
+        draft.into_final_check_parts();
+    let assessment = gate::assess_final_candidate_emission(
+        assessment,
+        &source_inputs,
+        &source_correspondence,
+        files.files(),
+        &global_use_elisions,
+    );
+    let globally_accepted = assessment.status
+        == gate::CandidateRelocationStatus::AcceptedWithinCheckedScope
+        && assessment.global_resolution.as_ref().is_some_and(|global| {
+            global.status == gate::GlobalResolutionStatus::Preserved
+                && global.source_correspondence_status
+                    == Some(gate::GlobalResolutionStatus::Preserved)
+        })
+        && assessment.final_output_is_sealed();
+    if globally_accepted {
+        CandidateEmissionOutcome::Accepted(AcceptedCandidateEmission {
+            files,
+            vendor_plan,
+            assessment,
+        })
+    } else {
+        CandidateEmissionOutcome::Refused(RefusedCandidateEmission { files, assessment })
+    }
+}
+
 impl VendorManifestOutput {
     /// No manifest is emitted without a destination or any replacements.
     pub fn prepare(path: Option<&Path>, report: VendorSwapsReport) -> Option<Self> {
@@ -47,73 +153,10 @@ impl VendorManifestOutput {
     }
 }
 
-/// A `define_logical_module` member whose `binding.name` did not
-/// resolve to a top-level declaration in the chunk. Collected across chunks
-/// and rejected at final validation before accepted output is written.
-#[derive(Debug, Clone, Serialize)]
-pub struct UnmatchedSpecClaim {
-    pub chunk_id: String,
-    /// Claiming module, by canonical [`spec::ModulePath`].
-    pub module_path: spec::ModulePath,
-    pub binding_name: String,
-    pub export_name: String,
-}
-
-/// Which realizability-gate check rejected a chunk's assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GateVerdict {
-    /// Members of one atomic group were claimed by different modules.
-    AtomicGroupConflicts { count: usize },
-    /// Module-quotient SCCs with at-init / side-effect edges between members.
-    UnrealizableCycles { count: usize },
-}
-
-impl fmt::Display for GateVerdict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AtomicGroupConflicts { count } => {
-                write!(f, "{count} atomic-group conflict(s)")
-            }
-            Self::UnrealizableCycles { count } => {
-                write!(f, "{count} unrealizable module SCC(s)")
-            }
-        }
-    }
-}
-
-/// A chunk the realizability gate rejected but lowering continued for, under
-/// `debundle run --emit-on-rejection`. Its files are readable, not runnable.
-#[derive(Debug, Clone)]
-pub struct ChunkGateRejection {
-    pub chunk_id: String,
-    pub verdict: GateVerdict,
-    /// `cycles.json` / `atomic_group_conflicts.json`, when the run has a
-    /// report directory.
-    pub evidence_report: Option<PathBuf>,
-    pub dependency_graph_report: Option<PathBuf>,
-    /// The rendered rejection the run fails with.
-    pub diagnostic: String,
-}
-
-impl ChunkGateRejection {
-    pub fn summary_line(&self) -> String {
-        let evidence = match &self.evidence_report {
-            Some(path) => format!("evidence: {}", path.display()),
-            None => "no report directory configured; see the run's stderr".to_string(),
-        };
-        format!(
-            "chunk {chunk}: {verdict}; {evidence}",
-            chunk = self.chunk_id,
-            verdict = self.verdict,
-        )
-    }
-}
-
 /// Ready-to-validate output syntax and replacement decisions for one program.
 /// Diagnostic reports are separate from the accepted output tree.
 pub struct ReconstructionPlan {
-    files: EmissionFiles,
-    vendor: Arc<VendorResolutionPlan>,
+    candidate: AcceptedCandidateEmission,
     vendor_manifest: Option<VendorManifestOutput>,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
     browser_harness: Option<BrowserHarnessPlan>,
@@ -121,22 +164,23 @@ pub struct ReconstructionPlan {
 
 impl ReconstructionPlan {
     pub fn new(
-        files: EmissionFiles,
-        vendor: Arc<VendorResolutionPlan>,
+        candidate: AcceptedCandidateEmission,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
+        let vendor = &candidate.vendor_plan;
         let browser_harness = browser_options
             .map(|options| {
                 BrowserHarnessPlan::prepare(
-                    files.files(),
+                    candidate.files().files(),
                     &vendor.full_swap_chunk_ids(),
                     &vendor
                         .full_swap_resolutions()
                         .values()
                         .filter_map(|resolution| {
-                            files
+                            candidate
+                                .files()
                                 .files()
                                 .chunk_table
                                 .get(&resolution.chunk_id)
@@ -148,8 +192,7 @@ impl ReconstructionPlan {
             })
             .transpose()?;
         Ok(Self {
-            files,
-            vendor,
+            candidate,
             vendor_manifest,
             unresolved_claims,
             browser_harness,
@@ -160,13 +203,12 @@ impl ReconstructionPlan {
     /// Keep both post-reconstruction safeguards: synthesized directives are not
     /// fully covered by the input-space replacement checks.
     pub fn validate(self) -> Result<ValidatedPlan> {
-        validate_partial_swap_consumers(&self.files, &self.vendor)?;
-        let excluded_chunk_ids = self.vendor.full_swap_chunk_ids();
-        validate_emitted_exports(&self.files, &excluded_chunk_ids)?;
+        validate_partial_swap_consumers(self.candidate.files(), &self.candidate.vendor_plan)?;
+        let excluded_chunk_ids = self.candidate.vendor_plan.full_swap_chunk_ids();
+        validate_emitted_exports(self.candidate.files(), &excluded_chunk_ids)?;
         reject_unresolved_claims(&self.unresolved_claims)?;
         Ok(ValidatedPlan {
-            files: self.files,
-            vendor: self.vendor,
+            candidate: self.candidate,
             vendor_manifest: self.vendor_manifest,
             excluded_chunk_ids,
             browser_harness: self.browser_harness,
@@ -177,8 +219,7 @@ impl ReconstructionPlan {
 /// An immutable concrete plan accepted by the shared final validator.
 /// Only `ReconstructionPlan::validate` can construct this capability.
 pub struct ValidatedPlan {
-    files: EmissionFiles,
-    vendor: Arc<VendorResolutionPlan>,
+    candidate: AcceptedCandidateEmission,
     vendor_manifest: Option<VendorManifestOutput>,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     browser_harness: Option<BrowserHarnessPlan>,
@@ -186,7 +227,11 @@ pub struct ValidatedPlan {
 
 impl ValidatedPlan {
     pub fn files(&self) -> &EmissionFiles {
-        &self.files
+        self.candidate.files()
+    }
+
+    pub fn candidate_assessment(&self) -> &gate::ApplicationRelocationAssessmentReport {
+        self.candidate.assessment()
     }
 
     pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
@@ -199,7 +244,7 @@ impl ValidatedPlan {
 
     /// Write the replacement assets and manifest belonging to this accepted program.
     pub fn write_vendor_outputs(&self) -> Result<()> {
-        write_planned_vendor_outputs(&self.vendor)?;
+        write_planned_vendor_outputs(&self.candidate.vendor_plan)?;
         if let Some(manifest) = &self.vendor_manifest {
             write_json(&manifest.path, &manifest.report)?;
         }
@@ -212,7 +257,7 @@ impl ValidatedPlan {
 /// validation and exposes no browser harness or vendor replacement outputs:
 /// those describe a runnable bundle. The tree writer marks the output.
 pub struct RejectedPlan {
-    files: EmissionFiles,
+    candidate: RefusedCandidateEmission,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     rejections: Vec<ChunkGateRejection>,
 }
@@ -221,7 +266,7 @@ impl RejectedPlan {
     /// Fails, naming the gate's diagnostic too, on unresolved spec claims: a
     /// reading-only tree carries the gate's rejection and no other failure.
     pub fn new(
-        files: EmissionFiles,
+        candidate: RefusedCandidateEmission,
         vendor: &VendorResolutionPlan,
         rejections: Vec<ChunkGateRejection>,
         unresolved_claims: &[UnmatchedSpecClaim],
@@ -231,7 +276,7 @@ impl RejectedPlan {
             "a rejected plan needs at least one gate rejection"
         );
         let plan = Self {
-            files,
+            candidate,
             excluded_chunk_ids: vendor.full_swap_chunk_ids(),
             rejections,
         };
@@ -240,7 +285,7 @@ impl RejectedPlan {
     }
 
     pub fn files(&self) -> &EmissionFiles {
-        &self.files
+        self.candidate.files()
     }
 
     pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {

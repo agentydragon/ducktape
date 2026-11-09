@@ -1,8 +1,13 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
-use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_inputs::{
+    ConditionalProviderIdentity, ProofDependencies, ProviderGraphInput, ProviderRetainedGraph,
+};
+use crate::facts::LexicalCellId;
 use crate::facts::abstract_domain::builtins::IterationRow;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{
+    ClassDefinitionId, HeapAddress, HeapModuleScope, Kind, Value,
+};
 use crate::facts::value_flow::static_prop as static_string_prop;
 use analysis_model::PrimKinds;
 use imbl::{OrdMap, OrdSet};
@@ -10,7 +15,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Bound::{Excluded, Unbounded};
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
@@ -28,6 +34,12 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
         },
         _ => None,
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct PrivateFieldId {
+    pub(super) class: ClassDefinitionId,
+    pub(super) name: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -65,6 +77,10 @@ impl Values {
 
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
+    }
+
+    pub(super) fn is_subset(&self, other: &Self) -> bool {
+        self.iter().all(|value| other.contains(value))
     }
 }
 
@@ -161,6 +177,38 @@ pub(super) struct Captured<T> {
     pub(super) values: Arc<T>,
 }
 
+/// An imported provider graph retained as opaque data. The graph's slots and
+/// provider closure IDs are not caller heap identities; only these substituted
+/// input values participate in caller reachability.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct InstantiatedProviderGraph {
+    pub(super) provider: ConditionalProviderIdentity,
+    pub(super) graph: Arc<ProviderRetainedGraph>,
+    pub(super) inputs: BTreeMap<ProviderGraphInput, Values>,
+}
+
+impl InstantiatedProviderGraph {
+    pub(super) fn retained_values(&self) -> Values {
+        self.inputs.values().flatten().cloned().collect()
+    }
+}
+
+/// A source-qualified provider closure plus the caller values captured when
+/// the verified provider recipe instantiated it. `source_origin` belongs to
+/// `module`; it must never be interpreted as an origin in the caller index.
+/// Home-object captures are intentionally excluded until a qualified runtime
+/// receiver representation exists.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct InstantiatedProviderClosure {
+    pub(super) module: HeapModuleScope,
+    pub(super) source_origin: u32,
+    pub(super) source_sha256: String,
+    pub(super) captures: LexicalCaptures,
+    /// Additional creation-time roots retained by the checked provider graph.
+    /// These are conservative may-roots, not executable caller source IDs.
+    pub(super) retained: Values,
+}
+
 impl<T> Captured<T> {
     pub(super) fn with_identity(identity: usize, values: Arc<T>) -> Self {
         Self { identity, values }
@@ -172,11 +220,53 @@ impl<T> Captured<T> {
 }
 
 /// Canonical descriptions stay interned while an actual value or semantic
-/// root owns them. The table itself never keeps their payloads alive.
+/// root owns them. The table itself never keeps their payloads alive. Clones
+/// share this run-scoped arena so sibling semantic worlds cannot allocate the
+/// same identity for different captures.
 pub(super) struct CaptureInterner<T> {
+    state: Arc<Mutex<CaptureInternerState<T>>>,
+}
+
+struct CaptureInternerState<T> {
     buckets: BTreeMap<u64, Vec<WeakCapture<T>>>,
-    next_identity: usize,
     sweep_after: Option<u64>,
+}
+
+impl<T> Default for CaptureInternerState<T> {
+    fn default() -> Self {
+        Self {
+            buckets: BTreeMap::new(),
+            sweep_after: None,
+        }
+    }
+}
+
+impl<T> Clone for CaptureInterner<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+        }
+    }
+}
+
+/// One identity allocator is shared by the execution state's capture and
+/// callback interners, and cloned semantic branches keep sharing it. Identity
+/// allocation is run-scoped even when a branch's COW world detaches.
+#[derive(Clone, Default)]
+pub(super) struct CaptureIdentityArena(Arc<AtomicUsize>);
+
+impl CaptureIdentityArena {
+    fn allocate(&self) -> usize {
+        self.0
+            .fetch_update(AtomicOrdering::Relaxed, AtomicOrdering::Relaxed, |next| {
+                next.checked_add(1)
+            })
+            .expect("capture identity exhausted")
+    }
+
+    pub(super) fn shares_arena(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 struct WeakCapture<T> {
@@ -187,18 +277,21 @@ struct WeakCapture<T> {
 impl<T> Default for CaptureInterner<T> {
     fn default() -> Self {
         Self {
-            buckets: BTreeMap::new(),
-            next_identity: 0,
-            sweep_after: None,
+            state: Arc::new(Mutex::new(CaptureInternerState::default())),
         }
     }
 }
 
 impl<T: Eq + Hash> CaptureInterner<T> {
-    pub(super) fn intern(&mut self, description: T) -> Captured<T> {
+    pub(super) fn shares_arena(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+
+    pub(super) fn intern(&self, identities: &CaptureIdentityArena, description: T) -> Captured<T> {
+        let mut state = self.state.lock().expect("capture interner lock poisoned");
         let mut hash = DefaultHasher::new();
         description.hash(&mut hash);
-        let bucket = self.buckets.entry(hash.finish()).or_default();
+        let bucket = state.buckets.entry(hash.finish()).or_default();
         bucket.retain(|entry| entry.values.strong_count() != 0);
         for entry in bucket.iter() {
             if let Some(values) = entry.values.upgrade()
@@ -207,8 +300,7 @@ impl<T: Eq + Hash> CaptureInterner<T> {
                 return Captured::with_identity(entry.identity, values);
             }
         }
-        let identity = self.next_identity;
-        self.next_identity = identity.checked_add(1).expect("capture identity exhausted");
+        let identity = identities.allocate();
         let values = Arc::new(description);
         bucket.push(WeakCapture {
             identity,
@@ -219,23 +311,25 @@ impl<T: Eq + Hash> CaptureInterner<T> {
 
     /// Payloads drop with their last strong owner. Retire a bounded batch of
     /// dead table entries too, without scanning all live captures per owner.
-    pub(super) fn sweep_dead(&mut self) {
+    /// The shared lock makes cleanup and identity allocation safe across forks.
+    pub(super) fn sweep_dead(&self) {
+        let mut state = self.state.lock().expect("capture interner lock poisoned");
         const BATCH: usize = 64;
-        let lower = self.sweep_after.map_or(Unbounded, Excluded);
-        let keys: Vec<_> = self
+        let lower = state.sweep_after.map_or(Unbounded, Excluded);
+        let keys: Vec<_> = state
             .buckets
             .range((lower, Unbounded))
             .map(|(&key, _)| key)
             .take(BATCH)
             .collect();
         for key in &keys {
-            let bucket = self.buckets.get_mut(key).expect("collected bucket");
+            let bucket = state.buckets.get_mut(key).expect("collected bucket");
             bucket.retain(|entry| entry.values.strong_count() != 0);
             if bucket.is_empty() {
-                self.buckets.remove(key);
+                state.buckets.remove(key);
             }
         }
-        self.sweep_after = keys.last().copied();
+        state.sweep_after = keys.last().copied();
     }
 }
 
@@ -245,16 +339,15 @@ impl<T> Hash for Captured<T> {
     }
 }
 
-/// One instantiated lexical cell, not a source binding or structural cache key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct LexicalCellId(pub(super) usize);
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
     pub(super) home_object: Option<u32>,
+    /// Actual lexical `this`, distinct from source containment. This retains
+    /// receiver capabilities but never a constructor frame's descriptor proof.
+    pub(super) receiver: Option<Values>,
 }
 
 impl Hash for LexicalCaptures {
@@ -265,6 +358,7 @@ impl Hash for LexicalCaptures {
             values.hash(state);
         }
         self.home_object.hash(state);
+        self.receiver.hash(state);
         self.cells.len().hash(state);
         for (binding, cell) in &self.cells {
             binding.hash(state);
@@ -275,7 +369,10 @@ impl Hash for LexicalCaptures {
 
 impl LexicalCaptures {
     pub(super) fn is_empty(&self) -> bool {
-        self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
+        self.snapshots.is_empty()
+            && self.cells.is_empty()
+            && self.home_object.is_none()
+            && self.receiver.is_none()
     }
 }
 
@@ -328,6 +425,9 @@ impl ProviderScopeId {
 pub(super) enum ProviderInput {
     Argument(usize),
     Capture(usize),
+    Property { argument: usize, property: usize },
+    Getter { argument: usize, property: usize },
+    Setter { argument: usize, property: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -337,9 +437,13 @@ pub(super) struct SymbolicInputId {
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum InstanceOrigin {
-    Constructed,
+    /// Present data descriptors established by this completed constructor
+    /// activation. The pooled class heap still supplies their possible values.
+    Constructed {
+        own_data: Arc<BTreeSet<String>>,
+    },
     Projected,
 }
 
@@ -351,15 +455,15 @@ pub(super) enum AbstractValue {
     /// Unknown kind/capabilities; only forwarding, storing and returning this
     /// query-local input is covered. It proves no shape or native identity.
     SymbolicInput(SymbolicInputId),
-    Closure(u32, CapturedContext),
+    Closure(HeapAddress, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
-    ClassMembers(u32),
+    ClassMembers(ClassDefinitionId),
     /// A constructed local class instance, or an opaque value read from one,
     /// retains its class methods and constructor argument capabilities. Only
     /// Constructed proves the value itself has the class's instance kind.
     /// Neither origin identifies a unique runtime allocation.
-    Instance(u32, Captured<Values>, InstanceOrigin),
+    Instance(ClassDefinitionId, Captured<Values>, InstanceOrigin),
     CallbackFactory,
     InlineCallbackFactory,
     /// An opaque returned capability retaining live input values. Its capture
@@ -372,14 +476,22 @@ pub(super) enum AbstractValue {
     /// allocation identity. Member projection and invocation remain opaque.
     AuditedRetainedResult(RetainedResultKind, Captured<Values>),
     /// Exact own-descriptor entries captured from one source-proved ordinary
-    /// object at a native call site. The executor may apply the certificate
-    /// through the paired defineProperties call; all other uses keep the
-    /// carrier opaque.
-    OwnDescriptorMap(CallSite),
+    /// object. The qualified address is the semantic carrier identity; the
+    /// capture CallSite remains metadata on the descriptor-map state. The
+    /// executor may apply the certificate through the paired
+    /// defineProperties call; all other uses keep the carrier opaque.
+    OwnDescriptorMap(HeapAddress),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
     ForeignDeferredRecord,
+    /// A checked provider-private graph with caller inputs substituted, but
+    /// without an instantiated caller heap. The graph itself remains opaque.
+    ProviderPrivateGraph(Captured<InstantiatedProviderGraph>),
+    /// A source-qualified provider closure with caller captures substituted.
+    /// It is retained as an opaque foreign callable until the shared kernel
+    /// has a checked activation path for provider closure identity.
+    ProviderClosure(HeapAddress, Captured<InstantiatedProviderClosure>),
     ObjectAssign,
     /// Array constructor/prototype capability obtained from a proven array.
     ArrayIntrinsic,
@@ -488,6 +600,15 @@ impl<T> PropertyDefinition<T> {
         }
     }
     pub(super) fn value(&self) -> &T {
+        match self {
+            Self::Data { value, .. }
+            | Self::Method { value, .. }
+            | Self::Getter { value, .. }
+            | Self::Setter { value, .. }
+            | Self::Opaque { value, .. } => value,
+        }
+    }
+    pub(super) fn value_mut(&mut self) -> &mut T {
         match self {
             Self::Data { value, .. }
             | Self::Method { value, .. }
@@ -618,6 +739,10 @@ pub(super) enum ValueExpr {
     /// imply ordinary own properties, prototype methods, or protocol behavior.
     Alloc(Kind, u32),
     ObjectLiteral(u32, Arc<[(Option<String>, Self)]>),
+    /// One object literal containing only an object-spread definition. Keep
+    /// the spread operand distinct from an opaque/computed property so the
+    /// shared allocation transfer can consume it exactly once.
+    ObjectSpreadLiteral(CallSite, Arc<Self>),
     Undefined,
     /// A primitive of the given types: a literal, a template, or a value
     /// known only to be primitive.
@@ -635,6 +760,9 @@ pub(super) enum ValueExpr {
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
     Primitive(Arc<[Self]>),
+    /// Retain the actual operator for primitive result and abrupt-completion
+    /// semantics. Operands remain ordered; object coercions require fallback.
+    Binary(BinaryOp, Arc<Self>, Arc<Self>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
     StrictEquality(Arc<Self>, Arc<Self>),
     Sequence(Arc<[Self]>),
@@ -786,6 +914,21 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
                 && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
 }
 
+/// Operations whose operand evaluation is strict and whose primitive semantics
+/// are shared with purity. Membership and instanceof retain protocol handling.
+pub(super) fn modeled_binary_operator(operator: BinaryOp) -> bool {
+    !matches!(
+        operator,
+        BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing
+            | BinaryOp::In
+            | BinaryOp::InstanceOf
+            | BinaryOp::EqEqEq
+            | BinaryOp::NotEqEq
+    )
+}
+
 impl ValueExpr {
     /// Possible returned values; the conditional test is evaluated separately.
     pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
@@ -827,7 +970,8 @@ impl ValueExpr {
                         | Lit::Regex(_)
                 )
         ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
-            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
+            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq)
+                || modeled_binary_operator(bin.op))
             && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
                 if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang))
         {
@@ -838,6 +982,17 @@ impl ValueExpr {
             Expr::Fn(function) => Self::Alloc(Kind::Function, function.function.span.lo.0),
             Expr::Arrow(arrow) => Self::Alloc(Kind::Function, arrow.span.lo.0),
             Expr::Class(class) => Self::Alloc(Kind::Class, class.class.span.lo.0),
+            Expr::Object(object)
+                if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) =>
+            {
+                let [PropOrSpread::Spread(spread)] = object.props.as_slice() else {
+                    unreachable!("guarded single object spread")
+                };
+                Self::ObjectSpreadLiteral(
+                    object.span.into(),
+                    Arc::new(Self::lower(&spread.expr, covered)),
+                )
+            }
             Expr::Object(object) => Self::ObjectLiteral(
                 object.span.lo.0,
                 object
@@ -1050,6 +1205,11 @@ impl ValueExpr {
                     .into(),
                 )
             }
+            Expr::Bin(bin) if modeled_binary_operator(bin.op) => Self::Binary(
+                bin.op,
+                Arc::new(Self::lower(&bin.left, covered)),
+                Arc::new(Self::lower(&bin.right, covered)),
+            ),
             Expr::Bin(bin) => Self::Primitive(
                 [
                     Self::lower(&bin.left, covered),
@@ -1105,7 +1265,7 @@ impl ValueExpr {
             | Self::SetIteratorPrototype(expression)
             | Self::LogicalNot(expression)
             | Self::Void(expression) => expression.bindings(result),
-            Self::StrictEquality(left, right) => {
+            Self::StrictEquality(left, right) | Self::Binary(_, left, right) => {
                 left.bindings(result);
                 right.bindings(result);
             }
@@ -1132,6 +1292,7 @@ impl ValueExpr {
                     operand.bindings(result);
                 }
             }
+            Self::ObjectSpreadLiteral(_, source) => source.bindings(result),
             Self::ObjectLiteral(_, properties) => {
                 for (_, value) in properties.iter() {
                     value.bindings(result);
@@ -1151,12 +1312,15 @@ impl ValueExpr {
             Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
                 expression.carries_namespace(id, aliases)
             }
+            Self::ObjectSpreadLiteral(_, source) => source.carries_namespace(id, aliases),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
@@ -1221,7 +1385,9 @@ impl ValueExpr {
         visiting: &mut BTreeSet<Id>,
     ) -> bool {
         match self {
-            Self::ObjectLiteral(_, _) | Self::Alloc(Kind::Function, _) => false,
+            Self::ObjectLiteral(_, _)
+            | Self::ObjectSpreadLiteral(..)
+            | Self::Alloc(Kind::Function, _) => false,
             // Class metadata may contain a namespace path, including a
             // self-referential static initializer. Keep the existing
             // conservative class-surface fallback.
@@ -1282,9 +1448,18 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
+            Self::ObjectSpreadLiteral(_, source) => source.may_publish_namespace_inner(
+                id,
+                aliases,
+                facts,
+                visiting_bindings,
+                visiting_classes,
+            ),
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -1440,9 +1615,12 @@ impl ValueExpr {
                     facts,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
+            Self::ObjectSpreadLiteral(_, source) => source.carries_namespace(id, aliases),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
@@ -1514,6 +1692,9 @@ impl ValueExpr {
                 !direct_member_value
                     && value.may_publish_namespace_in_factory_result(id, aliases, facts)
             }),
+            Self::ObjectSpreadLiteral(_, source) => {
+                source.may_publish_namespace(id, aliases, facts)
+            }
             _ => self.may_publish_namespace(id, aliases, facts),
         }
     }

@@ -82,8 +82,8 @@ mod value_set_tests;
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
+pub(crate) use cell_overlap::may_conflict;
 pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub(crate) use cell_overlap::{may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
@@ -102,26 +102,48 @@ pub(crate) use set_iterables::{
     primitive_literal_property_keys,
 };
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
+pub use statement_facts::ConditionalProviderTargetRequirement;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
-    SettledElements,
+    ConstructorFacts, ExportLinkage, HeapAccessOrigin, HeapAccessProvenance, HeapContentAccesses,
+    HeapContentCells, LocalRecordFactoryPurityCertificate, SettledElements,
 };
+pub use sync_effects::{OperationSupportOperation, OperationSupportReceipt, SourceOperationSite};
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
+
+/// Source locations from one canonical lowering of an already-prepared chunk.
+/// Callable bounds include bodies with no operation sites; class roots remain
+/// distinct from explicit constructor bodies. These locations establish source
+/// correspondence, not that any operation executed.
+pub struct CanonicalSourceInventory {
+    pub source_sites: BTreeSet<SourceOperationSite>,
+    pub callable_spans: BTreeMap<u32, Span>,
+    pub class_spans: BTreeMap<u32, Span>,
+}
+
+pub fn canonical_source_inventory(
+    source: &StructuralChunkAnalysis<'_>,
+) -> CanonicalSourceInventory {
+    sync_effects::execution_index::interpreter::canonical_source_inventory(source)
+}
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{
-    ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
-    analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
-    complete_chunk_structural, complete_chunk_structural_with_argument_inputs,
-    complete_chunk_structural_with_inputs, complete_chunk_structural_with_native_allocations,
-    module_has_top_level_await,
+    ExportReentryPolicy, analyze_chunk, analyze_chunk_structural,
+    analyze_chunk_structural_in_chunk, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
+    collect_chunk_source_facts, collect_chunk_source_facts_from_items,
+    collect_chunk_source_facts_in_chunk, complete_chunk_structural,
+    complete_chunk_structural_with_argument_inputs, complete_chunk_structural_with_inputs,
+    complete_chunk_structural_with_native_allocations, module_has_top_level_await,
 };
-pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
+pub(crate) use analyze::{
+    collect_chunk_source_facts_from_items_in_scope, complete_chunk_structural_with_flow,
+    structural_value_flow,
+};
 pub use evaluation_effects::{
     GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,
 };
@@ -132,7 +154,7 @@ pub use initialization_effects::{
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
-    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralChunkSourceFacts,
-    StructuralStatementFacts,
+    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, LexicalCellId, PositionBucketed,
+    RequiredImportedPrimitiveRead, StatementEffectSummary, StatementFacts, StatementKind,
+    StructuralChunkAnalysis, StructuralChunkSourceFacts, StructuralStatementFacts,
 };

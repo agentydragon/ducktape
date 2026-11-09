@@ -11,28 +11,30 @@ use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
-use gate::CandidateRelocationAssessmentReport;
+use gate::{
+    ApplicationRelocationAssessmentReport, ChunkGateRejection, FinalGlobalResolutionAssessment,
+    FinalGlobalResolutionSourceInputs, GateVerdict, GlobalResolutionStatus, UnmatchedSpecClaim,
+};
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
 };
 use lowering::ownership_subset::OwnershipSubset;
 use lowering::{
-    AnalysisMode, FullReportKind, GateRejectionPolicy, GraphReportSelection,
-    MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized, ReportEmission,
-    materialize_logical_modules, naturalize_cross_chunk_imports,
+    AnalysisMode, CandidateEmissionDraft, FullReportKind, GateRejectionPolicy,
+    GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
+    ReportEmission, materialize_logical_modules, write_final_candidate_assessment_reports,
 };
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
-use prune_dead_imports::prune_dead_import_specifiers;
-use prune_module_exports::prune_unimported_module_exports;
-use reconstruction::{
-    EmittablePlan, ReconstructionPlan, RejectedPlan, UnmatchedSpecClaim, VendorManifestOutput,
-};
+use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
 use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
 use spec_modules::read_flat_transform_spec;
-use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
+use spec_tree::{
+    CompileSpecTreeOptions, ModuleTreeCandidate, compile_spec_tree,
+    compile_spec_tree_with_candidate, graph_module_roots,
+};
 use vendor::{
-    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, apply_emission_rewrites_in_place,
-    build_partial_swap_resolutions, build_vendor_resolution_plan,
+    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, build_partial_swap_resolutions,
+    build_vendor_resolution_plan,
 };
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
@@ -53,6 +55,63 @@ impl std::fmt::Display for GateRejected {
 }
 
 impl std::error::Error for GateRejected {}
+
+fn final_global_resolution_rejections(
+    assessment: &ApplicationRelocationAssessmentReport,
+) -> Vec<ChunkGateRejection> {
+    let Some(global_resolution) = assessment.global_resolution.as_ref() else {
+        return Vec::new();
+    };
+    let mut rejections = Vec::new();
+    for (chunk_id, chunk_assessment) in &global_resolution.chunks {
+        if chunk_assessment.status == GlobalResolutionStatus::Preserved {
+            continue;
+        }
+        rejections.push(ChunkGateRejection {
+            chunk_id: chunk_id.clone(),
+            verdict: GateVerdict::GlobalResolution {
+                status: chunk_assessment.status,
+            },
+            // The complete per-chunk candidate report is written before this
+            // refusal. Keep the evidence pointer absent for pass-through rows,
+            // which have no local relocation report.
+            evidence_report: None,
+            dependency_graph_report: None,
+            diagnostic: format!(
+                "application final global binding assessment was {:?}; source chunk {chunk_id:?} was {:?}; required uses: {:?}, preserved: {}, elided: {}; findings: {:?}{}",
+                global_resolution.status,
+                chunk_assessment.status,
+                chunk_assessment.required_use_count,
+                chunk_assessment.preserved_use_count,
+                chunk_assessment.elided_use_count,
+                chunk_assessment.findings,
+                if !global_resolution.findings.is_empty() {
+                    format!("; application-scoped findings: {:?}", global_resolution.findings)
+                } else {
+                    String::new()
+                },
+            ),
+        });
+    }
+    rejections
+}
+
+fn final_candidate_refusal_diagnostic(
+    assessment: &ApplicationRelocationAssessmentReport,
+    global_rejections: &[ChunkGateRejection],
+) -> String {
+    if !global_rejections.is_empty() {
+        return global_rejections
+            .iter()
+            .map(|rejection| rejection.diagnostic.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    format!(
+        "final candidate assessment {:?} is not accepted; application global-resolution evidence: {:?}; chunk assessments: {:?}",
+        assessment.status, assessment.global_resolution, assessment.chunks
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformRequest {
@@ -170,7 +229,7 @@ pub fn run_transform_with_analysis(
         }
     }
     let (spec, prepared) =
-        prepare_transform(cli, &options, None, analysis.map(|input| input.path))?;
+        prepare_transform(cli, &options, None, analysis.map(|input| input.path), None)?;
     let mode = match analysis {
         Some(AnalysisArtifactInput {
             path,
@@ -183,29 +242,24 @@ pub fn run_transform_with_analysis(
         },
         None => AnalysisMode::Compute,
     };
-    run_prepared_transform(&spec, prepared, options, false, mode, false)?;
+    run_prepared_transform(&spec, prepared, options, false, mode, false, None)?;
     Ok(())
 }
 
 /// Build a report-only assessment from the exact candidate module documents
-/// used by a graph-backed `bindings assign` dry run. The tree source, staged
-/// analysis and graph must all identify the same chunk input.
+/// used by a graph-backed ownership edit. The verified graph anchors its chunk;
+/// staged facts and canonical reconstruction cover the complete application.
 pub fn assess_candidate_effect_relocation(
     cli: &TransformRequest,
     analysis: AnalysisArtifactInput<'_>,
     graph_source: &VerifiedGraphSourceContext,
     edit_modules_root: &Path,
     candidate_modules: &BTreeMap<String, LogicalModule>,
-) -> Result<CandidateRelocationAssessmentReport> {
+) -> Result<ApplicationRelocationAssessmentReport> {
     let TransformSpecSource::Tree(tree) = &cli.spec_source else {
         bail!("candidate effect assessment requires a tree-shaped transform context");
     };
     let tree_modules_root = graph_provenance::absolute(&tree.modules_root)?;
-    let edit_modules_root = graph_provenance::absolute(edit_modules_root)?;
-    anyhow::ensure!(
-        tree_modules_root == edit_modules_root,
-        "candidate assessment requires --tree-modules to equal --modules"
-    );
     anyhow::ensure!(
         graph_source
             .modules_root()
@@ -215,21 +269,14 @@ pub fn assess_candidate_effect_relocation(
             == Some(&tree_modules_root),
         "candidate transform context modules root differs from the verified graph"
     );
-    let scoped_roots = graph_module_roots(&tree.config_path)?;
-    let roots = scoped_roots.get(graph_source.chunk_id()).with_context(|| {
-        format!(
-            "tree config has no module root for graph chunk {:?}",
-            graph_source.chunk_id()
-        )
-    })?;
-    anyhow::ensure!(
-        roots.len() == 1 && roots[0].as_os_str().is_empty(),
-        "candidate effect assessment currently requires one full-tree module root for graph chunk {:?}",
-        graph_source.chunk_id()
-    );
-
+    let candidate = ModuleTreeCandidate {
+        chunk_id: graph_source.chunk_id(),
+        modules_root: edit_modules_root,
+        modules: candidate_modules,
+    };
     let options = audit_options();
-    let (mut spec, prepared) = prepare_transform(cli, &options, None, Some(analysis.path))?;
+    let (spec, prepared) =
+        prepare_transform(cli, &options, None, Some(analysis.path), Some(&candidate))?;
     let chunk_source = prepared
         .provenance
         .chunk_sources
@@ -254,13 +301,9 @@ pub fn assess_candidate_effect_relocation(
     );
     let materialized_chunks = spec.materialize_chunk_ids();
     anyhow::ensure!(
-        materialized_chunks.len() == 1 && materialized_chunks.contains(graph_source.chunk_id()),
-        "candidate effect assessment currently requires exactly the graph chunk {:?} to be materialized",
+        materialized_chunks.contains(graph_source.chunk_id()),
+        "candidate effect assessment requires the graph chunk {:?} to be materialized",
         graph_source.chunk_id(),
-    );
-    spec.logical_modules.insert(
-        graph_source.chunk_id().to_string(),
-        candidate_modules.clone(),
     );
     validate_transform_spec(&spec)?;
 
@@ -271,40 +314,49 @@ pub fn assess_candidate_effect_relocation(
         artifact,
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
-    let outcome = run_prepared_transform(&spec, prepared, options, true, mode, true)?;
-    let PreparedTransformResult::EffectAssessed(mut assessments) = outcome else {
+    let candidate_document_identity =
+        graph_provenance::sha256(&serde_json::to_vec(candidate_modules)?);
+    let outcome = run_prepared_transform(
+        &spec,
+        prepared,
+        options,
+        true,
+        mode,
+        true,
+        Some(candidate_document_identity),
+    )?;
+    let PreparedTransformResult::EffectAssessed(assessment) = outcome else {
         bail!("candidate effect assessment did not reach AssignmentAnalysis");
     };
-    let mut matches = assessments
-        .drain(..)
-        .filter(|(chunk_id, _)| chunk_id == graph_source.chunk_id());
-    let (_, assessment) = matches.next().with_context(|| {
-        format!(
-            "no effect assessment for chunk {:?}",
-            graph_source.chunk_id()
-        )
-    })?;
     anyhow::ensure!(
-        matches.next().is_none(),
-        "candidate transform produced duplicate effect assessments for chunk {:?}",
-        graph_source.chunk_id()
+        assessment.chunks.keys().cloned().collect::<BTreeSet<_>>() == materialized_chunks,
+        "final candidate assessment does not match the materialized chunk set"
     );
     Ok(assessment)
 }
 
-/// An edit that supplied verified staged facts may write only when the
-/// canonical placement projection yielded the maps normal emission uses.
-/// Effect conflicts remain report-only while the legacy gate is authoritative.
+/// A verified final candidate may write only when the joint final-output
+/// checker accepted the exact emitted files it assessed. Provisional or
+/// component-only reports cannot authorize a write.
 pub fn ensure_candidate_emittable_for_write(
-    assessment: &CandidateRelocationAssessmentReport,
+    assessment: &ApplicationRelocationAssessmentReport,
+    candidate_modules: &BTreeMap<String, LogicalModule>,
     dry_run: bool,
 ) -> Result<()> {
     if !dry_run {
+        let candidate_identity = graph_provenance::sha256(&serde_json::to_vec(candidate_modules)?);
         anyhow::ensure!(
-            assessment.placement.emission_mappable,
-            "candidate placement is unmappable for canonical emission: {:?}; unresolved checks: {:?}",
-            assessment.placement.projection_violations,
-            assessment.placement.coverage.unresolved_checks,
+            assessment.final_output_matches_candidate_document(&candidate_identity)
+                && assessment.status == gate::CandidateRelocationStatus::AcceptedWithinCheckedScope,
+            "candidate relocation {:?} refuses a write for an unassessed or different candidate document; chunk verdicts: {:?}",
+            assessment.status,
+            assessment
+                .chunks
+                .iter()
+                .filter(|(_, report)| report.status
+                    != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope)
+                .map(|(chunk, report)| (chunk, report.status))
+                .collect::<Vec<_>>(),
         );
     }
     Ok(())
@@ -314,7 +366,7 @@ pub fn ensure_candidate_emittable_for_write(
 /// `out` as its canonical bytes. Runs the selector solve and nothing after it.
 pub fn project_analysis(cli: &TransformRequest, out: &Path) -> Result<()> {
     let options = audit_options();
-    let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
+    let (spec, prepared) = prepare_transform(cli, &options, None, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let artifact = prepared.source.program.into_artifact();
     let projection =
@@ -352,7 +404,8 @@ pub enum ContractProbeOutcome {
 
 impl ContractAudit {
     pub fn prepare(cli: &TransformRequest, expected_spec: &TransformSpec) -> Result<Self> {
-        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
+        let (spec, prepared) =
+            prepare_transform(cli, &audit_options(), Some(expected_spec), None, None)?;
         run_prepared_transform(
             &spec,
             prepared.clone(),
@@ -360,6 +413,7 @@ impl ContractAudit {
             true,
             AnalysisMode::Compute,
             false,
+            None,
         )?;
         prepared
             .provenance
@@ -395,6 +449,7 @@ impl ContractAudit {
             true,
             AnalysisMode::Compute,
             false,
+            None,
         );
         self.provenance()
             .verify(&CurrentRoots::default())
@@ -456,6 +511,7 @@ fn prepare_transform(
     options: &TransformRunOptions,
     expected_spec: Option<&TransformSpec>,
     loaded_analysis: Option<&Path>,
+    module_candidate: Option<&ModuleTreeCandidate<'_>>,
 ) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
@@ -473,7 +529,15 @@ fn prepare_transform(
             graph_provenance::read_bytes(path)?;
         }
     }
-    let spec = load_transform_spec_source(&cli.spec_source)?;
+    let spec = match (module_candidate, &cli.spec_source) {
+        (Some(candidate), TransformSpecSource::Tree(tree)) => {
+            compile_spec_tree_with_candidate(tree, candidate)?
+        }
+        (Some(_), TransformSpecSource::Flat { .. }) => {
+            bail!("module candidates require a tree-shaped transform context")
+        }
+        (None, source) => load_transform_spec_source(source)?,
+    };
     if let Some(expected) = expected_spec {
         anyhow::ensure!(
             serde_json::to_vec(&spec)? == serde_json::to_vec(expected)?,
@@ -544,7 +608,7 @@ fn prepare_transform(
 
 enum PreparedTransformResult {
     Completed,
-    EffectAssessed(Vec<(String, CandidateRelocationAssessmentReport)>),
+    EffectAssessed(ApplicationRelocationAssessmentReport),
 }
 
 fn run_prepared_transform(
@@ -554,7 +618,19 @@ fn run_prepared_transform(
     suppress_reports: bool,
     analysis: AnalysisMode,
     assessment_only: bool,
+    candidate_document_identity: Option<String>,
 ) -> Result<PreparedTransformResult> {
+    let canonical_candidate_document_identity = graph_provenance::sha256(
+        &serde_json::to_vec(&spec.logical_modules)
+            .context("serialize the canonical candidate logical-module document")?,
+    );
+    if let Some(provided_identity) = &candidate_document_identity {
+        anyhow::ensure!(
+            provided_identity == &canonical_candidate_document_identity,
+            "candidate document identity does not match the canonical prepared spec"
+        );
+    }
+    let candidate_document_identity = canonical_candidate_document_identity;
     let PreparedTransform {
         source,
         vendor_plan,
@@ -621,7 +697,40 @@ fn run_prepared_transform(
     vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let processed_chunk_names: BTreeSet<String> = materialise_chunk_ids.iter().cloned().collect();
-    let mut module_count: usize = 0;
+    // The final checker expects only these source chunks when lowering will
+    // explicitly prune the rest. Derive the scope from configured chunk IDs,
+    // before emission; inferring it from final files would hide missing output.
+    let pruned_emission_scope = if !materialise_chunk_ids.is_empty()
+        && spec.materialize_logical_modules.prune_other_chunks
+    {
+        let source_artifact = source_program.artifact();
+        Some(
+            materialise_chunk_ids
+                .iter()
+                .map(|chunk_name| {
+                    source_artifact
+                        .chunk_table
+                        .get(chunk_name)
+                        .with_context(|| format!("unknown materialized source chunk {chunk_name}"))
+                })
+                .collect::<Result<BTreeSet<_>>>()?,
+        )
+    } else {
+        None
+    };
+    let global_resolution_source_inputs = FinalGlobalResolutionSourceInputs::capture(
+        source_program.artifact(),
+        source_program.indexes(),
+        &vendor_plan.full_swap_chunk_ids(),
+        pruned_emission_scope.as_ref(),
+        &provenance,
+    );
+    let candidate_assessment_context = gate::CandidateAssessmentContext::capture(
+        candidate_document_identity.clone(),
+        &global_resolution_source_inputs,
+        processed_chunk_names.clone(),
+    )
+    .context("capture canonical candidate assessment provenance")?;
     let mut selected_lowerings: Vec<artifact::reports::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
@@ -635,16 +744,15 @@ fn run_prepared_transform(
     // export); folded into the partial-swap manifests below so
     // `references_rewritten` keeps counting emitted references across
     // both application sites.
-    let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     // Chunks the gate rejected but lowered anyway (`RunOutput::EmitOnRejection`).
     let mut gate_rejections = Vec::new();
-    let mut emission_files = if !materialise_chunk_ids.is_empty() {
-        let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
-        let report_out_dir = options
-            .artifacts
-            .reports_root()
-            .or(options.report_dir_override.clone())
-            .or(report_out_dir);
+    let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
+    let report_out_dir = options
+        .artifacts
+        .reports_root()
+        .or(options.report_dir_override.clone())
+        .or(report_out_dir);
+    let candidate_draft = if !materialise_chunk_ids.is_empty() {
         let materialize_result = materialize_logical_modules(
             source_program.into_artifact(),
             MaterializeSpecInputs {
@@ -661,6 +769,8 @@ fn run_prepared_transform(
             MaterializeLogicalModulesOptions {
                 ownership_subset: options.ownership_subset.clone(),
                 graph_provenance: Some(provenance),
+                candidate_assessment_context: candidate_assessment_context.clone(),
+                candidate_source_inputs: global_resolution_source_inputs.clone(),
                 config: spec.materialize_logical_modules.clone(),
                 chunk_ids: materialise_chunk_ids,
                 keep_going: options.keep_going,
@@ -674,7 +784,7 @@ fn run_prepared_transform(
                 // evidence at the same reports/tree/<chunk>/ location.
                 // Graph-backed follow-ups additionally require --graphs.
                 graph_reports: options.graph_reports,
-                report_emission: match report_out_dir.filter(|_| !suppress_reports) {
+                report_emission: match report_out_dir.clone().filter(|_| !suppress_reports) {
                     Some(dir) if dry_run => ReportEmission::OnRejection(dir),
                     Some(dir) => ReportEmission::Full(dir),
                     None => ReportEmission::None,
@@ -688,91 +798,154 @@ fn run_prepared_transform(
             },
         )?;
         let materialize_result = match materialize_result {
-            Materialized::Assessed(assessments) => {
-                return Ok(PreparedTransformResult::EffectAssessed(assessments));
+            Materialized::Assessed(assessments) if assessment_only => {
+                anyhow::ensure!(
+                    assessments
+                        .iter()
+                        .any(|(_, report)| match &report.global_resolution {
+                            gate::CandidateGlobalResolutionEvidence::Pending {
+                                preflight_status,
+                            } => {
+                                *preflight_status
+                                    != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope
+                            }
+                            gate::CandidateGlobalResolutionEvidence::Final(_) => {
+                                report.status
+                                    != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope
+                            }
+                        }),
+                    "accepted chunk assessments stopped before final program validation"
+                );
+                let mut report = ApplicationRelocationAssessmentReport::from_chunks(
+                    &processed_chunk_names,
+                    assessments,
+                    Some(candidate_assessment_context.clone()),
+                )?;
+                report.finalize_global_resolution(
+                    FinalGlobalResolutionAssessment::candidate_not_materialized(
+                        &global_resolution_source_inputs,
+                    ),
+                )?;
+                if !suppress_reports && let Some(report_out_dir) = &report_out_dir {
+                    let rows = report
+                        .chunks
+                        .iter()
+                        .map(|(chunk, assessment)| (chunk.clone(), assessment.clone()))
+                        .collect::<Vec<_>>();
+                    write_final_candidate_assessment_reports(report_out_dir, &rows)?;
+                }
+                return Ok(PreparedTransformResult::EffectAssessed(report));
+            }
+            Materialized::Assessed(_) => {
+                bail!("normal materialization unexpectedly returned only assessments");
             }
             Materialized::Lowered(result) if !assessment_only => *result,
+            Materialized::AssessedAndLowered {
+                result,
+                assessments: _,
+            } if assessment_only => *result,
             Materialized::Lowered(_) => {
                 bail!("assessment-only materialization unexpectedly lowered chunks");
             }
+            Materialized::AssessedAndLowered { .. } => {
+                bail!("normal materialization unexpectedly returned candidate assessments");
+            }
         };
-        module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
         gate_rejections = materialize_result.gate_rejections;
-        vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
-        let outputs = materialize_result.output;
-        decomposition_by_chunk = outputs.decomposition_by_chunk;
-        outputs.files
+        materialize_result.output
     } else {
-        artifact::EmissionFiles::from_prepared(source_program)
+        CandidateEmissionDraft::pass_through(
+            source_program,
+            global_resolution_source_inputs.clone(),
+            candidate_assessment_context.clone(),
+            &vendor_plan,
+        )?
     };
 
-    // Cross-chunk import naturalization runs first, before the following
-    // emission rewrites canonicalize source specifiers. The two operations
-    // change AST bodies without changing the indexed output file set.
-    // Emission rewrites, one artifact pass over two disjoint file sets:
-    //
-    // * the unified pass-through directive rewrite over files emitted
-    //   without lowering in non-vendor chunks — specifier
-    //   canonicalization (the old always-on stage 0), boundary-rename
-    //   name mapping, and partial-swap consumer surgery from the
-    //   vendor plan (materialized module bodies were constructed from
-    //   the same plan during lowering; suppress-marked chunks are
-    //   skipped wholesale per open question 3; excluded full-swap
-    //   chunks are never rewritten);
-    // * the vendor residual computation for each partially-swapped
-    //   chunk — the canonicalize → self-rewrite → strip composition as
-    //   one function body, so the former stage ordering is structural
-    //   instead of a pipeline concern.
-    //
-    // Runs after materialize so the per-symbol consumer rewrite cannot
-    // erase binding names spec selectors matched on.
-    let mut vendor_rewrite_counts = vendor_lowering_rewrites;
-    let emission_references;
-    (emission_files, emission_references) =
-        emission_files.rewrite_bodies(|artifact, indexes| {
-            naturalize_cross_chunk_imports(
-                artifact,
-                indexes,
-                &selected_lowerings,
-                &processed_chunk_names,
-            )?;
-            apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
-        })?;
-    merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
+    let finalized_draft = candidate_draft.finalize()?;
+    let module_count = finalized_draft.module_count();
+    decomposition_by_chunk = finalized_draft.decomposition_by_chunk().clone();
+    let mut vendor_rewrite_counts = finalized_draft.references_by_symbol().clone();
 
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
 
-    // Trim dead named import specifiers across the whole bundle (entry
-    // included): the lowerer over-imports residual/hub bindings the
-    // importing file never references. Runs immediately before the
-    // export prune so that dropping a dead import — which the
-    // name-based export prune would otherwise treat as a live consumer —
-    // cascades into dropping the now-unimported module exports. See
-    // prune_dead_imports.rs for the soundness argument.
-    // Drop dead named exports from emitted logical-module files: a
-    // module-owned binding referenced nowhere outside its own module
-    // (the esbuild decorator scaffolding is the dominant case) is
-    // module-internal, so it should not appear in the module's
-    // `export { ... }`. Runs over the final bundle so it sees every
-    // import/re-export; entry files (the chunk public surface) are
-    // never touched. See prune_module_exports.rs for the soundness
-    // argument.
-    (emission_files, ()) = emission_files.rewrite_bodies(|files, _| {
-        prune_dead_import_specifiers(files);
-        prune_unimported_module_exports(files);
-        Ok(())
-    })?;
+    // The draft has already run both ordered pruning passes while retaining
+    // their exact request receipts. The final checker now owns this exact
+    // immutable output and its complete source-route inventory.
+    let candidate_emission = reconstruction::assess_final_candidate_emission(finalized_draft);
+    let finalized_assessment = candidate_emission.assessment().clone();
+    if !suppress_reports && let Some(report_out_dir) = &report_out_dir {
+        let rows = finalized_assessment
+            .chunks
+            .iter()
+            .map(|(chunk, assessment)| (chunk.clone(), assessment.clone()))
+            .collect::<Vec<_>>();
+        write_final_candidate_assessment_reports(report_out_dir, &rows)?;
+    }
+    if assessment_only
+        && finalized_assessment.status
+            != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope
+    {
+        return Ok(PreparedTransformResult::EffectAssessed(
+            finalized_assessment,
+        ));
+    }
+
+    let global_rejections = final_global_resolution_rejections(&finalized_assessment);
+    let final_global_status = finalized_assessment
+        .global_resolution
+        .as_ref()
+        .map(|assessment| assessment.status);
+    let final_candidate_accepted = matches!(
+        &candidate_emission,
+        reconstruction::CandidateEmissionOutcome::Accepted(_)
+    );
+
+    // Application-only evidence gaps do not identify a source chunk and
+    // cannot be represented by `RejectedPlan`'s per-chunk rejection rows.
+    // Refuse those candidates before plan construction and preserve the
+    // application-scoped assessment in the diagnostic.
+    if final_global_status != Some(GlobalResolutionStatus::Preserved)
+        && global_rejections.is_empty()
+    {
+        return Err(GateRejected(final_candidate_refusal_diagnostic(
+            &finalized_assessment,
+            &global_rejections,
+        ))
+        .into());
+    }
+
+    if !final_candidate_accepted {
+        if options.output != RunOutput::EmitOnRejection {
+            return Err(GateRejected(final_candidate_refusal_diagnostic(
+                &finalized_assessment,
+                &global_rejections,
+            ))
+            .into());
+        }
+        gate_rejections.extend(global_rejections);
+        if gate_rejections.is_empty() {
+            return Err(GateRejected(final_candidate_refusal_diagnostic(
+                &finalized_assessment,
+                &[],
+            ))
+            .into());
+        }
+    }
 
     // A gate-rejected program never reaches final program validation (as
     // without the flag, where the gate already failed the run): freeze it for
     // the marked reading-only tree, write that tree, and fail the run with the
     // gate's own diagnostic.
     if !gate_rejections.is_empty() {
+        let refused_candidate = candidate_emission.into_refused().ok_or_else(|| {
+            anyhow::anyhow!("joint candidate checker accepted output for a rejected plan")
+        })?;
         let rejected_plan = RejectedPlan::new(
-            emission_files,
+            refused_candidate,
             &vendor_plan,
             gate_rejections,
             &unmatched_spec_claims,
@@ -805,14 +978,21 @@ fn run_prepared_transform(
 
     // Freeze the exact final syntax and replacement decisions before any
     // accepted-program output is written. Diagnostic reports may already exist.
+    let accepted_candidate = candidate_emission.into_accepted().ok_or_else(|| {
+        anyhow::anyhow!("joint candidate checker refused output before accepted validation")
+    })?;
     let validated_plan = ReconstructionPlan::new(
-        emission_files,
-        vendor_plan,
+        accepted_candidate,
         unmatched_spec_claims,
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
     )?
     .validate()?;
+    if assessment_only {
+        return Ok(PreparedTransformResult::EffectAssessed(
+            finalized_assessment,
+        ));
+    }
     let emission_files = validated_plan.files();
     let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 

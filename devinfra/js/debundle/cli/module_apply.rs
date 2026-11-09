@@ -38,8 +38,8 @@ pub struct ModulesApplyArgs {
     /// Root for the chunk's source file.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub(super) source_root: PathBuf,
-    /// Report-only relocation assessment of the exact candidate before an
-    /// optional write, using a staged `--analysis` artifact.
+    /// Canonical relocation assessment of the exact candidate. Verified writes
+    /// require the staged `--analysis` artifact and full tree context.
     #[command(flatten)]
     effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
     /// Match the size cap used when generating the proposal IDs.
@@ -110,9 +110,9 @@ struct ApplyOutcome {
     bindings_claimed: usize,
     selector_reviews: Vec<SelectorReview>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
     /// Why the canonical effect verdict was unavailable for this graph-only
-    /// edit. The legacy gate still decides whether the edit can be written.
+    /// edit. The canonical candidate assessment decides whether the edit can be written.
     #[serde(skip_serializing_if = "Option::is_none")]
     effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
@@ -418,7 +418,7 @@ pub fn run_modules_apply(
         source_root: Some(&args.source_root),
         source_context,
     };
-    if let Err(err) = gate.check_expected(
+    if let Err(err) = gate.check_expected_claims(
         &args.modules_root,
         || post_edit_spec_from_docs(&docs, &deleted),
         &expected,
@@ -426,13 +426,13 @@ pub fn run_modules_apply(
         emit_gate_rejection_json("apply", args.format, &err);
         return Err(err);
     }
+    let candidate_modules = docs
+        .iter()
+        .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+        .collect::<BTreeMap<_, _>>();
     let effect_relocation_assessment = effect_context
         .as_ref()
         .map(|context| {
-            let candidate_modules = docs
-                .iter()
-                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
-                .collect();
             context.assess(
                 &args.modules_root,
                 &candidate_modules,
@@ -440,16 +440,23 @@ pub fn run_modules_apply(
             )
         })
         .transpose()?;
-    if let Some(assessment) = &effect_relocation_assessment {
-        pipeline::ensure_candidate_emittable_for_write(assessment, args.dry_run)?;
-    }
+    crate::candidate_assessment::ensure_candidate_write(
+        effect_relocation_assessment.as_ref(),
+        &candidate_modules,
+        args.dry_run,
+        false,
+    )?;
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &deleted, args.dry_run)?;
     let out = ApplyOutcome {
         outcome: MutationOutcome {
             verb: "apply",
             action: if args.dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+            gate: gate.outcome().with_candidate_assessment(
+                effect_relocation_assessment.as_ref(),
+                &candidate_modules,
+            ),
+            needs_full_assessment: effect_relocation_assessment.is_none(),
             files_written,
             files_deleted,
         },
@@ -463,12 +470,18 @@ pub fn run_modules_apply(
     };
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => {
+            let assessment = if out.outcome.needs_full_assessment {
+                "; needs_full_assessment"
+            } else {
+                ""
+            };
             println!(
-                "{}: {} proposal(s), {} binding(s), {} file(s)",
+                "{}: {} proposal(s), {} binding(s), {} file(s){}",
                 out.outcome.action,
                 out.proposals_applied,
                 out.bindings_claimed,
-                out.outcome.files_written.len()
+                out.outcome.files_written.len(),
+                assessment,
             );
             for review in &out.selector_reviews {
                 println!("{}", serde_yaml::to_string(review)?.trim_end());

@@ -20,10 +20,30 @@ use swc_ecma_ast::*;
 
 #[derive(Debug)]
 pub(crate) struct ImportedReexport {
+    pub(crate) source_binding: Id,
     pub(crate) local: String,
     pub(crate) imported_name: String,
     pub(crate) imported_from: String,
+    pub(crate) source_specifier: Option<String>,
     pub(crate) public_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlannedCrossModuleBinding {
+    pub(crate) source_binding: Id,
+    pub(crate) imported_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlannedResidualEntryBinding {
+    pub(crate) source_binding: Id,
+    pub(crate) entry_export: EntryExport,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RuntimeReimport<'a> {
+    pub(crate) source_binding: Id,
+    pub(crate) info: &'a RuntimeImportInfo,
 }
 
 #[derive(Debug, Clone)]
@@ -34,10 +54,11 @@ pub(crate) struct EntryExport {
 
 #[derive(Default)]
 pub(crate) struct ModuleReferenceNeeds<'a> {
-    pub(crate) cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    pub(crate) residual_entry_imports: BTreeMap<String, EntryExport>,
+    pub(crate) cross_module_imports_by_provider:
+        BTreeMap<usize, BTreeMap<String, PlannedCrossModuleBinding>>,
+    pub(crate) residual_entry_imports: BTreeMap<String, PlannedResidualEntryBinding>,
     pub(crate) missing_residual_exports: BTreeSet<String>,
-    pub(crate) runtime_reimports: BTreeMap<Id, &'a RuntimeImportInfo>,
+    pub(crate) runtime_reimports: BTreeMap<Id, RuntimeReimport<'a>>,
     /// Side-effect-only providers: modules this module has a constraining
     /// edge to (via at-init call promotion) but whose bindings aren't
     /// directly referenced in this module's body. Without an explicit
@@ -198,6 +219,7 @@ pub(crate) fn collect_imported_reexports_by_module(
     assignment_analysis: &AssignmentAnalysis,
     chunk_identity: ChunkId,
     module_count: usize,
+    runtime_imports: &RuntimeImportFacts,
 ) -> Result<Vec<Vec<ImportedReexport>>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
     let local_bindings = assignment_analysis
@@ -228,9 +250,11 @@ pub(crate) fn collect_imported_reexports_by_module(
             continue;
         };
         reexports.push(ImportedReexport {
+            source_binding: id.clone(),
             local: local.to_string(),
             imported_name: imported_name.to_string(),
             imported_from: imported_from.clone(),
+            source_specifier: runtime_imports.imports.get(id).map(|info| info.src.clone()),
             public_name: public_name.to_string(),
         });
     }
@@ -270,7 +294,13 @@ pub(crate) fn plan_module_reference_needs<'a>(
                     .cross_module_imports_by_provider
                     .entry(provider_index)
                     .or_default()
-                    .insert(name_str.to_string(), exported_name.to_string());
+                    .insert(
+                        name_str.to_string(),
+                        PlannedCrossModuleBinding {
+                            source_binding: original_id.clone(),
+                            imported_name: exported_name.to_string(),
+                        },
+                    );
             }
             continue;
         }
@@ -280,9 +310,13 @@ pub(crate) fn plan_module_reference_needs<'a>(
             && declaration_by_name.contains_key(original_id)
         {
             if let Some(entry_export) = entry_exports_by_original_local.get(original_id) {
-                needs
-                    .residual_entry_imports
-                    .insert(name_str.to_string(), entry_export.clone());
+                needs.residual_entry_imports.insert(
+                    name_str.to_string(),
+                    PlannedResidualEntryBinding {
+                        source_binding: original_id.clone(),
+                        entry_export: entry_export.clone(),
+                    },
+                );
             } else {
                 needs.missing_residual_exports.insert(name_str.to_string());
             }
@@ -294,7 +328,13 @@ pub(crate) fn plan_module_reference_needs<'a>(
         }
         let info = runtime_imports.imports.get(original_id);
         if let Some(info) = info {
-            needs.runtime_reimports.insert(body_id.clone(), info);
+            needs.runtime_reimports.insert(
+                body_id.clone(),
+                RuntimeReimport {
+                    source_binding: original_id.clone(),
+                    info,
+                },
+            );
         }
     }
 
@@ -326,7 +366,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
 fn collect_phantom_side_effect_providers(
     module_index: usize,
     assignment_analysis: &AssignmentAnalysis,
-    cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
+    cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, PlannedCrossModuleBinding>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(module_index);

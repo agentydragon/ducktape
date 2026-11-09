@@ -28,8 +28,8 @@ pub struct SourcePreparation {
 
 /// `materialized_chunk_ids` is `TransformSpec::materialize_chunk_ids`: the
 /// chunks whose modules are planned keep their AST. `analysis_provider_chunk_ids`
-/// independently retains original ASTs for source-premise providers, including
-/// providers inside the import closure that are not materialized.
+/// adds source-premise roots. The static-request closure of both sets retains
+/// original ASTs for provider execution independently of emission.
 pub fn prepare_js_chunks(
     materialized_chunk_ids: &BTreeSet<String>,
     analysis_provider_chunk_ids: &BTreeSet<String>,
@@ -93,48 +93,20 @@ pub fn prepare_js_chunks(
         })
         .collect();
 
-    // Second pass: replace ASTs with original source for chunks that don't need them.
-    //
-    // A chunk needs to keep its AST if any downstream stage will read it. The
-    // predicates below cover spec-driven stages (logical modules, residual
-    // modules, renames, vendor) and source-premise provider analysis. The
-    // pass-through emission rewriter also canonicalizes specifiers in every
-    // emitted non-module file, so we keep its AST whenever it would rewrite this
-    // chunk's entry. The `has_rewritable_specifier` fact mirrors the
-    // canonicalizer's relative-path gate (`.` or `/` prefix) exactly and is
-    // computed during the first-pass `analyze_program_shallow` walk, so this
-    // second pass does not need to re-visit the AST.
-    let prepared_chunks = parsed_chunks
-        .into_iter()
-        .map(|(chunk_id, chunk_name, mut prepared)| {
-            let needs_emission_ast = materialized_chunk_ids.contains(&chunk_name)
-                || vendor_target_chunk_ids.contains(&chunk_name)
-                || prepared.has_rewritable_specifier;
-
-            if !needs_emission_ast
-                && let Some(pos) = prepared
-                    .files
-                    .iter()
-                    .position(|f| f.path == CANONICAL_CHUNK_ENTRY_FILE)
-            {
-                let file = prepared.files.remove(pos);
-                // Read-only analysis retention must not change source-marker
-                // matching or pass-through output bytes/header behavior.
-                let file = if analysis_provider_chunk_ids.contains(&chunk_name) {
-                    file.into_source_with_ast()
-                } else {
-                    file.into_rendered_source()
-                }
-                .context("freshly prepared entry must contain an AST")?;
-                prepared.files.insert(pos, file);
-            }
-
-            Ok((chunk_id, chunk_name, prepared))
+    // Retain the canonical preparation parse across the selected static-request
+    // closure before any source-only entry can discard its hygiene identities.
+    // Emission storage remains governed by its own shallow rewrite inventory.
+    let emission_chunks = parsed_chunks
+        .iter()
+        .filter_map(|(chunk_id, name, prepared)| {
+            (materialized_chunk_ids.contains(name)
+                || vendor_target_chunk_ids.contains(name)
+                || prepared.has_rewritable_specifier)
+                .then_some(*chunk_id)
         })
-        .collect::<Result<Vec<_>>>()?;
-
+        .collect();
     let artifact = ChunkBundle {
-        chunks: prepared_chunks
+        chunks: parsed_chunks
             .into_iter()
             .map(|(chunk_id, _, prepared)| ChunkArtifact {
                 chunk_id,
@@ -148,10 +120,16 @@ pub fn prepare_js_chunks(
             .collect(),
         chunk_table,
     };
+    let analysis_roots = materialized_chunk_ids
+        .union(analysis_provider_chunk_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let program =
+        SourceProgram::new(artifact)?.retain_entry_asts(&emission_chunks, &analysis_roots)?;
 
-    let (counts, chunk_records) = build_prepare_output(&artifact.chunks);
+    let (counts, chunk_records) = build_prepare_output(&program.artifact().chunks);
     Ok(SourcePreparation {
-        program: SourceProgram::new(artifact)?,
+        program,
         counts,
         chunk_records,
     })

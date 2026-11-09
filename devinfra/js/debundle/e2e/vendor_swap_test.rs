@@ -3,8 +3,9 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_json,
-    run_debundler, write_text_file, write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, assert_single_namespace_import,
+    assert_source_file, read_gzip_json, read_json, run_debundler, run_debundler_with_args,
+    write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -483,6 +484,27 @@ fn partial_swap_strips_implementation_when_unreferenced() {
 
     assert_success(&fixture.result);
     assert_source_file(&fixture.megachunk_emitted_path, &["keepMe"], &[" e6 "]);
+}
+
+#[test]
+fn partial_swap_elision_receipt_is_exact_for_removed_comma_declarator_capture() {
+    // Both unresolved captures share one original comma declaration. The
+    // swapped `e6` declarator is removed, while the exported `keepMe` sibling
+    // stays in the residual and must not be covered by a broad statement span.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => goneGlobal, keepMe = () => keptGlobal;\n",
+        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert_success(&fixture.result);
+    assert_source_file(
+        &fixture.megachunk_emitted_path,
+        &["keepMe", "keptGlobal"],
+        &["goneGlobal", "e6"],
+    );
 }
 
 #[test]
@@ -1838,7 +1860,8 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
             ),
             (
                 APP_PATH,
-                "import { m as toolkitMap, k as toolkitMake } from \"../../vendor/entry.js\";\n\
+                "import { m as toolkitMap } from \"../../vendor/entry.js\";\n\
+                 import { k as toolkitMake } from \"../../vendor/entry.js\";\n\
                  const direct = toolkitMap(\"top\");\n\
                  const shadowed = ((toolkitMap) => toolkitMap(\"shadow\"))(value => `local:${value}`);\n\
                  const made = toolkitMake({ label: \"top\" });\n\
@@ -1910,6 +1933,12 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
         &["toolkitMap(\"top\")", "toolkitMake"],
     );
 
+    assert_single_namespace_import(
+        &materialized_path,
+        "../../../../vendors/generated/static/vendor/toolkit-core.js",
+        "Toolkit",
+    );
+
     let probe_path = ws.out_root.join("__run_materialized_named.mjs");
     write_text_file(
         &probe_path,
@@ -1917,6 +1946,84 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
          console.log(`${direct}|${shadowed}|${made.mark}`);\n",
     );
     assert_node_output(&probe_path, "package:top|local:shadow|package\n", "");
+}
+
+#[test]
+fn materialized_vendor_member_explicit_property_has_exact_use_receipt() {
+    materialized_vendor_property_receipt_fixture(false);
+}
+
+#[test]
+fn materialized_vendor_member_shorthand_has_exact_use_receipt() {
+    materialized_vendor_property_receipt_fixture(true);
+}
+
+fn materialized_vendor_property_receipt_fixture(shorthand: bool) {
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-materialized-property-receipt-",
+        "toolkit.esbuilt.js",
+        "const Toolkit = { map: value => value }; export { Toolkit };\n",
+        &[
+            ("static/vendor.js", "export const m = value => value;\n"),
+            (
+                "static/app.js",
+                if shorthand {
+                    "import { m as toolkitMap } from \"../../vendor/entry.js\";\nconst pair = { toolkitMap };\nexport { pair };\n"
+                } else {
+                    "import { m as toolkitMap } from \"../../vendor/entry.js\";\nconst pair = { value: toolkitMap };\nexport { pair };\n"
+                },
+            ),
+        ],
+    );
+    let package_root = ws.write_upstream_package(
+        "upstream/toolkit-core",
+        "toolkit-core",
+        "1.0.0",
+        "index.js",
+        "export const map = value => value;\n",
+    );
+    let report_root = ws.out_root.join("reports/tree");
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/vendor.js": bundled_vendor(
+            "exact property use receipt fixture", &bundle_path,
+            &[("toolkit-core", bundled_package("1.0.0", "index.js", "Toolkit", Some("Toolkit")))],
+            &[("m", swap_symbol("toolkit-core", PartialSwapKind::Named, Some("map"), None))],
+        )}),
+        Some(json!({
+            "logical_modules": {"static/app": {"values": {"members": [
+                {"name": "pair", "selector": {"binding": {"name": "pair"}}}
+            ]}}},
+            "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
+            "materialize_logical_modules": {
+                "prune_other_chunks": false, "target_dir": "modules", "report_out_dir": &report_root,
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[("toolkit-core", &package_root)]);
+    assert_success(&result);
+    assert_module_source(
+        &ws.out_root,
+        "app/static/app/modules/values.js",
+        &[if shorthand {
+            "toolkitMap: Toolkit.map"
+        } else {
+            "value: Toolkit.map"
+        }],
+        &[],
+    );
+    let probe_path = ws.out_root.join("__run_property_receipt.mjs");
+    write_text_file(
+        &probe_path,
+        if shorthand {
+            "const { pair } = await import(\"./app/static/app/modules/values.js\"); console.log(pair.toolkitMap(7));\n"
+        } else {
+            "const { pair } = await import(\"./app/static/app/modules/values.js\"); console.log(pair.value(7));\n"
+        },
+    );
+    assert_node_output(&probe_path, "7\n", "");
 }
 
 #[test]
@@ -2147,6 +2254,13 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
     assert_eq!(
         modules["imported_callables"]["object"]["foreign_call"]["replacement_package"],
         "fac"
+    );
+    let assessment: Value =
+        read_json(&report_root.join("static/app/candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["provider_targets"]["required_targets"],
+        json!([]),
+        "the independently closed foreign body must not consume a conditional specialization: {assessment:#}"
     );
     let app_root = ws.out_root.join("app");
     install_node_module(&app_root, "fac", "1.0.0", PROVIDER);
@@ -2447,19 +2561,24 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
     const VENDOR_PATH: &str = "static/vendor.js";
     const APP_PATH: &str = "static/app.js";
     let ws = VendorTestWorkspace::new("vendor-boundary-rename-");
-    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
+    ws.write_chunk(
+        VENDOR_PATH,
+        "const a = 1;\nconst keep = 2;\nexport { a as alpha, keep };\n",
+    );
     ws.write_chunk(
         APP_PATH,
-        "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
+        "import { a, keep } from \"../vendor/entry.js\";\nconsole.log(a, keep);\n",
     );
     ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
 
     let spec_path = ws.root.path().join("transform_spec.yaml");
+    let report_root = ws.out_root.join("reports").join("tree");
     let spec = json!({
         "vendor": {
             VENDOR_PATH: { "level": "boundary_rename", "identity": "boundary rename fixture" },
         },
         "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "materialize_logical_modules": { "report_out_dir": &report_root },
         "write_js_tree": { "out_dir": &ws.out_root },
     });
     write_yaml_file(&spec_path, &spec);
@@ -2468,15 +2587,101 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
 
     assert_source_file(
         &ws.out_root.join("app/static/app/entry.js"),
-        &["import { alpha as a }"],
+        &["import { alpha as a, keep }"],
         &[],
+    );
+    let assessment: Value =
+        read_json(&report_root.join("static/app/candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["global_resolution"]["status"], "preserved",
+        "the final candidate route check must accept the selected boundary import and untouched sibling: {assessment:#}"
+    );
+    assert_eq!(
+        assessment["global_resolution"]["source_correspondence_status"], "preserved",
+        "the renamed binding must resolve through the checked boundary output while the untouched sibling retains its source route: {assessment:#}"
     );
     let probe_path = ws.out_root.join("__run_boundary_rename.mjs");
     write_text_file(
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",
     );
-    assert_node_output(&probe_path, "1\n", "");
+    assert_node_output(&probe_path, "1 2\n", "");
+}
+
+#[test]
+fn boundary_rename_preserves_materialized_and_residual_import_uses() {
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    let ws = VendorTestWorkspace::new("vendor-boundary-rename-materialized-");
+    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
+    ws.write_chunk(
+        APP_PATH,
+        "import { a } from \"../vendor/entry.js\";\n\
+         function read() { return a; }\n\
+         const retained = a;\n\
+         console.log(read(), retained);\n\
+         export { read, retained };\n",
+    );
+    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+
+    let report_root = ws.out_root.join("reports/tree");
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: { "level": "boundary_rename", "identity": "materialized boundary route fixture" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "logical_modules": {
+            "static/app": {
+                "readers": {
+                    "members": [{ "name": "read", "selector": { "binding": { "name": "read" } } }],
+                },
+            },
+        },
+        "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+            "report_out_dir": &report_root,
+            "target_dir": "modules",
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[]);
+    assert_success(&result);
+
+    let app_root = ws.out_root.join("app/static/app");
+    assert_source_file(
+        &app_root.join("modules/readers.js"),
+        &["import { alpha as a", "function read()", "return a"],
+        &["import { a }"],
+    );
+    assert_source_file(
+        &app_root.join("entry.js"),
+        &[
+            "import { alpha as a",
+            "const retained = a",
+            "console.log(read(), retained)",
+        ],
+        &["import { a }"],
+    );
+    let probe_path = ws.out_root.join("__run_boundary_rename_materialized.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "1 1\n", "");
+
+    let assessment: Value =
+        read_json(&report_root.join("static/app/candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["global_resolution"]["assessment"]["status"], "preserved",
+        "the final checker must join the moved and residual uses to the same boundary export: {assessment:#}"
+    );
 }
 
 #[test]
@@ -3427,5 +3632,114 @@ fn bundled_reentry_proof_requires_closed_bundle() {
             "{}",
             fixture.result.stderr
         );
+    }
+}
+
+#[test]
+fn partial_swap_body_effect_receipt_retains_equivalence_dependency() {
+    for (case, provider, invocation, member) in [
+        (
+            "direct",
+            "export function object() { const record = { value: 1 }; return record; }\n",
+            "object()",
+            None,
+        ),
+        (
+            "member",
+            "var object = {}; object.make = function() { const record = { value: 1 }; return record; }; export { object };\n",
+            "object.make()",
+            Some("make"),
+        ),
+    ] {
+        let (ws, package_root) = setup_partial_swap_consumer_fixture(
+            "vendor-partial-swap-body-effects-",
+            &format!("{provider}export const keep = () => 7;\n"),
+            &format!(
+                "import {{ object }} from './megachunk.js';\nconst wrapped = {invocation};\nconsole.log(wrapped.value);\n"
+            ),
+            "fac",
+            "1.0.0",
+            "lib/index.mjs",
+            provider,
+        );
+        let report_root = ws.out_root.join("reports").join("tree");
+        let mut spec = build_bundled_partial_swap_spec(
+            &ws,
+            json!({"static/megachunk.js": partial_swap_vendor(
+                "equivalent body-effect fixture",
+                &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
+                &[("object", swap_symbol("fac", PartialSwapKind::Member, Some("object"), None))],
+            )}),
+            Some(json!({
+                "logical_modules": {
+                    "static/app": {
+                        "records/wrapped": {
+                            "members": [{ "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } }],
+                        },
+                    },
+                },
+                "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+                "materialize_logical_modules": {
+                    "prune_other_chunks": false,
+                    "report_out_dir": &report_root,
+                },
+            })),
+        );
+        if let Some(member) = member {
+            spec["chunk_export_purity"] = json!({"static/megachunk": {
+                "namespace_independent_members": {"object": [member]},
+                "source_callable_members": {"object": [member]},
+            }});
+        }
+        let spec_path = ws.root.path().join("transform_spec.yaml");
+        write_yaml_file(&spec_path, &spec);
+        let result = run_debundler_with_args(&spec_path, &[("fac", &package_root)], &["--graphs"]);
+        assert_success(&result);
+        let artifacts = PathBuf::from(std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR").unwrap())
+            .join("imported-body-vendor-equivalence")
+            .join(case);
+        fs::create_dir_all(&artifacts).unwrap();
+        for name in [
+            "dependency_graph.json.gz",
+            "effect_translation_validation.json",
+            "candidate_relocation_assessment.json",
+        ] {
+            fs::copy(
+                report_root.join("static/app").join(name),
+                artifacts.join(name),
+            )
+            .unwrap();
+        }
+        let graph: Value = read_gzip_json(&report_root.join("static/app/dependency_graph.json.gz"));
+        let wrapped = graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|binding| binding["binding"] == "wrapped")
+            })
+            .unwrap();
+        let authority = &wrapped["synchronous_execution"]["binding_effect_authority"];
+        assert_eq!(authority["authority"], "operation_receipt", "{wrapped:#}");
+        let call = &authority["receipt"]["calls"][0];
+        assert_eq!(call["target"]["kind"], "imported_callable");
+        assert_eq!(
+            call["dependencies"]["vendor_swap_equivalences"],
+            json!([{"defining_module": "static/megachunk", "export": "object", "replacement_package": "fac"}])
+        );
+        assert_eq!(call["target"]["member"], json!(member));
+        if let Some(member) = member {
+            assert_eq!(
+                call["dependencies"]["source_callable_members"][0]["member"],
+                member
+            );
+        }
+        let app_root = ws.out_root.join("app");
+        install_node_module(&app_root, "fac", "1.0.0", provider);
+        assert_node_output(&app_root.join("static/app/entry.js"), "1\n", "");
     }
 }

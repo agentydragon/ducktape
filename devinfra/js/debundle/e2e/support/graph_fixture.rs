@@ -22,6 +22,206 @@ impl GraphFixture {
         Self::run(source, modules, true)
     }
 
+    /// One-chunk full tree for edit tests that need a canonical staged
+    /// assessment before a verified ownership write.
+    pub fn new_full_tree(source: &str, modules: &[(&str, &str)]) -> Self {
+        Self::full_tree(source, modules, true)
+    }
+
+    /// Source facts can assess a repair even when the original assignment
+    /// is rejected. This never certifies that original assignment.
+    pub fn rejected_full_tree(source: &str, modules: &[(&str, &str)]) -> Self {
+        Self::full_tree(source, modules, false)
+    }
+
+    fn full_tree(source: &str, modules: &[(&str, &str)], succeeds: bool) -> Self {
+        let run = run_tree_graph_fixture(
+            &TreeFixture {
+                chunks: &[("main", source)],
+                module_roots: &[],
+                modules,
+            },
+            &[],
+        );
+        assert_eq!(
+            run.result.status.success(),
+            succeeds,
+            "{}",
+            run.result.stderr
+        );
+        Self {
+            graph: run.report_root.join("main/dependency_graph.json.gz"),
+            modules: run.root().join("modules"),
+            run,
+        }
+    }
+
+    /// Stage typed facts from the original full-tree source/projection. The
+    /// edit command assesses its own exact candidate documents against these
+    /// facts; this artifact is never synthesized from the requested edit.
+    pub fn stage_analysis(&self) -> PathBuf {
+        let root = self.run.root();
+        assert_eq!(
+            self.modules,
+            root.join("modules"),
+            "full tree fixture required"
+        );
+        let projection = root.join("edit-analysis.projection");
+        let artifact = root.join("edit-analysis.dba");
+        let project = Command::new(debundler_path())
+            .args(["spec", "project-analysis", "--tree-config"])
+            .arg(root.join("spec_config.yaml"))
+            .arg("--tree-modules")
+            .arg(&self.modules)
+            .arg("--tree-vendor-marks")
+            .arg(root.join("vendor_marks.yaml"))
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out-root")
+            .arg(root.join("edit-project-out"))
+            .arg("--out")
+            .arg(&projection)
+            .output()
+            .unwrap();
+        assert!(
+            project.status.success(),
+            "{}",
+            String::from_utf8_lossy(&project.stderr)
+        );
+        let analyze = Command::new(analyzer_path())
+            .arg("--projection")
+            .arg(&projection)
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out")
+            .arg(&artifact)
+            .output()
+            .unwrap();
+        assert!(
+            analyze.status.success(),
+            "{}",
+            String::from_utf8_lossy(&analyze.stderr)
+        );
+        artifact
+    }
+
+    pub fn process_with_assessment(&self, args: &[&str], analysis: &Path) -> Command {
+        let root = self.run.root();
+        let mut command = self.process(args);
+        command
+            .arg("--tree-config")
+            .arg(root.join("spec_config.yaml"))
+            .arg("--tree-vendor-marks")
+            .arg(root.join("vendor_marks.yaml"))
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out-root")
+            .arg(root.join("edit-out"))
+            .arg("--analysis")
+            .arg(analysis);
+        if args.first() == Some(&"bindings")
+            || args.get(1) == Some(&"merge")
+            || args.get(1) == Some(&"delete")
+        {
+            command.arg("--tree-modules").arg(&self.modules);
+        }
+        command
+    }
+
+    pub fn json_with_assessment(&self, args: &[&str], analysis: &Path) -> Value {
+        let output = self
+            .process_with_assessment(args, analysis)
+            .args(["--format", "json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        parse_stdout_json(&output)
+    }
+
+    pub fn assert_success_with_assessment(&self, args: &[&str], analysis: &Path) {
+        let output = self
+            .process_with_assessment(args, analysis)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    pub fn assert_rejected_unchanged_with_assessment(
+        &self,
+        args: &[&str],
+        analysis: &Path,
+        diagnostics: &[&str],
+    ) -> Value {
+        fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+            let mut files = BTreeMap::new();
+            for entry in fs::read_dir(root).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    files.extend(snapshot(&path));
+                } else {
+                    files.insert(path.clone(), fs::read(path).unwrap());
+                }
+            }
+            files
+        }
+        let before = snapshot(&self.modules);
+        let preview = self
+            .process_with_assessment(args, analysis)
+            .arg("--dry-run")
+            .args(["--format", "json"])
+            .output()
+            .unwrap();
+        assert!(
+            preview.status.success(),
+            "preview failed: {}",
+            String::from_utf8_lossy(&preview.stderr)
+        );
+        let preview_report = parse_stdout_json(&preview);
+        assert_eq!(preview_report["action"], "dry-run", "{preview_report}");
+        assert_eq!(preview_report["gate"], "claims_checked", "{preview_report}");
+        assert!(
+            matches!(
+                preview_report["effect_relocation_assessment"]["status"].as_str(),
+                Some(
+                    "blocked_by_effect"
+                        | "blocked_by_placement"
+                        | "blocked_by_effect_and_placement"
+                        | "incomplete"
+                )
+            ),
+            "{preview_report}"
+        );
+        assert_eq!(snapshot(&self.modules), before, "preview changed spec");
+        let output = self
+            .process_with_assessment(args, analysis)
+            .args(["--format", "json"])
+            .output()
+            .unwrap();
+        let rejection = parse_stdout_json(&output);
+        assert_eq!(
+            rejection["rejection"], preview_report["effect_relocation_assessment"],
+            "{rejection}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "{args:?} unexpectedly succeeded: {stderr}"
+        );
+        for diagnostic in diagnostics {
+            assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
+        }
+        assert_eq!(snapshot(&self.modules), before, "{args:?}: spec changed");
+        rejection["rejection"].clone()
+    }
+
     /// A rejected real spec still emits graph and gate diagnostic artifacts.
     pub fn rejected(source: &str, modules: &[(&str, &str)]) -> Self {
         Self::run(source, modules, false)
@@ -94,6 +294,19 @@ impl GraphFixture {
         )
     }
 
+    pub fn acyclic_pair_full_tree() -> Self {
+        Self::new_full_tree(
+            "const beta = 1;\nconst alpha = beta + 1;\nconsole.log(alpha);\n",
+            &[
+                (
+                    "a.yaml",
+                    "members: [{selector: {binding: {name: alpha}}}]\n",
+                ),
+                ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
+            ],
+        )
+    }
+
     /// Merging the endpoints a/b makes a cycle through the middle c.
     pub fn dependency_chain() -> Self {
         Self::new(
@@ -128,12 +341,22 @@ impl GraphFixture {
     /// Both edit modes must refuse for the intended reason, without changing
     /// any spec bytes or creating/deleting files (including nested modules).
     pub fn assert_rejected_unchanged(&self, args: &[&str], diagnostics: &[&str]) {
-        self.assert_rejected_unchanged_with_graph(args, diagnostics, true);
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, true, None);
     }
 
     /// Test an explicitly unverified edit without supplying a saved graph.
     pub fn assert_rejected_unchanged_without_graph(&self, args: &[&str], diagnostics: &[&str]) {
-        self.assert_rejected_unchanged_with_graph(args, diagnostics, false);
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, false, None);
+    }
+
+    /// An invalid edit can fail before producing a candidate assessment report.
+    pub fn assert_error_unchanged_with_assessment(
+        &self,
+        args: &[&str],
+        analysis: &Path,
+        diagnostics: &[&str],
+    ) {
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, true, Some(analysis));
     }
 
     fn assert_rejected_unchanged_with_graph(
@@ -141,6 +364,7 @@ impl GraphFixture {
         args: &[&str],
         diagnostics: &[&str],
         with_graph: bool,
+        analysis: Option<&Path>,
     ) {
         fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             let mut files = BTreeMap::new();
@@ -161,7 +385,11 @@ impl GraphFixture {
             if dry_run {
                 args.push("--dry-run");
             }
-            let mut command = self.process(&args);
+            let mut command = if let Some(analysis) = analysis {
+                self.process_with_assessment(&args, analysis)
+            } else {
+                self.process(&args)
+            };
             if !with_graph {
                 command.env_remove("DEBUNDLE_GRAPH");
             }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
-use source_identity::SourceUnitOrdinal;
+use crate::facts::abstract_domain::value::{ClassDefinitionId, HeapAddress, HeapModuleScope};
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 
 /// One value per syntactic position bucket. Collapses the repeated
 /// eager / lazy / first-order-lazy triples (reads, rebinds, calls)
@@ -103,6 +104,10 @@ pub struct StatementFacts {
     /// Proven effects are retained even when some targets remain unresolved;
     /// `complete` decides whether the conservative fallback also runs.
     pub(crate) synchronous_calls: Option<SynchronousCalls>,
+    /// Canonical AST-lowered source operation sites owned by this source unit.
+    /// Execution receipts may reference these sites but cannot authenticate or
+    /// extend this independently prepared table.
+    pub(crate) source_operation_sites: Vec<super::sync_effects::SourceOperationSite>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -204,6 +209,36 @@ pub struct CallbackFactoryWriteWitness {
     pub property: Option<String>,
 }
 
+/// A reached imported primitive GetValue whose source capability depends on
+/// provider initialization. This is a may-execution obligation: candidate
+/// assessment must preserve its exact imported binding route and initialize
+/// the retained provider closure before the consuming body can execute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequiredImportedPrimitiveRead {
+    /// Lexical source owner of the read operation.
+    pub source_owner: SourceUnitOrdinal,
+    /// Canonical operation identity attached by source-covered local lowering.
+    /// Missing identity is retained explicitly and makes candidate proof fail.
+    pub source_site: Option<super::sync_effects::SourceOperationSite>,
+    /// Top-level source statement whose actual execution reached this read.
+    /// `None` remains an explicit unproved context for non-rooted queries.
+    pub consumer_root: Option<SourceUnitOrdinal>,
+    /// Hygiene-aware source import binding that supplied the read value.
+    pub source_binding: Id,
+    /// Original static request spelling and first-hop imported name.
+    pub source_specifier: String,
+    pub imported_name: String,
+    /// First resolved provider and all source primitive cells used to derive
+    /// the value through local exports or forwarding aliases.
+    pub provider_module: String,
+    pub provider_export: String,
+    pub dependency_closure: BTreeSet<String>,
+    /// Full source closure, including every admitted static host leaf. A
+    /// missing value is an explicit unproved obligation after legacy restore.
+    pub provider_closure: Option<crate::analysis_inputs::ResolvedProviderDependencyClosure>,
+    pub source_cells: BTreeSet<crate::analysis_inputs::PrimitiveExportCell>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
     pub initializer_binding_effects:
@@ -211,6 +246,17 @@ pub(crate) struct SynchronousCalls {
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+    /// Keep proof dependencies off recursive `Outcome`/`SynchronousCalls`
+    /// frames. The box is transparent in saved analysis serialization.
+    /// Exact-owner normal-completion evidence for the initialization control
+    /// fence is independent of effect-domain closure.
+    pub(crate) root_normal_completion:
+        Option<Box<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
+    /// Exact root-level outward known throw, distinct from potential
+    /// suppression inferred from missing normal-completion evidence.
+    /// Boxed so its proof dependencies do not inflate recursive outcome frames.
+    pub(crate) root_outward_throw:
+        Option<Box<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
@@ -252,10 +298,26 @@ pub(crate) struct SynchronousCalls {
     pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
     pub(crate) heap_contents: HeapContentCells,
-    /// Heap reads and writes reached without an assumed callback or fallback
-    /// path. This is a subset of `heap_contents` and is used only to check
-    /// explicit commuting premises; the conservative heap order uses all cells.
-    pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    /// Conditional imported bodies whose checked module-cell reads and writes
+    /// are included in this execution require their source initialization to
+    /// precede every candidate invocation.
+    pub(crate) required_initialized_module_cells: BTreeSet<ModuleCellId>,
+    /// Conditional imported-body transfers require the emitted candidate to
+    /// preserve the exact imported binding route to the analyzed provider,
+    /// even when the body has no module-cell footprint.
+    pub(crate) conditional_provider_targets: Vec<ConditionalProviderTargetRequirement>,
+    /// Reached imported primitive reads whose candidate must preserve the
+    /// exact source binding route and provider-before-consumer phase.
+    pub(crate) required_imported_primitive_reads: Vec<RequiredImportedPrimitiveRead>,
+    /// Source operation evidence is separate from the may-access set: exact
+    /// interpreter operations, operations reached only under an assumption,
+    /// and conservative summaries have different authority in pair premises.
+    /// Every category remains in `heap_contents` for ordering.
+    pub(crate) heap_access_provenance: HeapAccessProvenance,
+    /// Typed descriptor/shape support for admitted own-data reads and stores.
+    /// This is report/read-footprint evidence, not effect-domain authority.
+    pub(crate) operation_support_receipts:
+        Option<Box<[super::sync_effects::OperationSupportReceipt]>>,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -268,6 +330,37 @@ pub(crate) struct SynchronousCalls {
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+}
+
+/// Source identity for one successfully applied conditional imported-body
+/// transfer. This is an obligation to prove the same binding route in the
+/// prepared candidate; it does not itself prove target preservation.
+/// Source binding and provider identity for an applied conditional imported-body transfer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalProviderTargetRequirement {
+    /// Source-unit ordinal containing the callsite.
+    pub owner: SourceUnitOrdinal,
+    /// Exact source callsite span used to join candidate requests.
+    pub call_span: Span,
+    /// Hygiene-aware source Id of the imported callee.
+    pub source_binding: Id,
+    /// Source chunk namespace that owns the analyzed function.
+    pub defining_module: String,
+    /// Export name through which the function was resolved.
+    pub export: String,
+    /// Provider-local binding name for the resolved function.
+    pub local: String,
+    /// Analysis identity for the resolved callable body.
+    pub callable_key: u32,
+    /// Complete first-hop provider closure and its admitted host leaves.
+    /// Missing legacy evidence remains unproved, never an empty closure.
+    pub provider_closure: Option<crate::analysis_inputs::ResolvedProviderDependencyClosure>,
+    /// Exact host leaves in this call's provider route, retained separately
+    /// because its module-cell initialization proof also depends on the
+    /// importer's source-initialized closure. Missing legacy evidence remains
+    /// unproved rather than defaulting to an empty set.
+    pub source_initialized_host_dependencies:
+        Option<BTreeSet<crate::analysis_inputs::AdmittedHostModuleDependency>>,
 }
 
 /// Binding effects a statement's synchronous summary assumed rather than
@@ -285,25 +378,61 @@ pub(crate) struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
-    pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
+    pub(crate) fn require_imported_primitive_read(
+        &mut self,
+        requirement: RequiredImportedPrimitiveRead,
+    ) {
+        if !self
+            .required_imported_primitive_reads
+            .contains(&requirement)
+        {
+            self.required_imported_primitive_reads.push(requirement);
+        }
+    }
+
+    pub(crate) fn record_operation_support(
+        &mut self,
+        receipt: super::sync_effects::OperationSupportReceipt,
+    ) {
+        if self
+            .operation_support_receipts
+            .as_deref()
+            .is_some_and(|receipts| receipts.contains(&receipt))
+        {
+            return;
+        }
+        let mut receipts = self
+            .operation_support_receipts
+            .take()
+            .map(|receipts| receipts.into_vec())
+            .unwrap_or_default();
+        receipts.push(receipt);
+        self.operation_support_receipts = Some(receipts.into_boxed_slice());
+    }
+
+    pub(crate) fn operation_support_receipts(
+        &self,
+    ) -> &[super::sync_effects::OperationSupportReceipt] {
+        self.operation_support_receipts.as_deref().unwrap_or(&[])
+    }
+
+    pub(crate) fn record_heap_contents(
+        &mut self,
+        cells: &HeapContentCells,
+        provenance: HeapAccessOrigin,
+    ) {
         self.heap_contents.extend(cells);
-        if non_assumed {
-            self.non_assumed_heap_accesses.extend_cells(cells);
-        }
+        self.heap_access_provenance.record_cells(cells, provenance);
     }
 
-    pub(crate) fn record_heap_read(&mut self, cell: EffectCell, non_assumed: bool) {
+    pub(crate) fn record_heap_read(&mut self, cell: EffectCell, provenance: HeapAccessOrigin) {
         self.heap_contents.reads.insert(cell.clone());
-        if non_assumed {
-            self.non_assumed_heap_accesses.reads.insert(cell);
-        }
+        self.heap_access_provenance.record_read(cell, provenance);
     }
 
-    pub(crate) fn record_heap_write(&mut self, cell: EffectCell, non_assumed: bool) {
+    pub(crate) fn record_heap_write(&mut self, cell: EffectCell, provenance: HeapAccessOrigin) {
         self.heap_contents.writes.insert(cell.clone());
-        if non_assumed {
-            self.non_assumed_heap_accesses.writes.insert(cell);
-        }
+        self.heap_access_provenance.record_write(cell, provenance);
     }
 
     pub(crate) fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
@@ -350,7 +479,7 @@ impl SynchronousCalls {
 /// `call_span`; factory and class purity summaries remain unchanged. An
 /// author assertion may supply otherwise-unproved prototype premises, but
 /// native/source evidence can establish them without an assertion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LocalRecordFactoryPurityCertificate {
     pub call_span: swc_common::Span,
     pub checked_owners: BTreeSet<SourceUnitOrdinal>,
@@ -378,6 +507,36 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
+    /// Module cells whose source initialization the statement's checked
+    /// conditional imported-body transfer requires. These are identities
+    /// only; the iterator grants no authority over cell contents or writes.
+    pub fn required_initialized_module_cells(&self) -> impl Iterator<Item = ModuleCellId> + '_ {
+        self.synchronous_calls
+            .iter()
+            .flat_map(|calls| calls.required_initialized_module_cells.iter().copied())
+    }
+
+    /// Binding and provider identities consumed by applied conditional body
+    /// transfers. These remain required even when no module cells were read.
+    pub fn required_conditional_provider_targets(
+        &self,
+    ) -> impl Iterator<Item = &ConditionalProviderTargetRequirement> + '_ {
+        self.synchronous_calls
+            .iter()
+            .flat_map(|calls| calls.conditional_provider_targets.iter())
+    }
+
+    /// Imported primitive reads reached by this statement or its synchronous
+    /// callees. Alternatives union these requirements because any path may
+    /// consume the source-proved provider value.
+    pub fn required_imported_primitive_reads(
+        &self,
+    ) -> impl Iterator<Item = &RequiredImportedPrimitiveRead> + '_ {
+        self.synchronous_calls
+            .iter()
+            .flat_map(|calls| calls.required_imported_primitive_reads.iter())
+    }
+
     /// What one synchronous call of the function or class this statement
     /// declares runs first-order (before nested closures and `await`):
     /// a class runs its constructor. The view at-init call promotion uses.
@@ -450,6 +609,75 @@ impl StatementFacts {
         reads.extend(self.heap_contents.reads.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
+
+    /// Preserve the correspondence between this chunk's lexical names and
+    /// resolved module storage. These are may-accesses, never coverage or
+    /// initialized-value evidence, and retain the original binding effects.
+    pub(crate) fn record_module_cell_accesses(&mut self, cells: &BTreeMap<Id, ModuleCellId>) {
+        let effects = self.effects();
+        for (accesses, target) in [
+            (&effects.reads, &mut self.heap_contents.reads),
+            (&effects.writes, &mut self.heap_contents.writes),
+        ] {
+            target.extend(accesses.iter().filter_map(|access| {
+                let EffectCell::Binding(binding) = access else {
+                    return None;
+                };
+                cells.get(binding).copied().map(EffectCell::ModuleCell)
+            }));
+        }
+        if let Some(calls) = &mut self.synchronous_calls {
+            calls.heap_contents.reads.extend(
+                calls
+                    .reads
+                    .iter()
+                    .map(|(binding, _)| binding)
+                    .chain(&calls.uninitialized_reads)
+                    .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
+            );
+            calls.heap_contents.writes.extend(
+                calls
+                    .rebinds
+                    .iter()
+                    .map(|(binding, _)| binding)
+                    .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
+            );
+            for cell in calls
+                .reads
+                .iter()
+                .map(|(binding, _)| binding)
+                .chain(&calls.uninitialized_reads)
+                .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell))
+            {
+                calls
+                    .heap_access_provenance
+                    .record_read(cell, HeapAccessOrigin::ConservativeSummary);
+            }
+            for cell in calls
+                .rebinds
+                .iter()
+                .map(|(binding, _)| binding)
+                .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell))
+            {
+                calls
+                    .heap_access_provenance
+                    .record_write(cell, HeapAccessOrigin::ConservativeSummary);
+            }
+        }
+    }
+}
+
+/// Identity in a chunk's declarative-cell arena. Slots are never reused; saved
+/// effects preserve the identity without retaining its runtime value graph.
+/// Immutable function-name views are not new activation-cell effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LexicalCellId(pub(crate) usize);
+
+impl std::fmt::Display for LexicalCellId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// One outer-observable storage location a statement can read or
@@ -463,21 +691,67 @@ impl StatementFacts {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
+    /// The actual captured cell, with its canonical declaration offset.
+    /// Identity does not prove initialization, contents, or private ownership.
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
+    /// One declarative module binding cell, scoped to its source chunk.
+    /// Persisted analysis uses a checked chunk name instead of this interned ID.
+    #[serde(skip)]
+    ModuleCell(ModuleCellId),
     GlobalProp(String),
+    /// Shared synchronous module-initialization progress across all logical
+    /// modules in one exact per-chunk relocation sweep.
+    ExecutionProgress,
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
-    ArrayContents(u32),
+    ArrayContents(HeapAddress),
     /// Mutable contents of one proved fresh native Set construction.
-    SetContents(u32),
+    SetContents(HeapAddress),
+    /// Shared agent-local ECMAScript GlobalSymbolRegistry used by
+    /// `Symbol.for`. Its entries are not enumerable or removable from source,
+    /// but repeated lookups observe the same key-unique symbol.
+    GlobalSymbolRegistry,
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
-    ObjectShape(u32),
+    ObjectShape(HeapAddress),
+    /// A captured native descriptor carrier, including its property records.
+    DescriptorMapContents(HeapAddress),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {
-        origin: u32,
+        origin: HeapAddress,
         property: String,
     },
+    /// One private element, keyed independently by receiver allocation source,
+    /// class brand source, and private name. Source origins still aggregate
+    /// runtime generations and supply no strong-update or privacy proof.
+    PrivateSlot {
+        origin: HeapAddress,
+        class: ClassDefinitionId,
+        name: String,
+    },
+}
+
+impl EffectCell {
+    pub(crate) fn is_heap_content(&self) -> bool {
+        match self {
+            Self::Binding(_)
+            | Self::ModuleCell(_)
+            | Self::GlobalProp(_)
+            | Self::ExecutionProgress => false,
+            Self::ArrayContents(_)
+            | Self::LexicalCell { .. }
+            | Self::SetContents(_)
+            | Self::GlobalSymbolRegistry
+            | Self::ObjectShape(_)
+            | Self::DescriptorMapContents(_)
+            | Self::OwnProperty { .. }
+            | Self::PrivateSlot { .. } => true,
+        }
+    }
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -530,8 +804,97 @@ impl HeapContentCells {
     }
 }
 
-/// Source-known heap may-accesses whose invocation path was not assumed.
-/// Allocations are excluded: a fresh birth is not a content write.
+/// Why a heap-cell may-access is present in the synchronous transfer.
+/// `ExecutedOperation` is a source operation represented by the interpreter;
+/// `AssumedOperation` is such an operation reached only on an assumed path;
+/// `ConservativeSummary` is a fallback, barrier, or summary footprint. The
+/// enclosing source path can demote operation evidence, never promote a
+/// summary into executed evidence.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum HeapAccessOrigin {
+    #[default]
+    ExecutedOperation,
+    AssumedOperation,
+    ConservativeSummary,
+}
+
+/// Separate source-operation authority from the unchanged may-access sets.
+/// A cell can occur in more than one category when independent paths produce
+/// both direct and summarized evidence.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HeapAccessProvenance {
+    pub executed_operations: HeapContentAccesses,
+    pub assumed_operations: HeapContentAccesses,
+    pub conservative_summaries: HeapContentAccesses,
+}
+
+impl HeapAccessProvenance {
+    pub(crate) fn record_cells(&mut self, cells: &HeapContentCells, origin: HeapAccessOrigin) {
+        let accesses = HeapContentAccesses {
+            reads: cells.reads.clone(),
+            writes: cells.writes.clone(),
+        };
+        self.extend_origin(&accesses, origin);
+    }
+
+    pub(crate) fn record_read(&mut self, cell: EffectCell, origin: HeapAccessOrigin) {
+        self.extend_origin(
+            &HeapContentAccesses {
+                reads: BTreeSet::from([cell]),
+                writes: BTreeSet::new(),
+            },
+            origin,
+        );
+    }
+
+    pub(crate) fn record_write(&mut self, cell: EffectCell, origin: HeapAccessOrigin) {
+        self.extend_origin(
+            &HeapContentAccesses {
+                reads: BTreeSet::new(),
+                writes: BTreeSet::from([cell]),
+            },
+            origin,
+        );
+    }
+
+    fn extend_origin(&mut self, accesses: &HeapContentAccesses, origin: HeapAccessOrigin) {
+        match origin {
+            HeapAccessOrigin::ExecutedOperation => {
+                self.executed_operations.extend(accesses);
+            }
+            HeapAccessOrigin::AssumedOperation => {
+                self.assumed_operations.extend(accesses);
+            }
+            HeapAccessOrigin::ConservativeSummary => {
+                self.conservative_summaries.extend(accesses);
+            }
+        }
+    }
+
+    pub(crate) fn absorb(&mut self, other: &Self, enclosing: HeapAccessOrigin) {
+        self.conservative_summaries
+            .extend(&other.conservative_summaries);
+        match enclosing {
+            HeapAccessOrigin::ExecutedOperation => {
+                self.executed_operations.extend(&other.executed_operations);
+                self.assumed_operations.extend(&other.assumed_operations);
+            }
+            HeapAccessOrigin::AssumedOperation => {
+                self.assumed_operations.extend(&other.executed_operations);
+                self.assumed_operations.extend(&other.assumed_operations);
+            }
+            HeapAccessOrigin::ConservativeSummary => {
+                self.conservative_summaries
+                    .extend(&other.executed_operations);
+                self.conservative_summaries
+                    .extend(&other.assumed_operations);
+            }
+        }
+    }
+}
+
+/// Heap accesses in one provenance category. Allocations are excluded: a
+/// fresh birth is not a content read or write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HeapContentAccesses {
     pub reads: BTreeSet<EffectCell>,
@@ -542,11 +905,6 @@ impl HeapContentAccesses {
     pub(crate) fn extend(&mut self, other: &Self) {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
-    }
-
-    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells) {
-        self.reads.extend(cells.reads.iter().cloned());
-        self.writes.extend(cells.writes.iter().cloned());
     }
 }
 
@@ -654,6 +1012,34 @@ fn apply_initializer_binding_effects(
 }
 
 impl ChunkFactAnalysis {
+    /// Whether every provider callable named by a restored exact call receipt
+    /// still resolves in the current prepared provider inventory. Caller
+    /// sites are validated independently against their canonical source table.
+    pub(crate) fn provider_callables_are_current(
+        &self,
+        current: &mut impl FnMut(&str, &str, u32) -> bool,
+    ) -> bool {
+        self.facts
+            .iter()
+            .filter_map(|fact| fact.synchronous_calls.as_ref())
+            .all(|calls| {
+                calls
+                    .binding_effect_coverage
+                    .provider_callables_are_current(current)
+            })
+    }
+
+    /// Whether any selected call receipt in this chunk carries an exact
+    /// provider target whose caller-to-target relation must be regenerated
+    /// from current source before loaded facts are used.
+    pub fn has_provider_callable_targets(&self) -> bool {
+        self.facts.iter().any(|fact| {
+            fact.synchronous_calls
+                .as_ref()
+                .is_some_and(|calls| calls.binding_effect_coverage.has_provider_callable_target())
+        })
+    }
+
     /// Apply author lexical-effect boundaries after raw source execution and
     /// receipt sealing. Source-owned coverage is never changed by this overlay.
     pub fn apply_initializer_binding_effects(&mut self, source_only_bindings: &BTreeSet<String>) {
@@ -877,6 +1263,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
+    pub(crate) heap_scope: HeapModuleScope,
     pub(crate) dynamic_scope: super::DynamicScopeFact,
     pub(crate) set_iterable_shapes: super::SetIterableShapes,
     pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
@@ -900,12 +1287,22 @@ pub struct StructuralChunkAnalysis<'a> {
 /// Source-only structural census. Selector resolution can consume this before
 /// value-flow roots supplied by validated author inputs are known.
 pub struct StructuralChunkSourceFacts<'a> {
+    pub(crate) heap_scope: HeapModuleScope,
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
+}
+
+impl StructuralChunkSourceFacts<'_> {
+    /// Whether these source facts were prepared for the requested semantic
+    /// heap namespace. The scope remains private so callers can validate the
+    /// prepared analysis without treating its identity as mutable input.
+    pub fn has_heap_scope(&self, expected: HeapModuleScope) -> bool {
+        self.heap_scope == expected
+    }
 }
 
 #[cfg(test)]
@@ -940,7 +1337,7 @@ mod initializer_overlay_tests {
                 .as_ref()
                 .unwrap()
                 .clone();
-            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
+            let BindingEffectCoverage::OrderedRoot { receipt, .. } =
                 &before.binding_effect_coverage
             else {
                 panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");
@@ -971,10 +1368,7 @@ mod initializer_overlay_tests {
             );
             assert_eq!(after.complete, before.complete);
             assert_eq!(after.heap_contents, before.heap_contents);
-            assert_eq!(
-                after.non_assumed_heap_accesses,
-                before.non_assumed_heap_accesses
-            );
+            assert_eq!(after.heap_access_provenance, before.heap_access_provenance);
             assert_eq!(
                 serde_json::to_value(&after.completed_initialization).unwrap(),
                 serde_json::to_value(&before.completed_initialization).unwrap()
@@ -1022,5 +1416,170 @@ mod initializer_overlay_tests {
                 .unwrap_err();
             assert!(error.to_string().contains(diagnostic), "{error:#}");
         }
+    }
+}
+
+#[cfg(test)]
+mod heap_access_provenance_tests {
+    use super::*;
+
+    fn address(origin: u32) -> HeapAddress {
+        HeapAddress::module_family(
+            source_identity::ChunkId(0),
+            crate::facts::abstract_domain::value::Kind::Array,
+            origin,
+        )
+    }
+
+    fn cell() -> EffectCell {
+        EffectCell::ArrayContents(address(7))
+    }
+
+    #[test]
+    fn assumptions_demote_executed_evidence_without_removing_may_effects() {
+        let direct = HeapContentCells {
+            writes: BTreeSet::from([cell()]),
+            ..HeapContentCells::default()
+        };
+        let mut calls = SynchronousCalls::default();
+        calls.record_heap_contents(&direct, HeapAccessOrigin::ExecutedOperation);
+        assert_eq!(calls.heap_contents.writes, direct.writes);
+        assert_eq!(
+            calls.heap_access_provenance.executed_operations.writes,
+            direct.writes
+        );
+        let assumed = HeapAccessProvenance {
+            executed_operations: HeapContentAccesses {
+                writes: BTreeSet::from([cell()]),
+                ..HeapContentAccesses::default()
+            },
+            ..HeapAccessProvenance::default()
+        };
+
+        let mut merged = SynchronousCalls::default();
+        merged.heap_contents.extend(&direct);
+        merged
+            .heap_access_provenance
+            .absorb(&assumed, HeapAccessOrigin::AssumedOperation);
+
+        assert_eq!(merged.heap_contents.writes, BTreeSet::from([cell()]));
+        assert!(
+            merged
+                .heap_access_provenance
+                .executed_operations
+                .writes
+                .is_empty()
+        );
+        assert_eq!(
+            merged.heap_access_provenance.assumed_operations.writes,
+            BTreeSet::from([cell()])
+        );
+        assert!(
+            merged
+                .heap_access_provenance
+                .conservative_summaries
+                .writes
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn enclosing_summary_never_promotes_nested_operations_to_executed() {
+        let direct = HeapAccessProvenance {
+            executed_operations: HeapContentAccesses {
+                reads: BTreeSet::from([cell()]),
+                ..HeapContentAccesses::default()
+            },
+            ..HeapAccessProvenance::default()
+        };
+        let mut merged = HeapAccessProvenance::default();
+        merged.absorb(&direct, HeapAccessOrigin::ConservativeSummary);
+
+        assert!(merged.executed_operations.reads.is_empty());
+        assert_eq!(
+            merged.conservative_summaries.reads,
+            BTreeSet::from([cell()])
+        );
+    }
+
+    #[test]
+    fn summary_caller_does_not_poison_reusable_invocation_evidence() {
+        let invocation = HeapAccessProvenance {
+            executed_operations: HeapContentAccesses {
+                writes: BTreeSet::from([cell()]),
+                ..HeapContentAccesses::default()
+            },
+            ..HeapAccessProvenance::default()
+        };
+
+        let mut summarized_caller = HeapAccessProvenance::default();
+        summarized_caller.absorb(&invocation, HeapAccessOrigin::ConservativeSummary);
+        let mut direct_caller = HeapAccessProvenance::default();
+        direct_caller.absorb(&invocation, HeapAccessOrigin::ExecutedOperation);
+
+        assert_eq!(
+            summarized_caller.conservative_summaries.writes,
+            BTreeSet::from([cell()])
+        );
+        assert!(summarized_caller.executed_operations.writes.is_empty());
+        assert_eq!(
+            direct_caller.executed_operations.writes,
+            BTreeSet::from([cell()])
+        );
+        assert!(direct_caller.conservative_summaries.writes.is_empty());
+    }
+
+    #[test]
+    fn executed_merge_preserves_each_nested_origin() {
+        let mut nested = HeapAccessProvenance::default();
+        nested.record_write(cell(), HeapAccessOrigin::ExecutedOperation);
+        nested.record_read(cell(), HeapAccessOrigin::AssumedOperation);
+        nested.record_write(
+            EffectCell::OwnProperty {
+                origin: address(8),
+                property: "name".to_owned(),
+            },
+            HeapAccessOrigin::ConservativeSummary,
+        );
+
+        let mut merged = HeapAccessProvenance::default();
+        merged.absorb(&nested, HeapAccessOrigin::ExecutedOperation);
+
+        assert_eq!(merged.executed_operations.writes, BTreeSet::from([cell()]));
+        assert_eq!(merged.assumed_operations.reads, BTreeSet::from([cell()]));
+        assert_eq!(
+            merged.conservative_summaries.writes,
+            BTreeSet::from([EffectCell::OwnProperty {
+                origin: address(8),
+                property: "name".to_owned(),
+            }])
+        );
+    }
+
+    #[test]
+    fn a_later_direct_operation_retains_executed_authority_after_an_assumed_path() {
+        let mut provenance = HeapAccessProvenance::default();
+        let nested_direct = HeapAccessProvenance {
+            executed_operations: HeapContentAccesses {
+                writes: BTreeSet::from([cell()]),
+                ..HeapContentAccesses::default()
+            },
+            ..HeapAccessProvenance::default()
+        };
+        provenance.absorb(&nested_direct, HeapAccessOrigin::AssumedOperation);
+        let later_direct = HeapContentAccesses {
+            writes: BTreeSet::from([EffectCell::OwnProperty {
+                origin: address(7),
+                property: "length".to_owned(),
+            }]),
+            ..HeapContentAccesses::default()
+        };
+        provenance.extend_origin(&later_direct, HeapAccessOrigin::ExecutedOperation);
+
+        assert_eq!(
+            provenance.assumed_operations.writes,
+            BTreeSet::from([cell()])
+        );
+        assert_eq!(provenance.executed_operations.writes, later_direct.writes);
     }
 }

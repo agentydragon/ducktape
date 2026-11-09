@@ -10,14 +10,14 @@ use crate::rename_ledger::{
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::top_level_id;
 use anyhow::{Context, Result};
-use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{CandidateImportNaturalizationReceipt, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::module_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{VisitMutWith, VisitWith};
+use swc_ecma_visit::{Visit, VisitMutWith, VisitWith};
 
 const CROSS_CHUNK_IMPORT_RENAME_CONTRIBUTOR: &str = "spec-named cross-chunk import readability";
 
@@ -35,7 +35,8 @@ pub fn naturalize_cross_chunk_imports(
     indexes: &ArtifactIndexes,
     selected_lowerings: &[SelectedModuleLowering],
     processed_chunks: &BTreeSet<String>,
-) -> Result<()> {
+) -> Result<Vec<CandidateImportNaturalizationReceipt>> {
+    let mut receipts = Vec::new();
     let mut alias_candidates = BTreeMap::<String, BTreeMap<String, BTreeSet<String>>>::new();
     for lowering in selected_lowerings {
         let aliases = alias_candidates
@@ -259,6 +260,42 @@ pub fn naturalize_cross_chunk_imports(
                 )
             })
             .collect();
+        for candidate in &candidates {
+            if let Some(to_imported_name) =
+                approved.get(&(candidate.item_index, candidate.specifier_index))
+            {
+                let from_local = top_level_id(&candidate.local, parsed.top_level_mark);
+                let item = parsed.module.body.get(candidate.item_index);
+                let item_span = item.map(Spanned::span).unwrap_or(DUMMY_SP);
+                let specifier_span = item
+                    .and_then(|item| match item {
+                        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+                            .specifiers
+                            .get(candidate.specifier_index)
+                            .map(Spanned::span),
+                        _ => None,
+                    })
+                    .unwrap_or(DUMMY_SP);
+                let mut use_spans = IdentSpanCollector {
+                    wanted: from_local.clone(),
+                    spans: Vec::new(),
+                };
+                parsed.module.visit_with(&mut use_spans);
+                receipts.push(CandidateImportNaturalizationReceipt {
+                    chunk: chunk_id,
+                    file: file_path.clone(),
+                    item_index: candidate.item_index,
+                    item_span,
+                    specifier_index: candidate.specifier_index,
+                    specifier_span,
+                    from_local,
+                    to_local: top_level_id(to_imported_name, parsed.top_level_mark),
+                    from_imported_name: candidate.imported.clone(),
+                    to_imported_name: to_imported_name.clone(),
+                    rewritten_use_spans: use_spans.spans,
+                });
+            }
+        }
         if !renames.is_empty() {
             let mut renamer = IdentifierRenamer::new(&renames, unresolved_context);
             for item in &mut parsed.module.body {
@@ -287,6 +324,19 @@ pub fn naturalize_cross_chunk_imports(
         }
     }
     Ok(())
+}
+
+struct IdentSpanCollector {
+    wanted: Id,
+    spans: Vec<Span>,
+}
+
+impl Visit for IdentSpanCollector {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if ident.to_id() == self.wanted {
+            self.spans.push(ident.span);
+        }
+    }
 }
 
 #[derive(Debug)]

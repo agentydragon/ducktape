@@ -1,66 +1,22 @@
-//! Shared realizability + atom-split gate for spec-mutating CLI verbs.
+//! Shared graph claim validation for spec-mutating CLI verbs.
 //!
-//! Every command that edits the spec on disk (`modules merge`,
-//! `modules delete --force`, `bindings assign`) must reject edits that
-//! would render the spec unrealizable BEFORE writing any YAML. Two
-//! invariants the gate enforces, mirroring what `debundle run` checks
-//! against the on-disk spec:
-//!
-//! 1. **No cross-module init-order cycles** — `check_realizability` /
-//!    `validate_assignment` over the post-edit assignment.
-//! 2. **No atom-split** — every `AtomicGroup` (constraining-edge SCC of
-//!    the dependency graph) maps to a single destination module under the
-//!    post-edit assignment. Splitting a member off into a different
-//!    module is unrealizable by construction (see
-//!    `docs/design.md` §"Two classes of atom").
-//!
-//! Both checks share the same `PostEditSpec` view: a list of surviving
-//! module paths, each with the binding names and anonymous source unit ids
-//! it declares. Each verb projects its planned documents or deletions into a
-//! `PostEditSpec`, then uses [`Gate::check`], [`Gate::check_expected`], or
-//! [`Gate::check_source_units`]. These share
-//! the gate path that returns a [`GateRejection`] error carrying the same
-//! `render_cycle_summary` / `render_atomic_group_conflict_summary`
-//! text the materializer emits when its own gate rejects, so authors
-//! see one consistent diagnostic regardless of whether the rejection
-//! came from `debundle run` or a CLI edit verb. The error also
-//! carries a machine-readable [`GateRejectionReport`] payload (the
-//! same `BlockingSccEntry` / `AtomicGroupConflictReport` projections
-//! the pipeline writes to disk), which the CLI dispatchers serialize
-//! to stdout when a JSON format is selected.
-//!
-//! On rejection the gate also writes the same on-disk artifacts the
-//! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
-//! siblings of the supplied `dependency_graph.json.gz` (the location
-//! `debundle gate list/describe` reads by default) — so the
-//! documented `gate` follow-up queries work after an edit-gate or
-//! `--dry-run` rejection. Stale artifacts from a previous rejection
-//! are removed when the gate passes (or when the rejection kind
-//! changes), keeping `gate list` consistent with the latest verdict.
+//! Ownership edits project their exact planned documents into [`PostEditSpec`]
+//! and resolve direct and source-backed claims, expected members, and (for
+//! reviewed refinement) the complete source-unit assignment. The canonical
+//! candidate assessment supplies the verified write verdict.
 
 use analysis_model::DepKind;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
-use std::fs;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ::gate::{
-    BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
-    validate_assignment,
-};
-use analysis::assignment_assembly::detect_atomic_group_conflict;
-use analysis::{
-    AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleAssignment,
-    ModuleId, compute_atomic_groups,
-};
+use analysis::{DependencyGraphInput, DependencyGraphReport};
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
 use graph_provenance::VerifiedGraphSourceContext;
-use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
@@ -78,7 +34,8 @@ pub struct GraphEditArgs {
     /// Validate and report the edit without modifying spec files.
     #[arg(long)]
     pub dry_run: bool,
-    /// Skip validation. Can permit name collisions or unrealizable specs.
+    /// `--no-verify`: skip claim validation and candidate assessment. Can
+    /// permit unresolved claims, name collisions, or an unaccepted candidate.
     #[arg(long)]
     pub no_verify: bool,
     /// dependency graph for validation; required unless --no-verify or the edit
@@ -106,14 +63,11 @@ impl GraphEditArgs {
     }
 }
 
-/// How a spec-mutating CLI verb validates its edit. Replaces the
-/// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
-/// `(false, None)` combination used to silently skip the
-/// realizability gate.
-#[derive(Debug)]
+/// How a spec-mutating CLI verb validates its edit.
+#[derive(Debug, Clone)]
 pub enum Gate<'a> {
-    /// Run name-collision checks and the post-edit realizability +
-    /// atom-split gate against this dependency graph.
+    /// Resolve post-edit claims using this saved dependency graph. The
+    /// canonical candidate assessment supplies verified-write acceptance.
     Run {
         graph_path: &'a Path,
         input: Arc<DependencyGraphInput>,
@@ -153,7 +107,7 @@ impl<'a> Gate<'a> {
                 source_context,
             }),
             None => bail!(
-                "realizability gate requires --graph (path to dependency_graph.json.gz) or --no-verify"
+                "graph-backed claim validation requires --graph (path to dependency_graph.json.gz) or --no-verify"
             ),
         }
     }
@@ -167,25 +121,22 @@ impl<'a> Gate<'a> {
     /// validation mode.
     pub fn outcome(&self) -> crate::outcome::GateOutcome {
         match self {
-            Self::Run { .. } => crate::outcome::GateOutcome::Passed,
+            Self::Run { .. } => crate::outcome::GateOutcome::ClaimsChecked,
             Self::Skip => crate::outcome::GateOutcome::Skipped,
         }
     }
 
-    /// Run the realizability + atom-split gate against the post-edit
-    /// spec when this is [`Gate::Run`]. `post_spec` is lazy so
-    /// skipped gates don't pay for spec assembly.
-    pub fn check(
+    /// Resolve post-edit claims and prove newly authored selectors still claim
+    /// the binding their edit intended, not merely some unique declaration.
+    pub fn check_claims(
         &self,
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
     ) -> Result<()> {
-        self.check_expected(modules_root, post_spec, &[])
+        self.check_expected_claims(modules_root, post_spec, &[])
     }
 
-    /// Check the gate and prove newly authored selectors still claim the
-    /// binding their edit intended, not merely some unique declaration.
-    pub fn check_expected(
+    pub fn check_expected_claims(
         &self,
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
@@ -197,7 +148,7 @@ impl<'a> Gate<'a> {
                 input,
                 source_root,
                 source_context,
-            } => gate_post_edit_assignment_with_expected(
+            } => check_post_edit_claims(
                 graph_path,
                 input,
                 modules_root,
@@ -212,9 +163,8 @@ impl<'a> Gate<'a> {
         }
     }
 
-    /// Prove the complete resolved assignment, including source units that stay
-    /// residual, against the same graph used to plan the edit.
-    pub fn check_source_units(
+    /// Resolve claims and prove the complete reviewed source-unit map.
+    pub fn check_source_unit_claims(
         &self,
         modules_root: &Path,
         post_spec: &PostEditSpec,
@@ -227,7 +177,7 @@ impl<'a> Gate<'a> {
                 input,
                 source_root,
                 source_context,
-            } => gate_post_edit_assignment_with_expected(
+            } => check_post_edit_claims(
                 graph_path,
                 input,
                 modules_root,
@@ -256,73 +206,6 @@ pub struct ExpectedResolvedMember {
     pub module_path: PathBuf,
     pub export_name: String,
     pub binding_name: String,
-}
-
-/// Machine-readable projection of a realizability-gate rejection.
-/// Reuses the canonical wire shapes the pipeline writes on rejection
-/// (`cycles.json` → [`BlockingSccEntry`], `atomic_group_conflicts.json`
-/// → [`AtomicGroupConflictReport`]) — there is no parallel schema.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum GateRejectionReport {
-    /// The post-edit spec splits one or more atomic groups across
-    /// destination modules.
-    AtomSplit {
-        conflicts: Vec<AtomicGroupConflictReport>,
-    },
-    /// The post-edit module quotient carries blocking SCCs; each entry
-    /// names the SCC's module paths and the binding-pair cut edges.
-    UnrealizableCycles {
-        blocking_sccs: Vec<BlockingSccEntry>,
-    },
-}
-
-/// Error returned when a post-edit assignment is rejected. The
-/// `Display` text is the terse one-line verdict (the blame report has
-/// already gone to stderr); `report` is the structured payload CLI
-/// dispatchers serialize to stdout under a JSON format.
-#[derive(Debug)]
-pub struct GateRejection {
-    pub report: GateRejectionReport,
-    message: &'static str,
-}
-
-impl fmt::Display for GateRejection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl std::error::Error for GateRejection {}
-
-/// Write a rejection artifact next to `dependency_graph_path` — the
-/// default location `debundle gate list/describe/cut` resolves
-/// (`GateCommonArgs::resolved_cycles_path`).
-fn write_rejection_artifact<T: Serialize>(
-    dependency_graph_path: &Path,
-    filename: &str,
-    value: &T,
-) -> Result<()> {
-    let path = rejection_artifact_path(dependency_graph_path, filename);
-    fs::write(&path, serde_json::to_string_pretty(value)?)
-        .with_context(|| format!("writing {}", path.display()))
-}
-
-/// Remove the previous gate result when replacing it with a completed
-/// post-edit assignment report.
-fn remove_rejection_artifact(dependency_graph_path: &Path, filename: &str) -> Result<()> {
-    let path = rejection_artifact_path(dependency_graph_path, filename);
-    if path.exists() {
-        fs::remove_file(&path).with_context(|| format!("removing stale {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn rejection_artifact_path(dependency_graph_path: &Path, filename: &str) -> PathBuf {
-    dependency_graph_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(filename)
 }
 
 #[derive(Debug, Clone)]
@@ -835,7 +718,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
     read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
-fn gate_post_edit_assignment_with_expected(
+fn check_post_edit_claims(
     dependency_graph_path: &Path,
     input: &DependencyGraphInput,
     modules_root: &Path,
@@ -845,7 +728,6 @@ fn gate_post_edit_assignment_with_expected(
 ) -> Result<()> {
     ensure_unaliased_module_tree(modules_root)?;
     let dependency_graph_report = input.report();
-    let dependency_graph = input.graph();
 
     // Source-backed claims resolve to the chunk-top bindings and anonymous
     // source units they claim. A claim the gate cannot resolve (missing chunk
@@ -920,126 +802,6 @@ fn gate_post_edit_assignment_with_expected(
         }
     }
 
-    // ModuleId assignment: residual at logical:0, every surviving
-    // spec module gets a fresh logical:N starting at 1. The path map
-    // renders diagnostics with the same canonical [`ModulePath`]
-    // every wire artifact uses (the module YAML's path relative to
-    // the modules root, `.yaml` stripped).
-    let residual = ModuleId(0);
-    let mut of: Vec<ModuleId> = vec![residual; dependency_graph.num_nodes()];
-    let mut module_path_by_id: HashMap<ModuleId, ModulePath> = [(
-        residual,
-        ModulePath::parse("residual", "").expect("residual is a canonical path"),
-    )]
-    .into_iter()
-    .collect();
-    for (next_idx, (module_idx, module)) in (1usize..).zip(post_spec.modules.iter().enumerate()) {
-        let mid = ModuleId(next_idx);
-        let raw = module_path_from_file(&module.path, modules_root);
-        module_path_by_id.insert(
-            mid,
-            ModulePath::parse(&raw, "")
-                .with_context(|| format!("module YAML {} path", module.path.display()))?,
-        );
-        for source_unit in &claim_projection.modules[module_idx].source_units {
-            of[source_unit.0] = mid;
-        }
-    }
-    let assignment = ModuleAssignment::from_assignments(
-        of,
-        analysis::EntryDestination::from_module_id(residual),
-    );
-
-    let module_path = |m: ModuleId| {
-        module_path_by_id.get(&m).cloned().unwrap_or_else(|| {
-            panic!(
-                "module id logical:{} not assigned by the post-edit spec",
-                m.0
-            )
-        })
-    };
-
-    // Atom splits remain the primary diagnosis; the shared validation below
-    // supplies any co-occurring cycle report as secondary evidence.
-    let atomic_groups = compute_atomic_groups(dependency_graph);
-    let atomic_conflicts = atomic_groups
-        .iter()
-        .filter_map(|atomic_group| {
-            detect_atomic_group_conflict(
-                atomic_group,
-                |source_unit| assignment.of(source_unit),
-                |source_unit| {
-                    dependency_graph_report
-                        .nodes
-                        .get(source_unit.0)
-                        .map(|node| {
-                            node.declared_bindings
-                                .iter()
-                                .map(|binding| binding.binding.clone())
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let report = validate_assignment(dependency_graph, &assignment, &module_path);
-
-    // Replace artifacts only after this candidate's assignment and shared
-    // realizability report are complete. A preflight error keeps the last
-    // completed gate result available instead of leaving partial evidence.
-    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
-    remove_rejection_artifact(
-        dependency_graph_path,
-        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
-    )?;
-
-    if !atomic_conflicts.is_empty() {
-        let conflicts = AtomicGroupConflictReport::from_conflicts(
-            &atomic_conflicts,
-            &module_path,
-            dependency_graph,
-            &|id| input.edge_report(id).clone(),
-        );
-        write_rejection_artifact(
-            dependency_graph_path,
-            output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
-            &conflicts,
-        )?;
-        if !report.cycles.is_empty() {
-            let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
-            write_rejection_artifact(
-                dependency_graph_path,
-                output_layout::CYCLES_REPORT,
-                &blocking_sccs,
-            )?;
-        }
-        let summary =
-            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, dependency_graph);
-        eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
-        return Err(GateRejection {
-            report: GateRejectionReport::AtomSplit { conflicts },
-            message: "realizability gate rejected the edit (atom-split)",
-        }
-        .into());
-    }
-
-    // Check 2 — module-quotient cycles.
-    if !report.cycles.is_empty() {
-        let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
-        write_rejection_artifact(
-            dependency_graph_path,
-            output_layout::CYCLES_REPORT,
-            &blocking_sccs,
-        )?;
-        let summary = render_cycle_summary(&report.cycles);
-        eprintln!("error: post-edit spec is unrealizable:\n{summary}");
-        return Err(GateRejection {
-            report: GateRejectionReport::UnrealizableCycles { blocking_sccs },
-            message: "realizability gate rejected the edit",
-        }
-        .into());
-    }
     Ok(())
 }
 

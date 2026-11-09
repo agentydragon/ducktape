@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use source_identity::{ChunkId, ChunkTable, ModuleCellId};
 use swc_atoms::Atom;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::{Id, Module};
@@ -28,14 +29,29 @@ pub struct SavedBinding {
     context_ordinal: u32,
 }
 
-/// First-occurrence ordinals of the hygiene contexts in a list of modules.
-/// Ordinal 0 is the empty context.
-pub struct ContextOrdinals {
-    ordinals: HashMap<SyntaxContext, u32>,
-    contexts: Vec<SyntaxContext>,
+/// A chunk's persistent identity. Interned [`ChunkId`] values belong to one
+/// artifact's `ChunkTable`, so saved values carry the checked source name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SavedChunk(pub String);
+
+/// A persistent module-cell address. The declaration origin is scoped by a
+/// checked source chunk name, never by an artifact-local `ChunkId`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SavedModuleCell {
+    pub chunk: SavedChunk,
+    pub declaration_origin: u32,
 }
 
-impl ContextOrdinals {
+/// First-occurrence ordinals of the hygiene contexts in a list of modules.
+/// Ordinal 0 is the empty context.
+pub struct ContextOrdinals<'c> {
+    ordinals: HashMap<SyntaxContext, u32>,
+    contexts: Vec<SyntaxContext>,
+    chunk_table: &'c ChunkTable,
+}
+
+impl<'c> ContextOrdinals<'c> {
     pub fn snapshot_binding(&self, binding: &Id) -> Result<SavedBinding> {
         Ok(SavedBinding {
             symbol: binding.0.clone(),
@@ -55,17 +71,76 @@ impl ContextOrdinals {
         Ok((binding.symbol, SyntaxContext::from_u32(context)))
     }
 
-    /// Numbers contexts across `modules`; callers use the same modules in the
-    /// same order when writing and reading an artifact.
-    pub fn new<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Self {
+    pub fn snapshot_chunk(&self, chunk: ChunkId) -> Result<SavedChunk> {
+        let name = self
+            .chunk_table
+            .try_name(chunk)
+            .with_context(|| format!("chunk ID {chunk:?} is outside the current ChunkTable"))?;
+        Ok(SavedChunk(name.to_owned()))
+    }
+
+    pub fn restore_chunk(&self, chunk: SavedChunk) -> Result<ChunkId> {
+        self.chunk_table.get(&chunk.0).with_context(|| {
+            format!(
+                "saved chunk name {:?} is absent from the current ChunkTable",
+                chunk.0
+            )
+        })
+    }
+
+    pub fn snapshot_module_cell(&self, cell: ModuleCellId) -> Result<SavedModuleCell> {
+        Ok(SavedModuleCell {
+            chunk: self.snapshot_chunk(cell.chunk)?,
+            declaration_origin: cell.declaration_origin,
+        })
+    }
+
+    pub fn restore_module_cell(&self, cell: SavedModuleCell) -> Result<ModuleCellId> {
+        Ok(ModuleCellId {
+            chunk: self.restore_chunk(cell.chunk)?,
+            declaration_origin: cell.declaration_origin,
+        })
+    }
+
+    /// Numbers contexts across `modules`; the table supplies the namespace for
+    /// checked, persistent chunk identities.
+    pub fn new<'m>(
+        modules: impl IntoIterator<Item = &'m Module>,
+        chunk_table: &'c ChunkTable,
+    ) -> Self {
         let mut collector = Self {
             ordinals: HashMap::from([(SyntaxContext::empty(), 0)]),
             contexts: vec![SyntaxContext::empty()],
+            chunk_table,
         };
         for module in modules {
             module.visit_with(&mut collector);
         }
         collector
+    }
+
+    /// Number contexts from retained `modules`, then from canonical binding
+    /// identities whose source AST was discarded before analysis saving.
+    /// Callers must provide bindings in stable source/module order on both
+    /// snapshot and restore; duplicate contexts keep their first ordinal.
+    pub fn new_with_bindings<'m, 'b>(
+        modules: impl IntoIterator<Item = &'m Module>,
+        chunk_table: &'c ChunkTable,
+        bindings: impl IntoIterator<Item = &'b Id>,
+    ) -> Self {
+        let mut collector = Self::new(modules, chunk_table);
+        for binding in bindings {
+            collector.intern_context(&binding.1);
+        }
+        collector
+    }
+
+    fn intern_context(&mut self, context: &SyntaxContext) {
+        if !self.ordinals.contains_key(context) {
+            let ordinal = u32::try_from(self.contexts.len()).expect("fewer than 2^32 contexts");
+            self.ordinals.insert(*context, ordinal);
+            self.contexts.push(*context);
+        }
     }
 
     fn ordinal(&self, raw: u32) -> Option<u32> {
@@ -79,13 +154,9 @@ impl ContextOrdinals {
     }
 }
 
-impl Visit for ContextOrdinals {
+impl Visit for ContextOrdinals<'_> {
     fn visit_syntax_context(&mut self, context: &SyntaxContext) {
-        if !self.ordinals.contains_key(context) {
-            let ordinal = u32::try_from(self.contexts.len()).expect("fewer than 2^32 contexts");
-            self.ordinals.insert(*context, ordinal);
-            self.contexts.push(*context);
-        }
+        self.intern_context(context);
     }
 }
 
@@ -121,7 +192,8 @@ mod tests {
         let saved = GLOBALS.set(&Globals::new(), || {
             let context = SyntaxContext::empty().apply_mark(Mark::new());
             let unknown = SyntaxContext::empty().apply_mark(Mark::new());
-            let mut writer = ContextOrdinals::new([]);
+            let chunks = ChunkTable::default();
+            let mut writer = ContextOrdinals::new([], &chunks);
             writer.visit_syntax_context(&context);
             let saved = writer
                 .snapshot_binding(&("captured".into(), context))
@@ -136,7 +208,8 @@ mod tests {
 
         GLOBALS.set(&Globals::new(), || {
             let context = SyntaxContext::empty().apply_mark(Mark::new());
-            let mut reader = ContextOrdinals::new([]);
+            let chunks = ChunkTable::default();
+            let mut reader = ContextOrdinals::new([], &chunks);
             reader.visit_syntax_context(&context);
             assert_eq!(
                 reader.restore_binding(saved).expect("known ordinal"),

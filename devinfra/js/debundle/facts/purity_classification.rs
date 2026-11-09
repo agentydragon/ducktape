@@ -23,9 +23,17 @@ pub(crate) struct StatementPurityContext<'a> {
 }
 
 pub(crate) enum NativeOwnDataReadDiagnostic {
-    Proven { dependencies: ProofDependencies },
-    MissingProof { span: Span, detail: String },
-    Unrecognized { span: Span, detail: String },
+    Proven {
+        dependencies: Box<ProofDependencies>,
+    },
+    MissingProof {
+        span: Span,
+        detail: String,
+    },
+    Unrecognized {
+        span: Span,
+        detail: String,
+    },
 }
 
 impl StatementPurityContext<'_> {

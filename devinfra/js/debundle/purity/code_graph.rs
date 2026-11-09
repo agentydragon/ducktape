@@ -222,14 +222,21 @@ impl ChunkCodeGraph {
         stable_var_number_candidates: &BTreeSet<Id>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
-        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
+        let heap_scope = crate::facts::abstract_domain::value::HeapModuleScope::LocalAnalysis(
+            crate::facts::abstract_domain::value::LocalAnalysisScopeId::fresh(),
+        );
+        let heap_resolver =
+            crate::facts::abstract_domain::value::SourceHeapResolver::new(heap_scope);
+        let candidates = heap::tracked_allocation_roots(body, heap_resolver);
+        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates_in_resolver(
+            heap_resolver,
             body,
-            &heap::tracked_allocation_roots(body),
+            &candidates,
         );
         let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
             .plain_data_bindings()
             .bindings;
-        let plain_array_bindings = heap::plain_array_bindings(body, shadowed);
+        let plain_array_bindings = heap::plain_array_bindings(body, shadowed, heap_scope);
         let dynamic_scope = DynamicScopeFact::analyze(body);
         let local_class_construction_proof =
             LocalClassConstructionShapes::analyze(body, shadowed, &value_flow, dynamic_scope);
@@ -558,6 +565,11 @@ impl ChunkCodeGraph {
         &ProofDependencies,
     )> {
         self.set_iterable_proof.native_iterable_operand(span)
+    }
+
+    pub(crate) fn requires_native_iterable_operand(&self, span: Span) -> bool {
+        self.set_iterable_proof
+            .requires_native_iterable_operand(span)
     }
 
     pub(crate) fn stable_set_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {

@@ -10,7 +10,7 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
     let actual = ChunkValueFlow::analyze(&body);
-    let reference = ChunkValueFlow::analyze_reference(&body);
+    let reference = ChunkValueFlow::analyze_reference_in_resolver(actual.heap_resolver(), &body);
     assert_eq!(
         actual, reference,
         "value-flow mismatch for source:\n{source}"
@@ -26,7 +26,10 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
     });
     let resolved_body = top_level_item_views(&resolved_module.body);
     let resolved_actual = ChunkValueFlow::analyze(&resolved_body);
-    let resolved_reference = ChunkValueFlow::analyze_reference(&resolved_body);
+    let resolved_reference = ChunkValueFlow::analyze_reference_in_resolver(
+        resolved_actual.heap_resolver(),
+        &resolved_body,
+    );
     assert_eq!(
         resolved_actual, resolved_reference,
         "resolved value-flow mismatch for source:\n{source}"
@@ -80,7 +83,11 @@ const rooted = return_cycle();
     else {
         panic!("foreign binding should have one object identity");
     };
-    assert!(foreign_span > source.len() as u32);
+    assert!(
+        foreign_span
+            .source_origin()
+            .is_some_and(|origin| origin > source.len() as u32)
+    );
     let foreign = Value::Alloc(Kind::Object, foreign_span);
     assert!(candidates.insert(foreign));
 
@@ -101,8 +108,12 @@ const rooted = return_cycle();
     };
     let alpha = Value::Alloc(Kind::Object, alpha_span);
     let alpha_reachable = &actual.0[&alpha];
+    let alpha_origin = flow
+        .heap_resolver()
+        .source_origin(alpha_span)
+        .expect("local alpha has a source origin");
     let [Value::Alloc(Kind::Function, cycle_span)] = flow
-        .values_of_property(alpha_span, "callback")
+        .values_of_property(alpha_origin, "callback")
         .expect("cycle property should have a value")
         .iter()
         .collect::<Vec<_>>()[..]
@@ -113,7 +124,7 @@ const rooted = return_cycle();
     assert!(
         alpha_reachable.contains(&Value::Alloc(
             Kind::Object,
-            flow.values_of_property(alpha_span, "peer")
+            flow.values_of_property(alpha_origin, "peer")
                 .expect("peer property should have a value")
                 .iter()
                 .find_map(|origin| match origin {
@@ -287,7 +298,10 @@ fn argument_evaluations(source: &str) -> usize {
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
     let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+    assert_eq!(
+        actual,
+        ChunkValueFlow::analyze_reference_in_resolver(actual.heap_resolver(), &body)
+    );
     stats.argument_evaluations
 }
 
@@ -549,7 +563,10 @@ fn reverse_return_call_chain_has_bounded_worklist_growth() {
         let module = raw_js_test_support::parse(&source);
         let body = top_level_item_views(&module.body);
         let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
-        assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+        assert_eq!(
+            actual,
+            ChunkValueFlow::analyze_reference_in_resolver(actual.heap_resolver(), &body)
+        );
         if let Some(previous) = previous_executions {
             assert!(
                 stats.event_executions <= previous * 3,
@@ -737,12 +754,16 @@ const late_right = make_right()[key];
         ("right", &right_functions[..2]),
     ] {
         let object = object_origin(binding);
+        let object_origin = flow
+            .heap_resolver()
+            .source_origin(object)
+            .expect("local object has a source origin");
         let unknown = flow
-            .values_of_property(object, "unknown_value")
+            .values_of_property(object_origin, "unknown_value")
             .expect("the missing-property write should create a property");
         assert!(unknown.contains(&Value::Top));
         let changing = flow
-            .values_of_property(object, "changing")
+            .values_of_property(object_origin, "changing")
             .expect("the changing property should be written");
         for expected in expected_functions {
             assert!(changing.contains(expected));
@@ -865,8 +886,12 @@ const second = relay(alias || box.primary || globalThis);
         panic!("box should have exactly one object identity");
     };
     for property in ["primary", "secondary", "later"] {
+        let box_source_origin = flow
+            .heap_resolver()
+            .source_origin(box_origin)
+            .expect("local box has a source origin");
         let values = flow
-            .values_of_property(box_origin, property)
+            .values_of_property(box_source_origin, property)
             .unwrap_or_else(|| panic!("missing static property {property}"));
         assert!(values.contains(&Value::Top) || property == "primary");
         assert!(

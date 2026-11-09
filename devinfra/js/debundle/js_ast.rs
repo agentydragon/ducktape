@@ -7,10 +7,10 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Id, Ident,
     IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
     Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
     VarDeclarator,
@@ -59,6 +59,31 @@ pub struct ParsedJsModule {
     pub top_level_mark: Mark,
 }
 
+/// Source-resolved identifier sites that have no lexical binding in one parsed
+/// module. This is an inventory only: an unresolved identifier may refer to a
+/// host global, and still needs a separate host/read proof before receiving
+/// value or effect authority.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ParsedGlobalUses {
+    /// The exact source-map file name that owns `uses`' spans.
+    pub source_file: String,
+    /// Unresolved binding identity to every reference span in the source AST.
+    pub uses: BTreeMap<Id, Vec<Span>>,
+    /// Whether source contains a construct whose dynamic scope can affect
+    /// identifier resolution (`with` or nontrivial direct `eval`).
+    pub dynamic_scope: bool,
+}
+
+/// Exact source-resolved identifier sites that a successful checked strip
+/// removed from emitted source. The source file owns the spans; `uses` is
+/// restricted to canonical resolver `Id`s and reference spans from that
+/// source's original `ParsedGlobalUses` inventory.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GlobalUseElisionReceipt {
+    pub source_file: String,
+    pub uses: BTreeMap<Id, Vec<Span>>,
+}
+
 impl ParsedJsModule {
     pub fn line_index(&self) -> SourceLineIndex {
         SourceLineIndex::for_source_map(&self.cm)
@@ -69,6 +94,12 @@ impl ParsedJsModule {
     /// `parse_js_module_consuming`.
     pub fn source_text(&self) -> String {
         self.cm.files()[0].src.to_string()
+    }
+
+    /// Return the file name from this parse's own SourceMap, which is the
+    /// canonical owner for the AST's source spans.
+    pub fn source_file_name(&self) -> String {
+        self.cm.files()[0].name.to_string()
     }
 }
 

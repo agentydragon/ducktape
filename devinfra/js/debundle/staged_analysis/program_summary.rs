@@ -6,17 +6,19 @@
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
 use analysis_model::{PrimKinds, StableExportValue};
-use source_identity::ChunkId;
+use source_identity::{ChunkId, ModuleCellId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, EffectiveInitializerCallReplacement,
-    ImportedPrimitiveRead, InitializerCallEffectInputRef, NativeInputKind, NativeIntegrity,
-    NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
-    NoAccessorInstallRef, PrimitiveExportCell, ResolvedArgumentInput, ResolvedBindingValueInput,
+    AdmittedHostModuleDependency, ArgumentInputEvidence, ArgumentInputRef, CallableSummary,
+    EffectiveInitializerCallReplacement, ImportedPrimitiveRead, InitializerCallEffectInputRef,
+    NativeInputKind, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
+    NativeOperationSelectorProvenance, NoAccessorInstallRef, PrimitiveCellInvariant,
+    PrimitiveExportCell, ResolvedArgumentInput, ResolvedBindingValueInput,
     ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, ResolvedNoAccessorInstall,
-    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    ResolvedProviderDependencyClosure, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
@@ -29,6 +31,7 @@ use analysis::cross_module_purity::{
     resolve_asserted_retained_callback_factory_members, resolve_export_primitives,
     resolve_imported_callable_summaries, resolve_imported_purities,
 };
+use analysis::facts::abstract_domain::value::HeapModuleScope;
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
@@ -38,11 +41,11 @@ use artifact::reports::{
 };
 use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
-use js_ast::ParsedJsModule;
+use js_ast::{ParsedGlobalUses, ParsedJsModule};
 use program_analysis::analyze_program_shallow;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
+    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
     ModuleDecl, ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
@@ -72,6 +75,31 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
     }
 }
 
+pub(super) fn local_exports(
+    body: &[ModuleItem],
+    aliases: &[ExportAliasRecord],
+) -> BTreeMap<String, String> {
+    let mut exports: BTreeMap<_, _> = aliases
+        .iter()
+        .filter(|alias| alias.source.is_none())
+        .filter_map(|alias| {
+            alias
+                .local
+                .clone()
+                .map(|local| (alias.exported.clone(), local))
+        })
+        .collect();
+    // The shallow alias inventory excludes exported declarations.
+    for item in body {
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(declaration)) = item {
+            for name in exported_decl_names(&declaration.decl) {
+                exports.entry(name.clone()).or_insert(name);
+            }
+        }
+    }
+    exports
+}
+
 /// Parsed entry + import/export records for a chunk whose entry the artifact
 /// kept as raw source (non-selected chunks). The program-summary pass parses
 /// these itself so every listed chunk participates in analysis, not just the
@@ -86,6 +114,11 @@ pub struct ReparsedEntry {
 
 /// Program-wide analysis summaries, keyed by source chunk name.
 pub struct ProgramSummary {
+    pub provider_programs: analysis::analysis_inputs::FrozenProviderPrograms,
+    /// Complete resolver-unbound source inventories from prepared parses for
+    /// every source chunk in this summary. Entries are never reconstructed
+    /// from the legacy reparse used for other summary facts.
+    pub global_uses: BTreeMap<String, Arc<ParsedGlobalUses>>,
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imported values admitted to ordinary candidate execution.
@@ -106,7 +139,22 @@ pub struct ProgramSummary {
     /// construction contract (`chunk_export_purity.pure_new_exports`).
     pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
+    /// A conditional provider transfer remains one record within each callable
+    /// summary, so its source, layout, result, effects, and cell obligations
+    /// arrive together in the importing `AnalysisInputs`.
     pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    /// Per-chunk local and imported binding addresses. These identify the defining cell
+    /// but do not grant value, initialization, or body authority.
+    pub module_cells: BTreeMap<String, BTreeMap<Id, ModuleCellId>>,
+    /// Canonical source-only invariant proofs for module-cell post-initialization kinds.
+    pub module_cell_invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    /// Module cells source-proven initialized before each importer's execution.
+    pub source_initialized_module_cells: BTreeMap<String, BTreeSet<ModuleCellId>>,
+    /// Host premises used by the source-initialized cell closures. `None`
+    /// means a legacy saved summary did not retain this proof; an explicit
+    /// empty map is complete evidence with no host leaves.
+    pub source_initialized_host_dependencies:
+        Option<BTreeMap<String, BTreeSet<AdmittedHostModuleDependency>>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
@@ -220,6 +268,7 @@ fn resolved_target_is_entry(
 struct ResolvedStaticDependencies {
     targets: BTreeMap<String, BTreeSet<String>>,
     ordinary_requests: BTreeMap<String, BTreeSet<(String, String)>>,
+    admitted_host_modules: BTreeMap<String, BTreeSet<AdmittedHostModuleDependency>>,
     complete_modules: BTreeSet<String>,
 }
 
@@ -232,10 +281,12 @@ fn resolved_static_dependency_graph(
 ) -> ResolvedStaticDependencies {
     let mut dependencies = BTreeMap::new();
     let mut ordinary_dependencies = BTreeMap::new();
+    let mut admitted_host_modules = BTreeMap::new();
     let mut complete_modules = BTreeSet::new();
     for (module, (chunk, entry_file, module_requests)) in requests {
         let mut module_dependencies = BTreeSet::new();
         let mut module_ordinary_dependencies = BTreeSet::new();
+        let mut module_host_dependencies = BTreeSet::new();
         let mut is_complete = true;
         for request in module_requests {
             if request.mode != StaticModuleRequestMode::OrdinaryEsm {
@@ -248,10 +299,17 @@ fn resolved_static_dependency_graph(
                 &artifact.chunk_table,
             ) else {
                 if request.mode == StaticModuleRequestMode::OrdinaryEsm
-                    && host_behavior
-                        .reentry_free_module(&request.specifier)
-                        .is_some()
+                    && let Some(host_module) = host_behavior.reentry_free_module(&request.specifier)
                 {
+                    module_host_dependencies.insert(AdmittedHostModuleDependency {
+                        source_module: module.clone(),
+                        specifier: request.specifier.clone(),
+                        module: host_module,
+                        consumed_premise:
+                            analysis::analysis_inputs::HostBehaviorKey::reentry_free_module(
+                                host_module,
+                            ),
+                    });
                     continue;
                 }
                 is_complete = false;
@@ -278,6 +336,7 @@ fn resolved_static_dependency_graph(
         }
         dependencies.insert(module.clone(), module_dependencies);
         ordinary_dependencies.insert(module.clone(), module_ordinary_dependencies);
+        admitted_host_modules.insert(module.clone(), module_host_dependencies);
         if is_complete {
             complete_modules.insert(module.clone());
         }
@@ -285,6 +344,7 @@ fn resolved_static_dependency_graph(
     ResolvedStaticDependencies {
         targets: dependencies,
         ordinary_requests: ordinary_dependencies,
+        admitted_host_modules,
         complete_modules,
     }
 }
@@ -294,7 +354,7 @@ fn resolved_closure_precedes_importer(
     provider: &str,
     source_specifier: &str,
     dependencies: &ResolvedStaticDependencies,
-) -> Option<BTreeSet<String>> {
+) -> Option<ResolvedProviderDependencyClosure> {
     if !dependencies
         .ordinary_requests
         .get(importer)
@@ -304,21 +364,146 @@ fn resolved_closure_precedes_importer(
     {
         return None;
     }
-    let mut pending = vec![provider.to_string()];
-    let mut visited = BTreeSet::new();
-    while let Some(module) = pending.pop() {
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum VisitState {
+        Visiting,
+        Complete,
+    }
+
+    let mut pending = vec![(provider.to_string(), false)];
+    let mut states = BTreeMap::<String, VisitState>::new();
+    let mut modules = BTreeSet::new();
+    let mut admitted_host_modules = BTreeSet::new();
+    while let Some((module, leaving)) = pending.pop() {
+        if leaving {
+            states.insert(module, VisitState::Complete);
+            continue;
+        }
         if module == importer {
             return None;
         }
-        if !visited.insert(module.clone()) {
-            continue;
+        match states.get(&module) {
+            Some(VisitState::Visiting) => return None,
+            Some(VisitState::Complete) => continue,
+            None => {}
         }
         if !dependencies.complete_modules.contains(&module) {
             return None;
         }
-        pending.extend(dependencies.targets.get(&module)?.iter().cloned());
+        states.insert(module.clone(), VisitState::Visiting);
+        modules.insert(module.clone());
+        admitted_host_modules.extend(
+            dependencies
+                .admitted_host_modules
+                .get(&module)?
+                .iter()
+                .cloned(),
+        );
+        let targets = dependencies.targets.get(&module)?;
+        pending.push((module, true));
+        pending.extend(targets.iter().rev().cloned().map(|target| (target, false)));
     }
-    Some(visited)
+    Some(ResolvedProviderDependencyClosure {
+        modules,
+        admitted_host_modules,
+    })
+}
+
+/// Close noninvoking source initialization from dependency leaves. Cycles and
+/// dependencies outside the complete ordinary ESM graph never become ready.
+/// This proves a source context only; relocation must check the actual output
+/// graph independently before consuming the same body effects.
+fn source_initialized_module_cells(
+    dependencies: &ResolvedStaticDependencies,
+    noninvoking: &BTreeSet<String>,
+    invariants: &BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    chunks: &source_identity::ChunkTable,
+) -> (
+    BTreeMap<String, BTreeSet<ModuleCellId>>,
+    BTreeMap<String, BTreeSet<AdmittedHostModuleDependency>>,
+) {
+    let mut pending = BTreeMap::<&str, usize>::new();
+    let mut dependents = BTreeMap::<&str, Vec<&str>>::new();
+    for module in noninvoking.intersection(&dependencies.complete_modules) {
+        let Some(targets) = dependencies.targets.get(module) else {
+            continue;
+        };
+        pending.insert(module, targets.len());
+        for target in targets {
+            dependents.entry(target).or_default().push(module);
+        }
+    }
+    let mut ready: Vec<_> = pending
+        .iter()
+        .filter_map(|(module, count)| (*count == 0).then_some(*module))
+        .collect();
+    let mut completed = BTreeSet::new();
+    while let Some(module) = ready.pop() {
+        completed.insert(module);
+        for dependent in dependents.get(module).into_iter().flatten() {
+            let Some(count) = pending.get_mut(*dependent) else {
+                continue;
+            };
+            *count -= 1;
+            if *count == 0 {
+                ready.push(*dependent);
+            }
+        }
+    }
+    let mut cells_by_module = BTreeMap::<&str, BTreeSet<ModuleCellId>>::new();
+    for cell in invariants.keys() {
+        if let Some(module) = chunks.try_name(cell.chunk) {
+            cells_by_module.entry(module).or_default().insert(*cell);
+        }
+    }
+    let summaries: Vec<_> = dependencies
+        .ordinary_requests
+        .iter()
+        .filter(|(importer, _)| dependencies.complete_modules.contains(*importer))
+        .map(|(importer, requests)| {
+            let mut cells = BTreeSet::new();
+            let mut host_dependencies = BTreeSet::new();
+            for (specifier, provider) in requests {
+                let Some(closure) =
+                    resolved_closure_precedes_importer(importer, provider, specifier, dependencies)
+                else {
+                    continue;
+                };
+                if !closure
+                    .modules
+                    .iter()
+                    .all(|module| completed.contains(module.as_str()))
+                {
+                    continue;
+                }
+                let closure_cells: BTreeSet<_> = closure
+                    .modules
+                    .iter()
+                    .flat_map(|module| {
+                        cells_by_module
+                            .get(module.as_str())
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                    })
+                    .collect();
+                if !closure_cells.is_empty() {
+                    cells.extend(closure_cells);
+                    host_dependencies.extend(closure.admitted_host_modules);
+                }
+            }
+            (importer.clone(), cells, host_dependencies)
+        })
+        .collect();
+    let cells = summaries
+        .iter()
+        .map(|(importer, cells, _)| (importer.clone(), cells.clone()))
+        .collect();
+    let host_dependencies = summaries
+        .into_iter()
+        .map(|(importer, _, dependencies)| (importer, dependencies))
+        .collect();
+    (cells, host_dependencies)
 }
 
 /// Inputs that affect program-summary construction.
@@ -406,6 +591,9 @@ pub fn collect_program_summary(
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
     let mut static_requests =
         BTreeMap::<String, (ChunkId, String, Vec<StaticModuleRequest>)>::new();
+    let mut global_uses = BTreeMap::new();
+    let mut provider_global_uses = BTreeMap::new();
+    let mut provider_sources = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
             continue;
@@ -430,6 +618,40 @@ pub fn collect_program_summary(
                 ),
                 (None, None) => continue,
             };
+        // The prepared manifest belongs to the canonical preparation parse.
+        // A legacy reparse may provide a body for other summary work, but its
+        // freshly allocated resolver contexts are not interchangeable with
+        // the canonical manifest's Id keys.
+        if retained_ast.is_some() {
+            let files = parsed.cm.files();
+            let file = &files[0];
+            provider_sources.insert(
+                chunk_name.to_owned(),
+                analysis::analysis_inputs::ProviderProgramSource {
+                    module: chunk_name.to_owned(),
+                    scope: HeapModuleScope::Chunk(chunk_artifact.chunk_id),
+                    sha256: graph_provenance::sha256(file.src.as_bytes()),
+                    source_start: file.start_pos.0,
+                    source_end: file.end_pos.0,
+                },
+            );
+        }
+        let parsed_global_uses = chunk_artifact
+            .analysis
+            .runtime_facts
+            .global_uses
+            .clone()
+            .with_context(|| {
+                format!("parsed source chunk {chunk_name} has no canonical resolver-use inventory")
+            })?;
+        if retained_ast.is_some() {
+            ensure!(
+                parsed_global_uses.source_file == parsed.source_file_name(),
+                "retained source chunk {chunk_name} resolver-use inventory belongs to a different source-map file"
+            );
+            provider_global_uses.insert(chunk_name.to_string(), Arc::clone(&parsed_global_uses));
+        }
+        global_uses.insert(chunk_name.to_string(), parsed_global_uses);
         let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
             Some(entry) => &entry.stable_export_values,
             None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
@@ -524,32 +746,49 @@ pub fn collect_program_summary(
                 );
             }
         }
-        // `export_aliases` only carries `export { x as y }` specifiers and
-        // `export default`. Exported declarations (`export function foo`,
-        // `export const foo`, `export class Foo`) are not aliases, so add them
-        // directly from the body — their export name is the local name.
-        let mut exports: BTreeMap<String, String> = export_alias_records
+        let exports = local_exports(&parsed.module.body, export_alias_records);
+        let reexports = export_alias_records
             .iter()
             .filter_map(|alias| {
-                alias
-                    .local
-                    .clone()
-                    .map(|local| (alias.exported.clone(), local))
+                let source = alias.source.as_ref()?;
+                if !module_static_requests.iter().any(|request| {
+                    &request.specifier == source
+                        && request.mode == StaticModuleRequestMode::OrdinaryEsm
+                }) || module_static_requests.iter().any(|request| {
+                    &request.specifier == source
+                        && request.mode != StaticModuleRequestMode::OrdinaryEsm
+                }) {
+                    return None;
+                }
+                let target = indexes.resolve_runtime_import_reference(
+                    source,
+                    chunk_artifact.chunk_id,
+                    entry_file,
+                    &artifact.chunk_table,
+                )?;
+                if !chunk_allowed(target.target_chunk_id, chunk_filter)
+                    || !resolved_target_is_entry(artifact, &target)
+                {
+                    return None;
+                }
+                Some((
+                    alias.exported.clone(),
+                    ResolvedImport {
+                        module: artifact.chunk_table.name(target.target_chunk_id).to_owned(),
+                        export: alias.local.clone()?,
+                        source_specifier: source.clone(),
+                    },
+                ))
             })
             .collect();
-        for item in &parsed.module.body {
-            if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item {
-                for name in exported_decl_names(&export_decl.decl) {
-                    exports.entry(name.clone()).or_insert(name);
-                }
-            }
-        }
         modules.insert(
             chunk_name.to_string(),
             ModulePurityFacts {
+                heap_scope: HeapModuleScope::Chunk(chunk_artifact.chunk_id),
                 body: &parsed.module.body,
                 imports,
                 exports,
+                reexports,
                 source: Some((
                     chunk_artifact.js.get_file(entry_file).map_or_else(
                         || chunk_artifact.analysis.source_path.clone(),
@@ -564,6 +803,13 @@ pub fn collect_program_summary(
             },
         );
     }
+    ensure!(
+        global_uses.len() == modules.len()
+            && global_uses
+                .keys()
+                .all(|chunk_name| modules.contains_key(chunk_name)),
+        "program summary is missing resolver-use inventory for a parsed source chunk"
+    );
 
     for ((chunk, export), (kinds, local_imports)) in local_export_values {
         let Some(module) = modules.get(&chunk) else {
@@ -611,6 +857,7 @@ pub fn collect_program_summary(
         },
         &static_dependencies,
     )?;
+
     let primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> = modules
         .iter()
         .map(|(importer, module)| {
@@ -623,14 +870,14 @@ pub fn collect_program_summary(
                     if primitive.kinds.is_empty() || primitive.source_cells.is_empty() {
                         return None;
                     }
-                    let dependency_closure = resolved_closure_precedes_importer(
+                    let provider_closure = resolved_closure_precedes_importer(
                         importer,
                         &target.module,
                         &target.source_specifier,
                         &static_dependencies,
                     )?;
                     if !primitive.source_cells.iter().all(|cell| {
-                        dependency_closure.contains(&cell.module)
+                        provider_closure.modules.contains(&cell.module)
                             && export_primitives
                                 .get(&(cell.module.clone(), cell.export.clone()))
                                 .is_some_and(|source| !source.kinds.is_empty())
@@ -641,8 +888,11 @@ pub fn collect_program_summary(
                         local.clone(),
                         ImportedPrimitiveRead {
                             kinds: primitive.kinds,
+                            source_specifier: target.source_specifier.clone(),
+                            imported_name: target.export.clone(),
                             provider_module: target.module.clone(),
-                            dependency_closure,
+                            dependency_closure: provider_closure.modules.clone(),
+                            provider_closure: Some(provider_closure),
                             source_cells: primitive.source_cells.clone(),
                         },
                     ))
@@ -783,6 +1033,15 @@ pub fn collect_program_summary(
             )
         })
         .collect();
+    let source_callable_members = chunk_export_purity.iter()
+        .filter(|(_, assertion)| !assertion.source_callable_members.is_empty())
+        .map(|(chunk, assertion)| {
+            for (export, members) in &assertion.source_callable_members {
+                ensure!(assertion.namespace_independent_members.get(export).is_some_and(|audited| members.is_subset(audited)),
+                    "source_callable_members {chunk}:{export} requires the same namespace_independent_members entries");
+            }
+            Ok((chunk.clone(), assertion.source_callable_members.clone()))
+        }).collect::<Result<BTreeMap<_, _>>>()?;
     let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
@@ -823,6 +1082,10 @@ pub fn collect_program_summary(
             })
             .collect(),
         CallableSummaryInputs {
+            provider_sources: &provider_sources,
+            chunk_table: &artifact.chunk_table,
+            global_uses: &provider_global_uses,
+            source_callable_members: &source_callable_members,
             requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
@@ -845,7 +1108,39 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
-    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
+    // Bind conditional callable summaries to the direct source import route
+    // of each consumer before passing them to per-chunk execution. The same
+    // closure later proves the imported provider's module-cell initialization;
+    // a missing or incomplete route must not leave a usable body summary.
+    for (consumer, bindings) in &mut callable_summaries.imported_callables {
+        let Some(consumer_facts) = modules.get(consumer) else {
+            continue;
+        };
+        for (local, summary) in bindings {
+            let closure = consumer_facts.imports.get(local).and_then(|target| {
+                resolved_closure_precedes_importer(
+                    consumer,
+                    &target.module,
+                    &target.source_specifier,
+                    &static_dependencies,
+                )
+            });
+            summary.bind_provider_closure_from_direct_import(closure, &artifact.chunk_table);
+        }
+    }
+    let (source_initialized_module_cells, source_initialized_host_dependencies) =
+        source_initialized_module_cells(
+            &static_dependencies,
+            &callable_summaries.noninvoking_provider_modules,
+            &callable_summaries.module_cell_invariants,
+            &artifact.chunk_table,
+        );
+    let bindings = resolve_imported_purities(
+        &modules,
+        &asserted_pure,
+        &provider_global_uses,
+        &mut callable_summaries,
+    )?;
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
@@ -863,26 +1158,27 @@ pub fn collect_program_summary(
             }
         }
     }
-    for (consumer, inputs) in &callable_summaries.imported_primitive_array_spread_inputs {
+    for (consumer, inputs) in &mut callable_summaries.imported_primitive_array_spread_inputs {
         for input in inputs {
-            for operand in &input.evidence.operands {
-                ensure!(
-                    resolved_closure_precedes_importer(
-                        consumer,
-                        &operand.provider_module,
-                        &operand.source_specifier,
-                        &static_dependencies,
+            for operand in &mut input.evidence.operands {
+                let closure = resolved_closure_precedes_importer(
+                    consumer,
+                    &operand.provider_module,
+                    &operand.source_specifier,
+                    &static_dependencies,
+                )
+                .with_context(|| {
+                    format!(
+                        "{} requires direct provider {} to have a complete acyclic ordinary static initialization closure before consumer {}",
+                        input.evidence.spec_location, operand.provider_module, consumer
                     )
-                    .is_some(),
-                    "{} requires direct provider {} to have a complete acyclic ordinary static initialization closure before consumer {}",
-                    input.evidence.spec_location,
-                    operand.provider_module,
-                    consumer
-                );
+                })?;
+                operand.provider_closure = Some(closure);
             }
         }
     }
     Ok(ProgramSummary {
+        global_uses,
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
             &chunk_export_purity
@@ -934,6 +1230,11 @@ pub fn collect_program_summary(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
+        provider_programs: callable_summaries.provider_programs,
+        module_cells: callable_summaries.module_cells,
+        module_cell_invariants: callable_summaries.module_cell_invariants,
+        source_initialized_module_cells,
+        source_initialized_host_dependencies: Some(source_initialized_host_dependencies),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,
@@ -1205,7 +1506,7 @@ fn resolve_initializer_call_effect_inputs(
                     && imported.export == contract.provider_export,
                 "{request} provider identity disagrees with the direct import"
             );
-            let closure = resolved_closure_precedes_importer(
+            let provider_closure = resolved_closure_precedes_importer(
                 chunk,
                 &imported.module,
                 &imported.source_specifier,
@@ -1231,7 +1532,8 @@ fn resolve_initializer_call_effect_inputs(
                 provider_export: imported.export.clone(),
                 provider_sha256: provider_source.sha256.clone(),
                 effective_replacement,
-                provider_dependency_closure: closure,
+                provider_dependency_closure: provider_closure.modules.clone(),
+                provider_closure: Some(provider_closure),
             });
         }
         resolved.insert(chunk.clone(), entries);
@@ -1787,6 +2089,177 @@ mod tests {
     use source_identity::ChunkTable;
     use spec::ChunkExportPurity;
 
+    // Original parse identity and analysis-only storage are internal invariants.
+    // Exercise the real loader/preparation boundary, including a forwarding edge
+    // and a callable-free static leaf, without author premises.
+    #[test]
+    fn inferred_provider_uses_canonical_preparation_and_preserves_passthrough() {
+        js_ast::with_swc_globals(|| {
+            let root = tempfile::TempDir::new().unwrap();
+            let provider_source = "// exact pass-through bytes\nexport function reader() { return 7; }\nexport function pick(record) { return record.value; }\nfunction globalReader() { return undefined; }\n";
+            for (name, source) in [
+                (
+                    "app.js",
+                    "import { reader, pick, limit } from './forward.js'; pick({ value: 1 }); export const copied = reader(); export const count = limit;",
+                ),
+                (
+                    "forward.js",
+                    "export { reader, pick } from './provider.js'; export { limit } from './leaf.js';",
+                ),
+                ("provider.js", provider_source),
+                ("leaf.js", "export const limit = 7;"),
+                ("unrelated.js", "export const ignored = 9;"),
+            ] {
+                std::fs::write(root.path().join(name), source).unwrap();
+            }
+            let list = root.path().join("js-files.txt");
+            std::fs::write(
+                &list,
+                "app.js\nforward.js\nprovider.js\nleaf.js\nunrelated.js\n",
+            )
+            .unwrap();
+            for retain_closure in [false, true] {
+                let selected = if retain_closure {
+                    BTreeSet::from(["app".to_owned()])
+                } else {
+                    BTreeSet::new()
+                };
+                let prepared = prepare_chunks::prepare_js_chunks(
+                    &selected,
+                    &BTreeSet::new(),
+                    &BTreeMap::new(),
+                    artifact::load_js_chunks(root.path(), &list).unwrap(),
+                )
+                .unwrap();
+                let artifact = prepared.program.artifact();
+                let provider_id = artifact.chunk_table.get("provider").unwrap();
+                let provider = artifact.chunk(provider_id).unwrap();
+                let file = provider
+                    .js
+                    .get_file(artifact::CANONICAL_CHUNK_ENTRY_FILE)
+                    .unwrap();
+                assert_eq!(file.ast().is_some(), retain_closure);
+                assert_eq!(file.render_source().unwrap(), provider_source);
+                if let Some(parsed) = file.ast() {
+                    let inventory = provider
+                        .analysis
+                        .runtime_facts
+                        .global_uses
+                        .as_ref()
+                        .unwrap();
+                    assert_eq!(inventory.source_file, parsed.source_file_name());
+                    let (binding, _) = inventory
+                        .uses
+                        .iter()
+                        .find(|(id, _)| id.0 == "undefined")
+                        .unwrap();
+                    assert_eq!(
+                        binding.1,
+                        swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark)
+                    );
+                }
+                for chunk in &artifact.chunks {
+                    let name = artifact.chunk_table.name(chunk.chunk_id);
+                    let entry = chunk
+                        .js
+                        .get_file(artifact::CANONICAL_CHUNK_ENTRY_FILE)
+                        .unwrap();
+                    let retained = matches!(name, "app" | "forward")
+                        || (retain_closure && name != "unrelated");
+                    assert_eq!(entry.ast().is_some(), retained, "{name}");
+                }
+                let closure = prepared
+                    .program
+                    .indexes()
+                    .selected_static_import_closure(artifact, &["app".to_owned()])
+                    .unwrap();
+                let reparsed = reparse_unretained_entries(artifact, Some(&closure));
+                assert_eq!(reparsed.is_empty(), retain_closure);
+                let host_behavior = spec::HostBehavior::default();
+                let facts = collect_program_summary(
+                    artifact,
+                    prepared.program.indexes(),
+                    &AnalysisProjection::new(
+                        &BTreeMap::new(),
+                        &BTreeMap::new(),
+                        &host_behavior,
+                        None,
+                        BTreeMap::new(),
+                        AnalysisSourceSites::default(),
+                        BTreeMap::new(),
+                    )
+                    .unwrap(),
+                    ProgramSummaryOptions {
+                        graph_provenance: None,
+                        vendor_plan: None,
+                        replacement_packages: &BTreeMap::new(),
+                    },
+                    Some(&closure),
+                    &reparsed,
+                )
+                .unwrap();
+                let inventories = facts.provider_programs.source_inventories();
+                assert_eq!(inventories.contains_key("provider"), retain_closure);
+                assert_eq!(inventories.contains_key("leaf"), retain_closure);
+                let ordinals = crate::context_ordinals(
+                    artifact,
+                    &[],
+                    None,
+                    &reparsed,
+                    facts.global_uses.values().map(AsRef::as_ref),
+                )
+                .unwrap();
+                let snapshot = |summary| {
+                    serde_json::to_value(
+                        analysis::analysis_inputs::saved::SavedCallableSummary::snapshot(
+                            summary,
+                            &ordinals,
+                            &inventories,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap()
+                };
+                let reader = &facts.imported_callables["app"]["reader"];
+                assert!(reader.foreign_call.is_some());
+                let saved_reader = snapshot(reader);
+                assert_eq!(
+                    saved_reader["foreign_call_body_effects"].is_object(),
+                    retain_closure
+                );
+                let pick = facts.imported_callables["app"]
+                    .get("pick")
+                    .cloned()
+                    .unwrap_or_default();
+                let saved_pick = snapshot(&pick);
+                let transfers = saved_pick["conditional_bodies"].as_array().unwrap();
+                assert_eq!(!transfers.is_empty(), retain_closure);
+                for transfer in transfers {
+                    assert_eq!(transfer["identity"]["defining_module"], "provider");
+                    assert_eq!(
+                        transfer["source"]["sha256"],
+                        graph_provenance::sha256(provider_source.as_bytes())
+                    );
+                }
+                facts
+                    .provider_programs
+                    .validate_transfers(&facts.imported_callables)
+                    .unwrap();
+                assert!(facts.module_cell_invariants.keys().all(|cell| {
+                    inventories.contains_key(artifact.chunk_table.name(cell.chunk))
+                }));
+                let emission = artifact::EmissionFiles::from_prepared(prepared.program);
+                let emitted_provider = emission.files().chunk(provider_id).unwrap();
+                let emitted = emitted_provider
+                    .js
+                    .get_file(artifact::CANONICAL_CHUNK_ENTRY_FILE)
+                    .unwrap();
+                assert!(emitted.ast().is_none());
+                assert_eq!(emitted.render_source().unwrap(), provider_source);
+            }
+        });
+    }
+
     fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {
         js_ast::with_swc_globals(|| {
             let mut chunk_table = ChunkTable::default();
@@ -1875,6 +2348,167 @@ mod tests {
         });
     }
 
+    fn provider_dependencies(
+        importer: &str,
+        provider: &str,
+        edges: &[(&str, &[&str])],
+        complete_modules: &[&str],
+        host_dependencies: &[AdmittedHostModuleDependency],
+    ) -> ResolvedStaticDependencies {
+        let mut modules = BTreeSet::from([importer.to_string(), provider.to_string()]);
+        let mut targets = BTreeMap::new();
+        for (source, dependencies) in edges {
+            modules.insert((*source).to_string());
+            let dependencies: BTreeSet<_> = dependencies
+                .iter()
+                .map(|dependency| {
+                    modules.insert((*dependency).to_string());
+                    (*dependency).to_string()
+                })
+                .collect();
+            targets.insert((*source).to_string(), dependencies);
+        }
+        modules.extend(complete_modules.iter().map(|module| (*module).to_string()));
+        modules.extend(
+            host_dependencies
+                .iter()
+                .map(|dependency| dependency.source_module.clone()),
+        );
+        for module in &modules {
+            targets.entry(module.clone()).or_default();
+        }
+
+        let mut ordinary_requests = BTreeMap::new();
+        ordinary_requests.insert(
+            importer.to_string(),
+            BTreeSet::from([("./provider.js".to_string(), provider.to_string())]),
+        );
+        let mut admitted_host_modules: BTreeMap<_, BTreeSet<_>> = modules
+            .iter()
+            .map(|module| (module.clone(), BTreeSet::new()))
+            .collect();
+        for dependency in host_dependencies {
+            admitted_host_modules
+                .entry(dependency.source_module.clone())
+                .or_default()
+                .insert(dependency.clone());
+        }
+        ResolvedStaticDependencies {
+            targets,
+            ordinary_requests,
+            admitted_host_modules,
+            complete_modules: complete_modules
+                .iter()
+                .map(|module| (*module).to_string())
+                .collect(),
+        }
+    }
+
+    fn provider_closure(
+        provider: &str,
+        dependencies: &ResolvedStaticDependencies,
+    ) -> Option<ResolvedProviderDependencyClosure> {
+        resolved_closure_precedes_importer("static/app", provider, "./provider.js", dependencies)
+    }
+
+    #[test]
+    fn provider_closure_rejects_internal_cycles() {
+        let dependencies = provider_dependencies(
+            "static/app",
+            "static/provider",
+            &[
+                ("static/provider", &["static/helper"]),
+                ("static/helper", &["static/provider"]),
+            ],
+            &["static/app", "static/provider", "static/helper"],
+            &[],
+        );
+
+        assert!(provider_closure("static/provider", &dependencies).is_none());
+    }
+
+    #[test]
+    fn provider_closure_accepts_dag_diamonds_once() {
+        let dependencies = provider_dependencies(
+            "static/app",
+            "static/provider",
+            &[
+                ("static/provider", &["static/left", "static/right"]),
+                ("static/left", &["static/leaf"]),
+                ("static/right", &["static/leaf"]),
+            ],
+            &[
+                "static/app",
+                "static/provider",
+                "static/left",
+                "static/right",
+                "static/leaf",
+            ],
+            &[],
+        );
+
+        let closure = provider_closure("static/provider", &dependencies)
+            .expect("a complete DAG diamond is a valid provider closure");
+        assert_eq!(
+            closure.modules,
+            BTreeSet::from([
+                "static/provider".to_string(),
+                "static/left".to_string(),
+                "static/right".to_string(),
+                "static/leaf".to_string(),
+            ])
+        );
+        assert!(closure.admitted_host_modules.is_empty());
+    }
+
+    #[test]
+    fn provider_closure_rejects_importer_backedges() {
+        let dependencies = provider_dependencies(
+            "static/app",
+            "static/provider",
+            &[("static/provider", &["static/app"])],
+            &["static/app", "static/provider"],
+            &[],
+        );
+
+        assert!(provider_closure("static/provider", &dependencies).is_none());
+    }
+
+    #[test]
+    fn provider_closure_keeps_admitted_host_leaves_and_rejects_unknown_ones() {
+        let host_module = spec::HostModule::Node(spec::NodeBuiltinModule::Path);
+        let host_dependency = AdmittedHostModuleDependency {
+            source_module: "static/provider".to_string(),
+            specifier: "path".to_string(),
+            module: host_module,
+            consumed_premise: analysis::analysis_inputs::HostBehaviorKey::reentry_free_module(
+                host_module,
+            ),
+        };
+        let admitted = provider_dependencies(
+            "static/app",
+            "static/provider",
+            &[],
+            &["static/app", "static/provider"],
+            &[host_dependency.clone()],
+        );
+        let closure = provider_closure("static/provider", &admitted)
+            .expect("an explicitly admitted host leaf completes the provider closure");
+        assert_eq!(
+            closure.modules,
+            BTreeSet::from(["static/provider".to_string()])
+        );
+        assert_eq!(
+            closure.admitted_host_modules,
+            BTreeSet::from([host_dependency])
+        );
+        assert!(closure.is_well_formed());
+
+        let unknown =
+            provider_dependencies("static/app", "static/provider", &[], &["static/app"], &[]);
+        assert!(provider_closure("static/provider", &unknown).is_none());
+    }
+
     #[test]
     fn request_only_host_loading_preserves_direct_esm_primitive_facts() {
         js_ast::with_swc_globals(|| {
@@ -1907,10 +2541,55 @@ mod tests {
     #[test]
     fn imported_read_capability_requires_a_resolved_provider_closure_before_the_importer() {
         js_ast::with_swc_globals(|| {
-            for (provider, expected_read) in [
-                ("export const limit = 2;", true),
-                ("import '../app/app.js'; export const limit = 2;", false),
-                ("import './missing.js'; export const limit = 2;", false),
+            let admitted_path = spec::HostBehavior {
+                reentry_free_builtin_modules: [spec::NodeBuiltinModule::Path].into_iter().collect(),
+                ..spec::HostBehavior::default()
+            };
+            let path_dependency = AdmittedHostModuleDependency {
+                source_module: "static/peer".to_string(),
+                specifier: "path".to_string(),
+                module: spec::HostModule::Node(spec::NodeBuiltinModule::Path),
+                consumed_premise: analysis::analysis_inputs::HostBehaviorKey::reentry_free_module(
+                    spec::HostModule::Node(spec::NodeBuiltinModule::Path),
+                ),
+            };
+            for (provider, host_behavior, expected_read, expected_host_dependencies) in [
+                (
+                    "export const limit = 2;",
+                    spec::HostBehavior::default(),
+                    true,
+                    BTreeSet::new(),
+                ),
+                (
+                    "import '../app/app.js'; export const limit = 2;",
+                    spec::HostBehavior::default(),
+                    false,
+                    BTreeSet::new(),
+                ),
+                (
+                    "import './missing.js'; export const limit = 2;",
+                    spec::HostBehavior::default(),
+                    false,
+                    BTreeSet::new(),
+                ),
+                (
+                    "import 'path'; export const limit = 2;",
+                    spec::HostBehavior::default(),
+                    false,
+                    BTreeSet::new(),
+                ),
+                (
+                    "import 'path'; export const limit = 2;",
+                    admitted_path.clone(),
+                    true,
+                    BTreeSet::from([path_dependency.clone()]),
+                ),
+                (
+                    "import 'unknown-static-package'; export const limit = 2;",
+                    admitted_path.clone(),
+                    false,
+                    BTreeSet::new(),
+                ),
             ] {
                 let artifact = test_bundle(&[
                     (
@@ -1922,7 +2601,6 @@ mod tests {
                 let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
                 let no_options = BTreeMap::new();
                 let no_export_purity = BTreeMap::new();
-                let host_behavior = spec::HostBehavior::default();
                 let facts = collect_program_summary(
                     &artifact,
                     &indexes,
@@ -1970,6 +2648,13 @@ mod tests {
                         read.dependency_closure,
                         BTreeSet::from(["static/peer".to_string()])
                     );
+                    let closure = read
+                        .provider_closure
+                        .as_ref()
+                        .expect("a source read carries its complete provider closure");
+                    assert!(closure.is_well_formed());
+                    assert_eq!(closure.modules, read.dependency_closure);
+                    assert_eq!(closure.admitted_host_modules, expected_host_dependencies);
                     assert_eq!(
                         read.source_cells,
                         BTreeSet::from([PrimitiveExportCell {
@@ -1980,6 +2665,74 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[test]
+    fn source_initialized_cell_summary_retains_admitted_host_leaf_premise() {
+        let mut chunks = source_identity::ChunkTable::default();
+        chunks.intern("static/app".to_string());
+        let provider = chunks.intern("static/peer".to_string());
+        let cell = ModuleCellId {
+            chunk: provider,
+            declaration_origin: 41,
+        };
+        let host_module = spec::HostModule::Node(spec::NodeBuiltinModule::Path);
+        let host_dependency = AdmittedHostModuleDependency {
+            source_module: "static/peer".to_string(),
+            specifier: "path".to_string(),
+            module: host_module,
+            consumed_premise: analysis::analysis_inputs::HostBehaviorKey::reentry_free_module(
+                host_module,
+            ),
+        };
+        let dependencies = ResolvedStaticDependencies {
+            targets: BTreeMap::from([
+                (
+                    "static/app".to_string(),
+                    BTreeSet::from(["static/peer".to_string()]),
+                ),
+                ("static/peer".to_string(), BTreeSet::new()),
+            ]),
+            ordinary_requests: BTreeMap::from([
+                (
+                    "static/app".to_string(),
+                    BTreeSet::from([("../peer/peer.js".to_string(), "static/peer".to_string())]),
+                ),
+                ("static/peer".to_string(), BTreeSet::new()),
+            ]),
+            admitted_host_modules: BTreeMap::from([
+                ("static/app".to_string(), BTreeSet::new()),
+                (
+                    "static/peer".to_string(),
+                    BTreeSet::from([host_dependency.clone()]),
+                ),
+            ]),
+            complete_modules: BTreeSet::from(["static/app".to_string(), "static/peer".to_string()]),
+        };
+        let invariant = serde_json::from_value::<PrimitiveCellInvariant>(serde_json::json!({
+            "declaration": {
+                "owner": serde_json::to_value(source_identity::SourceUnitOrdinal(0)).unwrap(),
+                "activation_callable": null,
+                "binding_span": serde_json::to_value(swc_common::DUMMY_SP).unwrap(),
+                "initializer_span": null,
+            },
+            "post_init_kinds": serde_json::to_value(PrimKinds::NUMBER).unwrap(),
+            "stores": [],
+        }))
+        .expect("source invariant fixture decodes through its checked data schema");
+
+        let (initialized, host_dependencies) = source_initialized_module_cells(
+            &dependencies,
+            &BTreeSet::from(["static/peer".to_string()]),
+            &BTreeMap::from([(cell, invariant)]),
+            &chunks,
+        );
+
+        assert_eq!(initialized["static/app"], BTreeSet::from([cell]));
+        assert_eq!(
+            host_dependencies["static/app"],
+            BTreeSet::from([host_dependency])
+        );
     }
 
     #[test]

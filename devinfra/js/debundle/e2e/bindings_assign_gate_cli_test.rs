@@ -5,10 +5,17 @@ use debundle_e2e_support::{parse_stdout_json, run_debundle, write_text_file};
 use std::fs;
 
 #[test]
-fn bindings_assign_rejects_atom_split_in_both_modes_without_writes() {
-    GraphFixture::atomic_pair().assert_rejected_unchanged(
-        &["bindings", "assign", "alpha:dogfood/split"],
-        &["splits one or more atomic groups"],
+fn graph_only_atom_split_cannot_be_written_without_full_assessment() {
+    let fixture = GraphFixture::atomic_pair();
+    let preview = fixture.json(&["bindings", "assign", "alpha:dogfood/split", "--dry-run"]);
+    assert_eq!(preview["needs_full_assessment"], true);
+    let before = fs::read(fixture.modules.join("home/atom.yaml")).unwrap();
+    let output = fixture.command(&["bindings", "assign", "alpha:dogfood/split"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+    assert_eq!(
+        fs::read(fixture.modules.join("home/atom.yaml")).unwrap(),
+        before
     );
 }
 
@@ -37,8 +44,22 @@ fn bindings_assign_and_unassign_require_graph_or_no_verify() {
 }
 
 #[test]
+fn graph_only_assignment_is_a_preview_and_cannot_be_written_as_verified() {
+    let fixture = GraphFixture::acyclic_pair();
+    let original = fs::read(fixture.modules.join("a.yaml")).unwrap();
+    let preview = fixture.json(&["bindings", "assign", "--dry-run", "alpha:c"]);
+    assert_eq!(preview["gate"], "claims_checked");
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&["bindings", "assign", "alpha:c"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+    assert_eq!(fs::read(fixture.modules.join("a.yaml")).unwrap(), original);
+    assert!(!fixture.modules.join("c.yaml").exists());
+}
+
+#[test]
 fn bulk_edits_resolve_both_spellings_against_the_pre_edit_spec() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const alpha = 1; const beta = 2; console.log(alpha + beta);",
         &[(
             "home.yaml",
@@ -49,18 +70,28 @@ fn bulk_edits_resolve_both_spellings_against_the_pre_edit_spec() {
         &["bindings", "assign", "Alpha:first", "alpha:second"],
         &["contradictory destinations"],
     );
-    let report = fixture.json(&[
-        "bindings",
-        "assign",
-        "Alpha:dest:First",
-        "alpha:dest:First",
-        "Beta:dest:Second",
-    ]);
+    let analysis = fixture.stage_analysis();
+    let report = fixture.json_with_assessment(
+        &[
+            "bindings",
+            "assign",
+            "Alpha:dest:First",
+            "alpha:dest:First",
+            "Beta:dest:Second",
+        ],
+        &analysis,
+    );
     assert_eq!(report["moves_applied"], 2);
+    assert_eq!(report["gate"], "passed");
     assert!(!fixture.modules.join("home.yaml").exists());
     fixture.refresh_graph();
-    let report = fixture.json(&["bindings", "unassign", "First", "alpha", "Second"]);
+    let analysis = fixture.stage_analysis();
+    let report = fixture.json_with_assessment(
+        &["bindings", "unassign", "First", "alpha", "Second"],
+        &analysis,
+    );
     assert_eq!(report["unassigned"], 2);
+    assert_eq!(report["gate"], "passed");
     assert!(!fixture.modules.join("dest.yaml").exists());
     fixture.assert_runs("3\n");
 }

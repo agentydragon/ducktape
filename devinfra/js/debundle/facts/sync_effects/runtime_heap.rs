@@ -5,6 +5,8 @@ use super::super::value_model::{CallSite, Context, ValueExpr, Values};
 use super::CallKind;
 use super::MemberValueWrite;
 use super::interpreter::{Executor, NativeCallResolution};
+use crate::facts::EffectCell;
+use crate::facts::abstract_domain::value::{HeapAddress, Kind, SourceHeapResolver};
 use std::collections::BTreeSet;
 use swc_common::Span;
 
@@ -13,11 +15,18 @@ pub(super) enum NativeIterableInput {
     Borrowed,
     /// Canonical immediate argument-array syntax, not origin uniqueness.
     ImmediateArrayLiteral(u32),
+    /// A source-checked const array binding, still read from the runtime prefix.
+    BorrowedConstArray {
+        allocation_site: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum NativeIterableUse {
     ArraySpread(Span),
+    /// Uses only current dense own-data state and intrinsic integrity, with
+    /// no raw source span resolved in the receiving program's index.
+    CurrentArraySpread,
     SetConstruction {
         site: CallSite,
         input: NativeIterableInput,
@@ -36,7 +45,7 @@ pub(super) enum NativeIterableYields {
 pub(super) struct NativeIterableReceipt {
     /// `None` for the scoped imported-array transfer, which intentionally
     /// carries yields but no provider heap identity.
-    pub(super) source: Option<u32>,
+    pub(super) source: Option<HeapAddress>,
     pub(super) yields: NativeIterableYields,
     /// Body reads are retained even for a private input whose read cannot
     /// observe a caller's earlier heap. The external projection is below.
@@ -46,10 +55,13 @@ pub(super) struct NativeIterableReceipt {
 }
 
 impl NativeIterableReceipt {
-    pub(super) fn external_heap_contents(&self) -> crate::facts::HeapContentCells {
+    pub(super) fn external_heap_contents(
+        &self,
+        resolver: SourceHeapResolver,
+    ) -> crate::facts::HeapContentCells {
         let mut external = self.heap_contents.clone();
         if let NativeIterableInput::ImmediateArrayLiteral(origin) = self.input
-            && self.source == Some(origin)
+            && self.source == Some(resolver.allocation(Kind::Object, origin))
         {
             // The operation validated the actual source against this canonical
             // immediate literal. This invocation consumes its newly built
@@ -57,7 +69,9 @@ impl NativeIterableReceipt {
             // Keep the Set allocation and every other source/body read.
             external
                 .reads
-                .remove(&crate::facts::EffectCell::ArrayContents(origin));
+                .remove(&crate::facts::EffectCell::ArrayContents(
+                    resolver.allocation(Kind::Object, origin),
+                ));
         }
         external
     }
@@ -72,11 +86,8 @@ pub(super) enum HeapOperation {
         writes: Vec<MemberValueWrite>,
         environment: Context,
         captures: Context,
-        certified_data_receivers: BTreeSet<u32>,
+        certified_data_receivers: BTreeSet<HeapAddress>,
         deferred_global_write: bool,
-    },
-    ApplyDescriptors {
-        arguments: Vec<Values>,
     },
     ResolveNative {
         kind: CallKind,
@@ -88,7 +99,7 @@ pub(super) enum HeapOperation {
 }
 
 pub(super) enum HeapResult {
-    Updated,
+    MemberWrites(BTreeSet<EffectCell>),
     Iteration(Box<Option<NativeIterableReceipt>>),
     Native(Box<Option<NativeCallResolution>>),
 }
@@ -106,18 +117,14 @@ impl HeapOperation {
                 certified_data_receivers,
                 deferred_global_write,
             } => {
-                executor.apply_member_value_writes_transfer(
+                let writes = executor.apply_member_value_writes_transfer(
                     &writes,
                     &environment,
                     &captures,
                     &certified_data_receivers,
                     deferred_global_write,
                 );
-                HeapResult::Updated
-            }
-            Self::ApplyDescriptors { arguments } => {
-                executor.apply_own_descriptor_map_transfer(&arguments);
-                HeapResult::Updated
+                HeapResult::MemberWrites(writes)
             }
             Self::ResolveNative {
                 kind,

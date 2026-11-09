@@ -73,24 +73,34 @@ fn forward_var_read_split_is_rejected() {
     }
 }
 
-/// The at-init call reads `value` before its declaration in the source too.
-/// The emit keeps that order, so no pair swaps; the forward edge counts as
-/// violated for the gate and for step 1, though swapped-pair semantics would
-/// accept this order.
+/// Moving the hoisted function declaration preserves the early lexical read
+/// and its ReferenceError. The legacy forward-edge diagnostics do not veto
+/// this effect-checked candidate.
 #[test]
-fn forward_at_init_read_kept_in_source_order_is_reported() {
-    let report = run_rejection_fixture(FixtureOpts::new(
+fn forward_at_init_read_preserves_its_error_with_hoisted_declaration_swap() {
+    let fixture = run_fixture(FixtureOpts::new(
         "const seed = 7;\nconst result = readValue(seed);\nfunction readValue(x) { return value + x; }\nconst value = 42;\nconsole.log(result);\nexport { seed, result, readValue, value };\n",
         vec![
             logical_module("readers", &[Member::new("readValue")]),
             logical_module("values", &[Member::new("value")]),
         ],
-    ))
-    .translation_validation();
+    ));
+    assert_preserved_entry_error(&fixture, "ReferenceError");
+    let candidate = fixture.candidate_relocation_assessment();
+    assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
+    assert_eq!(
+        candidate["emitted_order"],
+        serde_json::json!([0, 1, 3, 2, 4, 5]),
+        "{candidate:#}"
+    );
+    assert_eq!(candidate["swapped_pairs"], 1, "{candidate:#}");
+    assert_eq!(candidate["counts"]["uncovered_pairs"], 0, "{candidate:#}");
+
+    let report = fixture.translation_validation();
     assert_eq!(report["gate_accepts"], false, "{report:#}");
     assert_eq!(report["accepts"], false, "{report:#}");
     assert_eq!(edges(&report, "conflicts"), 0, "{report:#}");
-    assert_eq!(edges(&report, "forward_edges_kept"), 1, "{report:#}");
+    assert_eq!(edges(&report, "forward_edges_kept"), 2, "{report:#}");
 }
 
 /// The entry's import of `vendor.js` loses its only specifier once `cx()`

@@ -856,7 +856,7 @@ impl<'a> Analysis<'a> {
                     edge: edge.id.clone(),
                     from: edge.source.clone(),
                     to: edge.target.clone(),
-                    conflict: conflict.clone(),
+                    conflict: conflict.as_ref().clone(),
                 }),
             }
         }

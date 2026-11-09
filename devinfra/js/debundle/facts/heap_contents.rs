@@ -9,7 +9,7 @@
 //! it cannot complete is a heap-frontier barrier in the graph emitter.
 
 use super::*;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{HeapAddress, Kind, SourceHeapResolver, Value};
 
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
@@ -37,17 +37,20 @@ pub(crate) fn annotate_heap_contents(
     proofs: HeapContentProofs<'_>,
     facts: &mut [StatementFacts],
 ) -> ChunkHeapContents {
-    let mut origins = ArrayOriginCollector::default();
+    let mut origins = ArrayOriginCollector {
+        resolver: value_flow.heap_resolver(),
+        origins: BTreeSet::new(),
+    };
     for item in body {
         item.as_module_item().visit_with(&mut origins);
     }
-    let mut candidates = array_candidate_roots_from_origins(&origins.0);
+    let mut candidates = array_candidate_roots_from_origins(&origins.origins);
     candidates.extend(
         value_flow
             .native_set_allocations()
             .keys()
             .copied()
-            .map(|site| Value::Alloc(Kind::Set, site)),
+            .map(|site| Value::Alloc(Kind::Set, value_flow.heap_address(Kind::Set, site))),
     );
     let reachability = value_flow.candidate_object_index(&candidates);
     let mut callables = BTreeMap::new();
@@ -62,7 +65,7 @@ pub(crate) fn annotate_heap_contents(
             native_reads: proofs.native_reads,
             native_facts: proofs.native_facts,
             array_reachability: &reachability,
-            array_origins: &origins.0,
+            array_origins: &origins.origins,
             eager: HeapContentCells::default(),
             callables: &mut callables,
             deferred_allocations: BTreeSet::new(),
@@ -86,9 +89,13 @@ pub(crate) fn annotate_heap_contents(
                 match declaration.decls.as_slice() {
                     [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
                         match declarator.init.as_deref()?.unwrap_parens() {
-                            Expr::Array(array) => Some(EffectCell::ArrayContents(array.span.lo.0)),
+                            Expr::Array(array) => Some(EffectCell::ArrayContents(
+                                value_flow.heap_address(Kind::Object, array.span.lo.0),
+                            )),
                             Expr::New(construction) => {
-                                let cell = EffectCell::SetContents(construction.span.lo.0);
+                                let cell = EffectCell::SetContents(
+                                    value_flow.heap_address(Kind::Set, construction.span.lo.0),
+                                );
                                 // A direct eager source occurrence whose exact
                                 // construction is proved fresh. Reuse the same
                                 // one-shot producer as arrays; repeated or
@@ -127,15 +134,21 @@ pub(crate) fn annotate_heap_contents(
     }
 }
 
-pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
-    let mut origins = ArrayOriginCollector::default();
+pub(crate) fn array_candidate_roots(
+    body: &[TopLevelItemView<'_>],
+    resolver: SourceHeapResolver,
+) -> BTreeSet<Value> {
+    let mut origins = ArrayOriginCollector {
+        resolver,
+        origins: BTreeSet::new(),
+    };
     for item in body {
         item.as_module_item().visit_with(&mut origins);
     }
-    array_candidate_roots_from_origins(&origins.0)
+    array_candidate_roots_from_origins(&origins.origins)
 }
 
-fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value> {
+fn array_candidate_roots_from_origins(origins: &BTreeSet<HeapAddress>) -> BTreeSet<Value> {
     origins
         .iter()
         .copied()
@@ -143,12 +156,15 @@ fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value
         .collect()
 }
 
-#[derive(Default)]
-struct ArrayOriginCollector(BTreeSet<u32>);
+struct ArrayOriginCollector {
+    resolver: SourceHeapResolver,
+    origins: BTreeSet<HeapAddress>,
+}
 
 impl Visit for ArrayOriginCollector {
     fn visit_array_lit(&mut self, node: &ArrayLit) {
-        self.0.insert(node.span.lo.0);
+        self.origins
+            .insert(self.resolver.allocation(Kind::Object, node.span.lo.0));
         node.visit_children_with(self);
     }
 }
@@ -163,7 +179,7 @@ struct ArrayContentCollector<'a> {
         &'a super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
     native_facts: &'a ValidatedNativeOperationFacts,
     array_reachability: &'a CandidateObjectIndex<'a>,
-    array_origins: &'a BTreeSet<u32>,
+    array_origins: &'a BTreeSet<HeapAddress>,
     /// The statement's own at-init cells.
     eager: HeapContentCells,
     callables: &'a mut BTreeMap<u32, HeapContentCells>,
@@ -206,7 +222,7 @@ impl ArrayContentCollector<'_> {
         Some(self.callables.entry(key).or_default())
     }
 
-    fn record(&mut self, ids: &BTreeSet<u32>, read: bool, write: bool, opaque: bool) {
+    fn record(&mut self, ids: &BTreeSet<HeapAddress>, read: bool, write: bool, opaque: bool) {
         let Some(cells) = self.cells() else {
             return;
         };
@@ -245,7 +261,7 @@ impl ArrayContentCollector<'_> {
         self.bodies.pop();
     }
 
-    fn array_ids(&self, expr: &Expr) -> (BTreeSet<u32>, bool) {
+    fn array_ids(&self, expr: &Expr) -> (BTreeSet<HeapAddress>, bool) {
         let values = self.value_flow.values_of_expr(expr);
         let mut arrays = BTreeSet::new();
         let mut unknown = false;
@@ -264,7 +280,13 @@ impl ArrayContentCollector<'_> {
         (arrays, ambiguous)
     }
 
-    fn record_set_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
+    fn record_set_expr(
+        &mut self,
+        expr: &Expr,
+        read: bool,
+        write: bool,
+        opaque: bool,
+    ) -> BTreeSet<HeapAddress> {
         let values = self.value_flow.values_of_expr(expr);
         let mut sets = BTreeSet::new();
         let mut unknown = false;
@@ -285,7 +307,7 @@ impl ArrayContentCollector<'_> {
         let opaque = (!sets.is_empty() && (opaque || ambiguous))
             || (unknown && !self.value_flow.native_set_allocations().is_empty());
         let Some(cells) = self.cells() else {
-            return;
+            return sets;
         };
         if read {
             cells
@@ -298,6 +320,7 @@ impl ArrayContentCollector<'_> {
                 .extend(sets.iter().map(|site| EffectCell::SetContents(*site)));
         }
         cells.opaque |= opaque;
+        sets
     }
 
     fn record_array_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
@@ -394,15 +417,32 @@ impl ArrayContentCollector<'_> {
 
     fn record_member_write(&mut self, member: &MemberExpr, read: bool) {
         let receiver = binding_targets::transparent_target_expr(&member.obj);
-        self.record_set_expr(receiver, read, true, true);
+        let sets = self.record_set_expr(receiver, read, true, true);
         if self.member_content_kind(member).is_some() {
-            // A static key identifies which array's contents are involved,
-            // but it does not prove an own writable data property. The write
-            // may hit an inherited setter or a descriptor changed after the
-            // array escaped. Keep the exact cell plus the opaque barrier;
-            // trusted binding/global summaries do not assert descriptor
-            // integrity.
+            // A static key identifies which array or native Set contents are
+            // involved, but does not prove an own writable data property. The
+            // write may hit an inherited setter or a descriptor changed after
+            // the receiver escaped. Keep the content cell plus the opaque
+            // barrier; trusted summaries do not assert descriptor integrity.
             self.record_array_expr(receiver, read, true, true);
+
+            // ArrayContents and SetContents describe internal contents, not
+            // public own-key or descriptor changes. A generic source write
+            // may create, delete, or redefine the selected own property, so
+            // retain the shared surface footprint alongside the existing
+            // conservative content/opaque effects.
+            let (arrays, _) = self.array_ids(receiver);
+            if let Some(cells) = self.cells() {
+                let property = static_member_property(member);
+                for origin in arrays.union(&sets).copied() {
+                    cells
+                        .writes
+                        .extend(crate::facts::sync_effects::member_store_write_cells(
+                            origin,
+                            property.clone(),
+                        ));
+                }
+            }
         }
     }
 }
@@ -426,7 +466,9 @@ impl Visit for ArrayContentCollector<'_> {
         // Materialization initializes this fresh identity's contents. Keep an
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
-        self.record_allocation(EffectCell::ArrayContents(node.span.lo.0));
+        self.record_allocation(EffectCell::ArrayContents(
+            self.value_flow.heap_address(Kind::Object, node.span.lo.0),
+        ));
         node.visit_children_with(self);
     }
 
@@ -492,7 +534,7 @@ impl Visit for ArrayContentCollector<'_> {
         }
         match &node.callee {
             Callee::Expr(callee) if let Expr::Member(member) = callee.unwrap_parens() => {
-                self.record_set_expr(&member.obj, true, true, true);
+                let _ = self.record_set_expr(&member.obj, true, true, true);
                 self.record_array_expr(&member.obj, true, true, true);
                 self.visit_member_children(member);
                 self.record_opaque();
@@ -545,7 +587,7 @@ impl Visit for ArrayContentCollector<'_> {
             // the platform result remains opaque to every subsequent use.
             return;
         }
-        // The projection constrains exact literal sites when present. Keep
+        // The projection constrains exact source sites when present. Keep
         // the previous flow-root admission for nonprojected Set sources.
         let certified_set = self
             .set_iterable_proof
@@ -555,7 +597,9 @@ impl Visit for ArrayContentCollector<'_> {
                 .native_set_allocations()
                 .contains_key(&node.span.lo.0);
         if certified_set {
-            self.record_allocation(EffectCell::SetContents(node.span.lo.0));
+            self.record_allocation(EffectCell::SetContents(
+                self.value_flow.heap_address(Kind::Set, node.span.lo.0),
+            ));
         }
         if certified_set {
             // The same static proof that seeded this allocation covers its
@@ -633,7 +677,7 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        self.record_set_expr(&node.right, true, false, true);
+        let _ = self.record_set_expr(&node.right, true, false, true);
         self.record_array_expr(&node.right, true, false, true);
         node.visit_children_with(self);
     }
@@ -651,7 +695,7 @@ impl Visit for ArrayContentCollector<'_> {
             .set_iterable_proof
             .stable_spread_dependencies(node.expr.span())
             .is_some();
-        self.record_set_expr(&node.expr, true, false, !certified);
+        let _ = self.record_set_expr(&node.expr, true, false, !certified);
         self.record_array_expr(&node.expr, true, false, !certified);
         node.expr.visit_with(self);
     }
@@ -665,7 +709,7 @@ impl Visit for ArrayContentCollector<'_> {
                 .set_iterable_proof
                 .stable_spread_dependencies(token)
                 .is_some();
-            self.record_set_expr(&node.expr, true, false, !certified_set);
+            let _ = self.record_set_expr(&node.expr, true, false, !certified_set);
             // A certified primitive-array source reads its exact allocation
             // contents. Unsupported iterables retain the opaque heap barrier.
             let certified = self
@@ -764,6 +808,28 @@ fn is_numeric_index(value: f64) -> bool {
     value.is_finite() && value >= 0.0 && value < u32::MAX as f64 && value.fract() == 0.0
 }
 
+/// A static member key whose source representation has an exact property
+/// string in this collector. Numeric support is deliberately limited to the
+/// unsigned 32-bit integer range; other numeric expressions remain covered by
+/// the opaque barrier and do not get a potentially incorrect OwnProperty key.
+fn static_member_property(member: &MemberExpr) -> Option<String> {
+    match &member.prop {
+        MemberProp::Ident(name) => Some(name.sym.to_string()),
+        MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
+            Expr::Lit(Lit::Str(value)) => Some(value.value.to_string_lossy().into_owned()),
+            Expr::Lit(Lit::Num(value))
+                if value.value.is_finite()
+                    && value.value >= 0.0
+                    && value.value <= u32::MAX as f64
+                    && value.value.fract() == 0.0 =>
+            {
+                Some((value.value as u32).to_string())
+            }
+            _ => None,
+        },
+        MemberProp::PrivateName(_) => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::{is_array_index, is_numeric_index};

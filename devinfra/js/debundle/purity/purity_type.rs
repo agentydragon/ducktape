@@ -28,7 +28,7 @@ use std::sync::Arc;
 pub enum Purity {
     Pure {
         #[serde(default, skip_serializing_if = "ProofDependencies::is_empty")]
-        dependencies: ProofDependencies,
+        dependencies: Box<ProofDependencies>,
     },
     NotPure {
         reasons: Vec<PurityReason>,
@@ -380,7 +380,9 @@ impl Effects {
             }
         }
         if reasons.is_empty() {
-            Purity::Pure { dependencies }
+            Purity::Pure {
+                dependencies: Box::new(dependencies),
+            }
         } else {
             Purity::NotPure { reasons }
         }
@@ -433,7 +435,7 @@ fn rule(effect: Effect) -> PurityRule {
 impl Purity {
     pub fn pure() -> Self {
         Self::Pure {
-            dependencies: ProofDependencies::default(),
+            dependencies: Box::default(),
         }
     }
 

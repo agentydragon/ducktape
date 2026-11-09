@@ -1,14 +1,17 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
-use super::super::allocation_transfer::AllocationJudgment;
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::local_transfer::{CallableSelection, EvaluatedCallee};
+use super::super::allocation_transfer::{AllocationJudgment, AllocationValue, ChildTransfer};
+use super::super::local_transfer::{
+    CallableSelection, EvaluatedCallee, LocalContinuation, SelectedValue,
+};
 use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use super::Call;
-use super::interpreter::{ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery};
+use super::interpreter::{
+    ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery, RuntimeTransferFamily,
+};
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
@@ -24,6 +27,12 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Copy-on-write execution state owned by this run-local inference context.
+pub(super) type ExecutionStateSnapshot = Rc<ExecutionState>;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
@@ -48,7 +57,7 @@ enum RuntimeRule {
 }
 
 enum RuntimeFact {
-    Prefix(Box<ExecutionState>),
+    Prefix(ExecutionStateSnapshot),
     PreparedPurity(Box<PreparedPurity>),
     CompletedPurity(Box<CompletedPurity>),
     Effects(Box<SynchronousCalls>),
@@ -56,23 +65,73 @@ enum RuntimeFact {
     Result(Box<RuntimeResult>),
     OwnPropertyRequest(Box<OwnPropertyQuery>),
     OwnPropertyResult(Option<Box<OwnPropertyProof>>),
-    InvocationMemo(Box<Outcome>),
+    InvocationMemo(Box<(RuntimeTransferFamily, Option<ExecutionStateSnapshot>)>),
 }
 
 /// The path identifies an occurrence within its parent's transfer, rather than
 /// conflating repeated evaluation of the same expression in different contexts.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct ProgramPoint {
     owner: SourceUnitOrdinal,
     path: Vec<(NativeProgramPointKind, usize)>,
+    branch_lineage: Vec<AlternativeBranchId>,
+}
+
+/// Unique identity for one feasible branch within a single inference run.
+/// Runtime facts and invocation memos include the full lineage so sibling
+/// paths cannot alias merely because they perform the same child ordinal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct AlternativeBranchId(u64);
+
+/// Identity for one explicitly joined set of path alternatives. It shares the
+/// run-scoped allocator with branch identities but cannot be confused with one.
+#[derive(Debug, Clone)]
+pub(super) struct AlternativeFamilyId {
+    allocator: BranchLineageArena,
+    ordinal: u64,
+}
+
+impl PartialEq for AlternativeFamilyId {
+    fn eq(&self, other: &Self) -> bool {
+        self.ordinal == other.ordinal && self.allocator.shares_arena(&other.allocator)
+    }
+}
+
+impl Eq for AlternativeFamilyId {}
+
+#[derive(Debug, Clone, Default)]
+struct BranchLineageArena(Arc<AtomicU64>);
+
+impl BranchLineageArena {
+    fn allocate(&self) -> AlternativeBranchId {
+        AlternativeBranchId(self.allocate_id())
+    }
+
+    fn allocate_family(&self) -> AlternativeFamilyId {
+        AlternativeFamilyId {
+            allocator: self.clone(),
+            ordinal: self.allocate_id(),
+        }
+    }
+
+    fn shares_arena(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    fn allocate_id(&self) -> u64 {
+        self.0
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                next.checked_add(1)
+            })
+            .expect("alternative branch identity exhausted")
+    }
 }
 
 /// The ordered caller has already read its callee and arguments. The call
 /// transfer must use these snapshots rather than evaluate their source again.
 pub(super) struct CallOperands {
     pub(super) callee: EvaluatedCallee,
-    pub(super) arguments: Vec<Values>,
-    pub(super) argument_selections: Vec<Option<CallableSelection>>,
+    pub(super) arguments: Vec<SelectedValue>,
     /// The exact root has independent pure-initializer and operation inputs.
     /// This only admits an existing callback-factory result transfer; the
     /// ordered caller still checks the operation domains.
@@ -83,20 +142,16 @@ pub(super) enum CallTransfer {
     /// Consult the accompanying outcome for effect completeness. No return
     /// value was requested, or the selected proof supplies only effects.
     EffectsOnly,
-    Values(Values),
+    /// The accompanying outcome ledger contains the requested result
+    /// projection. This enum is only a disposition, never another result
+    /// authority.
+    ResultAvailable,
     /// The ordered operand path declined this target. Its source-based
     /// helpers cannot safely replay already evaluated operands.
     UnsupportedOperands(OrderedCallAdmissionRefusal),
-}
-
-impl CallTransfer {
-    pub(super) fn requested(needs_value: bool, values: impl FnOnce() -> Values) -> Self {
-        if needs_value {
-            Self::Values(values())
-        } else {
-            Self::EffectsOnly
-        }
-    }
+    /// The opaque invocation protocol consumed all evaluated operands. This
+    /// carries no result or coverage proof; a caller remainder still needs fallback.
+    SummarizedOpaque(OrderedCallAdmissionRefusal),
 }
 
 pub(super) enum RuntimeOperation {
@@ -119,8 +174,11 @@ pub(super) enum RuntimeOperation {
         argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
+        receiver: Option<Values>,
+        continuation: Option<Box<LocalContinuation>>,
     },
     Call {
+        continuation: Option<Box<LocalContinuation>>,
         call: Call,
         environment: Context,
         captures: Context,
@@ -133,16 +191,15 @@ pub(super) enum RuntimeOperation {
 
 pub(super) enum RuntimeValue {
     Heap(HeapResult),
-    Values(Values),
+    AllocationTransfer(Box<ChildTransfer<AllocationValue>>),
     Initializer {
-        values: Values,
+        transfer: Box<ChildTransfer<AllocationValue>>,
         evaluated: Option<Box<EvaluatedInitializer>>,
-        operation_coverage: Option<Box<EffectCoverageFragment>>,
         refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
-    Outcome(Box<Outcome>),
+    Outcome(Box<RuntimeTransferFamily>),
     Call {
-        outcome: Box<Outcome>,
+        family: Box<RuntimeTransferFamily>,
         transfer: CallTransfer,
     },
     Callbacks(CallbackResult),
@@ -150,12 +207,12 @@ pub(super) enum RuntimeValue {
 }
 
 struct RuntimeRequest {
-    state: Box<ExecutionState>,
+    state: ExecutionStateSnapshot,
     operation: RuntimeOperation,
 }
 
 pub(super) struct RuntimeResult {
-    pub(super) state: Box<ExecutionState>,
+    pub(super) state: ExecutionStateSnapshot,
     pub(super) value: RuntimeValue,
     pub(super) allocation_judgment: AllocationJudgment,
     pub(super) evaluation_effects: EvaluationEffects,
@@ -170,11 +227,33 @@ pub(super) struct RuntimeQueries<'source, 'query> {
     inputs: &'query ExecutionInputs<'source>,
     point: ProgramPoint,
     next_child: Cell<usize>,
+    branch_lineage: Rc<RefCell<Vec<AlternativeBranchId>>>,
+    branch_ids: BranchLineageArena,
     dependencies: RefCell<ProofDependencies>,
     context: RefCell<&'query mut dyn FactContext<RuntimeKey, RuntimeFact>>,
 }
 
+pub(super) struct BranchLineageScope {
+    lineage: Rc<RefCell<Vec<AlternativeBranchId>>>,
+    prior: Vec<AlternativeBranchId>,
+}
+
+impl Drop for BranchLineageScope {
+    fn drop(&mut self) {
+        *self.lineage.borrow_mut() = std::mem::take(&mut self.prior);
+    }
+}
+
 impl RuntimeQueries<'_, '_> {
+    pub(super) fn program_point(&self) -> &ProgramPoint {
+        &self.point
+    }
+    /// Source ownership of this transfer, including read-only proof queries
+    /// outside an active top-level execution frame. This grants no invocation.
+    pub(super) fn source_owner(&self) -> SourceUnitOrdinal {
+        self.point.owner
+    }
+
     pub(super) fn point_path(&self) -> Vec<NativeProgramPointStep> {
         self.point
             .path
@@ -185,22 +264,39 @@ impl RuntimeQueries<'_, '_> {
             })
             .collect()
     }
-    pub(super) fn invocation_memo(&self, point: &ProgramPoint) -> Outcome {
+    pub(super) fn invocation_memo(
+        &self,
+        point: &ProgramPoint,
+        entry: &ExecutionStateSnapshot,
+    ) -> Option<RuntimeTransferFamily> {
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::InvocationMemo(outcome)) =
             context.read_final(RuntimeKey::InvocationMemo(point.clone()))
         else {
             unreachable!("a live invocation memo points to its completed outcome");
         };
-        outcome.as_ref().clone()
+        // Whole-world replay requires correspondence with the input snapshot.
+        // Structural equivalence can broaden this admission later; a summary
+        // signature alone does not prove that unrelated caller state is equal.
+        outcome
+            .1
+            .as_ref()
+            .filter(|saved| Rc::ptr_eq(saved, entry))
+            .map(|_| outcome.0.clone())
     }
 
-    pub(super) fn publish_invocation_memo(&self, outcome: &Outcome) -> ProgramPoint {
+    pub(super) fn publish_invocation_memo(
+        &self,
+        family: &RuntimeTransferFamily,
+        entry: Option<ExecutionStateSnapshot>,
+    ) -> ProgramPoint {
+        let mut point = self.point.clone();
+        point.branch_lineage = self.branch_lineage.borrow().clone();
         self.context.borrow_mut().propose(
-            RuntimeKey::InvocationMemo(self.point.clone()),
-            RuntimeFact::InvocationMemo(Box::new(outcome.clone())),
+            RuntimeKey::InvocationMemo(point.clone()),
+            RuntimeFact::InvocationMemo(Box::new((family.clone(), entry))),
         );
-        self.point.clone()
+        point
     }
 
     pub(super) fn retire_invocation_memo(&self, point: ProgramPoint) {
@@ -291,7 +387,53 @@ impl RuntimeQueries<'_, '_> {
         self.next_child.set(ordinal + 1);
         let mut point = self.point.clone();
         point.path.push((kind, ordinal));
+        point.branch_lineage = self.branch_lineage.borrow().clone();
         point
+    }
+
+    /// Clone an execution snapshot for a possible path while preserving the
+    /// shared semantic identity arena and run-scoped expansion budget.
+    pub(super) fn fork_alternative(
+        &self,
+        state: &ExecutionStateSnapshot,
+    ) -> (AlternativeBranchId, ExecutionStateSnapshot) {
+        assert_eq!(
+            state.branch_lineage.as_slice(),
+            self.branch_lineage.borrow().as_slice(),
+            "alternative forks must start from the active state lineage"
+        );
+        let branch = self.branch_ids.allocate();
+        // Existing memo points belong to the parent lineage. Calls in this
+        // fork use a distinct signature and must not retire/reuse those
+        // shared fact entries as if this branch owned them.
+        let fork = state.fork_for_alternative(branch);
+        (branch, Rc::new(fork))
+    }
+
+    /// Evaluate one branch sequentially against the exclusive FactContext.
+    /// The scope is restored on normal return and unwind; no context clone is
+    /// made, and all child fact keys carry this branch's lineage.
+    pub(super) fn enter_branch_lineage(
+        &self,
+        lineage: &[AlternativeBranchId],
+    ) -> BranchLineageScope {
+        let prior = std::mem::replace(&mut *self.branch_lineage.borrow_mut(), lineage.to_vec());
+        BranchLineageScope {
+            lineage: self.branch_lineage.clone(),
+            prior,
+        }
+    }
+
+    pub(super) fn allocate_alternative_family(&self) -> AlternativeFamilyId {
+        self.branch_ids.allocate_family()
+    }
+
+    pub(super) fn owns_alternative_family(&self, family: &AlternativeFamilyId) -> bool {
+        self.branch_ids.shares_arena(&family.allocator)
+    }
+
+    pub(super) fn branch_lineage(&self) -> Vec<AlternativeBranchId> {
+        self.branch_lineage.borrow().clone()
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
@@ -315,9 +457,14 @@ impl RuntimeQueries<'_, '_> {
 
     pub(super) fn request(
         &self,
-        state: Box<ExecutionState>,
+        state: ExecutionStateSnapshot,
         operation: RuntimeOperation,
     ) -> RuntimeResult {
+        assert_eq!(
+            state.branch_lineage.as_slice(),
+            self.branch_lineage.borrow().as_slice(),
+            "execution state and runtime fact request must share branch lineage"
+        );
         let kind = match &operation {
             RuntimeOperation::Heap(_) => NativeProgramPointKind::Heap,
             RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. } => {
@@ -334,7 +481,7 @@ impl RuntimeQueries<'_, '_> {
             RuntimeKey::Request(point.clone()),
             RuntimeFact::Request(Box::new(RuntimeRequest { state, operation })),
         );
-        RuntimeRules::transfer(self.inputs, &point, &mut **context);
+        RuntimeRules::transfer(self.inputs, &point, &self.branch_ids, &mut **context);
         let Some(RuntimeFact::Result(result)) = context.take_final(RuntimeKey::Result(point))
         else {
             unreachable!("a transfer with settled inputs produces a terminal result");
@@ -346,6 +493,7 @@ impl RuntimeQueries<'_, '_> {
 struct RuntimeRules<'source, 'inputs> {
     inputs: &'inputs ExecutionInputs<'source>,
     owner_count: usize,
+    branch_ids: BranchLineageArena,
 }
 
 impl IterativeRules for RuntimeRules<'_, '_> {
@@ -377,7 +525,9 @@ impl IterativeRules for RuntimeRules<'_, '_> {
     ) {
         match rule {
             RuntimeRule::ExecuteOwner(owner) => self.execute_owner(*owner, context),
-            RuntimeRule::Transfer(point) => Self::transfer(self.inputs, point, context),
+            RuntimeRule::Transfer(point) => {
+                Self::transfer(self.inputs, point, &self.branch_ids, context)
+            }
             RuntimeRule::OwnProperty(point) => {
                 Self::project_own_property(self.inputs, point, context)
             }
@@ -468,13 +618,17 @@ impl RuntimeRules<'_, '_> {
                 self.inputs.statement_effects(owner, &state),
             ))),
         );
+        let branch_lineage = state.branch_lineage.clone();
         let queries = RuntimeQueries {
             inputs: self.inputs,
             point: ProgramPoint {
                 owner,
                 path: Vec::new(),
+                branch_lineage: branch_lineage.clone(),
             },
             next_child: Cell::new(0),
+            branch_lineage: Rc::new(RefCell::new(branch_lineage)),
+            branch_ids: self.branch_ids.clone(),
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
@@ -485,7 +639,7 @@ impl RuntimeRules<'_, '_> {
         // Requests/results are taken at their single-consumer sites, and
         // owner finalization retires invocation memos. No active transfer
         // frame can hold a cell reference outside this settled prefix now.
-        state.reclaim_lexical_cells(owner.0 + 1 == self.owner_count);
+        Rc::make_mut(&mut state).reclaim_lexical_cells(owner.0 + 1 == self.owner_count);
         context.propose(
             RuntimeKey::Effects(owner),
             RuntimeFact::Effects(Box::new(effects)),
@@ -499,6 +653,7 @@ impl RuntimeRules<'_, '_> {
     fn transfer(
         inputs: &ExecutionInputs<'_>,
         point: &ProgramPoint,
+        branch_ids: &BranchLineageArena,
         context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
         let Some(RuntimeFact::Request(request)) =
@@ -511,6 +666,8 @@ impl RuntimeRules<'_, '_> {
             inputs,
             point: point.clone(),
             next_child: Cell::new(0),
+            branch_lineage: Rc::new(RefCell::new(point.branch_lineage.clone())),
+            branch_ids: branch_ids.clone(),
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
@@ -534,11 +691,11 @@ impl RuntimeRules<'_, '_> {
                 if source_covered {
                     executor.cover_source_expression();
                 }
-                RuntimeValue::Values(executor.evaluate_transfer(
+                RuntimeValue::AllocationTransfer(Box::new(executor.evaluate_transfer(
                     &expression,
                     &environment,
                     &captures,
-                ))
+                )))
             }
             RuntimeOperation::EvaluateInitializer {
                 source,
@@ -546,31 +703,33 @@ impl RuntimeRules<'_, '_> {
                 environment,
                 captures,
             } => {
-                let (values, judgment, native_constructor_transfer, operation_coverage) = executor
+                let (transfer, native_constructor_transfer, operation_ledger) = executor
                     .evaluate_initializer_transfer(&source, &expression, &environment, &captures);
                 let operation_source = source.operation_source(&expression).is_some();
                 let evaluated = if operation_source {
                     None
+                } else if let ChildTransfer::Value(value) = &transfer {
+                    source.evaluated(
+                        executor.heap_resolver(),
+                        &expression,
+                        value,
+                        native_constructor_transfer,
+                    )
                 } else {
-                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
+                    None
                 };
                 let covered_operation = operation_source
-                    && !values.is_empty()
-                    && !values.contains(&super::super::value_model::AbstractValue::Value(
-                        crate::facts::abstract_domain::value::Value::Unavailable,
-                    ))
-                    && operation_coverage
+                    && matches!(&transfer, ChildTransfer::Value(value)
+                        if value.ledger.is_exact_normal())
+                    && operation_ledger
                         .as_ref()
-                        .and_then(EffectCoverageFragment::normal_dependencies)
+                        .and_then(|ledger| ledger.normal_dependencies())
                         .is_some();
                 let refusal = (evaluated.is_none() && !covered_operation)
                     .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
                 RuntimeValue::Initializer {
-                    values,
+                    transfer: Box::new(transfer),
                     evaluated: evaluated.map(Box::new),
-                    operation_coverage: operation_coverage
-                        .filter(|_| covered_operation)
-                        .map(Box::new),
                     refusal,
                 }
             }
@@ -580,28 +739,46 @@ impl RuntimeRules<'_, '_> {
                 argument_selections,
                 captured,
                 fresh_checked_constructor,
-            } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
-                callable,
-                arguments,
-                argument_selections,
-                captured,
-                fresh_checked_constructor,
-            ))),
+                receiver,
+                continuation,
+            } => {
+                let family = executor.invoke_transfer(
+                    callable,
+                    arguments,
+                    argument_selections,
+                    captured,
+                    fresh_checked_constructor,
+                    receiver,
+                );
+                let family = match continuation {
+                    Some(continuation) => family.with_continuation(*continuation),
+                    None => family,
+                };
+                RuntimeValue::Outcome(Box::new(family))
+            }
             RuntimeOperation::Call {
+                continuation,
                 call,
                 environment,
                 captures,
-                mut outcome,
+                outcome,
                 operands,
             } => {
-                let transfer = executor.execute_call_transfer(
+                let (transfer, family) = executor.execute_call_transfer_family(
                     &call,
                     &environment,
                     &captures,
-                    &mut outcome,
+                    *outcome,
                     operands.map(|operands| *operands),
                 );
-                RuntimeValue::Call { outcome, transfer }
+                let family = match continuation {
+                    Some(continuation) => family.with_continuation(*continuation),
+                    None => family,
+                };
+                RuntimeValue::Call {
+                    family: Box::new(family),
+                    transfer,
+                }
             }
             RuntimeOperation::Model(operation) => {
                 RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))
@@ -628,13 +805,15 @@ pub(super) fn infer_synchronous_execution(
     initial: ExecutionState,
     owner_count: usize,
 ) -> Vec<(SynchronousCalls, CompletedPurity)> {
+    let branch_ids = BranchLineageArena::default();
     let mut inference = IterativeInference::new(RuntimeRules {
         inputs,
         owner_count,
+        branch_ids,
     });
     inference.seed(
         RuntimeKey::Prefix(SourceUnitOrdinal(0)),
-        RuntimeFact::Prefix(Box::new(initial)),
+        RuntimeFact::Prefix(Rc::new(initial)),
     );
     let mut facts = inference.solve([]).into_values();
     (0..owner_count)

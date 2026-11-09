@@ -1,11 +1,12 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
-use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
+use super::allocation_transfer::{AllocationJudgment, AllocationValue};
+use super::completion::{Completion, TransferLedger};
+use super::effect_coverage::RootEffectIdentity;
+use super::value_model::{AbstractValue, CallSite, ValueExpr};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{HeapAddress, Kind, SourceHeapResolver, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -41,7 +42,6 @@ impl NativeConstructorKind {
 enum Leaf {
     Composed(ValueExpr),
     Function(u32),
-    Class(u32),
     RegExp(u32),
     /// Exact direct source form; only a checked operation receipt may cover it.
     KeyedCollectionOperation {
@@ -72,7 +72,7 @@ pub(super) struct EvaluatedInitializer {
 
 /// A candidate exists only while one dedicated root initializer is evaluated.
 /// Its matching transfer is recorded by that root's native New dispatch.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct NativeConstructorCandidate {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
@@ -83,7 +83,7 @@ pub(super) struct NativeConstructorCandidate {
 /// Evidence that the exact root New dispatch selected and applied the native
 /// constructor row for its collected source form. This is not a value identity
 /// or a heap-shape fact.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
@@ -119,14 +119,19 @@ impl NativeConstructorCandidate {
         self.kind
     }
 
-    fn matches_set_primitive_array_allocation(self, allocation: u32) -> bool {
+    fn matches_set_primitive_array_allocation(
+        self,
+        resolver: SourceHeapResolver,
+        allocation: HeapAddress,
+    ) -> bool {
         matches!(
             (self.kind, self.form),
             (
                 NativeConstructorKind::Set,
                 NativeConstructorForm::SetPrimitiveArray { .. }
             )
-        ) && self.call_site.allocation_id() == allocation
+        ) && allocation.kind() == Some(Kind::Set)
+            && resolver.source_origin(allocation) == Some(self.call_site.allocation_id())
     }
 
     pub(super) fn matches_dispatch(
@@ -141,29 +146,110 @@ impl NativeConstructorCandidate {
 
 /// Terminal evidence for this source owner only. Never composed through a
 /// child ledger, generic Evaluate result, callee outcome or invocation memo.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CompletedInitialization {
     owner: SourceUnitOrdinal,
     dependencies: ProofDependencies,
 }
 
 impl CompletedInitialization {
-    /// Seal only the exact normally completed root initializer. Child
+    /// Seal only the exact normally completed source root. Child
     /// operations and invocation memos carry fragments, never this evidence.
-    pub(super) fn from_root_effects(
-        source: &InitializationSourceIdentity,
+    pub(super) fn from_root_transfer<N, A>(
+        source: &RootEffectIdentity,
         owner: SourceUnitOrdinal,
-        binding: &Id,
-        initializer_span: Span,
         initialized: &BTreeSet<Id>,
-        effects: &EffectCoverageFragment,
+        transfer: &TransferLedger<N, A>,
     ) -> Option<Self> {
-        if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
+        if source.owner != owner || !source.targets_initialized(initialized) {
             return None;
         }
         Some(Self {
             owner,
-            dependencies: effects.normal_dependencies()?,
+            dependencies: transfer.normal_dependencies()?,
+        })
+    }
+
+    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
+        self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+}
+
+/// Exact-owner evidence that synchronous module evaluation completes
+/// normally. Unlike effect-domain closure, this receipt says nothing about
+/// which global, heap or host effects the owner may have produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RootNormalCompletion {
+    owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
+}
+
+impl RootNormalCompletion {
+    /// An exact completed-initializer receipt is itself whole-root normality
+    /// evidence. It need not also have an operation-root identity, which is
+    /// absent for some scalar and non-invoking function-creation roots.
+    pub(crate) fn from_completed_initialization(
+        owner: SourceUnitOrdinal,
+        proof: &CompletedInitialization,
+    ) -> Option<Self> {
+        proof.covers(owner).then(|| Self {
+            owner,
+            dependencies: proof.dependencies().clone(),
+        })
+    }
+
+    /// Seal normal completion only for the exact whole-owner root selected by
+    /// the shared executor. A completed-initializer theorem may supply the
+    /// normality proof even when unrelated may-effect domains remain unknown.
+    pub(super) fn from_root<N, A>(
+        source: &RootEffectIdentity,
+        owner: SourceUnitOrdinal,
+        initialized: &BTreeSet<Id>,
+        transfer: &TransferLedger<N, A>,
+    ) -> Option<Self> {
+        if source.owner != owner || !source.targets_initialized(initialized) {
+            return None;
+        }
+        Some(Self {
+            owner,
+            dependencies: transfer.normal_dependencies()?,
+        })
+    }
+
+    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
+        self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+}
+
+/// Exact-root evidence that the shared transfer reached an outward known
+/// throw. Missing normal-completion evidence alone never creates this receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RootOutwardThrow {
+    owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
+}
+
+impl RootOutwardThrow {
+    /// Seal only a known throw returned from the exact owner root.
+    pub(super) fn from_root<N, A>(
+        source: &RootEffectIdentity,
+        owner: SourceUnitOrdinal,
+        transfer: &TransferLedger<N, A>,
+    ) -> Option<Self> {
+        if source.owner != owner {
+            return None;
+        }
+        Some(Self {
+            owner,
+            dependencies: transfer.known_abrupt_dependencies()?,
         })
     }
 
@@ -356,71 +442,6 @@ fn javascript_parameter(parameter: &Pat) -> bool {
     }
 }
 
-fn plain_class_member(member: &ClassMember) -> bool {
-    match member {
-        ClassMember::Method(method) => {
-            method.kind == MethodKind::Method
-                && !matches!(method.key, PropName::Computed(_))
-                && method.function.decorators.is_empty()
-                && method.function.body.is_some()
-                && method.function.type_params.is_none()
-                && method.function.return_type.is_none()
-                && method.function.params.iter().all(|parameter| {
-                    parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
-                })
-                && !method.is_abstract
-                && !method.is_optional
-                && !method.is_override
-        }
-        ClassMember::Constructor(constructor) => {
-            !matches!(constructor.key, PropName::Computed(_))
-                && constructor.body.is_some()
-                && constructor.accessibility.is_none()
-                && !constructor.is_optional
-                && constructor.params.iter().all(|parameter| match parameter {
-                    ParamOrTsParamProp::Param(parameter) => {
-                        parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
-                    }
-                    ParamOrTsParamProp::TsParamProp(_) => false,
-                })
-        }
-        ClassMember::ClassProp(property) => {
-            !property.is_static
-                && !matches!(property.key, PropName::Computed(_))
-                && property.decorators.is_empty()
-                && property.type_ann.is_none()
-                && !property.is_abstract
-                && !property.is_optional
-                && !property.is_override
-                && !property.declare
-                && !property.definite
-        }
-        ClassMember::Empty(_) => true,
-        ClassMember::PrivateMethod(_)
-        | ClassMember::PrivateProp(_)
-        | ClassMember::TsIndexSignature(_)
-        | ClassMember::StaticBlock(_)
-        | ClassMember::AutoAccessor(_) => false,
-    }
-}
-
-/// This subset only creates a fresh constructor, prototype, and method
-/// functions, then publishes the class through its lexical binding. With no
-/// heritage, decorators, computed keys, or static initialization, class
-/// evaluation runs no user code and cannot expose those fresh objects before
-/// binding initialization. Method bodies and instance field values stay lazy.
-fn inert_class_declaration(declaration: &ClassDecl) -> bool {
-    let class = &declaration.class;
-    !declaration.declare
-        && class.decorators.is_empty()
-        && class.super_class.is_none()
-        && !class.is_abstract
-        && class.type_params.is_none()
-        && class.super_type_params.is_none()
-        && class.implements.is_empty()
-        && class.body.iter().all(plain_class_member)
-}
-
 fn empty_direct_constructor(expression: &Expr) -> Option<(Id, CallSite)> {
     let Expr::New(construction) = expression.unwrap_parens() else {
         return None;
@@ -497,29 +518,12 @@ fn set_primitive_array_constructor(
 }
 
 impl OriginalInitializer {
-    pub(super) fn collect<'source>(
-        item: &TopLevelItemView<'source>,
-        owner: SourceUnitOrdinal,
+    pub(super) fn collect(
         source: Result<
-            (InitializationSourceIdentity, &'source Expr),
+            (InitializationSourceIdentity, &Expr),
             OwnerInitializationCoverageRefusalReason,
         >,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
-        if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration)))) =
-            item
-        {
-            if !inert_class_declaration(declaration) {
-                return Err(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind);
-            }
-            return Ok(Self {
-                identity: InitializationSourceIdentity::new(
-                    owner,
-                    declaration.ident.to_id(),
-                    declaration.class.span,
-                ),
-                leaf: Leaf::Class(declaration.class.span.lo.0),
-            });
-        }
         let (identity, initializer) = source?;
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
@@ -663,18 +667,23 @@ impl OriginalInitializer {
     /// Generic lowering or an empty effect ledger is no proof.
     pub(super) fn evaluated(
         &self,
+        resolver: SourceHeapResolver,
         expression: &ValueExpr,
-        values: &Values,
-        judgment: &AllocationJudgment,
+        transfer: &AllocationValue,
         native_constructor_transfer: Option<NativeConstructorTransfer>,
     ) -> Option<EvaluatedInitializer> {
+        let Completion::Normal(values) = &transfer.ledger.completion else {
+            return None;
+        };
         if values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable)) {
             return None;
         }
+        let transfer_dependencies = transfer.ledger.dependencies.as_ref().clone();
         let matches = match (&self.leaf, expression, values.first()?) {
-            (Leaf::Composed(_), _, _) => {
-                matches!(judgment, AllocationJudgment::CoveredAllocationOnly(_))
-            }
+            (Leaf::Composed(_), _, _) => matches!(
+                &transfer.ledger.allocation,
+                AllocationJudgment::CoveredAllocationOnly(_)
+            ),
             (Leaf::NativeConstructor { .. }, _, AbstractValue::Value(Value::Top)) => self
                 .native_constructor_candidate(expression)
                 .zip(native_constructor_transfer.as_ref())
@@ -691,34 +700,39 @@ impl OriginalInitializer {
                 .is_some_and(|(candidate, transfer)| {
                     values.len() == 1
                         && transfer.matches(candidate)
-                        && candidate.matches_set_primitive_array_allocation(*allocation)
+                        && candidate.matches_set_primitive_array_allocation(resolver, *allocation)
                 }),
             (
                 Leaf::RegExp(allocation),
                 ValueExpr::Alloc(Kind::RegExp, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::RegExp, evaluated)),
-            ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
-            (
-                Leaf::Class(expected),
-                ValueExpr::Alloc(Kind::Class, lowered),
-                AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && allocation == lowered
+                    && evaluated.kind() == Some(Kind::RegExp)
+                    && resolver.source_origin(*evaluated) == Some(*allocation)
+            }
             (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
                 AbstractValue::Closure(evaluated, _),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && evaluated.kind() == Some(Kind::Function)
+                    && resolver.source_origin(*evaluated) == Some(*expected)
+            }
             _ => false,
         };
         if !matches {
             return None;
         }
-        let mut dependencies = match judgment {
-            AllocationJudgment::CoveredAllocationOnly(dependencies) => {
-                dependencies.as_ref().clone()
-            }
-            AllocationJudgment::Opaque => ProofDependencies::default(),
-        };
+        let mut dependencies = transfer_dependencies;
+        if let AllocationJudgment::CoveredAllocationOnly(allocation_dependencies) =
+            &transfer.ledger.allocation
+        {
+            dependencies.extend(allocation_dependencies.as_ref());
+        }
         if let Some(transfer) = native_constructor_transfer {
             dependencies.extend(&transfer.dependencies);
         }
@@ -798,11 +812,7 @@ mod source_identity_tests {
         ));
 
         assert!(matches!(
-            OriginalInitializer::collect(
-                &views[1],
-                SourceUnitOrdinal(1),
-                Ok((unsupported_identity, unsupported_expression)),
-            ),
+            OriginalInitializer::collect(Ok((unsupported_identity, unsupported_expression))),
             Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
         ));
     }
@@ -816,11 +826,7 @@ mod source_identity_tests {
                 .expect("export wrapper still identifies the original binding and initializer");
         assert!(identity.matches(SourceUnitOrdinal(0), &id("result"), expression.span()));
         assert!(matches!(
-            OriginalInitializer::collect(
-                &views[0],
-                SourceUnitOrdinal(0),
-                Ok((identity, expression))
-            ),
+            OriginalInitializer::collect(Ok((identity, expression))),
             Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
         ));
     }

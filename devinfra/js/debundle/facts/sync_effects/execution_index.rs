@@ -2,21 +2,28 @@
 
 mod callback_arguments;
 mod prototype_properties;
+pub(crate) mod provider_program;
 
 use super::callable_body_facts::CallableBodyFacts;
-use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
+use super::effect_coverage::{
+    LocalBodyIdentity, OperationStep, RootEffectIdentity, RootEffectSource, SourceOperationSite,
+};
+use super::local_operations::{
+    DeferredCallableCreation, LocalBinding, LocalBody, LocalCall, LocalExpression, OrderedRoot,
+};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    AbstractValue, ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, Values, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
-    InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
+    AnalysisInputs, BindingCellDeclarationIdentity, BindingCellStoreEvidence, BindingStoreKind,
+    BundleGlobalNames, HostBehaviorKey, InferredSetConstruction, InferredSetOperation,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic,
+    NativeOperationInputEvidence, NoAccessorInstallRef, PrimitiveCellInvariant, ProgramPremiseKey,
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
@@ -26,9 +33,12 @@ use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
 use crate::facts::abstract_domain::integrity::{
-    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
+    Integrity, IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::primitive::{self, PrimScope};
+use crate::facts::abstract_domain::value::{
+    HeapModuleScope, Kind, LocalAnalysisScopeId, SourceHeapResolver, Value,
+};
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -36,7 +46,9 @@ use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use crate::facts::item_views::{
+    TopLevelItemView, classify_item, collect_declared_names, var_decl_of_item,
+};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use crate::facts::semantic_inference::{
@@ -52,6 +64,7 @@ use crate::facts::value_flow::ChunkValueFlow;
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
+    StatementKind, StructuralChunkAnalysis,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
@@ -59,7 +72,7 @@ use crate::reports::schema::{
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
 };
 use analysis_model::PrimKinds;
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -270,6 +283,63 @@ fn primitive_literal(expression: &Expr) -> bool {
         expression.unwrap_parens(),
         Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
     )
+}
+
+fn function_has_no_decorators(function: &Function) -> bool {
+    function.decorators.is_empty()
+        && function
+            .params
+            .iter()
+            .all(|parameter| parameter.decorators.is_empty())
+}
+
+fn provider_initialization_source_item_is_noninvoking(
+    item: &ModuleItem,
+    is_string_directive: bool,
+) -> bool {
+    match classify_item(item) {
+        StatementKind::Import => matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))),
+        StatementKind::Export => match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_) | ModuleDecl::ExportAll(_)) => true,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
+                matches!(&export.decl, DefaultDecl::Fn(function)
+                    if function_has_no_decorators(&function.function))
+            }
+            _ => false,
+        },
+        StatementKind::FnDecl => match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
+                !function.declare && function_has_no_decorators(&function.function)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                matches!(&export.decl, Decl::Fn(function)
+                    if !function.declare && function_has_no_decorators(&function.function))
+            }
+            _ => false,
+        },
+        StatementKind::VarDecl => var_decl_of_item(item).is_some_and(|declaration| {
+            !declaration.declare
+                && declaration.decls.len() == 1
+                && matches!(&declaration.decls[0].name, Pat::Ident(_))
+                && declaration.decls[0]
+                    .init
+                    .as_deref()
+                    .is_none_or(|initializer| {
+                        primitive_literal(initializer)
+                            || matches!(initializer.unwrap_parens(), Expr::Fn(function)
+                            if function_has_no_decorators(&function.function))
+                            || matches!(initializer.unwrap_parens(), Expr::Arrow(_))
+                    })
+        }),
+        StatementKind::ClassDecl => false,
+        StatementKind::SideEffect => match item {
+            ModuleItem::Stmt(Stmt::Empty(_)) => true,
+            ModuleItem::Stmt(Stmt::Expr(statement)) if is_string_directive => {
+                matches!(statement.expr.unwrap_parens(), Expr::Lit(Lit::Str(_)))
+            }
+            _ => false,
+        },
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1071,11 +1141,18 @@ struct Call {
     span: Span,
     caller: Option<u32>,
     owner: SourceUnitOrdinal,
+    /// Canonical invocation sites for each local body interpretation of this
+    /// source call. Constructor execution can lower the same AST body under a
+    /// construction identity as well as its ordinary callable identity.
+    source_sites: BTreeSet<SourceOperationSite>,
     plain_object_sources: bool,
     no_sync_arguments: bool,
     no_reentry_candidate: bool,
     no_reentry_record_candidate: bool,
     has_spread: bool,
+    /// Canonical source positions and spread-token spans for call arguments.
+    /// Ordered execution must prove these exact positions were expanded.
+    spread_arguments: BTreeMap<usize, Span>,
 }
 
 impl Call {
@@ -1092,12 +1169,24 @@ impl Call {
             span,
             caller,
             owner,
+            source_sites: BTreeSet::new(),
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
             no_reentry_record_candidate: false,
             has_spread: false,
+            spread_arguments: BTreeMap::new(),
         }
+    }
+
+    fn source_site_for_body(&self, body: &LocalBodyIdentity) -> Option<&SourceOperationSite> {
+        self.source_sites.iter().find(|site| site.body == *body)
+    }
+
+    fn has_source_site(&self, site: &SourceOperationSite) -> bool {
+        self.owner == site.owner
+            && site.step == OperationStep::CallInvocation
+            && self.source_sites.contains(site)
     }
 }
 
@@ -1133,6 +1222,8 @@ enum CallKind {
     ObjectSpread,
     LocalMemberRead,
     AccessorCalleeLookup,
+    /// Identifier read, ToNumeric and store; flat fallback remains opaque.
+    BindingUpdate,
     OpaqueExecution,
     InProtocol,
     InstanceOfProtocol,
@@ -1327,9 +1418,29 @@ struct CallbackResultWrite {
 struct MemberValueWrite {
     receiver: Id,
     property: Option<String>,
+    simple_assignment: bool,
     value: ValueExpr,
     site: CallSite,
     owner: SourceUnitOrdinal,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TopPropertyWrite {
+    pub(super) receiver: Option<Id>,
+    pub(super) property: Option<String>,
+    pending_site_span: Option<Span>,
+    pub(super) source_site: Option<SourceOperationSite>,
+}
+
+impl TopPropertyWrite {
+    fn unresolved() -> Self {
+        Self {
+            receiver: None,
+            property: None,
+            pending_site_span: None,
+            source_site: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1362,6 +1473,8 @@ struct Callable {
     dynamic_property_effect: bool,
     dynamic_property_receivers: Vec<ValueExpr>,
     implicit_capture: bool,
+    lexical_this: bool,
+    meta_property: bool,
     opaque: bool,
     generator: bool,
     may_fall_through: bool,
@@ -1429,6 +1542,22 @@ fn safe_constructor_value(
             safe_constructor_value(&bin.left, params, property_reads, binding_reads)
                 && safe_constructor_value(&bin.right, params, property_reads, binding_reads)
         }
+        Expr::Call(call) if call.args.iter().all(|argument| argument.spread.is_none()) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return false;
+            };
+            // Calls are admitted as ordered operations, never as proof that a
+            // constructor body is pure. The runtime continuation owns callee,
+            // argument, normal/throw and receiver effects. Restrict this
+            // source gate to an ordinary lexical callee and recursively
+            // checked operands; unsupported targets still take its explicit
+            // conservative transfer.
+            matches!(callee.unwrap_parens(), Expr::Ident(_))
+                && safe_constructor_value(callee, params, property_reads, binding_reads)
+                && call.args.iter().all(|argument| {
+                    safe_constructor_value(&argument.expr, params, property_reads, binding_reads)
+                })
+        }
         _ => false,
     }
 }
@@ -1484,6 +1613,9 @@ fn local_constructor(
     let checked_default_fields = construction_proof.contains_class(class.span.lo.0);
     let mut constructor = None;
     let mut has_instance_fields = false;
+    let mut property_reads = BTreeSet::new();
+    let mut binding_reads = BTreeSet::new();
+    let no_parameters = Vec::new();
     for member in &class.body {
         match member {
             ClassMember::Constructor(ctor) if constructor.is_none() => constructor = Some(ctor),
@@ -1499,6 +1631,12 @@ fn local_constructor(
                     && (checked_default_fields
                         || prop.value.as_deref().is_none_or(|value| {
                             matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                                || safe_constructor_value(
+                                    value,
+                                    &no_parameters,
+                                    &mut property_reads,
+                                    &mut binding_reads,
+                                )
                         })) =>
             {
                 has_instance_fields = true
@@ -1509,6 +1647,12 @@ fn local_constructor(
                     && (checked_default_fields
                         || prop.value.as_deref().is_none_or(|value| {
                             matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                                || safe_constructor_value(
+                                    value,
+                                    &no_parameters,
+                                    &mut property_reads,
+                                    &mut binding_reads,
+                                )
                         })) =>
             {
                 has_instance_fields = true
@@ -1541,8 +1685,6 @@ fn local_constructor(
     if params.iter().any(Option::is_none) {
         return None;
     }
-    let mut property_reads = BTreeSet::new();
-    let mut binding_reads = BTreeSet::new();
     let mut written_properties = BTreeSet::new();
     for statement in &ctor.body.as_ref()?.stmts {
         let Stmt::Expr(expr) = statement else {
@@ -1607,6 +1749,8 @@ impl Default for Callable {
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
             implicit_capture: false,
+            lexical_this: false,
+            meta_property: false,
             opaque: false,
             generator: false,
             may_fall_through: true,
@@ -1769,12 +1913,21 @@ struct ReceiverFlowValue {
 #[derive(Debug, Clone)]
 struct BindingDeclarationWrite {
     owner: SourceUnitOrdinal,
+    activation_callable: Option<u32>,
+    mutable: bool,
     /// A simple `var` in a callable's scope. Such a binding is initialized to
     /// undefined on entry; this proves no kind or privacy of its stored value.
     private_var_scope: Option<u32>,
+    /// A `var` cell initialized to `undefined` by module or callable
+    /// instantiation. This evidence says nothing about its stored value.
+    initialized_var_scope: Option<InitializedVarScope>,
     binding_span: Span,
     initializer_span: Option<Span>,
     initializer: Option<ValueExpr>,
+    initializer_transfer: BindingInitializerTransfer,
+    /// Conditional normal-result kinds collected from the original syntax.
+    /// Lowered values may have erased assignment/short-circuit operations.
+    primitive_initializer: Option<Box<PrimitiveInitializer>>,
     direct_top_level: bool,
     simple_identifier: bool,
     primitive_literal_initializer: bool,
@@ -2003,6 +2156,110 @@ fn native_operation_initializers(
         }
         _ => None,
     }
+}
+
+#[derive(Debug, Clone)]
+enum BindingInitializerTransfer {
+    Uninitialized,
+    Supported(Arc<LocalBody>),
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BindingStoreRefusal {
+    CompoundAssignment,
+    Destructuring,
+    UnsupportedTarget,
+    UnsupportedLowering,
+    MissingSiteContext,
+}
+
+#[derive(Debug, Clone)]
+enum BindingStoreInput {
+    Supported(Arc<LocalBody>),
+    Unsupported(BindingStoreRefusal),
+}
+
+#[derive(Debug, Clone)]
+struct BindingStoreSite {
+    owner: SourceUnitOrdinal,
+    activation_callable: Option<u32>,
+    span: Span,
+    kind: BindingStoreKind,
+    input: BindingStoreInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PrimitiveCellInvariantRefusal {
+    DynamicScope,
+    MissingDeclaration,
+    AmbiguousDeclaration,
+    NotDirectModuleCell,
+    DestructuredDeclaration,
+    ImmutableDeclaration,
+    UnsupportedInitializer,
+    UnsupportedTransfer(BindingCellStoreEvidence),
+    NestedInitializerWrite,
+    InitializerNotNormallyCompleted,
+    NonPrimitiveInitializer,
+    UnsupportedStore(BindingCellStoreEvidence, BindingStoreRefusal),
+    NestedStore(BindingCellStoreEvidence),
+    NonPrimitiveStoreResult(BindingCellStoreEvidence),
+    NoNormalStoreValue(BindingCellStoreEvidence),
+    NonConvergent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PrimitiveCellInvariantQuery {
+    Known(PrimitiveCellInvariant),
+    Unknown(PrimitiveCellInvariantRefusal),
+}
+
+#[derive(Debug, Clone)]
+struct PrimitiveInitializer {
+    kinds: PrimKinds,
+    intrinsics: BTreeMap<Id, BTreeSet<IntrinsicSlot>>,
+}
+
+impl PrimitiveInitializer {
+    fn collect(expression: &Expr) -> Option<Box<Self>> {
+        // This is a conditional type candidate, not an integrity certificate.
+        // The completed canonical census checks every collected identity below.
+        #[derive(Default)]
+        struct CandidateScope {
+            intrinsics: std::cell::RefCell<BTreeMap<Id, BTreeSet<IntrinsicSlot>>>,
+        }
+        impl PrimScope for CandidateScope {
+            fn binding(&self, _: &Ident) -> Option<PrimKinds> {
+                None
+            }
+            fn intact_intrinsic(&self, row: &Row, global: &Ident, _: Option<&str>) -> bool {
+                if row.requires.is_empty() {
+                    return false;
+                }
+                self.intrinsics
+                    .borrow_mut()
+                    .entry(global.to_id())
+                    .or_default()
+                    .extend(row.requires.iter().copied());
+                true
+            }
+        }
+        let scope = CandidateScope::default();
+        let kinds = primitive::evaluate(expression, &scope)?;
+        (!kinds.is_empty()).then(|| {
+            Box::new(Self {
+                kinds,
+                intrinsics: scope.intrinsics.into_inner(),
+            })
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InitializedVarScope {
+    Module,
+    Callable(u32),
 }
 
 fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
@@ -2677,6 +2934,7 @@ fn intrinsic_roots(
                         ValueExpr::Undefined
                             | ValueExpr::NonCallable(_)
                             | ValueExpr::Primitive(_)
+                            | ValueExpr::Binary(..)
                             | ValueExpr::StrictEquality(..)
                             | ValueExpr::LogicalNot(_)
                             | ValueExpr::Void(_)
@@ -3367,11 +3625,24 @@ fn evaluate_receiver_value(
                 result.fact.opaque = true;
             }
         }
+        ValueExpr::ObjectSpreadLiteral(_, source) => {
+            let source = evaluate_receiver_value(source, context, rules);
+            result.pending = source.pending;
+            result.fact.complete = source.fact.complete;
+            result.fact.callable_dependencies = source.fact.callable_dependencies;
+            result.fact.capture_dependencies = source.fact.capture_dependencies;
+            result.fact.opaque = true;
+            result.fact.roots = source.fact.roots;
+            result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::UnknownGlobalValue,
+            ));
+        }
         ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
             result.fact.safe = true;
             result.fact.complete = true;
         }
         ValueExpr::Primitive(_)
+        | ValueExpr::Binary(..)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => {
@@ -3952,11 +4223,13 @@ fn solve_receiver_flow(
                 .values_of_binding(binding)
                 .into_iter()
                 .collect::<Vec<_>>();
-            if let [Value::Alloc(Kind::Function, function)] = values.as_slice() {
+            if let [Value::Alloc(Kind::Function, function)] = values.as_slice()
+                && let Some(function) = flow.source_origin(*function)
+            {
                 inference.seed(
                     ReceiverFlowKey::BindingSeed(binding.clone()),
                     ReceiverFlowFact {
-                        callable_targets: BTreeSet::from([*function]),
+                        callable_targets: BTreeSet::from([function]),
                         complete: true,
                         ..ReceiverFlowFact::default()
                     },
@@ -4487,6 +4760,27 @@ impl NativePointEffects {
             }
             None => self.prototype_site_count,
         }
+    }
+
+    pub(super) fn join_alternatives(alternatives: &[&Self]) -> Self {
+        let mut joined = Self::default();
+        for alternative in alternatives {
+            joined.roots.extend(&alternative.roots);
+            // Counts gate later native premises. The maximum preserves the
+            // strongest path without counting a shared prefix repeatedly.
+            joined.prototype_site_count = joined
+                .prototype_site_count
+                .max(alternative.prototype_site_count);
+            joined.prototype_any_key = joined.prototype_any_key.max(alternative.prototype_any_key);
+            for (property, count) in &alternative.prototype_known_keys {
+                let prior = joined
+                    .prototype_known_keys
+                    .entry(property.clone())
+                    .or_default();
+                *prior = (*prior).max(*count);
+            }
+        }
+        joined
     }
 }
 
@@ -5489,6 +5783,7 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
         // cannot be the global object. Calls arising from those operands are
         // checked separately below.
         ValueExpr::Primitive(_)
+        | ValueExpr::Binary(..)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => false,
@@ -5597,11 +5892,85 @@ fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool
         ValueExpr::NonCallable(_)
         | ValueExpr::Undefined
         | ValueExpr::Primitive(_)
+        | ValueExpr::Binary(..)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => true,
         _ => false,
     }
+}
+
+/// The parser's class-body self binding is a distinct lexical environment
+/// from the declaration binding, and the current local body has no activation
+/// stage for it. Refuse a class-root transfer if an unshadowed read with the
+/// class name would otherwise be mistaken for the still-uninitialized outer
+/// declaration. Identifier identity is checked first; the spelling fallback
+/// is limited to canonical free reads (or reads after local declarations,
+/// parameters, and function-name bindings have been removed).
+fn class_root_has_unrepresented_self_name(
+    index: &ExecutionIndex,
+    class_span: Span,
+    owner: SourceUnitOrdinal,
+    body: &LocalBody,
+    binding: &Id,
+) -> bool {
+    let matches_name = |read: &Id| read == binding || read.0 == binding.0;
+    if body.free_reads().iter().any(matches_name) {
+        return true;
+    }
+
+    let mut pending = body.closure_sites().to_vec();
+    pending.extend(index.callables.iter().filter_map(|(key, callable)| {
+        (callable.owner == owner && class_span.lo.0 <= *key && *key < class_span.hi.0)
+            .then_some(*key)
+    }));
+    let mut visited = BTreeSet::new();
+    while let Some(key) = pending.pop() {
+        if !visited.insert(key) {
+            continue;
+        }
+        let Some(callable) = index.callables.get(&key) else {
+            // Missing callable facts cannot establish the class-name scope.
+            return true;
+        };
+        // Closure reads can resolve to a shadowing declaration in any
+        // enclosing function, not just the immediate callable. Walk the
+        // canonical parent chain and compare resolved Ids, never spelling,
+        // when removing local shadows from the class-name probe.
+        let mut local = BTreeSet::new();
+        let mut scope = Some(key);
+        while let Some(scope_key) = scope {
+            let Some(scoped_callable) = index.callables.get(&scope_key) else {
+                return true;
+            };
+            local.extend(scoped_callable.declared_locals.iter().cloned());
+            local.extend(scoped_callable.hoisted_vars.iter().cloned());
+            local.extend(scoped_callable.lexical_declarations.keys().cloned());
+            local.extend(scoped_callable.pattern_locals.iter().cloned());
+            local.extend(
+                scoped_callable
+                    .params
+                    .iter()
+                    .flat_map(|parameter| parameter.bindings.iter().cloned()),
+            );
+            local.extend(scoped_callable.self_binding.iter().cloned());
+            scope = *index
+                .callable_parents
+                .get(&scope_key)
+                .expect("canonical callable parent is recorded at entry");
+        }
+        if callable
+            .reads
+            .iter()
+            .any(|read| matches_name(read) && !local.contains(read))
+        {
+            return true;
+        }
+        if let Some(plan) = callable.body_facts.ordered_plan() {
+            pending.extend(plan.closure_sites().iter().copied());
+        }
+    }
+    false
 }
 
 fn confined_prepublication_alias(
@@ -5695,6 +6064,7 @@ fn confined_prepublication_alias(
                 ValueExpr::NonCallable(_)
                     | ValueExpr::Undefined
                     | ValueExpr::Primitive(_)
+                    | ValueExpr::Binary(..)
                     | ValueExpr::StrictEquality(..)
                     | ValueExpr::LogicalNot(_)
                     | ValueExpr::Void(_)
@@ -5970,6 +6340,10 @@ fn stored_global_alias(
 }
 
 struct ExecutionIndex {
+    /// The source-origin namespace shared with value flow and runtime. It is
+    /// allocated once for this structural/execution analysis and never
+    /// synthesized from the local source offsets themselves.
+    heap_resolver: SourceHeapResolver,
     member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
@@ -5986,12 +6360,15 @@ struct ExecutionIndex {
     factory_callback_depth: u32,
     callables: BTreeMap<u32, Callable>,
     callable_spans: BTreeMap<u32, Span>,
+    /// Canonical lexical parents captured when each callable is entered.
+    callable_parents: BTreeMap<u32, Option<u32>>,
     immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
-    class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
+    class_provider_bodies: BTreeMap<u32, super::local_operations::ClassConstructorBody>,
+    class_definitions: BTreeMap<u32, super::local_operations::ClassDefinition>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,
@@ -6024,6 +6401,10 @@ struct ExecutionIndex {
         BTreeMap<u32, Vec<crate::facts::abstract_domain::foreign_call::RecordMember>>,
     array_iterations: BTreeMap<CallSite, ArrayIteration>,
     async_callables: BTreeSet<u32>,
+    /// Class methods have receiver/home-object semantics and cannot be
+    /// activated through the provider-closure ABI, even when their body is
+    /// otherwise an ordinary synchronous function.
+    class_method_callables: BTreeSet<u32>,
     callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
     /// Direct calls of annotated record factories, with the syntax check of
@@ -6038,6 +6419,9 @@ struct ExecutionIndex {
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     source_chunk_id: Option<String>,
+    /// Source grammar admission only; request closure and initialization phase
+    /// are proved separately by the provider candidate.
+    provider_initialization_source_is_noninvoking: bool,
     native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
     initial_native_point_effects: NativePointEffects,
     all_native_point_effects: NativePointEffects,
@@ -6051,8 +6435,10 @@ struct ExecutionIndex {
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     property_key_declarations: BTreeSet<Id>,
+    lexical_cell_origins: BTreeMap<Id, u32>,
     native_write_census: NativeWriteCensus,
     binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
+    binding_store_sites: BTreeMap<Id, Vec<BindingStoreSite>>,
     namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
@@ -6066,8 +6452,6 @@ struct ExecutionIndex {
     /// single canonical AST walk is complete.
     direct_primitive_const_bindings: BTreeSet<Id>,
     reassigned_bindings: BTreeSet<Id>,
-    /// Complete target-walker writes for primitive Set operand certification.
-    binding_target_writes: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
@@ -6087,6 +6471,8 @@ struct ExecutionIndex {
     /// Visiting an assignment target: its identifiers are assigned, not
     /// declared.
     assignment_target: bool,
+    /// Metadata for the target-walker callback currently recording one store.
+    active_binding_store: Option<BindingStoreSite>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
@@ -6099,11 +6485,14 @@ struct ExecutionIndex {
     ordinary_top_call_sites: BTreeSet<CallSite>,
     bare_constructor_sites: BTreeSet<CallSite>,
     literal_true_second_arguments: BTreeSet<CallSite>,
-    top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    top_property_writes: Vec<Vec<TopPropertyWrite>>,
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
-    ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    ordered_roots: BTreeMap<SourceUnitOrdinal, OrderedRoot>,
+    /// Prepared canonical source-site table. Execution receipts reference
+    /// these source-authenticated sites but never contribute table entries.
+    source_operation_sites: BTreeSet<SourceOperationSite>,
     /// Canonical owner/binding/initializer identity, independent of the
     /// legacy initializer leaf and allocation admission.
     initialization_source_identities: BTreeMap<SourceUnitOrdinal, InitializationSourceIdentity>,
@@ -6129,6 +6518,10 @@ struct ExecutionIndex {
     dynamic_global_member: bool,
     global_alias_written: bool,
     imported_bindings: BTreeSet<Id>,
+    /// Import bindings whose storage can be matched through ordinary ESM
+    /// requests. Other import phases, attributes and type-only bindings carry
+    /// no module-cell correspondence.
+    ordinary_imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
     direct_top_level_functions: BTreeSet<Id>,
     /// Exact sole-return calls in top-level function declarations, collected
@@ -6150,11 +6543,13 @@ struct ExecutionIndex {
     opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
-    callback_factory_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
+    imported_callable_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
     /// The existing canonical call-shape check accepted one syntactic inline
     /// callback. Lowered values cannot establish this source prerequisite.
     direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
+    foreign_member_imports:
+        BTreeMap<Id, BTreeMap<String, crate::analysis_inputs::ForeignCallSummary>>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -6190,6 +6585,9 @@ struct ExecutionIndex {
 impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
+            heap_resolver: SourceHeapResolver::new(HeapModuleScope::LocalAnalysis(
+                LocalAnalysisScopeId::fresh(),
+            )),
             member_owners: BTreeMap::new(),
             retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
@@ -6204,11 +6602,13 @@ impl Default for ExecutionIndex {
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
             callable_spans: BTreeMap::new(),
+            callable_parents: BTreeMap::new(),
             immediate_anonymous_callers: BTreeMap::new(),
             inline_callback_entries: BTreeMap::new(),
             native_guarded_regions: Vec::new(),
             local_constructors: BTreeMap::new(),
             class_provider_bodies: BTreeMap::new(),
+            class_definitions: BTreeMap::new(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
@@ -6236,6 +6636,7 @@ impl Default for ExecutionIndex {
             method_record_members: BTreeMap::new(),
             array_iterations: BTreeMap::new(),
             async_callables: BTreeSet::new(),
+            class_method_callables: BTreeSet::new(),
             callable_member_reads: BTreeMap::new(),
             direct_call_members: BTreeSet::new(),
             record_factory_calls: BTreeMap::new(),
@@ -6248,6 +6649,7 @@ impl Default for ExecutionIndex {
             native_integrity_witnesses: Arc::default(),
             native_prototype_mutations: Arc::default(),
             source_chunk_id: None,
+            provider_initialization_source_is_noninvoking: true,
             native_point_effects: BTreeMap::new(),
             initial_native_point_effects: NativePointEffects::default(),
             all_native_point_effects: NativePointEffects::default(),
@@ -6261,8 +6663,10 @@ impl Default for ExecutionIndex {
             prototype_capture_stack: Vec::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
+            lexical_cell_origins: BTreeMap::new(),
             native_write_census: NativeWriteCensus::default(),
             binding_declaration_writes: BTreeMap::new(),
+            binding_store_sites: BTreeMap::new(),
             namespace_wrapper_candidates: BTreeMap::new(),
             binding_use_bounds: BTreeMap::new(),
             top_const_declarations: BTreeSet::new(),
@@ -6271,7 +6675,6 @@ impl Default for ExecutionIndex {
             variable_kind: None,
             direct_primitive_const_bindings: BTreeSet::new(),
             reassigned_bindings: BTreeSet::new(),
-            binding_target_writes: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
@@ -6287,6 +6690,7 @@ impl Default for ExecutionIndex {
             never_written_overrode: false,
             destructuring_source: None,
             assignment_target: false,
+            active_binding_store: None,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
@@ -6301,7 +6705,8 @@ impl Default for ExecutionIndex {
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
-            ordered_initializers: BTreeMap::new(),
+            ordered_roots: BTreeMap::new(),
+            source_operation_sites: BTreeSet::new(),
             initialization_source_identities: BTreeMap::new(),
             noninvoking_initializers: BTreeMap::new(),
             initialization_coverage_refusals: Vec::new(),
@@ -6323,6 +6728,7 @@ impl Default for ExecutionIndex {
             dynamic_global_member: false,
             global_alias_written: false,
             imported_bindings: BTreeSet::new(),
+            ordinary_imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
             direct_top_level_functions: BTreeSet::new(),
             direct_return_calls: BTreeMap::new(),
@@ -6338,8 +6744,9 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             foreign_call_imports: BTreeMap::new(),
+            foreign_member_imports: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
-            callback_factory_summaries: BTreeMap::new(),
+            imported_callable_summaries: BTreeMap::new(),
             direct_inline_callback_calls: BTreeMap::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
@@ -6450,6 +6857,7 @@ impl BundleGlobalContext<'_> {
         match value {
             ValueExpr::ObjectLiteral(..)
             | ValueExpr::Primitive(_)
+            | ValueExpr::Binary(..)
             | ValueExpr::StrictEquality(..)
             | ValueExpr::LogicalNot(_)
             | ValueExpr::Void(_)
@@ -6535,6 +6943,87 @@ impl ExecutionIndex {
             .all(|write| write.private_var_scope == Some(scope) && write.simple_identifier)
     }
 
+    fn callable_descends_from(&self, callable: u32, ancestor: u32) -> bool {
+        let mut current = Some(callable);
+        while let Some(key) = current {
+            if key == ancestor {
+                return true;
+            }
+            current = self.callable_parents.get(&key).copied().flatten();
+        }
+        false
+    }
+
+    /// A provider can carry a var cell only when its initializer boundary is
+    /// established by module or enclosing callable instantiation. The cell's
+    /// value and identity remain unknown.
+    fn initialized_provider_var_capture(&self, binding: &Id, callable: u32) -> bool {
+        if !self.dynamic_scope_owners.is_empty() || self.imported_bindings.contains(binding) {
+            return false;
+        }
+        let Some(writes) = self.binding_declaration_writes.get(binding) else {
+            return false;
+        };
+        let Some(scope) = writes.first().and_then(|write| write.initialized_var_scope) else {
+            return false;
+        };
+        if writes
+            .iter()
+            .any(|write| !write.simple_identifier || write.initialized_var_scope != Some(scope))
+        {
+            return false;
+        }
+        match scope {
+            InitializedVarScope::Module => writes.iter().all(|write| write.direct_top_level),
+            InitializedVarScope::Callable(scope) => {
+                if !self.private_var_binding(binding) {
+                    return false;
+                }
+                callable != scope && self.callable_descends_from(callable, scope)
+            }
+        }
+    }
+
+    /// Normal kinds of a stable initialized var cell. Its initializer may not
+    /// have executed, or may have thrown: neither case stores an object here.
+    /// This proves no effects or completion of the initializer itself.
+    fn primitive_provider_capture(
+        &self,
+        binding: &Id,
+        callable: u32,
+    ) -> Option<(PrimKinds, ProofDependencies)> {
+        if !self.initialized_provider_var_capture(binding, callable)
+            || self.reassigned_bindings.contains(binding)
+            || self.hoisted_bindings.contains_key(binding)
+            || self
+                .property_key_assignments
+                .get(binding)
+                .is_none_or(|writes| writes.len() != 1)
+        {
+            return None;
+        }
+        let [declaration] = self.binding_declaration_writes.get(binding)?.as_slice() else {
+            return None;
+        };
+        let candidate = declaration.primitive_initializer.as_ref()?;
+        let mut dependencies = ProofDependencies::default();
+        for (global, slots) in &candidate.intrinsics {
+            if self.property_key_declarations.contains(global)
+                || self.hoisted_bindings.contains_key(global)
+                || self.imported_bindings.contains(global)
+                || self.class_ids.contains(global)
+            {
+                return None;
+            }
+            let slots: Vec<_> = slots.iter().copied().collect();
+            let Integrity::Intact(required) = self.integrity.require(&slots, None) else {
+                return None;
+            };
+            dependencies.extend(required);
+        }
+        Some((candidate.kinds.union(PrimKinds::UNDEFINED), dependencies))
+    }
+
     pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         if self.array_elements.contains_key(&allocation) {
             return None;
@@ -6556,6 +7045,21 @@ impl ExecutionIndex {
 
     pub(super) fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
         self.callable_creations.get(&callable).copied()
+    }
+
+    pub(super) fn supports_synchronous_provider_activation(&self, key: u32) -> bool {
+        let Some(callable) = self.callables.get(&key) else {
+            return false;
+        };
+        !callable.generator
+            && !self.async_callables.contains(&key)
+            && !self.class_method_callables.contains(&key)
+            && callable.body_facts.ordered_plan().is_some()
+            && matches!(
+                self.callable_creation(key),
+                Some(DeferredCallableCreation::Function(start) | DeferredCallableCreation::Arrow(start))
+                    if start == key
+            )
     }
 
     pub(super) fn callable_home_object(&self, callable: u32) -> Option<u32> {
@@ -6618,6 +7122,7 @@ impl ExecutionIndex {
                 value,
                 ValueExpr::ObjectLiteral(..)
                     | ValueExpr::Primitive(_)
+                    | ValueExpr::Binary(..)
                     | ValueExpr::LogicalNot(_)
                     | ValueExpr::Undefined
             )
@@ -6766,6 +7271,9 @@ impl ExecutionIndex {
                     self.global_property_reads(value, context, reads);
                 }
             }
+            ValueExpr::ObjectSpreadLiteral(_, source) => {
+                self.global_property_reads(source, context, reads);
+            }
             ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
                 self.global_property_reads(inner, context, reads);
             }
@@ -6776,7 +7284,7 @@ impl ExecutionIndex {
                     self.global_property_reads(value, context, reads);
                 }
             }
-            ValueExpr::StrictEquality(left, right) => {
+            ValueExpr::StrictEquality(left, right) | ValueExpr::Binary(_, left, right) => {
                 self.global_property_reads(left, context, reads);
                 self.global_property_reads(right, context, reads);
             }
@@ -7032,7 +7540,7 @@ impl ExecutionIndex {
             .is_some_and(|aliases| {
                 aliases.iter().all(|binding| {
                     !self.reassigned_bindings.contains(binding)
-                        && !self.binding_target_writes.contains(binding)
+                        && !self.binding_store_sites.contains_key(binding)
                         && matches!(
                             self.binding_declaration_writes.get(binding).map(Vec::as_slice),
                             Some([source]) if source.direct_top_level
@@ -9277,7 +9785,24 @@ impl ExecutionIndex {
         // A standard host defines `global` only as Node's global object.
         let node_global = !hints.assumptions.predefined_globals.is_unknown()
             && unshadowed_global_names(body, &["global"]).contains("global");
+        let heap_resolver = flow.map_or_else(
+            || {
+                hints.heap_resolver.unwrap_or_else(|| {
+                    SourceHeapResolver::new(HeapModuleScope::LocalAnalysis(
+                        LocalAnalysisScopeId::fresh(),
+                    ))
+                })
+            },
+            ChunkValueFlow::heap_resolver,
+        );
+        if let Some(expected) = hints.heap_resolver {
+            assert_eq!(
+                heap_resolver, expected,
+                "execution index and value flow must share one heap resolver"
+            );
+        }
         let mut index = Self {
+            heap_resolver,
             source_chunk_id: hints.current_chunk_id.clone(),
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
@@ -9293,7 +9818,7 @@ impl ExecutionIndex {
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
-            ordered_initializers: BTreeMap::new(),
+            ordered_roots: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
@@ -9343,8 +9868,19 @@ impl ExecutionIndex {
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
         let mut max_source_position = 0u32;
+        let mut directive_prologue_open = true;
         for item in body {
-            max_source_position = max_source_position.max(item.as_module_item().span().hi.0);
+            let module_item = item.as_module_item();
+            let is_string_directive = directive_prologue_open
+                && matches!(module_item, ModuleItem::Stmt(Stmt::Expr(statement))
+                    if matches!(statement.expr.unwrap_parens(), Expr::Lit(Lit::Str(_))));
+            index.provider_initialization_source_is_noninvoking &=
+                provider_initialization_source_item_is_noninvoking(
+                    module_item,
+                    is_string_directive,
+                );
+            directive_prologue_open &= is_string_directive;
+            max_source_position = max_source_position.max(module_item.span().hi.0);
             // Seed all candidate roots before visiting any item, including imports
             // textually after a use. Other imported aliases remain an author audit.
             if (!hints.assumptions.namespace_independent_members.is_empty()
@@ -9407,29 +9943,112 @@ impl ExecutionIndex {
         }
         for (ordinal, item) in body.iter().enumerate() {
             let owner = SourceUnitOrdinal(ordinal);
+            let source_identity = InitializationSourceIdentity::collect(item, owner);
+            let source_expression = source_identity
+                .as_ref()
+                .ok()
+                .map(|(_, expression)| *expression);
+            if let Ok((identity, _)) = &source_identity {
+                index
+                    .initialization_source_identities
+                    .insert(owner, identity.clone());
+            }
             if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
                 item
                 && !declaration.declare
                 && let [declarator] = declaration.decls.as_slice()
                 && matches!(declarator.name, Pat::Ident(_))
                 && let Some(expression) = declarator.init.as_deref()
-                && !matches!(expression.unwrap_parens(), Expr::Ident(_))
                 && let Some(body) = LocalBody::from_initializer(expression)
+                && let Ok((source, _)) = &source_identity
             {
-                debug_assert_eq!(body.initializer_span(), Some(expression.span()));
-                index.ordered_initializers.insert(owner, body);
+                debug_assert_eq!(body.root_expression_span(), Some(expression.span()));
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::BindingInitializer {
+                                binding: source.binding().clone(),
+                                initializer_span: source.initializer_span(),
+                            },
+                        },
+                        body,
+                    },
+                );
             }
-            let source_identity = InitializationSourceIdentity::collect(item, owner);
-            if let Ok((identity, _)) = &source_identity {
-                index
-                    .initialization_source_identities
-                    .insert(owner, identity.clone());
+            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
+                item
+                && let [declarator] = declaration.decls.as_slice()
+                && let Some((body, pattern)) = LocalBody::from_object_binding(declaration)
+            {
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::ObjectBindingInitializer {
+                                pattern,
+                                declarator_span: declarator.span,
+                                initializer_span: declarator
+                                    .init
+                                    .as_deref()
+                                    .expect("lowered object binding has an RHS")
+                                    .span(),
+                            },
+                        },
+                        body,
+                    },
+                );
+            }
+            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
+                && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
+            {
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::ExpressionStatement {
+                                expression_span: statement.expr.span(),
+                            },
+                        },
+                        body,
+                    },
+                );
+            }
+            // Owned split declarators keep their exact parent/index source
+            // identity above. Admit only a direct Set-from-array root into
+            // the ordered kernel; other split initializer families retain
+            // their existing root-selection boundaries.
+            if !index.ordered_roots.contains_key(&owner)
+                && matches!(item, TopLevelItemView::Owned { .. })
+                && let Some(expression) = source_expression
+                && let Some(body) = LocalBody::from_initializer(expression)
+                && body.direct_set_construction_root()
+                && let Ok((source, _)) = &source_identity
+                && body.root_expression_span() == Some(source.initializer_span())
+            {
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::BindingInitializer {
+                                binding: source.binding().clone(),
+                                initializer_span: source.initializer_span(),
+                            },
+                        },
+                        body,
+                    },
+                );
             }
             // A split comma-list owner keeps its original declaration/span
             // identity. The ordinary composed-initializer path below cannot
             // admit a call leaf, so admit only the one exact audited root call
             // that was independently selected from the original source.
-            if !hints.assumptions.initializer_call_effect_inputs.is_empty()
+            if !index.ordered_roots.contains_key(&owner)
+                && !hints.assumptions.initializer_call_effect_inputs.is_empty()
                 && matches!(
                     item,
                     TopLevelItemView::Owned {
@@ -9456,34 +10075,54 @@ impl ExecutionIndex {
                 && input.callee == *callee
                 && input.call_span == call_span
             {
-                index.ordered_initializers.insert(owner, body);
+                let Ok((source, _)) = &source_identity else {
+                    unreachable!("selected source identity was checked above")
+                };
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::BindingInitializer {
+                                binding: source.binding().clone(),
+                                initializer_span: source.initializer_span(),
+                            },
+                        },
+                        body,
+                    },
+                );
             }
-            match OriginalInitializer::collect(item, owner, source_identity) {
+            match OriginalInitializer::collect(source_identity) {
                 Ok(initializer) => {
-                    if matches!(
-                        item,
-                        TopLevelItemView::Owned {
-                            item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
-                            ..
-                        }
-                    ) && matches!(
-                        initializer.composed_expression(),
-                        Some(ValueExpr::Binding(_))
-                    ) && let Some(declaration) = var_decl_of_item(item.as_module_item())
-                        && !declaration.declare
-                        && let [declarator] = declaration.decls.as_slice()
-                        && let Pat::Ident(binding) = &declarator.name
-                        && let Some(expression) = declarator.init.as_deref()
+                    // Split/exported scalar owners retain their original
+                    // initializer through the same checked source identity.
+                    // An identifier copy still needs the ordered read transfer:
+                    // purity or a lowered value alone cannot cover its module
+                    // GetBindingValue (or a possible global accessor).
+                    if !index.ordered_roots.contains_key(&owner)
+                        && matches!(
+                            initializer.composed_expression(),
+                            Some(ValueExpr::Binding(_) | ValueExpr::Binary(..))
+                        )
+                        && let Some(expression) = source_expression
                         && let Some(body) = LocalBody::from_initializer(expression)
-                        && body.initializer_span() == Some(expression.span())
-                        && index
-                            .initialization_source_identities
-                            .get(&owner)
-                            .is_some_and(|identity| {
-                                identity.matches(owner, &binding.id.to_id(), expression.span())
-                            })
                     {
-                        index.ordered_initializers.insert(owner, body);
+                        debug_assert_eq!(body.root_expression_span(), Some(expression.span()));
+                        index.ordered_roots.insert(
+                            owner,
+                            OrderedRoot {
+                                identity: RootEffectIdentity {
+                                    owner,
+                                    source: RootEffectSource::BindingInitializer {
+                                        binding: index.initialization_source_identities[&owner]
+                                            .binding()
+                                            .clone(),
+                                        initializer_span: expression.span(),
+                                    },
+                                },
+                                body,
+                            },
+                        );
                     }
                     index.noninvoking_initializers.insert(owner, initializer);
                 }
@@ -9528,6 +10167,13 @@ impl ExecutionIndex {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
+                    if !import.type_only
+                        && matches!(&import.phase, ImportPhase::Evaluation)
+                        && import.with.is_none()
+                        && !matches!(specifier, ImportSpecifier::Named(named) if named.is_type_only)
+                    {
+                        index.ordinary_imported_bindings.insert(local.to_id());
+                    }
                     if host_async_local_storage
                         && let ImportSpecifier::Named(named) = specifier
                         && !named.is_type_only
@@ -9566,6 +10212,18 @@ impl ExecutionIndex {
                     // A narrower summary or an author contract keeps its own
                     // consumer and use reports; the derived summary fills in
                     // only where nothing else describes the call.
+                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref()) {
+                        index
+                            .imported_callable_summaries
+                            .insert(local.to_id(), summary.clone());
+                    }
+                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
+                        && !summary.foreign_members.is_empty()
+                    {
+                        index
+                            .foreign_member_imports
+                            .insert(local.to_id(), summary.foreign_members.clone());
+                    }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && let Some(call) = summary.foreign_call.as_ref()
                         && !summary.supports_callback_factory()
@@ -9584,9 +10242,6 @@ impl ExecutionIndex {
                         && summary.supports_callback_factory()
                     {
                         index.callback_factory_imports.insert(local.to_id());
-                        index
-                            .callback_factory_summaries
-                            .insert(local.to_id(), summary.clone());
                     }
                     if let Some(summary) = hints
                         .imported_callables
@@ -10205,13 +10860,15 @@ impl ExecutionIndex {
                         .iter()
                         .map(move |write| (SourceUnitOrdinal(owner), write))
                 })
-                .any(|(owner, (receiver, property))| {
-                    receiver.as_ref().is_some_and(|receiver| {
-                        !property
+                .any(|(owner, write)| {
+                    write.receiver.as_ref().is_some_and(|receiver| {
+                        !write
+                            .property
                             .as_ref()
                             .is_some_and(|property| certified(owner, None, receiver, property))
                             && ((receiver == id
-                                && property
+                                && write
+                                    .property
                                     .as_ref()
                                     .is_none_or(|property| members.contains(property)))
                                 || aliases.contains(receiver)
@@ -10228,9 +10885,9 @@ impl ExecutionIndex {
                         .iter()
                         .map(move |write| (SourceUnitOrdinal(owner), write))
                 })
-                .find_map(|(owner, (receiver, property))| {
-                    let receiver = receiver.as_ref()?;
-                    let property = property.as_ref()?;
+                .find_map(|(owner, write)| {
+                    let receiver = write.receiver.as_ref()?;
+                    let property = write.property.as_ref()?;
                     (members.contains(property)
                         && !certified(owner, None, receiver, property)
                         && (receiver == id
@@ -10272,7 +10929,7 @@ impl ExecutionIndex {
                 .enumerate()
                 .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
                 .flat_map(|(owner, writes)| writes.iter().map(move |write| (owner, write)))
-                .find_map(|(owner, (receiver, property))| match (receiver, property) {
+                .find_map(|(owner, write)| match (&write.receiver, &write.property) {
                     (Some(binding), None)
                         if binding == id
                             || aliases.contains(binding)
@@ -10552,6 +11209,15 @@ impl ExecutionIndex {
             .audited_factory_members
             .retain(|id, _| completed.get(&Rejected::Factory(id.clone())).is_none());
         index.callback_factory_members = retained_legacy;
+        index.foreign_member_imports.retain(|binding, members| {
+            private_namespace_family
+                && !index.reassigned_bindings.contains(binding)
+                && index
+                    .namespace_privacy
+                    .members
+                    .get(binding)
+                    .is_some_and(|audited| members.keys().all(|member| audited.contains(member)))
+        });
         index
             .no_reentry_members
             .retain(|id, _| completed.get(&Rejected::NoReentry(id.clone())).is_none());
@@ -10745,7 +11411,358 @@ impl ExecutionIndex {
             &hints.assumptions.native_operation_inputs,
             array_spreads,
         );
+        index.bind_source_operation_sites(body);
         index
+    }
+
+    fn bind_source_operation_sites(&mut self, source_body: &[TopLevelItemView<'_>]) {
+        let mut all_sites = BTreeSet::new();
+        let mut root_identities: BTreeMap<SourceUnitOrdinal, LocalBodyIdentity> = self
+            .ordered_roots
+            .iter()
+            .map(|(owner, root)| (*owner, root.identity.body_identity()))
+            .collect();
+        for (owner, root) in &mut self.ordered_roots {
+            let call_spans = self.top_calls[owner.0]
+                .iter()
+                .filter(|call| {
+                    call.caller.is_none() && matches!(call.kind, CallKind::Call | CallKind::New)
+                })
+                .map(|call| call.span);
+            let identity = root.identity.body_identity();
+            all_sites.extend(
+                root.body
+                    .bind_source_operation_sites(&identity, call_spans)
+                    .iter()
+                    .cloned(),
+            );
+        }
+        // The source table is broader than the currently selected execution
+        // roots. In particular, authored call inputs can select an ordered
+        // root that a source-only restore pass does not select. Record the
+        // same canonical lowering for every otherwise-supported source root,
+        // without adding it to `ordered_roots` or granting execution/effect
+        // authority.
+        for (ordinal, item) in source_body.iter().enumerate() {
+            let owner = SourceUnitOrdinal(ordinal);
+            if self.ordered_roots.contains_key(&owner) {
+                continue;
+            }
+            let source_identity = InitializationSourceIdentity::collect(item, owner);
+            let candidate = if let Ok((source, expression)) = &source_identity {
+                LocalBody::from_initializer(expression).map(|body| {
+                    (
+                        RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::BindingInitializer {
+                                binding: source.binding().clone(),
+                                initializer_span: source.initializer_span(),
+                            },
+                        },
+                        body,
+                    )
+                })
+            } else if let Some(declaration) = var_decl_of_item(item.as_module_item())
+                && let Some((body, pattern)) = LocalBody::from_object_binding(declaration)
+                && let [declarator] = declaration.decls.as_slice()
+                && let Some(expression) = declarator.init.as_deref()
+            {
+                Some((
+                    RootEffectIdentity {
+                        owner,
+                        source: RootEffectSource::ObjectBindingInitializer {
+                            pattern,
+                            declarator_span: declarator.span,
+                            initializer_span: expression.span(),
+                        },
+                    },
+                    body,
+                ))
+            } else if let ModuleItem::Stmt(Stmt::Expr(statement)) = item.as_module_item()
+                && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
+            {
+                Some((
+                    RootEffectIdentity {
+                        owner,
+                        source: RootEffectSource::ExpressionStatement {
+                            expression_span: statement.expr.span(),
+                        },
+                    },
+                    body,
+                ))
+            } else {
+                None
+            };
+            let Some((identity, mut body)) = candidate else {
+                continue;
+            };
+            root_identities.insert(owner, identity.body_identity());
+            let call_spans = self.top_calls[owner.0]
+                .iter()
+                .filter(|call| {
+                    call.caller.is_none() && matches!(call.kind, CallKind::Call | CallKind::New)
+                })
+                .map(|call| call.span);
+            let body_identity = identity.body_identity();
+            all_sites.extend(
+                body.bind_source_operation_sites(&body_identity, call_spans)
+                    .iter()
+                    .cloned(),
+            );
+        }
+        for (key, callable) in &mut self.callables {
+            let Some(mut body) = callable.body_facts.take_ordered_plan() else {
+                continue;
+            };
+            let identity = LocalBodyIdentity::Callable {
+                key: *key,
+                owner: callable.owner,
+            };
+            let call_spans = callable
+                .calls
+                .iter()
+                .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+                .map(|call| call.span);
+            all_sites.extend(
+                body.bind_source_operation_sites(&identity, call_spans)
+                    .iter()
+                    .cloned(),
+            );
+            callable.body_facts.set_ordered_plan(Some(body));
+        }
+        for (class, construction) in &mut self.class_provider_bodies {
+            let Some(owner) = self.class_owners.get(class).copied() else {
+                continue;
+            };
+            let identity = LocalBodyIdentity::Construction {
+                class: *class,
+                owner,
+            };
+            let call_spans = construction
+                .callables
+                .iter()
+                .flat_map(|key| self.callables.get(key).into_iter())
+                .flat_map(|callable| callable.calls.iter())
+                .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+                .map(|call| call.span);
+            let mut construction_sites = BTreeSet::new();
+            let mut ordinal = 0;
+            construction.initializers.bind_source_operation_sites_into(
+                &identity,
+                &mut ordinal,
+                &mut construction_sites,
+                std::iter::empty(),
+            );
+            construction.constructor.bind_source_operation_sites_into(
+                &identity,
+                &mut ordinal,
+                &mut construction_sites,
+                call_spans,
+            );
+            all_sites.extend(construction_sites);
+        }
+        for call in self.top_calls.iter_mut().flatten().chain(
+            self.callables
+                .values_mut()
+                .flat_map(|callable| &mut callable.calls),
+        ) {
+            if matches!(call.kind, CallKind::Call | CallKind::New) {
+                call.source_sites = all_sites
+                    .iter()
+                    .filter(|site| {
+                        site.owner == call.owner
+                            && site.span == call.span
+                            && site.step == OperationStep::CallInvocation
+                    })
+                    .cloned()
+                    .collect();
+            }
+        }
+        self.bind_stored_transfer_plans(&root_identities, &all_sites);
+        self.source_operation_sites = all_sites;
+        self.bind_top_property_write_sites();
+    }
+
+    fn bind_top_property_write_sites(&mut self) {
+        for (owner, writes) in self.top_property_writes.iter_mut().enumerate() {
+            for write in writes {
+                let Some(span) = write.pending_site_span.take() else {
+                    continue;
+                };
+                let mut sites = self.source_operation_sites.iter().filter(|site| {
+                    site.owner == SourceUnitOrdinal(owner)
+                        && site.span == span
+                        && site.step == OperationStep::FieldPutValue
+                });
+                let Some(site) = sites.next() else {
+                    continue;
+                };
+                if sites.next().is_none() {
+                    write.source_site = Some(site.clone());
+                }
+            }
+        }
+    }
+
+    fn bind_stored_transfer_plans(
+        &mut self,
+        root_identities: &BTreeMap<SourceUnitOrdinal, LocalBodyIdentity>,
+        canonical_sites: &BTreeSet<SourceOperationSite>,
+    ) {
+        let identity_for = |owner: SourceUnitOrdinal, activation_callable: Option<u32>| {
+            activation_callable
+                .map(|key| LocalBodyIdentity::Callable { key, owner })
+                .or_else(|| root_identities.get(&owner).cloned())
+        };
+
+        for declarations in self.binding_declaration_writes.values_mut() {
+            for declaration in declarations {
+                let BindingInitializerTransfer::Supported(body) =
+                    &mut declaration.initializer_transfer
+                else {
+                    continue;
+                };
+                let bound = identity_for(declaration.owner, declaration.activation_callable)
+                    .is_some_and(|identity| {
+                        Arc::make_mut(body)
+                            .bind_source_operation_sites_from_registry(&identity, canonical_sites)
+                    });
+                if !bound {
+                    declaration.initializer_transfer = BindingInitializerTransfer::Unsupported;
+                }
+            }
+        }
+
+        for sites in self.binding_store_sites.values_mut() {
+            for site in sites {
+                let BindingStoreInput::Supported(body) = &mut site.input else {
+                    continue;
+                };
+                let bound =
+                    identity_for(site.owner, site.activation_callable).is_some_and(|identity| {
+                        Arc::make_mut(body)
+                            .bind_source_operation_sites_from_registry(&identity, canonical_sites)
+                    });
+                if !bound {
+                    site.input =
+                        BindingStoreInput::Unsupported(BindingStoreRefusal::UnsupportedLowering);
+                }
+            }
+        }
+    }
+
+    /// Prepare operation sites and callable bounds together without effect
+    /// assumptions or imported-summary authority. The inventory is
+    /// intentionally broader than an execution index's selected roots.
+    pub(crate) fn canonical_source_inventory(
+        source: &StructuralChunkAnalysis<'_>,
+    ) -> crate::facts::CanonicalSourceInventory {
+        let index = Self::collect(
+            &source.body,
+            &AnalysisInputs::default(),
+            Some(&source.value_flow),
+            &BTreeSet::new(),
+            &source.local_class_shapes,
+            &source.stable_array_spread_shapes,
+        );
+        crate::facts::CanonicalSourceInventory {
+            source_sites: index.source_operation_sites,
+            callable_spans: index.callable_spans,
+            class_spans: index.class_spans,
+        }
+    }
+
+    pub(super) fn call_operation_sites<'call>(
+        &self,
+        body: &LocalBodyIdentity,
+        calls: impl IntoIterator<Item = &'call Call>,
+    ) -> Option<BTreeSet<SourceOperationSite>> {
+        calls
+            .into_iter()
+            .map(|call| {
+                let site = call.source_site_for_body(body)?.clone();
+                (site.step == OperationStep::CallInvocation
+                    && self.source_operation_sites.contains(&site))
+                .then_some(site)
+            })
+            .collect()
+    }
+
+    /// Authenticate a restored source site against this prepared program's
+    /// canonical source table. Equality includes owner, body, full span,
+    /// ordinal, operation step, and any linked control-test identity.
+    pub(super) fn contains_source_operation_site(&self, site: &SourceOperationSite) -> bool {
+        self.source_operation_sites.contains(site)
+    }
+
+    /// Reuse the indexed call inventory for an already canonical local body
+    /// identity. This keeps strict transfers' skipped-region receipts tied to
+    /// the source body that supplied their region and frontier sites.
+    pub(super) fn calls_for_local_body(&self, body: &LocalBodyIdentity) -> Option<Vec<Call>> {
+        match body {
+            LocalBodyIdentity::Callable { key, owner } => {
+                let callable = self.callables.get(key)?;
+                (callable.owner == *owner).then(|| callable.calls.clone())
+            }
+            LocalBodyIdentity::Construction { class, owner } => {
+                if self.class_owners.get(class) != Some(owner) {
+                    return None;
+                }
+                self.class_construction_call_inventory(*class)
+                    .map(|(calls, _)| calls)
+            }
+            _ => {
+                let owner = body.source_owner()?;
+                Some(
+                    self.top_calls
+                        .get(owner.0)?
+                        .iter()
+                        .filter(|call| call.source_site_for_body(body).is_some())
+                        .cloned()
+                        .collect(),
+                )
+            }
+        }
+    }
+
+    /// Return the canonical call records and source-site inventory for one
+    /// class construction body. Instance field initializers and the
+    /// constructor share a construction identity; static initializers remain
+    /// on the root/top-level path. The source-site check is shared with ordered
+    /// root and callable execution, so a partial or stale census cannot admit
+    /// a provider operation.
+    pub(super) fn class_construction_call_inventory(
+        &self,
+        class: u32,
+    ) -> Option<(Vec<Call>, BTreeSet<SourceOperationSite>)> {
+        self.class_provider_bodies.get(&class)?;
+        let owner = *self.class_owners.get(&class)?;
+        let identity = LocalBodyIdentity::Construction { class, owner };
+        // The source identity is the membership proof. `body.callables` is a
+        // lowering/activation aid and can be incomplete for direct field or
+        // constructor operations; it must not decide which prepared calls
+        // belong to this runtime inventory.
+        let mut by_site = BTreeMap::new();
+        for call in self
+            .top_calls
+            .iter()
+            .flatten()
+            .chain(
+                self.callables
+                    .values()
+                    .flat_map(|callable| callable.calls.iter()),
+            )
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+        {
+            if let Some(site) = call.source_site_for_body(&identity)
+                && by_site.insert(site.clone(), call.clone()).is_some()
+            {
+                return None;
+            }
+        }
+        let calls = by_site.into_values().collect::<Vec<_>>();
+        let sites = self.call_operation_sites(&identity, calls.iter())?;
+        Some((calls, sites))
     }
 
     fn populate_native_point_effects(&mut self, external: &NativeWriteCensus) {
@@ -11128,6 +12145,9 @@ impl ExecutionIndex {
     fn with_callable(&mut self, span: Span, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
         let key = span.lo.0;
         self.callable_spans.insert(key, span);
+        if let Some(parent) = self.callable_parents.insert(key, self.current) {
+            assert_eq!(parent, self.current, "canonical callable lexical parent");
+        }
         let created_after_parent_await = self
             .current
             .and_then(|parent| self.callables.get(&parent))
@@ -11215,11 +12235,13 @@ impl ExecutionIndex {
             span: member.span,
             caller: self.current,
             owner: self.owner,
+            source_sites: BTreeSet::new(),
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
             no_reentry_record_candidate: false,
             has_spread: false,
+            spread_arguments: BTreeMap::new(),
         });
     }
 
@@ -11231,11 +12253,13 @@ impl ExecutionIndex {
             span,
             caller: self.current,
             owner: self.owner,
+            source_sites: BTreeSet::new(),
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
             no_reentry_record_candidate: false,
             has_spread: false,
+            spread_arguments: BTreeMap::new(),
         });
     }
 
@@ -11258,11 +12282,13 @@ impl ExecutionIndex {
             span,
             caller: self.current,
             owner: self.owner,
+            source_sites: BTreeSet::new(),
             plain_object_sources: false,
             no_sync_arguments: false,
             no_reentry_candidate: false,
             no_reentry_record_candidate: false,
             has_spread: false,
+            spread_arguments: BTreeMap::new(),
         });
     }
 
@@ -11288,7 +12314,7 @@ impl ExecutionIndex {
                 .dynamic_property_receivers
                 .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         } else {
-            self.top_property_writes[self.owner.0].push((None, None));
+            self.top_property_writes[self.owner.0].push(TopPropertyWrite::unresolved());
             if let Some(receiver) = receiver {
                 self.top_dynamic_property_receivers[self.owner.0]
                     .push(ValueExpr::from_expr(receiver));
@@ -11511,7 +12537,7 @@ impl ExecutionIndex {
         })
     }
 
-    fn record_member_write(&mut self, member: &MemberExpr) {
+    fn record_member_write(&mut self, member: &MemberExpr, span: Span) {
         if self.past_await {
             return;
         }
@@ -11528,7 +12554,12 @@ impl ExecutionIndex {
                 .member_writes
                 .push((receiver, property)),
             (None, receiver, property) => {
-                self.top_property_writes[self.owner.0].push((receiver, property))
+                self.top_property_writes[self.owner.0].push(TopPropertyWrite {
+                    receiver,
+                    property,
+                    pending_site_span: Some(span),
+                    source_site: None,
+                })
             }
             _ => self.mark_dynamic_property_effect(Some(&member.obj)),
         }
@@ -11547,7 +12578,20 @@ impl ExecutionIndex {
 
 impl binding_targets::TargetAccessRecorder for ExecutionIndex {
     fn record_binding_write(&mut self, id: &Id) {
-        self.binding_target_writes.insert(id.clone());
+        let site = self
+            .active_binding_store
+            .clone()
+            .unwrap_or(BindingStoreSite {
+                owner: self.owner,
+                activation_callable: self.current,
+                span: DUMMY_SP,
+                kind: BindingStoreKind::Assignment,
+                input: BindingStoreInput::Unsupported(BindingStoreRefusal::MissingSiteContext),
+            });
+        self.binding_store_sites
+            .entry(id.clone())
+            .or_default()
+            .push(site);
         if !self.past_await
             && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
             && !callable.created_after_parent_await
@@ -11600,6 +12644,9 @@ impl Visit for ExecutionIndex {
         }
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
+        if let Some(definition) = super::local_operations::ClassDefinition::lower(class) {
+            self.class_definitions.insert(class.span.lo.0, definition);
+        }
         if let Some(body) = LocalBody::lower_class_constructor(class) {
             self.class_provider_bodies.insert(class.span.lo.0, body);
         }
@@ -11635,6 +12682,8 @@ impl Visit for ExecutionIndex {
         visit_eager_member_parts(self, member);
         match member {
             ClassMember::Method(method) => {
+                self.class_method_callables
+                    .insert(method.function.span.lo.0);
                 if method.kind == MethodKind::Setter {
                     self.setter_owners
                         .entry(static_property_name(&method.key))
@@ -11644,6 +12693,8 @@ impl Visit for ExecutionIndex {
                 method.function.visit_with(self);
             }
             ClassMember::PrivateMethod(method) => {
+                self.class_method_callables
+                    .insert(method.function.span.lo.0);
                 method.function.visit_with(self);
             }
             ClassMember::Constructor(ctor) => {
@@ -11728,7 +12779,8 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
-        if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
+        let single_spread = matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]);
+        if single_spread {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
         use super::value_model::LiteralPropertyKind;
@@ -11817,14 +12869,19 @@ impl Visit for ExecutionIndex {
                     let Some(name) = static_property_name(&pair.key) else {
                         return false;
                     };
-                    if name == "__proto__" || descriptor_shape.contains_key(&name) {
+                    if (name == "__proto__" && !matches!(&pair.key, PropName::Computed(_)))
+                        || descriptor_shape.contains_key(&name)
+                    {
                         return false;
                     }
                     descriptor_creation_order.push(name.clone());
                     descriptor_shape.insert(name, OwnPropertyDescriptorSyntax::Data);
                     true
                 }
-                Prop::Shorthand(ident) if ident.sym != "__proto__" => {
+                // Shorthand always defines an own data property, including
+                // the spelling `__proto__`; only the colon-form literal has
+                // legacy prototype-setter behavior.
+                Prop::Shorthand(ident) => {
                     let name = ident.sym.to_string();
                     if descriptor_shape.contains_key(&name) {
                         return false;
@@ -11927,11 +12984,13 @@ impl Visit for ExecutionIndex {
             PropOrSpread::Prop(property) => match property.as_ref() {
                 Prop::KeyValue(pair) => match static_property_name(&pair.key).as_deref() {
                     Some("__proto__")
-                        if matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                        if !matches!(&pair.key, PropName::Computed(_))
+                            && matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
                     {
                         null_prototype += 1;
                         true
                     }
+                    Some("__proto__") if matches!(&pair.key, PropName::Computed(_)) => true,
                     Some("__proto__") | None => false,
                     Some(_) => true,
                 },
@@ -11991,19 +13050,23 @@ impl Visit for ExecutionIndex {
             match property {
                 PropOrSpread::Spread(spread) => {
                     spread.expr.visit_with(self);
-                    self.record_call(Call {
-                        kind: CallKind::ObjectSpread,
-                        callee: ValueExpr::Unknown,
-                        args: vec![ValueExpr::from_expr(&spread.expr)],
-                        span: spread.expr.span(),
-                        caller: self.current,
-                        owner: self.owner,
-                        plain_object_sources: false,
-                        no_sync_arguments: false,
-                        no_reentry_candidate: false,
-                        no_reentry_record_candidate: false,
-                        has_spread: false,
-                    });
+                    if !single_spread {
+                        self.record_call(Call {
+                            kind: CallKind::ObjectSpread,
+                            callee: ValueExpr::Unknown,
+                            args: vec![ValueExpr::from_expr(&spread.expr)],
+                            span: spread.expr.span(),
+                            caller: self.current,
+                            owner: self.owner,
+                            source_sites: BTreeSet::new(),
+                            plain_object_sources: false,
+                            no_sync_arguments: false,
+                            no_reentry_candidate: false,
+                            no_reentry_record_candidate: false,
+                            has_spread: false,
+                            spread_arguments: BTreeMap::new(),
+                        });
+                    }
                 }
                 PropOrSpread::Prop(property)
                     if let Prop::KeyValue(pair) = property.as_ref()
@@ -12058,11 +13121,13 @@ impl Visit for ExecutionIndex {
                     span,
                     caller: self.current,
                     owner: self.owner,
+                    source_sites: BTreeSet::new(),
                     plain_object_sources: false,
                     no_sync_arguments: false,
                     no_reentry_candidate: false,
                     no_reentry_record_candidate: false,
                     has_spread: false,
+                    spread_arguments: BTreeMap::new(),
                 });
             }
         }
@@ -12114,12 +13179,34 @@ impl Visit for ExecutionIndex {
             .or_default()
             .push(PropertyKeyExpr::Unknown);
         declaration.class.visit_with(self);
+        if let Some(definition) = self.class_definitions.get_mut(&declaration.class.span.lo.0) {
+            *definition = definition
+                .clone()
+                .with_declaration_binding(declaration.ident.to_id());
+        }
         if self.current.is_none() {
             self.top_definite_initializers[self.owner.0].insert(declaration.ident.to_id());
             self.top_assignments[self.owner.0].push((
                 declaration.ident.to_id(),
                 ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
             ));
+            if !declaration.declare
+                && let Some(definition) = self.class_definitions.get(&declaration.class.span.lo.0)
+            {
+                self.ordered_roots.insert(
+                    self.owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner: self.owner,
+                            source: RootEffectSource::ClassDeclaration {
+                                binding: declaration.ident.to_id(),
+                                declaration_span: definition.span,
+                            },
+                        },
+                        body: LocalBody::from_class_declaration(definition),
+                    },
+                );
+            }
         } else if let Some(key) = self.current {
             let callable = self.callables.get_mut(&key).unwrap();
             callable
@@ -12252,11 +13339,13 @@ impl Visit for ExecutionIndex {
                 span: expression.span,
                 caller: self.current,
                 owner: self.owner,
+                source_sites: BTreeSet::new(),
                 plain_object_sources: false,
                 no_sync_arguments: false,
                 no_reentry_candidate: false,
                 no_reentry_record_candidate: false,
                 has_spread: false,
+                spread_arguments: BTreeMap::new(),
             });
         }
     }
@@ -12328,6 +13417,14 @@ impl Visit for ExecutionIndex {
 
     fn visit_fn_expr(&mut self, expression: &FnExpr) {
         if let Some(binding) = &expression.ident {
+            // This declaration is an Ident rather than a BindingIdent, so
+            // visit_binding_ident cannot register its captured-cell address.
+            if !binding.span.is_dummy() {
+                self.lexical_cell_origins
+                    .entry(binding.to_id())
+                    .and_modify(|origin| *origin = (*origin).min(binding.span.lo.0))
+                    .or_insert(binding.span.lo.0);
+            }
             self.property_key_declarations.insert(binding.to_id());
             self.property_key_assignments
                 .entry(binding.to_id())
@@ -12581,11 +13678,24 @@ impl Visit for ExecutionIndex {
         if let Some(key) = self.current {
             self.callables.get_mut(&key).unwrap().implicit_capture = true;
         }
+        // Arrow chains inherit the same lexical receiver. An ordinary
+        // function/method establishes a new dynamic receiver boundary.
+        for key in self.prototype_capture_stack.iter().rev() {
+            if !matches!(
+                self.callable_creations.get(key),
+                Some(DeferredCallableCreation::Arrow(_))
+            ) {
+                break;
+            }
+            self.callables.get_mut(key).unwrap().lexical_this = true;
+        }
     }
 
     fn visit_meta_prop_expr(&mut self, _: &MetaPropExpr) {
         if let Some(key) = self.current {
-            self.callables.get_mut(&key).unwrap().implicit_capture = true;
+            let callable = self.callables.get_mut(&key).unwrap();
+            callable.implicit_capture = true;
+            callable.meta_property = true;
         }
     }
 
@@ -12645,6 +13755,12 @@ impl Visit for ExecutionIndex {
     fn visit_binding_ident(&mut self, binding: &BindingIdent) {
         if !self.assignment_target {
             self.property_key_declarations.insert(binding.id.to_id());
+            if !binding.id.span.is_dummy() {
+                self.lexical_cell_origins
+                    .entry(binding.id.to_id())
+                    .and_modify(|origin| *origin = (*origin).min(binding.id.span.lo.0))
+                    .or_insert(binding.id.span.lo.0);
+            }
         }
         self.namespace_privacy.record_ident(&binding.id);
     }
@@ -12657,6 +13773,12 @@ impl Visit for ExecutionIndex {
 
     fn visit_var_decl(&mut self, declaration: &VarDecl) {
         let previous = self.variable_kind.replace(declaration.kind);
+        declaration.visit_children_with(self);
+        self.variable_kind = previous;
+    }
+
+    fn visit_using_decl(&mut self, declaration: &UsingDecl) {
+        let previous = self.variable_kind.take();
         declaration.visit_children_with(self);
         self.variable_kind = previous;
     }
@@ -12719,6 +13841,22 @@ impl Visit for ExecutionIndex {
             .init
             .as_ref()
             .map(|value| ValueExpr::from_expr(value));
+        let initializer_transfer = match (&declarator.name, &declarator.init) {
+            (Pat::Ident(_), None) => BindingInitializerTransfer::Uninitialized,
+            (Pat::Ident(_), Some(expression))
+                if self.direct_top_level_var_declaration && self.current.is_none() =>
+            {
+                LocalBody::from_initializer(expression)
+                    .map(Arc::new)
+                    .map(BindingInitializerTransfer::Supported)
+                    .unwrap_or(BindingInitializerTransfer::Unsupported)
+            }
+            // Primitive-cell analysis currently supports only direct module
+            // declarations. Preserve that boundary instead of representing a
+            // non-direct initializer with a transfer that loses its value.
+            (Pat::Ident(_), Some(_)) => BindingInitializerTransfer::Unsupported,
+            _ => BindingInitializerTransfer::Unsupported,
+        };
         let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
             if self.direct_top_level_const_declaration && direct_top_level {
@@ -12736,12 +13874,37 @@ impl Visit for ExecutionIndex {
                 .or_insert_with(|| Vec::with_capacity(1))
                 .push(BindingDeclarationWrite {
                     owner: self.owner,
+                    activation_callable: self.current,
+                    mutable: matches!(
+                        self.variable_kind,
+                        Some(VarDeclKind::Var | VarDeclKind::Let)
+                    ),
                     private_var_scope: self
                         .variable_scope
                         .filter(|_| self.variable_kind == Some(VarDeclKind::Var)),
+                    initialized_var_scope: match (
+                        self.variable_kind,
+                        direct_top_level,
+                        self.variable_scope,
+                    ) {
+                        (Some(VarDeclKind::Var), true, None) => Some(InitializedVarScope::Module),
+                        (Some(VarDeclKind::Var), _, Some(scope)) => {
+                            Some(InitializedVarScope::Callable(scope))
+                        }
+                        _ => None,
+                    },
                     binding_span: binding.id.span,
                     initializer_span: declarator.init.as_ref().map(|value| value.span()),
                     initializer: initializer.clone(),
+                    initializer_transfer: initializer_transfer.clone(),
+                    primitive_initializer: (self.variable_kind == Some(VarDeclKind::Var))
+                        .then(|| {
+                            declarator
+                                .init
+                                .as_deref()
+                                .and_then(PrimitiveInitializer::collect)
+                        })
+                        .flatten(),
                     direct_top_level,
                     simple_identifier: true,
                     primitive_literal_initializer: declarator
@@ -12815,10 +13978,18 @@ impl Visit for ExecutionIndex {
                     .or_insert_with(|| Vec::with_capacity(1))
                     .push(BindingDeclarationWrite {
                         owner: self.owner,
+                        activation_callable: self.current,
+                        mutable: matches!(
+                            self.variable_kind,
+                            Some(VarDeclKind::Var | VarDeclKind::Let)
+                        ),
                         private_var_scope: None,
+                        initialized_var_scope: None,
                         binding_span: declarator.name.span(),
                         initializer_span: declarator.init.as_ref().map(|value| value.span()),
                         initializer: initializer.clone(),
+                        initializer_transfer: BindingInitializerTransfer::Unsupported,
+                        primitive_initializer: None,
                         direct_top_level,
                         simple_identifier: false,
                         primitive_literal_initializer: false,
@@ -12982,12 +14153,17 @@ impl Visit for ExecutionIndex {
 
     fn visit_for_head(&mut self, head: &ForHead) {
         let mut assignments = Vec::new();
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: head.span(),
+            kind: BindingStoreKind::LoopBinding,
+            input: BindingStoreInput::Unsupported(BindingStoreRefusal::UnsupportedTarget),
+        });
         match head {
             ForHead::Pat(pattern) => {
                 binding_targets::record_pat_write(pattern, self);
                 collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut assignments);
-                self.reassigned_bindings
-                    .extend(assignments.iter().map(|(binding, _)| binding.clone()));
             }
             ForHead::VarDecl(declaration) => {
                 for declarator in &declaration.decls {
@@ -13001,6 +14177,10 @@ impl Visit for ExecutionIndex {
             }
             _ => {}
         }
+        self.active_binding_store = previous_store;
+        // Declaration heads also receive a value on every iteration.
+        self.reassigned_bindings
+            .extend(assignments.iter().map(|(binding, _)| binding.clone()));
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);
         }
@@ -13029,7 +14209,42 @@ impl Visit for ExecutionIndex {
         // Record before visiting operands: an await inside a target or RHS
         // can only make this conservative. Reuse the complete target walker
         // used by raw facts, including patterns and parenthesized targets.
+        let (kind, input) = match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(_))
+                if assignment.op == AssignOp::Assign =>
+            {
+                (
+                    BindingStoreKind::Assignment,
+                    LocalBody::from_assignment_store_transfer(assignment)
+                        .map(Arc::new)
+                        .map(BindingStoreInput::Supported)
+                        .unwrap_or(BindingStoreInput::Unsupported(
+                            BindingStoreRefusal::UnsupportedLowering,
+                        )),
+                )
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Ident(_)) => (
+                BindingStoreKind::Assignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::CompoundAssignment),
+            ),
+            AssignTarget::Pat(_) => (
+                BindingStoreKind::DestructuringAssignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::Destructuring),
+            ),
+            _ => (
+                BindingStoreKind::Assignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::UnsupportedTarget),
+            ),
+        };
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: assignment.span,
+            kind,
+            input,
+        });
         binding_targets::record_assign_target(&assignment.left, self);
+        self.active_binding_store = previous_store;
         let simple_target = binding_targets::simple_write_target(&assignment.left);
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref() {
             self.member_write_sites.insert(member.span.into());
@@ -13216,6 +14431,7 @@ impl Visit for ExecutionIndex {
                 let write = MemberValueWrite {
                     receiver: receiver.to_id(),
                     property: Some(key),
+                    simple_assignment: assignment.op == AssignOp::Assign,
                     value: ValueExpr::from_expr(&assignment.right),
                     site: assignment.span.into(),
                     owner: self.owner,
@@ -13235,6 +14451,7 @@ impl Visit for ExecutionIndex {
                 let write = MemberValueWrite {
                     receiver: receiver.to_id(),
                     property: None,
+                    simple_assignment: assignment.op == AssignOp::Assign,
                     value: ValueExpr::from_expr(&assignment.right),
                     site: assignment.span.into(),
                     owner: self.owner,
@@ -13251,7 +14468,7 @@ impl Visit for ExecutionIndex {
             }
             self.mark_possible_namespace_escape(&assignment.right);
             if assignment.op == AssignOp::Assign {
-                self.record_member_write(member);
+                self.record_member_write(member, assignment.span);
             } else {
                 self.mark_dynamic_property_effect(Some(&member.obj));
             }
@@ -13295,8 +14512,22 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        let input = LocalBody::from_update_store_transfer(expression)
+            .map(Arc::new)
+            .map(BindingStoreInput::Supported)
+            .unwrap_or(BindingStoreInput::Unsupported(
+                BindingStoreRefusal::UnsupportedTarget,
+            ));
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: expression.span,
+            kind: BindingStoreKind::Update,
+            input,
+        });
         binding_targets::record_update_target(&expression.arg, self);
         let simple_target = binding_targets::simple_update_target(&expression.arg);
+        self.active_binding_store = previous_store;
         if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) = simple_target.as_ref() {
             self.reassigned_bindings.insert(binding.clone());
             self.property_key_assignments
@@ -13357,7 +14588,14 @@ impl Visit for ExecutionIndex {
         // A complete ordered body instead represents this binding read,
         // ToNumeric and store at execution, where values decide coverage.
         self.record_source_protocol(
-            CallKind::OpaqueExecution,
+            if matches!(
+                simple_target.as_ref(),
+                Some(binding_targets::SimpleWriteTarget::Binding(_))
+            ) {
+                CallKind::BindingUpdate
+            } else {
+                CallKind::OpaqueExecution
+            },
             ValueExpr::from_expr(binding_targets::transparent_target_expr(&expression.arg)),
             expression.span,
         );
@@ -13673,7 +14911,13 @@ impl Visit for ExecutionIndex {
         } else {
             call.visit_children_with(self);
         }
-        if call.args.iter().any(|arg| arg.spread.is_some()) {
+        if call.args.iter().any(|arg| arg.spread.is_some())
+            && !LocalExpression::can_lower_call(call)
+        {
+            // The ordered local kernel models the spread protocol at the
+            // source argument position. Keep unsupported call shapes opaque,
+            // while allowing only syntax that the shared lowering can
+            // actually execute once.
             self.mark_opaque();
         }
         if let Some(proof) = from_entries_mapped_proof(call, &self.plain_array_bindings) {
@@ -13699,6 +14943,12 @@ impl Visit for ExecutionIndex {
                 kind: CallKind::Call,
                 span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
+                spread_arguments: call
+                    .args
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, argument)| argument.spread.map(|span| (index, span)))
+                    .collect(),
                 no_reentry_candidate: call
                     .args
                     .iter()
@@ -13717,6 +14967,7 @@ impl Visit for ExecutionIndex {
                 ) || member_row_invokes_no_argument(callee, &call.args),
                 caller: self.current,
                 owner: self.owner,
+                source_sites: BTreeSet::new(),
                 plain_object_sources: call.args.len() > 1
                     && call.args.iter().skip(1).all(|arg| {
                         matches!(arg.expr.unwrap_parens(), Expr::Object(object)
@@ -13786,10 +15037,9 @@ impl Visit for ExecutionIndex {
         chain.visit_children_with(self);
         self.past_await = before;
         if let OptChainBase::Call(call) = chain.base.as_ref() {
-            // Optional invocation can still execute arbitrary callee/receiver
-            // protocols and invoke its arguments. Keep that conservative call
-            // even though value/short-circuit inference stays opaque. Do not
-            // admit the assertions indexed only for ordinary CallExpr syntax.
+            // Preserve the conservative call even when the ordered kernel
+            // cannot prove the selected callee non-nullish. Do not admit the
+            // assertions indexed only for ordinary CallExpr syntax.
             self.record_call(Call {
                 callee: ValueExpr::from_expr(&call.callee),
                 args: call
@@ -13800,11 +15050,18 @@ impl Visit for ExecutionIndex {
                 kind: CallKind::Call,
                 span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
+                spread_arguments: call
+                    .args
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, argument)| argument.spread.map(|span| (index, span)))
+                    .collect(),
                 no_reentry_candidate: false,
                 no_reentry_record_candidate: false,
                 no_sync_arguments: false,
                 caller: self.current,
                 owner: self.owner,
+                source_sites: BTreeSet::new(),
                 plain_object_sources: false,
             });
             if call.args.iter().any(|arg| arg.spread.is_some()) {
@@ -13822,7 +15079,16 @@ impl Visit for ExecutionIndex {
                 );
             }
         }
-        self.mark_opaque();
+        // Bounded optional member reads and calls have source-covered plans.
+        // Optional receiver and optional callee checks remain separate; any
+        // unsupported chain shape retains the conservative opaque protocol.
+        let supported = match chain.base.as_ref() {
+            OptChainBase::Member(_) => LocalExpression::optional_member(chain, false).is_some(),
+            OptChainBase::Call(_) => LocalCall::optional_callee(chain, false).is_some(),
+        };
+        if !supported {
+            self.mark_opaque();
+        }
     }
 
     fn visit_new_expr(&mut self, new_expr: &NewExpr) {
@@ -13890,11 +15156,20 @@ impl Visit for ExecutionIndex {
                 .unwrap_or_default()
                 .iter()
                 .any(|arg| arg.spread.is_some()),
+            spread_arguments: new_expr
+                .args
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, argument)| argument.spread.map(|span| (index, span)))
+                .collect(),
             no_sync_arguments: false,
             no_reentry_candidate: false,
             no_reentry_record_candidate: false,
             caller: self.current,
             owner: self.owner,
+            source_sites: BTreeSet::new(),
             plain_object_sources: false,
         });
     }
@@ -14013,12 +15288,15 @@ pub(crate) struct InferredNamespaceWrapper {
 }
 
 pub(crate) struct InferredCallableCapabilities {
+    /// Unique possible source origins, not proofs of executed assignment or
+    /// runtime member identity. Unsupported bodies have no derived product.
+    pub member_calls: BTreeMap<(String, String), Option<InferredForeignCall>>,
     /// Exported local → derived call summary
     /// (`crate::facts::abstract_domain::foreign_call`).
     pub foreign_calls: BTreeMap<String, InferredForeignCall>,
-    /// Keyed-collection families whose global constructor slot this module's
-    /// census leaves intact.
-    pub intact_collections: BTreeSet<NativeIntrinsic>,
+    /// Native operations whose complete canonical row requirements this
+    /// module's census leaves intact.
+    pub intact_native_operations: BTreeSet<crate::analysis_inputs::ForeignNativeOperation>,
     pub stable_providers: BTreeSet<String>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
@@ -14027,6 +15305,7 @@ pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
     pub availability: CallableAvailability,
+    pub initialized_class: Option<ProofDependencies>,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -14051,10 +15330,17 @@ impl CallableAvailability {
     }
 }
 
-fn isolated_callable_initializer(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
+fn isolated_callable_provider(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
     let mut declarations = 0;
     for item in body {
         match item.as_module_item() {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Class(class)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Class(class), ..
+            })) if class.ident.to_id() == binding.to_id() => {
+                declarations += 1;
+            }
+
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
             | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                 decl: Decl::Var(declaration), ..
@@ -14084,9 +15370,147 @@ pub(crate) struct PreparedCallableCapabilities {
     index: ExecutionIndex,
     exported_locals: BTreeSet<String>,
     flow: Option<ChunkValueFlow>,
+    shadowed: BTreeSet<&'static str>,
 }
 
 impl PreparedCallableCapabilities {
+    /// Storage identity only: no value, initialization or writer invariant is
+    /// inferred from an unambiguous direct module declaration.
+    pub(crate) fn module_cell_declarations(&self) -> BTreeMap<Id, u32> {
+        self.index
+            .binding_declaration_writes
+            .iter()
+            .filter_map(|(binding, declarations)| {
+                let [declaration] = declarations.as_slice() else {
+                    return None;
+                };
+                (declaration.direct_top_level
+                    && declaration.simple_identifier
+                    && !declaration.binding_span.is_dummy())
+                .then(|| (binding.clone(), declaration.binding_span.lo.0))
+            })
+            .collect()
+    }
+
+    pub(crate) fn imported_binding_id(&self, local: &str) -> Option<&Id> {
+        let mut matches = self
+            .index
+            .ordinary_imported_bindings
+            .iter()
+            .filter(|binding| binding.0.as_ref() == local);
+        let binding = matches.next()?;
+        matches.next().is_none().then_some(binding)
+    }
+
+    /// Checked post-initialization primitive kinds for one canonical local
+    /// binding. Every syntactic target write is included; an unsupported site
+    /// or incomplete binding census returns an explicit refusal.
+    pub(crate) fn primitive_cell_invariant(&self, binding: &Id) -> PrimitiveCellInvariantQuery {
+        compute_primitive_cell_invariant(&self.index, &self.shadowed, binding)
+    }
+
+    /// Whether every top-level item has the non-invoking provider source form.
+    /// Import request mode, graph order, and initialization phase are separate.
+    pub(crate) fn provider_initialization_source_is_noninvoking(&self) -> bool {
+        self.index.provider_initialization_source_is_noninvoking
+    }
+
+    /// Demand layouts from the canonical call census. No argument expression
+    /// executes here; the consuming call must prove its actual current layout.
+    pub(crate) fn imported_record_inputs(
+        &self,
+    ) -> Vec<(String, crate::analysis_inputs::RecordInputShape)> {
+        self.index
+            .top_calls
+            .iter()
+            .flatten()
+            .filter_map(|call| {
+                if call.kind != CallKind::Call || call.has_spread {
+                    return None;
+                }
+                let ValueExpr::Binding(binding) = &call.callee else {
+                    return None;
+                };
+                if !self.index.imported_bindings.contains(binding) {
+                    return None;
+                }
+                let object = match call.args.first()? {
+                    ValueExpr::Alloc(Kind::Object, object)
+                    | ValueExpr::ObjectLiteral(object, _) => *object,
+                    _ => return None,
+                };
+                let shape = crate::analysis_inputs::RecordInputShape::from_shape(
+                    self.index.own_descriptor_shapes.get(&object)?,
+                )?;
+                Some((binding.0.to_string(), shape))
+            })
+            .collect()
+    }
+
+    pub(crate) fn conditional_body(
+        &mut self,
+        local: &str,
+        shape: crate::analysis_inputs::RecordInputShape,
+        module_cells: &BTreeMap<Id, ModuleCellId>,
+        integrity: &NativeIntegrity,
+    ) -> Option<(
+        u32,
+        crate::facts::abstract_domain::foreign_call::DerivedConditionalBody,
+    )> {
+        if !self.index.dynamic_scope_owners.is_empty() {
+            return None;
+        }
+        self.index.apply_native_integrity(integrity);
+        let (binding, key) = self.index.hoisted_bindings.iter().find(|(binding, _)| {
+            binding.0.as_ref() == local && self.index.direct_top_level_functions.contains(*binding)
+        })?;
+        if self.index.reassigned_bindings.contains(binding) {
+            return None;
+        }
+        let body = self.index.callables.get(key)?;
+        let local_body = body.body_facts.ordered_plan()?;
+        let captured_writes: BTreeSet<_> = local_body.captured_writes().iter().cloned().collect();
+        let mut selected_cells: BTreeMap<Id, (ModuleCellId, PrimitiveCellInvariant)> =
+            BTreeMap::new();
+        let candidates: BTreeSet<_> = local_body
+            .free_reads()
+            .iter()
+            .chain(local_body.captured_writes())
+            .cloned()
+            .collect();
+        for candidate in candidates {
+            let Some(cell) = module_cells.get(&candidate) else {
+                if captured_writes.contains(&candidate) {
+                    return None;
+                }
+                continue;
+            };
+            let PrimitiveCellInvariantQuery::Known(invariant) =
+                self.primitive_cell_invariant(&candidate)
+            else {
+                return None;
+            };
+            if invariant.declaration.binding_span.lo.0 != cell.declaration_origin
+                || selected_cells
+                    .values()
+                    .any(|(existing, _)| existing == cell)
+            {
+                return None;
+            }
+            selected_cells.insert(candidate, (*cell, invariant));
+        }
+        Some((
+            *key,
+            strict_provider::derive_conditional_body(
+                &self.index,
+                *key,
+                &self.shadowed,
+                shape,
+                &selected_cells,
+            )?,
+        ))
+    }
+
     /// A negative check for an exact audited imported call. This reads the
     /// already prepared callable index; unresolved calls remain the author's
     /// responsibility rather than becoming inferred absence of effects.
@@ -14483,6 +15907,209 @@ impl PreparedCallableCapabilities {
     }
 }
 
+fn binding_store_evidence(site: &BindingStoreSite) -> BindingCellStoreEvidence {
+    BindingCellStoreEvidence {
+        owner: site.owner,
+        activation_callable: site.activation_callable,
+        span: site.span,
+        kind: site.kind,
+    }
+}
+
+fn has_nested_binding_store(index: &ExecutionIndex, outer: &BindingStoreSite) -> bool {
+    index
+        .binding_store_sites
+        .values()
+        .flatten()
+        .any(|candidate| {
+            !std::ptr::eq(candidate, outer)
+                && candidate.owner == outer.owner
+                && candidate.activation_callable == outer.activation_callable
+                && span_contains(outer.span, candidate.span)
+        })
+}
+
+fn has_nested_member_write(index: &ExecutionIndex, span: Span) -> bool {
+    index
+        .member_write_sites
+        .iter()
+        .any(|site| span_contains(span, site.source_span()))
+}
+
+fn has_initializer_write(index: &ExecutionIndex, declaration: &BindingDeclarationWrite) -> bool {
+    let Some(span) = declaration.initializer_span else {
+        return false;
+    };
+    index.binding_store_sites.values().flatten().any(|site| {
+        site.owner == declaration.owner
+            && site.activation_callable == declaration.activation_callable
+            && span_contains(span, site.span)
+    }) || has_nested_member_write(index, span)
+}
+
+fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
+    let mut kinds = PrimKinds::NONE;
+    for value in values {
+        match value {
+            AbstractValue::Value(Value::Prim(value_kinds)) => {
+                kinds = kinds.union(*value_kinds);
+            }
+            // The shared execution kernel carries known abrupt alternatives
+            // separately from normal primitive values. Callers join the
+            // pre-operation cell state when this marker is present.
+            AbstractValue::Value(Value::Unavailable) => {}
+            _ => return None,
+        }
+    }
+    Some(kinds)
+}
+
+fn compute_primitive_cell_invariant(
+    index: &ExecutionIndex,
+    shadowed: &BTreeSet<&'static str>,
+    binding: &Id,
+) -> PrimitiveCellInvariantQuery {
+    use PrimitiveCellInvariantQuery::{Known, Unknown};
+
+    if !index.dynamic_scope_owners.is_empty() {
+        return Unknown(PrimitiveCellInvariantRefusal::DynamicScope);
+    }
+    let Some(declarations) = index.binding_declaration_writes.get(binding) else {
+        return Unknown(PrimitiveCellInvariantRefusal::MissingDeclaration);
+    };
+    let [declaration] = declarations.as_slice() else {
+        return Unknown(PrimitiveCellInvariantRefusal::AmbiguousDeclaration);
+    };
+    if !declaration.direct_top_level || declaration.activation_callable.is_some() {
+        return Unknown(PrimitiveCellInvariantRefusal::NotDirectModuleCell);
+    }
+    if !declaration.simple_identifier {
+        return Unknown(PrimitiveCellInvariantRefusal::DestructuredDeclaration);
+    }
+    if !declaration.mutable {
+        return Unknown(PrimitiveCellInvariantRefusal::ImmutableDeclaration);
+    }
+    if has_initializer_write(index, declaration) {
+        return Unknown(PrimitiveCellInvariantRefusal::NestedInitializerWrite);
+    }
+
+    let declaration_identity = BindingCellDeclarationIdentity {
+        owner: declaration.owner,
+        activation_callable: declaration.activation_callable,
+        binding_span: declaration.binding_span,
+        initializer_span: declaration.initializer_span,
+    };
+    let initial_kinds = match &declaration.initializer_transfer {
+        BindingInitializerTransfer::Uninitialized => PrimKinds::UNDEFINED,
+        BindingInitializerTransfer::Unsupported => {
+            return Unknown(PrimitiveCellInvariantRefusal::UnsupportedInitializer);
+        }
+        BindingInitializerTransfer::Supported(body) => {
+            let initial_cell =
+                if declaration.initialized_var_scope == Some(InitializedVarScope::Module) {
+                    Values::from([AbstractValue::UNDEFINED])
+                } else {
+                    Values::from([AbstractValue::Value(Value::Unavailable)])
+                };
+            let Some(transfer) = strict_provider::transfer_primitive_cell_initializer(
+                index,
+                shadowed,
+                body,
+                binding,
+                initial_cell,
+            ) else {
+                return Unknown(PrimitiveCellInvariantRefusal::InitializerNotNormallyCompleted);
+            };
+            if !transfer.normal_completion
+                || transfer.possible_throw
+                || !transfer.allocation_covered
+            {
+                return Unknown(PrimitiveCellInvariantRefusal::InitializerNotNormallyCompleted);
+            }
+            match primitive_kinds(&transfer.cell_values) {
+                Some(kinds) if !kinds.is_empty() => kinds,
+                Some(_) | None => {
+                    return Unknown(PrimitiveCellInvariantRefusal::NonPrimitiveInitializer);
+                }
+            }
+        }
+    };
+
+    let store_sites = index
+        .binding_store_sites
+        .get(binding)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let stores: Vec<_> = store_sites.iter().map(binding_store_evidence).collect();
+    for site in store_sites {
+        let evidence = binding_store_evidence(site);
+        if let BindingStoreInput::Unsupported(refusal) = &site.input {
+            return Unknown(PrimitiveCellInvariantRefusal::UnsupportedStore(
+                evidence, *refusal,
+            ));
+        }
+        if has_nested_binding_store(index, site) || has_nested_member_write(index, site.span) {
+            return Unknown(PrimitiveCellInvariantRefusal::NestedStore(evidence));
+        }
+    }
+
+    // Each primitive mask is a subset of seven bits. Every strict iteration
+    // adds at least one bit, so eight passes suffice to reach the least
+    // post-fixed point or report a refusal from a store transfer.
+    let mut gamma = initial_kinds;
+    for _ in 0..8 {
+        let previous = gamma;
+        for (site, evidence) in store_sites.iter().zip(&stores) {
+            let BindingStoreInput::Supported(body) = &site.input else {
+                unreachable!("unsupported store was refused before fixpoint")
+            };
+            let Some(transfer) = strict_provider::transfer_primitive_cell_store(
+                index,
+                shadowed,
+                body,
+                binding,
+                Values::from([AbstractValue::Value(Value::Prim(gamma))]),
+            ) else {
+                return Unknown(PrimitiveCellInvariantRefusal::UnsupportedTransfer(
+                    *evidence,
+                ));
+            };
+            if !transfer.normal_completion && !transfer.possible_throw {
+                return Unknown(PrimitiveCellInvariantRefusal::NoNormalStoreValue(*evidence));
+            }
+            if !transfer.allocation_covered {
+                return Unknown(PrimitiveCellInvariantRefusal::UnsupportedTransfer(
+                    *evidence,
+                ));
+            }
+            let Some(mut store_kinds) = primitive_kinds(&transfer.cell_values) else {
+                return Unknown(PrimitiveCellInvariantRefusal::NonPrimitiveStoreResult(
+                    *evidence,
+                ));
+            };
+            if transfer.possible_throw {
+                // Only a fully covered, source-only transfer reaches this
+                // branch. Its throw may precede the store, or follow earlier
+                // mutations, so join old Γ with every visible primitive
+                // post-store value and preserve writes before the abrupt
+                // frontier.
+                store_kinds = store_kinds.union(gamma);
+            } else if store_kinds.is_empty() {
+                return Unknown(PrimitiveCellInvariantRefusal::NoNormalStoreValue(*evidence));
+            }
+            gamma = gamma.union(store_kinds);
+        }
+        if gamma == previous {
+            return Known(PrimitiveCellInvariant {
+                declaration: declaration_identity,
+                post_init_kinds: gamma,
+                stores,
+            });
+        }
+    }
+    Unknown(PrimitiveCellInvariantRefusal::NonConvergent)
+}
+
 fn direct_callable_binding(
     index: &ExecutionIndex,
     binding: &Id,
@@ -14512,25 +16139,20 @@ pub(crate) fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     array_spreads: StableArraySpreadShapes,
     exported_locals: BTreeSet<String>,
-    selected_value_inputs: Vec<SelectedBindingValueInput>,
-    selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
-    predefined_globals: spec::PredefinedGlobals,
-    bundle_globals: BundleGlobalNames,
+    mut inputs: AnalysisInputs,
 ) -> PreparedCallableCapabilities {
-    let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
+    let heap_resolver = inputs.heap_resolver.unwrap_or_else(|| {
+        SourceHeapResolver::new(HeapModuleScope::LocalAnalysis(LocalAnalysisScopeId::fresh()))
+    });
+    inputs.heap_resolver = Some(heap_resolver);
+    let flow = (!inputs.selected_value_inputs.is_empty()).then(|| {
+        ChunkValueFlow::analyze_with_candidates_in_resolver(heap_resolver, body, &BTreeSet::new())
+    });
     PreparedCallableCapabilities {
+        shadowed: crate::facts::compute_shadowed_globals(body),
         index: ExecutionIndex::collect(
             body,
-            &AnalysisInputs {
-                selected_value_inputs,
-                selected_native_operation_inputs,
-                assumptions: crate::analysis_inputs::AnalysisAssumptions {
-                    predefined_globals,
-                    bundle_globals,
-                    ..Default::default()
-                },
-                ..AnalysisInputs::default()
-            },
+            &inputs,
             flow.as_ref(),
             &BTreeSet::new(),
             &LocalClassConstructionShapes::default(),
@@ -14547,18 +16169,24 @@ pub(crate) fn infer_callable_capabilities<'f>(
     prepared: PreparedCallableCapabilities,
     integrity: &NativeIntegrity,
     required_stable_providers: &BTreeSet<String>,
+    required_member_bodies: &BTreeMap<String, BTreeSet<String>>,
     derive_foreign_calls: bool,
     structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
-) -> InferredCallableCapabilities {
+) -> (
+    InferredCallableCapabilities,
+    provider_program::FrozenProviderProgram,
+) {
     let PreparedCallableCapabilities {
         mut index,
         exported_locals,
         flow: mut prepared_flow,
+        shadowed,
     } = prepared;
     index.apply_native_integrity(integrity);
     let mut result = InferredCallableCapabilities {
+        member_calls: BTreeMap::new(),
         foreign_calls: BTreeMap::new(),
-        intact_collections: BTreeSet::new(),
+        intact_native_operations: BTreeSet::new(),
         stable_providers: BTreeSet::new(),
         namespace_wrappers: BTreeMap::new(),
     };
@@ -14568,10 +16196,13 @@ pub(crate) fn infer_callable_capabilities<'f>(
                 && index.namespace_wrapper_candidates.contains_key(key))
     });
     if has_candidate {
-        let flow = prepared_flow
-            .take()
-            .unwrap_or_else(|| ChunkValueFlow::analyze(body));
-        let shadowed = crate::facts::compute_shadowed_globals(body);
+        let flow = prepared_flow.take().unwrap_or_else(|| {
+            ChunkValueFlow::analyze_with_candidates_in_resolver(
+                index.heap_resolver,
+                body,
+                &BTreeSet::new(),
+            )
+        });
         let callables = callable_inference_inputs(&index, &flow, &exported_locals);
         index.semantic_facts = Some(index.prepare_semantic_facts(
             &flow,
@@ -14603,47 +16234,111 @@ pub(crate) fn infer_callable_capabilities<'f>(
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
         prepared_flow = Some(flow);
     }
+    let mut structural_flow = Some(structural_flow);
+    let borrowed_flow = (!required_member_bodies.is_empty() && prepared_flow.is_none())
+        .then(|| structural_flow.take().unwrap()());
+    if !required_member_bodies.is_empty() && index.dynamic_scope_owners.is_empty() {
+        let flow = prepared_flow
+            .as_ref()
+            .or(borrowed_flow)
+            .expect("requested source-member flow");
+        for (local, members) in required_member_bodies {
+            let Some(binding) =
+                index
+                    .binding_declaration_writes
+                    .iter()
+                    .find_map(|(binding, writes)| {
+                        (binding.0.as_ref() == local
+                            && writes.iter().any(|write| write.direct_top_level))
+                        .then_some(binding)
+                    })
+            else {
+                continue;
+            };
+            let objects = flow.values_of_binding(binding);
+            let Some(objects) = objects
+                .iter()
+                .map(|value| match value {
+                    Value::Alloc(Kind::Object, object) => flow.source_origin(object),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            for member in members {
+                // Flow can retain a carrier's initial empty export object.
+                // Absence proves nothing; the explicit normal-selection
+                // assertion chooses the sole possible source function.
+                let values: BTreeSet<_> = objects
+                    .iter()
+                    .filter_map(|object| flow.values_of_property(*object, member))
+                    .flat_map(|values| values.iter())
+                    .collect();
+                let mut values = values.into_iter();
+                let Some(Value::Alloc(Kind::Function, key)) = values.next() else {
+                    continue;
+                };
+                if values.next().is_some() {
+                    continue;
+                }
+                let Some(key) = flow.source_origin(key) else {
+                    continue;
+                };
+                // Possible origins only select the body named by an explicit
+                // runtime-identity assertion; they never prove presence.
+                let derived = strict_provider::derive(&index, key, &shadowed)
+                    .map(|derived| foreign_call(&index, derived, key, false, false));
+                result
+                    .member_calls
+                    .insert((local.clone(), member.clone()), derived);
+            }
+        }
+    }
     if derive_foreign_calls {
         result.foreign_calls = infer_foreign_calls(
             &index,
             body,
             &exported_locals,
-            prepared_flow.as_ref(),
-            structural_flow,
-            |family| {
-                matches!(
-                    index
-                        .integrity
-                        .require(&[IntrinsicSlot::Global(family)], None),
-                    crate::facts::abstract_domain::integrity::Integrity::Intact(_)
-                )
+            prepared_flow.as_ref().or(borrowed_flow),
+            || structural_flow.take().unwrap()(),
+            |operation| {
+                operation.row().is_some_and(|row| {
+                    matches!(
+                        index.integrity.require(&row.operation_requires(), None),
+                        crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+                    )
+                })
             },
             |call| call.availability.available_to_importer() || call.callback_factory,
         );
     }
-    result.intact_collections = [
-        NativeIntrinsic::Map,
-        NativeIntrinsic::Set,
-        NativeIntrinsic::WeakMap,
-        NativeIntrinsic::WeakSet,
-    ]
-    .into_iter()
-    .filter(|family| {
-        matches!(
-            index
-                .integrity
-                .require(&[IntrinsicSlot::Global(*family)], None),
-            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
-        )
-    })
-    .collect();
-    result
+    result.intact_native_operations = builtins::ROWS
+        .iter()
+        .flat_map(|row| {
+            row.invocation.iter().filter_map(|invocation| {
+                crate::analysis_inputs::ForeignNativeOperation::for_row(row, *invocation)
+            })
+        })
+        .filter(|operation| {
+            operation.row().is_some_and(|row| {
+                matches!(
+                    index.integrity.require(&row.operation_requires(), None),
+                    crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+                )
+            })
+        })
+        .collect();
+    (
+        result,
+        provider_program::FrozenProviderProgram::new(index, shadowed),
+    )
 }
 
 /// Exported top-level function and class declarations, and single-declarator
 /// top-level function or arrow initializers, with one stable value, summarized
-/// by `foreign_call`. Dynamic scope can rebind any of them. `collection_intact`
-/// answers the census for an empty keyed collection's constructor; `wanted`
+/// by `foreign_call`. Dynamic scope can rebind any of them. `native_operation_intact`
+/// answers the census for every slot required by a native operation; `wanted`
 /// selects summaries before value flow checks their binding's stability.
 fn infer_foreign_calls<'f>(
     index: &ExecutionIndex,
@@ -14651,7 +16346,7 @@ fn infer_foreign_calls<'f>(
     exported_locals: &BTreeSet<String>,
     flow: Option<&ChunkValueFlow>,
     structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
-    collection_intact: impl Fn(NativeIntrinsic) -> bool,
+    native_operation_intact: impl Fn(&crate::analysis_inputs::ForeignNativeOperation) -> bool,
     wanted: impl Fn(&InferredForeignCall) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
     if !index.dynamic_scope_owners.is_empty() {
@@ -14705,9 +16400,9 @@ fn infer_foreign_calls<'f>(
                 strict_provider::derive(index, declaration_start, &shadowed)?
             };
             if !derived
-                .native_constructions
+                .native_operations
                 .iter()
-                .all(|family| collection_intact(*family))
+                .all(&native_operation_intact)
             {
                 return None;
             }
@@ -14718,7 +16413,7 @@ fn infer_foreign_calls<'f>(
                     derived,
                     declaration_start,
                     hoisted,
-                    !hoisted && isolated_callable_initializer(body, binding),
+                    (!hoisted || is_class) && isolated_callable_provider(body, binding),
                 ),
             ))
         })
@@ -14734,6 +16429,11 @@ fn infer_foreign_calls<'f>(
         Some(flow) => flow,
         None => structural_flow(),
     };
+    assert_eq!(
+        flow.heap_resolver(),
+        index.heap_resolver,
+        "callable inference must reuse its prepared heap resolver"
+    );
     candidates
         .into_iter()
         .filter(|(binding, call)| {
@@ -14744,9 +16444,10 @@ fn infer_foreign_calls<'f>(
             if call.availability == CallableAvailability::Declaration {
                 values.iter().count() == 1
             } else {
-                values
-                    .iter()
-                    .eq([Value::Alloc(Kind::Function, call.declaration_start)])
+                values.iter().eq([Value::Alloc(
+                    Kind::Function,
+                    flow.heap_address(Kind::Function, call.declaration_start),
+                )])
             }
         })
         .map(|(binding, call)| (binding.sym.to_string(), call))
@@ -14761,13 +16462,16 @@ fn foreign_call(
     isolated_initializer: bool,
 ) -> InferredForeignCall {
     let mut dependencies = derived.dependencies.clone();
-    for family in &derived.native_constructions {
+    for operation in &derived.native_operations {
+        let row = operation
+            .row()
+            .expect("provider retained its checked native row");
         dependencies.extend(
             &index
                 .integrity
-                .require(&[IntrinsicSlot::Global(*family)], None)
+                .require(&row.operation_requires(), None)
                 .dependencies()
-                .expect("derivation checked the census for every construction"),
+                .expect("derivation checked every required native slot"),
         );
     }
     let record = derived
@@ -14780,6 +16484,21 @@ fn foreign_call(
     });
     InferredForeignCall {
         declaration_start,
+        initialized_class: (isolated_initializer
+            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct)
+            .then(|| index.class_definitions.get(&declaration_start))
+            .flatten()
+            .and_then(|definition| {
+                // This summary-only path has no runtime LocalContext in which
+                // to execute class static elements. Preserve its prior
+                // no-eager-step proof only for the class-creation subset; a
+                // static field/block must be handled by the shared ordered
+                // transfer, never by a provider-side allocation shortcut.
+                definition
+                    .static_steps
+                    .is_empty()
+                    .then(ProofDependencies::default)
+            }),
         availability: if hoisted {
             CallableAvailability::Declaration
         } else if isolated_initializer && derived.retained_provider_captures.is_empty() {
@@ -14823,13 +16542,7 @@ fn returned_record(
         .collect();
     let mut derivation_rules =
         BTreeSet::from([InferenceRule::ReturnedRecord, InferenceRule::StableFunction]);
-    if !derived.native_constructions.is_empty() {
-        derivation_rules.extend([
-            InferenceRule::EmptyCollectionConstruction,
-            InferenceRule::NativeCallIdentity,
-            InferenceRule::NativeIntegrity,
-        ]);
-    }
+    derivation_rules.extend(derived.native_derivation_rules.iter().copied());
     InferredReturnedRecord {
         members,
         inference: InferenceUse {
@@ -14906,6 +16619,7 @@ fn callable_inference_inputs(
 ) -> CallableInferenceInputs {
     let mut inputs = CallableInferenceInputs {
         namespace_wrappers: namespace_wrapper_inputs(index, exported_locals),
+        heap_resolver: Some(flow.heap_resolver()),
         ..CallableInferenceInputs::default()
     };
     let rebound: BTreeSet<_> = index
@@ -15003,10 +16717,7 @@ mod preflow_set_protocol_tests {
             &views,
             StableArraySpreadShapes::default(),
             BTreeSet::new(),
-            Vec::new(),
-            Vec::new(),
-            spec::PredefinedGlobals::Unknown,
-            BundleGlobalNames::default(),
+            AnalysisInputs::default(),
         );
         assert!(prepared.flow.is_none());
         assert!(
@@ -15109,5 +16820,238 @@ console.log("after", copied.size);"#,
                 "{source}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod module_cell_writer_census_tests {
+    use super::*;
+
+    fn invariant(source: &str) -> PrimitiveCellInvariantQuery {
+        js_ast::with_swc_globals(|| {
+            let parsed = js_ast::parse_js_module("cell.ts", source)
+                .expect("canonical parser accepts the writer syntax");
+            let views = crate::facts::top_level_item_views(&parsed.module.body);
+            let prepared = prepare_callable_capabilities(
+                &views,
+                StableArraySpreadShapes::default(),
+                BTreeSet::new(),
+                AnalysisInputs::default(),
+            );
+            let binding = prepared
+                .module_cell_declarations()
+                .into_keys()
+                .find(|binding| binding.0 == "count")
+                .expect("direct module count binding");
+            prepared.primitive_cell_invariant(&binding)
+        })
+    }
+
+    #[test]
+    fn normally_supported_numeric_store_retains_its_kind_invariant() {
+        let proof = invariant("export let count = 0; function increment() { count++; }");
+        let PrimitiveCellInvariantQuery::Known(proof) = proof else {
+            panic!("ordinary numeric store needs its existing invariant: {proof:?}")
+        };
+        assert_eq!(proof.post_init_kinds, PrimKinds::NUMBER);
+        assert_eq!(proof.stores.len(), 1);
+        assert_eq!(proof.stores[0].kind, BindingStoreKind::Update);
+    }
+
+    #[test]
+    fn non_direct_initializers_are_explicitly_outside_the_module_cell_invariant() {
+        for source in [
+            "function initialize() { var count = 'not numeric'; }",
+            "if (true) { var count = 'not numeric'; }",
+        ] {
+            js_ast::with_swc_globals(|| {
+                let parsed = js_ast::parse_js_module("cell.ts", source)
+                    .expect("canonical parser accepts the non-direct declaration");
+                let views = crate::facts::top_level_item_views(&parsed.module.body);
+                let prepared = prepare_callable_capabilities(
+                    &views,
+                    StableArraySpreadShapes::default(),
+                    BTreeSet::new(),
+                    AnalysisInputs::default(),
+                );
+                let (binding, declarations) = prepared
+                    .index
+                    .binding_declaration_writes
+                    .iter()
+                    .find(|(binding, _)| binding.0 == "count")
+                    .expect("count declaration is represented in the prepared index");
+                let [declaration] = declarations.as_slice() else {
+                    panic!("test source has one count declaration: {declarations:?}");
+                };
+                assert!(!declaration.direct_top_level);
+                assert!(matches!(
+                    &declaration.initializer_transfer,
+                    BindingInitializerTransfer::Unsupported
+                ));
+                assert_eq!(
+                    prepared.primitive_cell_invariant(binding),
+                    PrimitiveCellInvariantQuery::Unknown(
+                        PrimitiveCellInvariantRefusal::NotDirectModuleCell
+                    )
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn wrapped_targets_are_unsupported_writers_rather_than_empty_censuses() {
+        for (writer, expected_kind) in [
+            ("count as any = 'changed';", BindingStoreKind::Assignment),
+            ("count!++;", BindingStoreKind::Update),
+        ] {
+            let source = format!("export let count = 0; function write() {{ {writer} }}");
+            let proof = invariant(&source);
+            assert!(
+                matches!(
+                    &proof,
+                    PrimitiveCellInvariantQuery::Unknown(
+                        PrimitiveCellInvariantRefusal::UnsupportedStore(store, _)
+                    ) if store.kind == expected_kind && !store.span.is_dummy()
+                ),
+                "the canonical wrapped writer must not leave count falsely numeric: {writer}: {proof:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod class_construction_call_inventory_tests {
+    use super::*;
+    use raw_js_test_support::parse;
+
+    fn prepared_class(source: &str) -> (PreparedCallableCapabilities, u32) {
+        let module = parse(source);
+        let views = crate::facts::top_level_item_views(&module.body);
+        let prepared = prepare_callable_capabilities(
+            &views,
+            StableArraySpreadShapes::default(),
+            BTreeSet::new(),
+            AnalysisInputs::default(),
+        );
+        let classes = prepared
+            .index
+            .class_provider_bodies
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(classes.len(), 1, "expected one supported class body");
+        let class = classes[0];
+        (prepared, class)
+    }
+
+    fn new_binding(call: &Call) -> Option<&str> {
+        (call.kind == CallKind::New)
+            .then_some(())
+            .and_then(|()| match &call.callee {
+                ValueExpr::Binding(binding) => Some(binding.0.as_ref()),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn class_fields_and_constructor_share_exact_construction_call_sites() {
+        let source = r#"
+            class Box {
+                static registry = new Map();
+                cache = new WeakMap();
+                constructor(value) { this.value = new Set(); }
+                helper() { return new Date(); }
+            }
+        "#;
+        let (prepared, class) = prepared_class(source);
+        let index = &prepared.index;
+        let owner = index.class_owners[&class];
+        let identity = LocalBodyIdentity::Construction { class, owner };
+        let (calls, sites) = index
+            .class_construction_call_inventory(class)
+            .expect("all supported construction calls have canonical sites");
+
+        let names = calls
+            .iter()
+            .map(|call| new_binding(call).expect("fixture call is a direct new"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(names, BTreeSet::from(["Set", "WeakMap"]));
+        assert_eq!(sites.len(), calls.len());
+        for call in &calls {
+            let site = call
+                .source_site_for_body(&identity)
+                .expect("field and constructor calls use the construction identity");
+            assert_eq!(site.step, OperationStep::CallInvocation);
+            assert!(index.source_operation_sites.contains(site));
+            assert!(sites.contains(site));
+        }
+
+        let static_call = index.top_calls[owner.0]
+            .iter()
+            .find(|call| new_binding(call) == Some("Map"))
+            .expect("static initializer remains on the class owner's eager path");
+        assert!(static_call.source_site_for_body(&identity).is_none());
+        assert!(
+            index.callables.values().any(|callable| {
+                callable
+                    .calls
+                    .iter()
+                    .any(|call| new_binding(call) == Some("Date"))
+            }),
+            "instance method calls stay in their own callable body"
+        );
+    }
+
+    #[test]
+    fn class_inventory_refuses_a_missing_canonical_call_site() {
+        let (mut prepared, class) = prepared_class(
+            "class Box { cache = new WeakMap(); constructor() { this.value = new Set(); } }",
+        );
+        let site = prepared
+            .index
+            .class_construction_call_inventory(class)
+            .and_then(|(_, sites)| sites.into_iter().next())
+            .expect("fixture starts with a complete call inventory");
+        prepared.index.source_operation_sites.remove(&site);
+        assert!(
+            prepared
+                .index
+                .class_construction_call_inventory(class)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn class_inventory_uses_canonical_source_calls_not_activation_metadata() {
+        let (mut prepared, class) = prepared_class(
+            "class Box { cache = makeCache(); constructor() { this.value = makeValue(); } }",
+        );
+        let expected = prepared
+            .index
+            .class_construction_call_inventory(class)
+            .expect("both lowered source calls have a canonical identity")
+            .0
+            .into_iter()
+            .map(|call| call.span)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(expected.len(), 2);
+
+        // Activation metadata may guide lowering, but the inventory itself
+        // must remain derivable from each prepared Call's Construction site.
+        prepared
+            .index
+            .class_provider_bodies
+            .get_mut(&class)
+            .unwrap()
+            .callables = Arc::from([]);
+        let actual = prepared
+            .index
+            .class_construction_call_inventory(class)
+            .expect("the exact source-site inventory is independent of callables metadata")
+            .0
+            .into_iter()
+            .map(|call| call.span)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
     }
 }

@@ -7,15 +7,18 @@ use std::sync::Mutex;
 
 use swc_common::{BytePos, DUMMY_SP, Spanned, SyntaxContext};
 
+use super::body_facts::{PreparedImportBinding, PreparedImportTarget, PreparedStaticRequest};
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
+use super::imports::static_request_for_item;
 use super::scope_names::collect_local_binding_names;
 
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
-    ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, VendorReimportOracle, cross_module_imports_for_plan,
-    final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier,
+    ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink,
+    MaterializedVendorIntent, ModuleReferenceNeeds, PlannedVendorReimports, RuntimeReimport,
+    VendorReimportOracle, cross_module_imports_for_plan, final_module_exports,
+    group_specifiers_into_import_decls, imported_binding_named_specifier,
     phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
     residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body,
 };
@@ -27,7 +30,7 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
-use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{OutputFileAddress, SelectedModuleLowering};
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
@@ -41,40 +44,44 @@ const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
-struct ModuleOutputContext<'a> {
+pub(super) struct ModuleOutputContext<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
     chunk_id_interned: ChunkId,
-    chunk_top_level_mark: swc_common::Mark,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
     chunk_id: &'a str,
     entry_file: &'a str,
     source_path: &'a str,
 }
 
-pub(super) struct ModuleEmissionInputs<'a> {
+/// Output context borrows use `'output` because `PreparedModuleEmission` keeps
+/// them. Planning-only views use `'planning`; the cache borrow is short-lived
+/// while its artifact/index referents use the independent `'cache` lifetime.
+/// The vendor oracle's borrowed data likewise has its own `'vendor` lifetime.
+pub(super) struct ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor> {
     pub(super) index: usize,
-    pub(super) plan: &'a ModulePlan,
+    pub(super) plan: &'output ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) assignment_analysis: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
-    pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
-    pub(super) imported_reexports: &'a [super::imports::plan_references::ImportedReexport],
-    pub(super) selected_exports: Option<&'a BTreeMap<String, String>>,
-    pub(super) cross_module_chunk_renames: &'a BTreeMap<String, String>,
-    pub(super) source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,
-    pub(super) chunk_id: &'a str,
+    pub(super) assignment_analysis: &'output AssignmentAnalysis,
+    pub(super) declaration_by_name: &'planning HashMap<Id, Vec<StatementId>>,
+    pub(super) binding_assignment: &'planning HashMap<Id, usize>,
+    pub(super) runtime_import_facts: &'planning RuntimeImportFacts,
+    pub(super) entry_exports_by_original_local: &'planning HashMap<Id, EntryExport>,
+    pub(super) imported_reexports: &'planning [super::imports::plan_references::ImportedReexport],
+    pub(super) selected_exports: Option<&'planning BTreeMap<String, String>>,
+    pub(super) cross_module_chunk_renames: &'planning BTreeMap<String, String>,
+    pub(super) source_import_cache: &'planning Mutex<ArtifactSourceImportResolutionCache<'cache>>,
+    pub(super) chunk_id: &'output str,
     pub(super) chunk_id_interned: ChunkId,
-    pub(super) entry_file: &'a str,
-    pub(super) source_path: &'a str,
+    pub(super) entry_file: &'output str,
+    pub(super) source_path: &'output str,
     pub(super) chunk_top_level_mark: swc_common::Mark,
-    pub(super) runtime_ast: &'a ParsedJsModule,
-    pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
+    pub(super) runtime_ast: &'output ParsedJsModule,
+    pub(super) vendor_import_oracle: Option<&'planning VendorReimportOracle<'vendor>>,
 }
 
 /// One module plan's lowered output: the emitted file plus the
-/// per-plan bookkeeping `lower_chunk` rolls up.
+/// per-plan bookkeeping `PreparedCandidateEmissionPlan::emit` rolls up.
 pub(super) struct LoweredModuleOutput {
     pub(super) file: JsFile,
     pub(super) record: (String, FileRole),
@@ -82,7 +89,69 @@ pub(super) struct LoweredModuleOutput {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredModuleOutput> {
+pub(super) struct MaterializedVendorOutput {
+    pub(super) output: OutputFileAddress,
+    pub(super) intents: Vec<MaterializedVendorIntent>,
+    pub(super) observations: Vec<vendor::VendorUseRewriteObservation>,
+    pub(super) generated_request_indices: Vec<usize>,
+}
+
+/// An exact module body, import list, and ordered static-request sequence
+/// prepared from the candidate placement. Rendering consumes this value
+/// without repeating reference or import planning.
+pub(super) struct PreparedModuleEmission<'a> {
+    pub(super) plan: &'a ModulePlan,
+    destination: ModuleId,
+    pub(super) body: Vec<ModuleItem>,
+    static_requests: Vec<PreparedStaticRequest>,
+    pub(super) explicit_renames: BTreeMap<String, String>,
+    pub(super) output_context: ModuleOutputContext<'a>,
+    vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+    vendor_output: MaterializedVendorOutput,
+}
+
+impl PreparedModuleEmission<'_> {
+    pub(super) fn vendor_output(&self) -> (&MaterializedVendorOutput, &[ModuleItem]) {
+        (&self.vendor_output, &self.body)
+    }
+
+    pub(super) fn destination_id(&self) -> ModuleId {
+        self.destination
+    }
+
+    pub(super) fn output_file_layout(&self) -> (&str, &str) {
+        (&self.plan.target_file, self.output_context.source_path)
+    }
+
+    pub(super) fn prepared_static_request_inventory(
+        &self,
+    ) -> (&str, &str, &[PreparedStaticRequest]) {
+        (
+            &self.plan.target_file,
+            self.output_context.source_path,
+            &self.static_requests,
+        )
+    }
+
+    pub(super) fn emit(self) -> LoweredModuleOutput {
+        let (file, record, lowering) = build_module_output(
+            self.plan,
+            self.body,
+            &self.explicit_renames,
+            &self.output_context,
+        );
+        LoweredModuleOutput {
+            file,
+            record,
+            lowering,
+            vendor_reference_rewrites: self.vendor_reference_rewrites,
+        }
+    }
+}
+
+pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
+    inputs: ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor>,
+) -> Result<PreparedModuleEmission<'output>> {
     let ModuleEmissionInputs {
         index,
         plan,
@@ -109,6 +178,14 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         explicit_renames,
         facts: body_facts,
     } = naturalized;
+    let mut static_requests_by_item = body_facts.static_requests().to_vec();
+    let body_leading_static_import_requests = body_facts.leading_static_import_requests();
+    debug_assert!(
+        static_requests_by_item
+            .windows(2)
+            .all(|pair| pair[0].item_index < pair[1].item_index),
+        "naturalized static requests must be in body-item order",
+    );
     let ModuleReferenceNeeds {
         cross_module_imports_by_provider,
         residual_entry_imports,
@@ -169,6 +246,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         &plan.id,
         entry_file,
         &plan.target_file,
+        chunk_id_interned,
         residual_entry_imports,
         missing_residual_exports,
         &mut import_rename_sink,
@@ -179,19 +257,44 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // are constructed as package / facade imports straight from the
     // plan oracle; everything else stays a chunk re-import (with the
     // boundary-rename mapping applied at construction).
+    let runtime_reimport_sources: BTreeMap<Id, Id> = runtime_reimports
+        .iter()
+        .map(|(emitted, reimport)| (emitted.clone(), reimport.source_binding.clone()))
+        .collect();
+    let needed_for_vendor = runtime_reimports
+        .into_iter()
+        .map(|(emitted, reimport)| (emitted, reimport.info))
+        .collect();
     let PlannedVendorReimports {
         retained: runtime_reimports,
+        replacements: mut vendor_replacements,
         imported_overrides,
         external_imports: vendor_external_imports,
         body_rewrites: vendor_body_rewrites,
         references_rewritten: mut vendor_reference_rewrites,
     } = plan_vendor_reimports(
-        runtime_reimports,
+        needed_for_vendor,
         vendor_import_oracle,
         chunk_id_interned,
         entry_file,
         &plan.target_file,
     );
+    let runtime_reimports: BTreeMap<Id, RuntimeReimport<'_>> = runtime_reimports
+        .into_iter()
+        .map(|(emitted, info)| {
+            let source_binding = runtime_reimport_sources
+                .get(&emitted)
+                .expect("vendor planner retains the source binding for every retained import")
+                .clone();
+            (
+                emitted,
+                RuntimeReimport {
+                    source_binding,
+                    info,
+                },
+            )
+        })
+        .collect();
     // Re-import any source-chunk import-specifier-bound locals that
     // moved code in `body` references but no top-level decl
     // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -202,13 +305,14 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // `source_import_cache` is shared across parallel per-plan
     // workers; the `Mutex` serialises the BTreeMap lookups but the
     // critical section is short (a key lookup + possible insert).
-    let mut runtime_reimports = {
+    let runtime_reimports = {
         let mut cache = source_import_cache
             .lock()
             .expect("source_import_cache poisoned");
         // Imports peeled with their atomic group still use source-chunk URLs.
         // Rebase those before adding imports already emitted for this target.
-        for item in &mut body {
+        let mut static_request_index = 0;
+        for (item_index, item) in body.iter_mut().enumerate() {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
                 let source = source_chunk_import_for_target(
                     &mut cache,
@@ -219,7 +323,15 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
                 )?;
                 set_str_value(&mut import.src, source);
             }
+            if let Some(indexed_request) = static_requests_by_item.get_mut(static_request_index)
+                && indexed_request.item_index == item_index
+            {
+                indexed_request.request = static_request_for_item(item)
+                    .expect("a request-bearing item keeps its static ESM request");
+                static_request_index += 1;
+            }
         }
+        debug_assert_eq!(static_request_index, static_requests_by_item.len());
         source_chunk_imports_for_moved_body(
             &mut cache,
             chunk_id,
@@ -250,13 +362,42 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     assignment_analysis
         .import_order()
         .sort_module_imports(&mut intra_chunk_imports);
-    let mut combined: Vec<ModuleItem> = intra_chunk_imports
-        .into_iter()
-        .map(|(_, item)| item)
-        .collect();
-    combined.append(&mut runtime_reimports);
+    let mut combined =
+        Vec::with_capacity(intra_chunk_imports.len() + runtime_reimports.len() + body.len());
+    let mut static_requests: Vec<PreparedStaticRequest> = Vec::with_capacity(
+        intra_chunk_imports.len() + runtime_reimports.len() + static_requests_by_item.len(),
+    );
+    for (_, prepared_import) in intra_chunk_imports {
+        if let Some(request) = static_request_for_item(&prepared_import.item) {
+            static_requests.push(PreparedStaticRequest {
+                request,
+                targets: prepared_import.targets,
+                bindings: prepared_import.bindings,
+            });
+        }
+        combined.push(prepared_import.item);
+    }
+    for prepared_import in runtime_reimports {
+        if let Some(request) = static_request_for_item(&prepared_import.item) {
+            static_requests.push(PreparedStaticRequest {
+                request,
+                targets: prepared_import.targets,
+                bindings: prepared_import.bindings,
+            });
+        }
+        combined.push(prepared_import.item);
+    }
+    let mut leading_static_import_requests =
+        static_requests.len() + body_leading_static_import_requests;
     let original_module_body_start = combined.len();
     combined.append(&mut body);
+    static_requests.extend(static_requests_by_item.into_iter().map(|indexed_request| {
+        PreparedStaticRequest {
+            request: indexed_request.request,
+            targets: indexed_request.targets,
+            bindings: indexed_request.bindings,
+        }
+    }));
     body = combined;
     // Seal the per-plan import ledger against the exact assembled body;
     // the Module-scope projection is the import-local rename map the
@@ -325,6 +466,16 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
+        // The inventory retains original source Ids. Source-level chunk
+        // renames are outside the current binding-route proof, unlike the
+        // import-local renames already carried by canonical planning.
+        for request in &mut static_requests {
+            for binding in &mut request.bindings {
+                if cross_module_chunk_renames.contains_key(binding.source_binding.0.as_ref()) {
+                    binding.target = PreparedImportTarget::Unsupported;
+                }
+            }
+        }
         if !renamer.captured.is_empty() {
             // The entry-side chunk_renames validation only sees
             // entry's post-split body; a target can still conflict with a
@@ -344,15 +495,34 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // after the chunk_renames application so the locals they
     // introduce are never subject to spec renames — matching the
     // post-hoc wave, which introduced them after every rename had run.
+    let mut generated_request_indices = Vec::new();
     if !vendor_external_imports.is_empty() {
         let import_count = body
             .iter()
             .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
             .count();
+        generated_request_indices
+            .extend(import_count..import_count + vendor_external_imports.len());
+        let vendor_static_requests = vendor_external_imports
+            .iter()
+            .filter_map(static_request_for_item)
+            .map(|request| PreparedStaticRequest {
+                request,
+                targets: vec![PreparedImportTarget::Unsupported],
+                bindings: Vec::new(),
+            })
+            .collect::<Vec<_>>();
         let tail = body.split_off(import_count);
         body.extend(vendor_external_imports);
         body.extend(tail);
+        let inserted_request_count = vendor_static_requests.len();
+        static_requests.splice(
+            leading_static_import_requests..leading_static_import_requests,
+            vendor_static_requests,
+        );
+        leading_static_import_requests += inserted_request_count;
     }
+    debug_assert!(leading_static_import_requests <= static_requests.len());
     let resource_destinations = source_import_cache
         .lock()
         .expect("source import cache")
@@ -369,6 +539,12 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // expression rewrite, not a rename — so it runs as a separate
     // plan-driven visitor sequenced after the sealed rename
     // application, like the runtime-URL rewrite above.
+    let mut vendor_observations = Vec::new();
+    for intent in &mut vendor_replacements {
+        if let Some(renamed) = cross_module_chunk_renames.get(intent.candidate_before.0.as_ref()) {
+            intent.candidate_before.0 = renamed.as_str().into();
+        }
+    }
     if !vendor_body_rewrites.is_empty() {
         // `cross_module_chunk_renames` may have renamed an import
         // local's sym in place (ctxt preserved); remap the keys so
@@ -385,6 +561,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         let mut rewriter = vendor::PartialSwapIdentRewriter {
             bindings: &bindings,
             references_by_symbol: &mut vendor_reference_rewrites,
+            observations: Some(&mut vendor_observations),
         };
         for item in body.iter_mut() {
             item.visit_mut_with(&mut rewriter);
@@ -416,7 +593,8 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         // namespace-split rule in the shared grouper is a no-op for
         // this path, but routing through it keeps the grouping logic
         // single-sourced with `source_chunk_imports_for_moved_body`.
-        let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
+        let mut pairs: Vec<(String, ImportSpecifier, PreparedImportBinding)> =
+            Vec::with_capacity(reexports.len());
         for reexport in reexports {
             let src = relative_source(&dest_abs, &reexport.imported_from);
             let specifier = imported_binding_named_specifier(
@@ -424,14 +602,48 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
                 &reexport.imported_name,
                 chunk_top_level_mark,
             );
-            pairs.push((src, specifier));
+            let target = match &reexport.source_specifier {
+                Some(specifier) => PreparedImportTarget::OriginalSource {
+                    specifier: specifier.clone(),
+                },
+                None => PreparedImportTarget::Unsupported,
+            };
+            pairs.push((
+                src,
+                specifier,
+                PreparedImportBinding {
+                    source_binding: reexport.source_binding.clone(),
+                    candidate_binding: top_level_id(&reexport.local, chunk_top_level_mark),
+                    imported_name: reexport.imported_name.clone(),
+                    kind: artifact::reports::ImportSpecifierKind::Named,
+                    exported_name: Some(reexport.public_name.clone()),
+                    target,
+                },
+            ));
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let reexport_imports = group_specifiers_into_import_decls(pairs);
+        let reexport_static_requests: Vec<PreparedStaticRequest> = reexport_imports
+            .iter()
+            .filter_map(|prepared| {
+                static_request_for_item(&prepared.item).map(|request| PreparedStaticRequest {
+                    request,
+                    targets: prepared.targets.clone(),
+                    bindings: prepared.bindings.clone(),
+                })
+            })
+            .collect();
         let tail = body.split_off(import_count);
-        body.extend(reexport_imports);
+        body.extend(reexport_imports.into_iter().map(|prepared| prepared.item));
         body.extend(tail);
+        let inserted_request_count = reexport_static_requests.len();
+        static_requests.splice(
+            leading_static_import_requests..leading_static_import_requests,
+            reexport_static_requests,
+        );
+        leading_static_import_requests += inserted_request_count;
     }
+    debug_assert!(leading_static_import_requests <= static_requests.len());
     if let Some(exports) = selected_exports {
         // Export locals remap through the explicit map only: heuristic
         // renames never rename the top-level declaration an export
@@ -463,13 +675,23 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         entry_file,
         source_path,
     };
-    let (file, record, lowering) =
-        build_module_output(plan, body, &explicit_renames, &output_context);
-    Ok(LoweredModuleOutput {
-        file,
-        record,
-        lowering,
+    Ok(PreparedModuleEmission {
+        plan,
+        destination: module,
+        body,
+        static_requests,
+        explicit_renames,
+        output_context,
         vendor_reference_rewrites,
+        vendor_output: MaterializedVendorOutput {
+            output: OutputFileAddress {
+                chunk: chunk_id_interned,
+                file: plan.target_file.clone(),
+            },
+            intents: vendor_replacements,
+            observations: vendor_observations,
+            generated_request_indices,
+        },
     })
 }
 

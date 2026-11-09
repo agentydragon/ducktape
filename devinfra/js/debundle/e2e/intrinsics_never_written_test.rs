@@ -74,13 +74,39 @@ fn named_families_stay_intact_and_overrides_are_listed() {
 }
 
 #[test]
-fn without_the_premise_or_naming_another_family_map_stays_unknown() {
+fn unproved_map_identity_preserves_an_unchanged_schedule() {
     let source = source("");
     for families in [None, Some("[Array]")] {
-        expect_atomic_conflict_rejection(
-            opts(&source, &["install"], families),
-            &["values/native", "values/later"],
-            &[],
+        let fixture = run_fixture(opts(&source, &["install"], families));
+        assert_preserved_entry_output(&fixture, "0 42\n");
+        let candidate = fixture.candidate_relocation_assessment();
+        assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
+        assert_eq!(
+            candidate["decision"]["scope"], "no_reordering",
+            "{candidate:#}"
+        );
+        assert_eq!(
+            candidate["emitted_order"],
+            serde_json::json!([0, 1, 2, 3, 4]),
+            "{candidate:#}"
+        );
+        assert_eq!(candidate["swapped_pairs"], 0, "{candidate:#}");
+        assert_eq!(candidate["premise_dependencies"], serde_json::json!([]));
+
+        let graph = fixture.dependency_graph();
+        let node_id = source_unit_for_binding(&graph, "collection");
+        let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+        let execution = node.synchronous_execution.as_ref().unwrap();
+        assert!(!execution.complete, "{execution:#?}");
+        assert!(execution.native_integrity_uses.is_empty(), "{execution:#?}");
+        let losses = serde_json::to_value(&execution.precision_losses).unwrap();
+        assert!(
+            losses
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|loss| { loss["reason"]["code"] == "unknown_call_target" }),
+            "{losses:#}"
         );
     }
 }

@@ -15,8 +15,11 @@ use vendor::{
 };
 
 use artifact::ArtifactIndexes;
+use artifact::reports::{CandidateVendorDestination, CandidateVendorPlanAction, OutputFileAddress};
 use frontend_elaboration::source_ast::{RuntimeImportInfo, RuntimeImportKind};
+use source_identity::StatementId;
 use std::collections::BTreeMap;
+use swc_common::Span;
 use swc_ecma_ast::*;
 
 /// Planner-boundary target vocabulary for one runtime re-import. Intra-chunk import lists stay keyed by
@@ -106,11 +109,51 @@ impl<'a> VendorReimportOracle<'a> {
     }
 }
 
+/// Original source provenance and the exact plan action chosen at import
+/// construction. No output spelling is used to reconstruct this decision.
+#[derive(Debug, Clone)]
+pub(crate) struct MaterializedVendorIntent {
+    pub(crate) statement: StatementId,
+    pub(crate) declaration_span: Span,
+    pub(crate) specifier_index: usize,
+    pub(crate) specifier_span: Span,
+    pub(crate) source_local: Id,
+    pub(crate) source_request: String,
+    pub(crate) source_export: String,
+    pub(crate) candidate_before: Id,
+    pub(crate) checked: Option<(CandidateVendorPlanAction, CandidateVendorDestination)>,
+    pub(crate) external: bool,
+}
+
+impl MaterializedVendorIntent {
+    fn new(
+        info: &RuntimeImportInfo,
+        candidate_before: Id,
+        source_export: String,
+        checked: Option<(CandidateVendorPlanAction, CandidateVendorDestination)>,
+        external: bool,
+    ) -> Self {
+        Self {
+            statement: info.statement,
+            declaration_span: info.declaration_span,
+            specifier_index: info.specifier_index,
+            specifier_span: info.specifier_span,
+            source_local: info.source_local.clone(),
+            source_request: info.src.clone(),
+            source_export,
+            candidate_before,
+            checked,
+            external,
+        }
+    }
+}
+
 /// The vendor-consulted split of a module body's runtime re-imports.
 pub(crate) struct PlannedVendorReimports<'a> {
     /// Re-imports the oracle did not claim — constructed as chunk
     /// re-imports exactly as before.
     pub(crate) retained: BTreeMap<Id, &'a RuntimeImportInfo>,
+    pub(crate) replacements: Vec<MaterializedVendorIntent>,
     /// Boundary-rename name mapping for retained named re-imports
     /// (vendor-local → public). Load-bearing: source ASTs reach
     /// lowering with the vendor-local names, and the public name is
@@ -138,6 +181,7 @@ pub(crate) fn plan_vendor_reimports<'a>(
 ) -> PlannedVendorReimports<'a> {
     let mut planned = PlannedVendorReimports {
         retained: BTreeMap::new(),
+        replacements: Vec::new(),
         imported_overrides: BTreeMap::new(),
         external_imports: Vec::new(),
         body_rewrites: BTreeMap::new(),
@@ -166,6 +210,34 @@ pub(crate) fn plan_vendor_reimports<'a>(
                         planned
                             .imported_overrides
                             .insert(local_id.clone(), public.to_string());
+                        let checked = oracle
+                            .references
+                            .resolve_runtime_import_reference(
+                                &info.src,
+                                source_chunk_id,
+                                source_entry_file,
+                                oracle.chunk_table,
+                            )
+                            .filter(|target| target.target_chunk_id == chunk)
+                            .and_then(|target| {
+                                vendor::checked_boundary_rename_action(
+                                    oracle.plan,
+                                    chunk,
+                                    imported,
+                                    public,
+                                    OutputFileAddress {
+                                        chunk,
+                                        file: target.target_file,
+                                    },
+                                )
+                            });
+                        planned.replacements.push(MaterializedVendorIntent::new(
+                            info,
+                            local_id.clone(),
+                            imported.clone(),
+                            checked,
+                            false,
+                        ));
                     }
                     planned.retained.insert(local_id, info);
                     continue;
@@ -175,16 +247,54 @@ pub(crate) fn plan_vendor_reimports<'a>(
                     continue;
                 }
             };
+        let emitted_request = match &action {
+            VendorImportAction::PackageMember { package, .. }
+            | VendorImportAction::PackageNamespace { package }
+            | VendorImportAction::PackageDefault { package }
+            | VendorImportAction::PackageNamed { package, .. } => package.clone(),
+            VendorImportAction::FacadeMember {
+                facade_app_path, ..
+            }
+            | VendorImportAction::FacadeDefault { facade_app_path } => {
+                bundled_facade_import_source(
+                    oracle.chunk_table,
+                    source_chunk_id,
+                    target_file,
+                    facade_app_path,
+                )
+            }
+        };
+        let checked = vendor::checked_vendor_replacement_action(
+            oracle.plan,
+            chunk,
+            &chunk_export,
+            &action,
+            &emitted_request,
+        );
+        planned.replacements.push(MaterializedVendorIntent::new(
+            info,
+            local_id.clone(),
+            chunk_export.clone(),
+            checked,
+            true,
+        ));
         planned.external_imports.extend(
             rewrites
-                .materialize(action, local_id, chunk, chunk_export, |path| {
-                    bundled_facade_import_source(
-                        oracle.chunk_table,
-                        source_chunk_id,
-                        target_file,
-                        path,
-                    )
-                })
+                .materialize_at(
+                    action,
+                    local_id,
+                    chunk,
+                    chunk_export,
+                    info.specifier_span,
+                    |path| {
+                        bundled_facade_import_source(
+                            oracle.chunk_table,
+                            source_chunk_id,
+                            target_file,
+                            path,
+                        )
+                    },
+                )
                 .into_iter()
                 .map(DeferredImport::into_module_item),
         );

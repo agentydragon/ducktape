@@ -578,10 +578,10 @@ fn captured_input_refs() -> BTreeSet<ValueInputRef> {
 
 fn expected_purity(value_inputs: BTreeSet<ValueInputRef>) -> Purity {
     Purity::Pure {
-        dependencies: ProofDependencies {
+        dependencies: Box::new(ProofDependencies {
             value_inputs,
             ..Default::default()
-        },
+        }),
     }
 }
 

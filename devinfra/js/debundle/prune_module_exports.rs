@@ -32,39 +32,94 @@
 //! - `Source`-bodied files (no AST) are upstream-verbatim and skipped.
 
 use binding_targets::module_export_name;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use artifact::paths::{join_module_path, module_path_dirname};
+use artifact::pruning::{PruningChanges, pruning_receipt, request_identity};
+use artifact::reports::{
+    CandidateRewriteElision, CandidateRewriteReceipt, CandidateRewriteStage,
+    CandidateSourceCorrespondence, OutputFileAddress,
+};
 use artifact::{ChunkBundle, FileRole, JsFile};
+use source_identity::ChunkId;
 use swc_ecma_ast::*;
 
-pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {
-    let mut modules: Vec<_> = bundle
-        .chunks
-        .iter_mut()
-        .flat_map(|chunk| &mut chunk.js.files)
-        .filter_map(|file| {
+pub fn prune_unimported_module_exports(
+    bundle: &mut ChunkBundle,
+    correspondence: &mut BTreeMap<ChunkId, CandidateSourceCorrespondence>,
+) -> Vec<CandidateRewriteReceipt> {
+    let mut modules = Vec::new();
+    let mut snapshots = Vec::new();
+    for chunk in &mut bundle.chunks {
+        for file in &mut chunk.js.files {
             let path = file_abs_path(file);
             let role = file.metadata.role;
-            Some((path, role, &mut file.ast_mut()?.module))
-        })
-        .collect();
-    prune_exports(&mut modules);
+            let output = OutputFileAddress {
+                chunk: chunk.chunk_id,
+                file: file.path.clone(),
+            };
+            let Some(ast) = file.ast_mut() else { continue };
+            let before = ast
+                .module
+                .body
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    request_identity(correspondence.get(&chunk.chunk_id), &output, index, item)
+                })
+                .collect::<Vec<_>>();
+            snapshots.push((output, before));
+            modules.push((path, role, &mut ast.module));
+        }
+    }
+    let changes = prune_exports(&mut modules);
+    let mut receipts = Vec::new();
+    for ((output, before), mut changes) in snapshots.into_iter().zip(changes) {
+        for (identity, issue) in before {
+            let index = identity.item_index;
+            let retained = changes
+                .retained_specifiers
+                .remove(&index)
+                .unwrap_or_else(|| {
+                    identity
+                        .bindings
+                        .iter()
+                        .map(|binding| binding.specifier_index)
+                        .collect()
+                });
+            receipts.push(pruning_receipt(
+                &output,
+                CandidateRewriteStage::DeadExportPruning,
+                identity,
+                issue,
+                changes.item_positions[index],
+                &retained,
+                changes.elisions.remove(&index).unwrap_or_default(),
+            ));
+        }
+    }
+    for source in correspondence.values_mut() {
+        source.apply_pruning_receipts(&mut receipts);
+    }
+    receipts
 }
 
-fn prune_exports(modules: &mut [(String, FileRole, &mut Module)]) {
-    let mut consumed: BTreeSet<String> = BTreeSet::new();
-    let mut namespace_protected: BTreeSet<String> = BTreeSet::new();
+fn prune_exports(modules: &mut [(String, FileRole, &mut Module)]) -> Vec<PruningChanges> {
+    let mut consumed = BTreeSet::new();
+    let mut namespace_protected = BTreeSet::new();
     for (path, _, module) in modules.iter() {
         collect_consumers(module, path, &mut consumed, &mut namespace_protected);
     }
-    for (path, role, module) in modules.iter_mut() {
-        if *role != FileRole::Module || namespace_protected.contains(path) {
-            continue;
-        }
-        let import_locals = collect_import_locals(module);
-        prune_local_named_exports(module, &consumed, &import_locals);
-    }
+    modules
+        .iter_mut()
+        .map(|(path, role, module)| {
+            if *role != FileRole::Module || namespace_protected.contains(path) {
+                return PruningChanges::preserved(module.body.len());
+            }
+            let import_locals = collect_import_locals(module);
+            prune_local_named_exports(module, &consumed, &import_locals)
+        })
+        .collect()
 }
 
 /// Local names bound by this module's `import` statements. A re-export of such
@@ -170,37 +225,57 @@ fn prune_local_named_exports(
     module: &mut Module,
     consumed: &BTreeSet<String>,
     import_locals: &BTreeSet<String>,
-) {
+) -> PruningChanges {
+    let mut changes = PruningChanges::default();
+    let mut item_index = 0;
+    let mut after_index = 0;
     module.body.retain_mut(|item| {
-        // Only local `export { ... }` blocks (no `from`) re-export bindings
-        // owned by this module. Re-exports, inline `export const/function`,
-        // and default exports are left untouched.
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-            return true;
-        };
-        if named.src.is_some() {
-            return true;
+        let index = item_index;
+        item_index += 1;
+        let mut keep = true;
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
+            && named.src.is_none()
+        {
+            let mut retained = Vec::new();
+            let mut elisions = Vec::new();
+            let mut specifier_index = 0;
+            named.specifiers.retain(|spec| {
+                let spec_index = specifier_index;
+                specifier_index += 1;
+                let keep = match spec {
+                    ExportSpecifier::Named(named) => {
+                        let local = module_export_name(&named.orig);
+                        let public = named
+                            .exported
+                            .as_ref()
+                            .map_or_else(|| local.clone(), module_export_name);
+                        let keep = import_locals.contains(&local) || consumed.contains(&public);
+                        if !keep && let ModuleExportName::Ident(local) = &named.orig {
+                            elisions.push(CandidateRewriteElision::DeadLocalExport {
+                                local: local.to_id(),
+                                exported_name: public,
+                            });
+                        }
+                        keep
+                    }
+                    _ => true,
+                };
+                if keep {
+                    retained.push(spec_index);
+                }
+                keep
+            });
+            keep = !named.specifiers.is_empty();
+            changes.retained_specifiers.insert(index, retained);
+            changes.elisions.insert(index, elisions);
         }
-        named.specifiers.retain(|spec| {
-            let ExportSpecifier::Named(n) = spec else {
-                return true;
-            };
-            // Re-export of an imported binding: keep it (pruning would orphan
-            // the import). Only dead exports of locally declared bindings —
-            // the decorator scaffolding — are pruned.
-            let local = module_export_name(&n.orig);
-            if import_locals.contains(&local) {
-                return true;
-            }
-            let public = match &n.exported {
-                Some(name) => module_export_name(name),
-                None => local.clone(),
-            };
-            consumed.contains(&public)
-        });
-        // Drop a now-empty `export {};` rather than emit it.
-        !named.specifiers.is_empty()
+        changes.item_positions.push(keep.then_some(after_index));
+        if keep {
+            after_index += 1;
+        }
+        keep
     });
+    changes
 }
 
 #[cfg(test)]
@@ -241,7 +316,7 @@ mod tests {
             .zip(files)
             .map(|((path, module), (_, _, role))| (format!("c/{path}"), *role, module))
             .collect();
-        prune_exports(&mut views);
+        let _ = prune_exports(&mut views);
         modules
     }
 
@@ -437,6 +512,61 @@ mod tests {
                 FileRole::Module,
             )]);
             assert_eq!(emitted_exports(&modules, "mod.js"), vec!["a".to_string()]);
+        });
+    }
+
+    #[test]
+    fn receipt_coordinates_preserve_import_shims_and_request_order() {
+        js_ast::with_swc_globals(|| {
+            let mut module = parse_js_module(
+                "module.js",
+                r#"
+                import { imported } from "./foreign.js";
+                const dead = 0;
+                const alive = 1;
+                export { dead as unused, alive as used, imported as bridge };
+                export { value as alias } from "./foreign.js";
+                export * from "./star.js";
+                export { dead as extra };
+                import "./last.js";
+            "#,
+            )
+            .unwrap()
+            .module;
+            let imports = collect_import_locals(&module);
+            let consumed = BTreeSet::from(["used".to_owned()]);
+            let changes = prune_local_named_exports(&mut module, &consumed, &imports);
+            assert_eq!(
+                changes.item_positions,
+                vec![
+                    Some(0),
+                    Some(1),
+                    Some(2),
+                    Some(3),
+                    Some(4),
+                    Some(5),
+                    None,
+                    Some(6)
+                ]
+            );
+            assert_eq!(changes.retained_specifiers[&3], vec![1, 2]);
+            assert!(
+                matches!(changes.elisions[&3].as_slice(), [CandidateRewriteElision::DeadLocalExport { exported_name, .. }] if exported_name == "unused")
+            );
+            assert!(
+                matches!(changes.elisions[&6].as_slice(), [CandidateRewriteElision::DeadLocalExport { exported_name, .. }] if exported_name == "extra")
+            );
+            assert!(
+                matches!(&module.body[4], ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_some())
+            );
+            assert!(matches!(
+                &module.body[5],
+                ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_))
+            ));
+            assert!(matches!(
+                &module.body[6],
+                ModuleItem::ModuleDecl(ModuleDecl::Import(_))
+            ));
         });
     }
 }

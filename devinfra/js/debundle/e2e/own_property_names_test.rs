@@ -1,6 +1,8 @@
 //! Guarded own-name inspection preserves exact keys without invoking getters.
 
 use analysis::analysis_provenance::InferenceRule;
+use analysis::execution_evidence::SkippedCallReason;
+use analysis::reports::schema::BindingEffectAuthorityReport;
 use analysis::reports::schema::InferenceUseReport;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
@@ -58,9 +60,7 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
             derivation_rules: BTreeSet::from([
                 InferenceRule::NativeIntegrity,
                 InferenceRule::NativeCallIdentity,
-                InferenceRule::OwnPropertySourceOrigin,
-                InferenceRule::OwnPropertyShape,
-                InferenceRule::OwnPropertyPrefixState,
+                InferenceRule::OwnPropertyStoreLayout,
                 InferenceRule::OwnPropertyNamesProjection,
             ]),
             value_input_refs: BTreeSet::new(),
@@ -102,6 +102,7 @@ console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
                 &[
                     Member::new("names"),
                     Member::new("argumentCalls"),
+                    Member::new("makeValue"),
                     Member::new("getterCalls"),
                     Member::new("argumentThrew"),
                 ],
@@ -110,6 +111,188 @@ console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
         ],
     ));
     assert_preserved_entry_output(&fixture, "field deferred 1 0 true\n");
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "argumentThrew")
+        })
+        .and_then(|node| node.synchronous_execution.as_ref())
+        .unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        panic!("caught source throw needs a complete operation receipt: {execution:#?}");
+    };
+    assert!(
+        receipt
+            .skipped_calls
+            .iter()
+            .any(|call| call.reason == SkippedCallReason::KnownThrow),
+        "the native body was not entered: {receipt:#?}"
+    );
+}
+
+#[test]
+fn a_caught_argument_throw_retains_the_outer_and_later_call_inventory() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function take(value, unused) { return value; }\nfunction stop() { throw 'stopped'; }\nfunction later() { console.log('unexpected'); return 0; }\nconst result = (() => { try { return take(stop(), later()); } catch (error) { return error === 'stopped'; } })();\nconst anchor = 7;\nconsole.log(result, anchor);\n",
+        vec![
+            logical_module("provider", &[Member::new("take"), Member::new("stop"), Member::new("later"), Member::new("anchor")]),
+            logical_module("observer", &[Member::new("result")]),
+        ],
+    ).with_unassigned_mode(unassigned_mode_inline()));
+    assert_preserved_entry_output(&fixture, "true 7\n");
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .and_then(|node| node.synchronous_execution.as_ref())
+        .unwrap();
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        panic!("actual caught throw must close its call inventory: {execution:#?}");
+    };
+    assert_eq!(
+        receipt.calls.len(),
+        2,
+        "only the outer arrow and stop were invoked: {receipt:#?}"
+    );
+    assert_eq!(
+        receipt.skipped_calls.len(),
+        2,
+        "the outer take and later argument must each remain accounted for: {receipt:#?}"
+    );
+    assert!(
+        receipt
+            .skipped_calls
+            .iter()
+            .all(|call| call.reason == SkippedCallReason::KnownThrow),
+        "{receipt:#?}"
+    );
+}
+
+#[test]
+fn a_returning_try_bypasses_its_catch_calls() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function unreachable() { console.log('unexpected'); return 0; }\nconst result = (() => { try { return 41; } catch (error) { return unreachable(); } })();\nconst anchor = 7;\nconsole.log(result, anchor);\n",
+        vec![logical_module("provider", &[Member::new("unreachable"), Member::new("anchor")]), logical_module("observer", &[Member::new("result")])],
+    ).with_unassigned_mode(unassigned_mode_inline()));
+    assert_preserved_entry_output(&fixture, "41 7\n");
+    let graph = fixture.dependency_graph();
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .and_then(|node| node.synchronous_execution.as_ref())
+        .unwrap();
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        panic!("normal return bypass must retain handler evidence: {execution:#?}");
+    };
+    assert_eq!(receipt.skipped_calls.len(), 1, "{receipt:#?}");
+    assert_eq!(
+        receipt.skipped_calls[0].reason,
+        SkippedCallReason::HandlerNotEntered
+    );
+}
+
+#[test]
+fn unsupported_handler_scopes_and_unknown_abrupt_paths_keep_conservative_coverage() {
+    for (source, expected, expect_unresolved_completion) in [
+        (
+            "const result = (() => { try { throw 1; } finally { return 2; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "2 42\n",
+            true,
+        ),
+        (
+            "const result = (() => { try { return 1; } finally { return 2; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "2 42\n",
+            true,
+        ),
+        (
+            "const result = (() => { try { try { return 1; } finally { throw 2; } } catch (error) { return error; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "2 42\n",
+            true,
+        ),
+        (
+            "const result = (() => { { let local = 41; return local; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "41 42\n",
+            true,
+        ),
+        (
+            "const result = (() => { try { const local = 41; return local; } catch (error) { return 0; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "41 42\n",
+            false,
+        ),
+        (
+            "const result = (() => { try { return later; } catch (error) { return 7; } })();\nconst later = 42;\nconsole.log(result, later);\n",
+            "7 42\n",
+            false,
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &[Member::new("result"), Member::new("later")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        let graph = fixture.dependency_graph();
+        let execution = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "result")
+            })
+            .and_then(|node| node.synchronous_execution.as_ref())
+            .unwrap();
+        if expect_unresolved_completion {
+            assert!(
+                !execution.complete,
+                "a flattened source summary cannot prove body completion: {execution:#?}"
+            );
+            assert!(
+                !execution.precision_losses.is_empty(),
+                "the missing completion transform must remain visible: {execution:#?}"
+            );
+        }
+        assert!(
+            !matches!(
+                execution.binding_effect_authority,
+                Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+            ),
+            "unsupported or unknown completion cannot seal an operation receipt: {execution:#?}"
+        );
+    }
 }
 
 fn expect_own_name_split_rejection(source: &str, extra_members: &[&'static str]) {

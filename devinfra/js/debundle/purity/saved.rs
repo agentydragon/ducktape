@@ -25,8 +25,12 @@ pub struct SavedPurityGraph {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SavedPurity {
-    Pure { dependencies: ProofDependencies },
-    NotPure { reasons: Vec<SavedReason> },
+    Pure {
+        dependencies: Box<ProofDependencies>,
+    },
+    NotPure {
+        reasons: Vec<SavedReason>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -153,7 +157,7 @@ mod tests {
             ..ProofDependencies::default()
         };
         let cause = Arc::new(Purity::Pure {
-            dependencies: dependencies.clone(),
+            dependencies: Box::new(dependencies.clone()),
         });
         let root = Arc::new(Purity::NotPure {
             reasons: vec![PurityReason {
@@ -187,7 +191,12 @@ mod tests {
             reasons[0].cause.as_ref().expect("cause"),
             &cause
         ));
-        assert_eq!(cause.as_ref(), &Purity::Pure { dependencies });
+        assert_eq!(
+            cause.as_ref(),
+            &Purity::Pure {
+                dependencies: Box::new(dependencies)
+            }
+        );
     }
 
     #[test]

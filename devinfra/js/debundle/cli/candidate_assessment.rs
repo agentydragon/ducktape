@@ -1,9 +1,9 @@
-//! Opt-in full-context inputs for report-only effect relocation assessment on
+//! Full-context inputs for candidate relocation assessment on
 //! an in-memory graph-backed edit candidate.
 //!
 //! These arguments deliberately remain separate from [`GraphEditArgs`]: the
-//! graph gate is still authoritative, while an assessment requires a verified
-//! staged artifact and the full tree transform context.
+//! verified ownership writes require an assessment from a staged artifact
+//! and the full tree transform context.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -22,8 +22,58 @@ pub enum EffectAssessmentUnavailable {
     AnalysisNotSupplied,
 }
 
-/// Shared opt-in CLI flags used by graph-backed edits that can assess a full
-/// in-memory candidate through the canonical lowering path.
+/// Rejection of a verified write, carrying the exact canonical report that
+/// caused it. Both text errors and JSON use this same decision.
+#[derive(Debug)]
+pub struct CandidateAssessmentRejection {
+    pub report: gate::ApplicationRelocationAssessmentReport,
+    reason: anyhow::Error,
+}
+
+impl std::fmt::Display for CandidateAssessmentRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.reason)
+    }
+}
+
+impl std::error::Error for CandidateAssessmentRejection {}
+
+/// Preview acceptance uses the same private final-output seal and exact
+/// candidate document identity as a verified ownership write.
+pub fn candidate_write_is_accepted(
+    assessment: Option<&gate::ApplicationRelocationAssessmentReport>,
+    candidate_modules: &BTreeMap<String, LogicalModule>,
+) -> bool {
+    assessment.is_some_and(|assessment| {
+        pipeline::ensure_candidate_emittable_for_write(assessment, candidate_modules, false).is_ok()
+    })
+}
+
+pub fn ensure_candidate_write(
+    assessment: Option<&gate::ApplicationRelocationAssessmentReport>,
+    candidate_modules: &BTreeMap<String, LogicalModule>,
+    dry_run: bool,
+    no_verify: bool,
+) -> Result<()> {
+    if dry_run || no_verify {
+        return Ok(());
+    }
+    let assessment = assessment.context(
+        "validated ownership write needs_full_assessment: supply --analysis and complete tree transform context, or use --no-verify for an explicitly unvalidated write"
+    )?;
+    pipeline::ensure_candidate_emittable_for_write(assessment, candidate_modules, false).map_err(
+        |reason| {
+            CandidateAssessmentRejection {
+                report: assessment.clone(),
+                reason,
+            }
+            .into()
+        },
+    )
+}
+
+/// Shared CLI flags for assessing a full in-memory candidate through the
+/// canonical lowering path.
 #[derive(Debug, clap::Args, Clone, Default)]
 pub struct CandidateEffectAssessmentArgs {
     /// Full tree transform inputs used only with `--analysis`.
@@ -56,17 +106,6 @@ pub struct ResolvedCandidateEffectAssessment<'a> {
 }
 
 impl CandidateEffectAssessmentArgs {
-    /// Resolve opt-in assessment inputs and enforce the CLI trust boundary.
-    /// With no `--analysis`, all transform-context flags must remain absent,
-    /// preserving the ordinary graph-only edit path.
-    pub fn resolve<'a>(
-        &self,
-        edit: &GraphEditArgs,
-        source_context: Option<&'a VerifiedGraphSourceContext>,
-    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, false)
-    }
-
     /// Callers use this only when they assess final candidate documents and
     /// enforce canonical placement before any write.
     pub fn resolve_for_verified_write<'a>(
@@ -74,14 +113,13 @@ impl CandidateEffectAssessmentArgs {
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, true)
+        self.resolve_candidate(edit, source_context)
     }
 
-    fn resolve_with_write_policy<'a>(
+    fn resolve_candidate<'a>(
         &self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
-        allow_write: bool,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis_path) = &self.analysis else {
             ensure!(
@@ -93,10 +131,6 @@ impl CandidateEffectAssessmentArgs {
             return Ok(None);
         };
 
-        ensure!(
-            edit.dry_run || allow_write,
-            "candidate effect assessment requires --dry-run"
-        );
         ensure!(
             !edit.no_verify && edit.dependency_graph_path.is_some(),
             "candidate effect assessment requires graph validation"
@@ -116,32 +150,20 @@ impl CandidateEffectAssessmentArgs {
 }
 
 impl CandidateEffectAssessmentExistingTreeArgs {
-    /// Resolve assessment inputs using the command's existing tree
-    /// config and module-root flags, so each option has one CLI owner.
-    pub fn resolve<'a>(
-        &self,
-        edit: &GraphEditArgs,
-        source_context: Option<&'a VerifiedGraphSourceContext>,
-        tree_config: Option<&std::path::Path>,
-    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, tree_config, false)
-    }
-
     pub fn resolve_for_verified_write<'a>(
         &self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         tree_config: Option<&std::path::Path>,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, tree_config, true)
+        self.resolve_candidate(edit, source_context, tree_config)
     }
 
-    fn resolve_with_write_policy<'a>(
+    fn resolve_candidate<'a>(
         &self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         tree_config: Option<&std::path::Path>,
-        allow_write: bool,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis) = &self.analysis else {
             ensure!(
@@ -161,7 +183,7 @@ impl CandidateEffectAssessmentExistingTreeArgs {
             },
             analysis: Some(analysis.clone()),
         };
-        args.resolve_with_write_policy(edit, source_context, allow_write)
+        args.resolve_candidate(edit, source_context)
     }
 }
 
@@ -173,7 +195,7 @@ impl ResolvedCandidateEffectAssessment<'_> {
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
         analysis_engine_sha256: &'static str,
-    ) -> Result<gate::CandidateRelocationAssessmentReport> {
+    ) -> Result<gate::ApplicationRelocationAssessmentReport> {
         pipeline::assess_candidate_effect_relocation(
             &self.transform,
             AnalysisArtifactInput {

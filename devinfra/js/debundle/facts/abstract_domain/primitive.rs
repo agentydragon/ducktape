@@ -86,7 +86,11 @@ pub(crate) fn update_throws(operand: PrimKinds) -> bool {
 /// ECMA-262 § 13.15.3 `ApplyStringOrNumericBinaryOperator` and the relational
 /// and equality operators. `None` for the short-circuit operators, whose
 /// result is one of their operands.
-fn binary(op: BinaryOp, left: Option<PrimKinds>, right: Option<PrimKinds>) -> Option<PrimKinds> {
+pub(crate) fn binary(
+    op: BinaryOp,
+    left: Option<PrimKinds>,
+    right: Option<PrimKinds>,
+) -> Option<PrimKinds> {
     let (left, right) = (
         left.unwrap_or(PrimKinds::ANY),
         right.unwrap_or(PrimKinds::ANY),

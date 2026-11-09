@@ -613,14 +613,20 @@ impl ArgumentNoEscapeFacts {
         inputs: &[ResolvedArgumentInput],
         dynamic_scope: bool,
     ) -> Self {
-        let mut callables = CallableInferenceInputs::default();
+        let mut callables = CallableInferenceInputs {
+            heap_resolver: Some(flow.heap_resolver()),
+            ..Default::default()
+        };
         let mut selected = BTreeMap::<Id, Vec<(u32, usize, usize)>>::new();
         let mut rules = BTreeMap::new();
         for input in inputs {
             let binding = &input.binding;
             let function = input.function_start;
             let values = flow.values_of_binding(binding);
-            if !values.iter().eq([Value::Alloc(Kind::Function, function)]) {
+            if !values.iter().eq([Value::Alloc(
+                Kind::Function,
+                flow.heap_address(Kind::Function, function),
+            )]) {
                 continue;
             }
             let rebound = statements.iter().any(|statement| {

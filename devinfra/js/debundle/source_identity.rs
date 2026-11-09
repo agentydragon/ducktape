@@ -10,6 +10,16 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct ChunkId(pub usize);
 
+/// Identity of one declarative module binding cell in a source chunk.
+/// `declaration_origin` is an AST source offset; `chunk` scopes it to the
+/// chunk where that declaration was found. This is a runtime identity only:
+/// persisted facts encode the checked chunk name instead of the interned ID.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ModuleCellId {
+    pub chunk: ChunkId,
+    pub declaration_origin: u32,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ChunkTable {
     names: Vec<String>,
@@ -33,6 +43,10 @@ impl ChunkTable {
 
     pub fn name(&self, id: ChunkId) -> &str {
         &self.names[id.0]
+    }
+
+    pub fn try_name(&self, id: ChunkId) -> Option<&str> {
+        self.names.get(id.0).map(String::as_str)
     }
 
     pub fn len(&self) -> usize {

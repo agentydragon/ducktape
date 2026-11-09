@@ -1,9 +1,1717 @@
-//! Public-pipeline controls for conservative, report-only effect TV.
+//! Public-pipeline controls for the authoritative effect/structural verdict.
 
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
+
+const REEXPORT_PEER_SOURCE: &str =
+    "console.log('peer'); globalThis.marker = 1; export const shared = 1;\n";
+
+#[test]
+fn known_optional_callee_composes_arguments_and_relocates() {
+    let source = "let argumentCalls = 0; function argument() { argumentCalls++; return 20; } function calculate(value) { return value + 22; } const readLater = () => later; const result = calculate?.(argument()); const later = 1; console.log(result, argumentCalls, readLater());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "work",
+                    &[
+                        Member::new("argumentCalls"),
+                        Member::new("argument"),
+                        Member::new("calculate"),
+                        Member::new("readLater"),
+                        Member::new("result"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        "known-optional-call",
+    );
+    assert_preserved_entry_output(&fixture, "42 1 1\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_operation_receipt(&fixture, "result", 2);
+}
+
+#[test]
+fn optional_callee_is_selected_before_argument_replacement() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "let calls = 0; let selected = value => value + 22; function replacement() { return 99; } function argument() { calls++; selected = replacement; return 20; } const result = selected?.(argument()); console.log(result, calls, selected());\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "42 1 99\n");
+    assert_operation_receipt(&fixture, "result", 2);
+}
+
+#[test]
+fn nullable_optional_callee_keeps_short_circuit_and_no_invocation_receipt() {
+    for input in ["null", ""] {
+        let source = format!(
+            "let calls = 0; function argument() {{ calls++; throw 'argument'; }} function run(target) {{ return target?.(argument()); }} const result = run({input}); console.log(result, calls);\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "undefined 0\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "an unproved short-circuit frontier cannot fabricate a call: {execution}"
+        );
+    }
+    let non_callable = run_fixture(
+        FixtureOpts::new(
+            "function run(target) { return target?.(); } const result = run(42); console.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_error(&non_callable, "TypeError");
+    let execution = binding_execution_report(&non_callable, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution}"
+    );
+}
+
+#[test]
+fn optional_call_retains_the_actual_captured_read_conflict() {
+    let source = "let state = 0; function read() { return state; } const result = read?.(); state = 42; console.log(result, state);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 42\n");
+    assert_operation_receipt(&baseline, "result", 1);
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "state",
+                    &[Member::new("state"), Member::new("read")],
+                    &["state = 42;"],
+                ),
+                logical_module("observer", &[Member::new("result")]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        3,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert_eq!(report["decision"]["status"], "conflict", "{report}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_node_output(&rejected.entry_path(), "42 42\n", "");
+}
+
+#[test]
+fn immediate_source_callables_compose_creation_arguments_and_body() {
+    for (case, callee) in [
+        ("arrow", "(value => value + 22)"),
+        ("function", "(function (value) { return value + 22; })"),
+        (
+            "named-function",
+            "(function calculate(value) { return value + 22; })",
+        ),
+    ] {
+        let source = format!(
+            "let argumentCalls = 0; function argument() {{ argumentCalls++; return 20; }} const readLater = () => later; const result = {callee}(argument()); const later = 1; console.log(result, argumentCalls, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[
+                            Member::new("argumentCalls"),
+                            Member::new("argument"),
+                            Member::new("readLater"),
+                            Member::new("result"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("immediate-callable-{case}"),
+        );
+        assert_preserved_entry_output(&fixture, "42 1 1\n");
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+        assert_operation_receipt(&fixture, "result", 2);
+    }
+}
+
+#[test]
+fn named_callee_keeps_self_identity_before_defaults_and_through_capture() {
+    for (case, source, expected) in [
+        (
+            "named-self-default",
+            "const result = (function self(value = self) { return value; })(); console.log(result === result());\n",
+            "true\n",
+        ),
+        (
+            "named-self-shadow",
+            "const result = (function self(self) { return self; })(42); console.log(result);\n",
+            "42\n",
+        ),
+        (
+            "named-self-capture",
+            "const factory = function self() { return () => self; }; const captured = factory(); const other = factory(); const result = captured(); console.log(result === factory, other() === factory);\n",
+            "true true\n",
+        ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        assert_operation_receipt(&fixture, "result", 1);
+        if case == "named-self-capture" {
+            for binding in ["captured", "other", "result"] {
+                let execution = binding_execution_report(&fixture, binding);
+                for access in ["allocations", "reads", "writes"] {
+                    assert!(
+                        execution["heap_frontier"]["composed_synchronous_calls"][access]["sample"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .all(|cell| cell["kind"] != "lexical_cell"),
+                        "an immutable name view is not a new activation storage location: {execution:#}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn named_callee_self_assignment_remains_abrupt() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const result = (function self() { self = 42; return 1; })(); console.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution}"
+    );
+}
+
+#[test]
+fn immediate_source_call_keeps_its_actual_captured_cell_read() {
+    let source =
+        "let state = 0; const result = (() => state)(); state = 42; console.log(result, state);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 42\n");
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("state", &[Member::new("state")], &["state = 42;"]),
+                logical_module("observer", &[Member::new("result")]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        3,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert_eq!(
+        report["status"], "blocked_by_effect_and_placement",
+        "{report}"
+    );
+    assert_eq!(report["decision"]["status"], "conflict", "{report}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_node_output(&rejected.entry_path(), "42 42\n", "");
+}
+
+#[test]
+fn immediate_call_creation_does_not_certify_unsupported_invocations() {
+    for (callee, expected) in [
+        ("(async () => 42)", "object 1\n"),
+        ("(function* () { yield 42; })", "object 1\n"),
+        ("(function () { return this; })", "undefined 1\n"),
+    ] {
+        let source = format!(
+            "const result = {callee}(); const later = 1; console.log(typeof result, later);\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution}"
+        );
+    }
+}
+
+#[test]
+fn binding_updates_compose_read_numeric_conversion_and_store() {
+    for (case, body, expected) in [
+        (
+            "postfix-increment",
+            "let state = 40; const before = state++; return before + state;",
+            "81 1\n",
+        ),
+        (
+            "prefix-increment",
+            "let state = 40; const after = ++state; return after + state;",
+            "82 1\n",
+        ),
+        (
+            "postfix-decrement",
+            "let state = 40; const before = state--; return before + state;",
+            "79 1\n",
+        ),
+        (
+            "prefix-decrement",
+            "let state = 40; const after = --state; return after + state;",
+            "78 1\n",
+        ),
+        (
+            "string-conversion",
+            "let state = '40'; const before = state++; return before + state;",
+            "81 1\n",
+        ),
+    ] {
+        let source = format!(
+            "const readLater = () => later; function advance() {{ {body} }} const result = advance(); const later = 1; console.log(result, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[
+                            Member::new("readLater"),
+                            Member::new("advance"),
+                            Member::new("result"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("binding-update-{case}"),
+        );
+        assert_preserved_entry_output_with_host_setup(
+            &fixture,
+            "",
+            expected,
+            &format!("binding-update-{case}"),
+        );
+        assert!(
+            fixture.effect_translation_validation()["swapped_pairs"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        assert_operation_receipt(&fixture, "result", 1);
+    }
+    let provider = "export function advance() { let state = 40; const before = state++; const after = ++state; return { before, after, state }; }";
+    let chunks = [("static/peer", provider)];
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new("import { advance } from './peer.js'; const readLater = () => later; const result = advance(); const later = 1; console.log(result.before, result.after, result.state, readLater());\n", vec![
+            logical_module("work", &[Member::new("readLater"), Member::new("result")]),
+            logical_module("value", &[Member::new("later")]),
+        ]).with_extra_chunks(&chunks),
+        "binding-update-imported",
+    );
+    assert_preserved_entry_output_with_host_setup(
+        &fixture,
+        "",
+        "40 42 42 1\n",
+        "binding-update-imported",
+    );
+    assert_operation_receipt(&fixture, "result", 1);
+}
+
+#[test]
+fn captured_binding_updates_keep_the_actual_cell_conflict() {
+    let source = "function make() { let state = 40; return { read: () => state, advance: () => state++ }; } const api = make(); const before = api.read(); const old = api.advance(); const after = api.read(); console.log(before, old, after);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output_with_host_setup(
+        &fixture,
+        "",
+        "40 40 41\n",
+        "binding-update-captured",
+    );
+    for binding in ["before", "old", "after"] {
+        assert_operation_receipt(&fixture, binding, 1);
+    }
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "writer",
+                &[Member::new("make"), Member::new("api"), Member::new("old")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let rows = read_jsonl(&rejected.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 3 && pair["runs_later"]["unit"] == 2)
+        .unwrap_or_else(|| panic!("counter update crossed its earlier observer: {rows:#?}"));
+    assert_eq!(pair["havoc"], false, "{pair:#}");
+    assert!(
+        pair["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|cell| cell["cell"]["kind"] == "lexical_cell"
+                && !cell["first_write"].is_null()
+                && !cell["later_read"].is_null()),
+        "{pair:#}"
+    );
+}
+
+#[test]
+fn binding_updates_keep_tdz_const_coercion_and_bigint_uncertainty() {
+    for (case, source, error) in [
+        (
+            "tdz",
+            "function advance() { return state++; } const result = advance(); let state = 1;",
+            "ReferenceError",
+        ),
+        (
+            "const",
+            "function make() { const state = 1; return () => state++; } const advance = make(); const result = advance();",
+            "TypeError",
+        ),
+        (
+            "symbol",
+            "function advance(seed) { return seed++; } const result = advance(Symbol());",
+            "TypeError",
+        ),
+        (
+            "const-after-coercion",
+            "function advance() { const state = { valueOf() { console.log('coerce'); return 1; } }; return state++; } const result = advance();",
+            "TypeError",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_error_with_host_setup(
+            &fixture,
+            "",
+            error,
+            &format!("binding-update-{case}"),
+        );
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+    }
+    for (case, source, expected) in [
+        (
+            "object-coercion",
+            "function advance(seed) { const before = seed++; return before + seed; } const seed = { valueOf() { console.log('coerce'); return 40; } }; const result = advance(seed); console.log(result);",
+            "coerce\n81\n",
+        ),
+        (
+            "bigint",
+            "function advance() { let state = 40n; return state++; } const result = advance(); console.log(result);",
+            "40n\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output_with_host_setup(
+            &fixture,
+            "",
+            expected,
+            &format!("binding-update-{case}"),
+        );
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+    }
+}
+
+#[test]
+fn captured_declarative_cells_compose_through_actual_argument_calls() {
+    for (case, body, observe, calls) in [
+        ("parameter", "return () => seed;", "result()", 1),
+        (
+            "let",
+            "let state = seed; return () => state;",
+            "result()",
+            1,
+        ),
+        (
+            "const",
+            "const state = seed; return () => state;",
+            "result()",
+            1,
+        ),
+        (
+            "eager-read",
+            "const state = seed; const read = () => state; return read();",
+            "result",
+            2,
+        ),
+    ] {
+        let source = format!(
+            "const readLater = () => later; function make(seed) {{ {body} }} const result = make(41); const later = 1; console.log({observe}, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[
+                            Member::new("readLater"),
+                            Member::new("make"),
+                            Member::new("result"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("captured-cell-{case}"),
+        );
+        assert_preserved_entry_output(&fixture, "41 1\n");
+        assert!(
+            fixture.effect_translation_validation()["swapped_pairs"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        assert_operation_receipt(&fixture, "result", calls);
+    }
+}
+
+#[test]
+fn captured_cell_effects_preserve_observer_write_conflicts() {
+    let aliases = run_fixture(FixtureOpts::new(
+        "function make() { let state = 1; return { read: () => state, write: () => state = 42 }; } const api = make(); const read = api.read; const write = api.write; const before = read(); const after = write(); console.log(before, after);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&aliases, "1 42\n");
+    for (binding, calls) in [
+        ("api", 1),
+        ("read", 0),
+        ("write", 0),
+        ("before", 1),
+        ("after", 1),
+    ] {
+        assert_operation_receipt(&aliases, binding, calls);
+    }
+    for (source, writer_bindings) in [
+        (
+            "function make() { let state = 1; return { read: () => state, write: () => state = 42 }; } const api = make(); const before = api.read(); const after = api.write(); console.log(before, after);\n",
+            &["make", "api", "after"][..],
+        ),
+        (
+            "function make() { let state = 1; return () => ({ read: () => state, write: () => state = 42 }); } const build = make(); const left = build(); const right = build(); const before = left.read(); const after = right.write(); console.log(before, after);\n",
+            &["make", "build", "left", "right", "after"][..],
+        ),
+    ] {
+        let colocated = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&colocated, "1 42\n");
+        let before = binding_execution_report(&colocated, "before");
+        let after = binding_execution_report(&colocated, "after");
+        let cell = before["heap_frontier"]["heap_access_provenance"]["executed_operations"]["reads"]["sample"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|cell| cell["kind"] == "lexical_cell")
+            .unwrap();
+        assert!(cell["instance"].is_number(), "{cell:#}");
+        assert!(
+            after["heap_frontier"]["heap_access_provenance"]["executed_operations"]["writes"]["sample"]
+                .as_array()
+                .unwrap()
+                .contains(cell),
+            "aliases, including inner factory activations, must address the same outer cell: {before:#} {after:#}"
+        );
+        let members: Vec<_> = writer_bindings
+            .iter()
+            .map(|binding| Member::new(binding))
+            .collect();
+        let fixture = run_rejection_fixture_with_args(
+            FixtureOpts::new(source, vec![logical_module("writer", &members)])
+                .with_unassigned_mode(unassigned_mode_inline()),
+            &["--effect-conflicts-jsonl"],
+            1,
+        );
+        let graph = fixture.dependency_graph();
+        let [before_unit, after_unit] = ["before", "after"].map(|binding| {
+            let id = source_unit_for_binding(&graph, binding);
+            graph
+                .nodes
+                .iter()
+                .find(|node| node.id == id)
+                .expect("selected captured-cell operation owner")
+                .statement_ordinal
+                .0
+        });
+        let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+        let pair = rows
+            .iter()
+            .find(|pair| {
+                pair["runs_first"]["unit"] == after_unit
+                    && pair["runs_later"]["unit"] == before_unit
+            })
+            .unwrap_or_else(|| panic!("captured write crossed its earlier observer: {rows:#?}"));
+        assert_eq!(pair["havoc"], false, "{pair:#}");
+        assert!(
+            pair["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|access| &access["cell"] == cell
+                    && !access["first_write"].is_null()
+                    && !access["later_read"].is_null()),
+            "{pair:#}"
+        );
+    }
+}
+
+#[test]
+fn escaped_and_recursive_capture_paths_keep_uncovered_effects() {
+    for (source, expected) in [
+        (
+            "function make() { let state = 1; const read = () => state; globalThis.saved = read; globalThis.reenter?.(read); return read; } const selected = make(); console.log(selected());\n",
+            "1\n",
+        ),
+        (
+            "function make(count) { let state = count; const read = () => state; return count ? make(count - 1) : read; } const selected = make(1); console.log(selected());\n",
+            "0\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "selected");
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "opaque escape and recursive source summaries cannot mint addressed-cell coverage: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn captured_cell_receipts_do_not_cover_tdz_const_or_argument_throws() {
+    for (source, error) in [
+        (
+            "function make() { const read = () => state; const result = read(); let state = 1; return result; } const result = make(); console.log(result);\n",
+            "ReferenceError",
+        ),
+        (
+            "function make() { const state = 1; return () => state = 2; } const write = make(); const result = write(); console.log(result);\n",
+            "TypeError",
+        ),
+        (
+            "function make(seed) { return () => seed; } const result = make(later()); var later = () => 41; console.log(result);\n",
+            "TypeError",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum DescriptorAssignmentScope {
+    Root,
+    Local,
+    LocalConst,
+    Imported,
+}
+
+fn assert_descriptor_assignment_relocation(scope: DescriptorAssignmentScope) {
+    let operations = "const record = { value: 42 }; const extra = { value: 43, added: () => 1 }; const result = Object.assign(Object.defineProperties({ defaults: true }, Object.getOwnPropertyDescriptors(record)), extra);";
+    let observe = "const later = 1; console.log(result.value, result.defaults, result.added(), readLater());\n";
+    let (source, provider, members, calls, case) = match scope {
+        DescriptorAssignmentScope::Root => (
+            format!("const readLater = () => later;\n{operations}\n{observe}"),
+            None,
+            vec![
+                Member::new("readLater"),
+                Member::new("record"),
+                Member::new("extra"),
+                Member::new("result"),
+            ],
+            3,
+            "descriptor-assignment-root",
+        ),
+        DescriptorAssignmentScope::Local => (
+            format!(
+                "const readLater = () => later;\nfunction make() {{ {operations} return result; }}\nconst result = make();\n{observe}"
+            ),
+            None,
+            vec![
+                Member::new("readLater"),
+                Member::new("make"),
+                Member::new("result"),
+            ],
+            4,
+            "descriptor-assignment-local",
+        ),
+        DescriptorAssignmentScope::LocalConst => (
+            format!(
+                "const readLater = () => later;\nfunction make() {{ const record = {{ value: 42 }}; const extra = {{ value: 43, added: () => 1 }}; const target = Object.defineProperties({{ defaults: true }}, Object.getOwnPropertyDescriptors(record)); const result = Object.assign(target, extra); return result; }}\nconst result = make();\n{observe}"
+            ),
+            None,
+            vec![
+                Member::new("readLater"),
+                Member::new("make"),
+                Member::new("result"),
+            ],
+            4,
+            "descriptor-assignment-local-const",
+        ),
+        DescriptorAssignmentScope::Imported => (
+            format!(
+                "import {{ make }} from './peer.js';\nconst readLater = () => later;\nconst result = make();\n{observe}"
+            ),
+            Some(format!(
+                "export function make() {{ {operations} return result; }}\n"
+            )),
+            vec![Member::new("readLater"), Member::new("result")],
+            1,
+            "descriptor-assignment-imported",
+        ),
+    };
+    let chunks: Vec<_> = provider
+        .as_deref()
+        .map(|source| vec![("static/peer", source)])
+        .unwrap_or_default();
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("work", &members),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+        case,
+    );
+    assert_preserved_entry_output(&fixture, "43 true 1 1\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_operation_receipt(&fixture, "result", calls);
+}
+
+#[test]
+fn native_descriptor_assignment_root_composes_real_set_effects() {
+    assert_descriptor_assignment_relocation(DescriptorAssignmentScope::Root);
+}
+
+#[test]
+fn native_descriptor_assignment_local_composes_real_set_effects() {
+    assert_descriptor_assignment_relocation(DescriptorAssignmentScope::Local);
+}
+
+#[test]
+fn native_descriptor_assignment_const_local_preserves_the_checked_result() {
+    assert_descriptor_assignment_relocation(DescriptorAssignmentScope::LocalConst);
+}
+
+#[test]
+fn native_descriptor_assignment_rejects_a_postcondition_changed_by_a_later_argument() {
+    let source = "function make() { const record = { value: 42 }; const extra = { value: 43 }; const descriptors = Object.getOwnPropertyDescriptors(record); const target = Object.defineProperties({ defaults: true }, descriptors); return Object.assign(target, (Object.defineProperties(target, descriptors), extra)); } const result = make(); console.log(result.value);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "43\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution:#}"
+    );
+}
+
+#[test]
+fn native_descriptor_recapture_keeps_an_accessor_replacing_a_data_slot_opaque() {
+    let source = "function make() { const source = { get value() { return later(); } }; const target = { value: 0 }; const applied = Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); const recaptured = Object.getOwnPropertyDescriptors(applied); return Object.defineProperties({}, recaptured); } const result = make(); console.log(result.value); var later = () => 42;\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution:#}"
+    );
+}
+
+#[test]
+fn native_descriptor_assignment_imported_composes_real_set_effects() {
+    assert_descriptor_assignment_relocation(DescriptorAssignmentScope::Imported);
+}
+
+#[test]
+fn native_descriptor_assignment_throws_do_not_gain_normal_receipts() {
+    for source in [
+        "const source = Object.freeze({ value: 1 }); const target = Object.defineProperties({}, Object.getOwnPropertyDescriptors(source)); const result = Object.assign(target, { value: 2 }); console.log(result);\n",
+        "const target = Object.freeze({}); const source = { value: 1 }; const result = Object.assign(target, source); console.log(result);\n",
+        "const source = { get value() { return later(); } }; const target = {}; const result = Object.assign(target, source); var later = () => 2; console.log(result);\n",
+        "const target = { set value(next) { later(); } }; const source = { value: 2 }; const result = Object.assign(target, source); var later = () => 2; console.log(result);\n",
+        "Object.defineProperty(Object.prototype, 'value', { set(next) { later(); } }); const target = {}; const source = { value: 2 }; const result = Object.assign(target, source); var later = () => 2; console.log(result);\n",
+        "const source = new Proxy({}, { ownKeys() { return later(); } }); const target = {}; const result = Object.assign(target, source); var later = () => []; console.log(result);\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+    }
+}
+
+#[test]
+fn native_assignment_coverage_preserves_actual_target_property_conflicts() {
+    let source = "const source = { value: 42 }; const target = { value: 1 }; const observed = target.value; const applied = Object.assign(target, source); console.log(observed, applied.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "work",
+                &[
+                    Member::new("source"),
+                    Member::new("target"),
+                    Member::new("applied"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 3 && pair["runs_later"]["unit"] == 2)
+        .unwrap_or_else(|| panic!("assignment crossed a target read: {rows:#?}"));
+    assert_eq!(pair["havoc"], false, "{pair:#}");
+    assert!(
+        pair["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|cell| cell["cell"]["kind"] == "own_property"
+                && !cell["first_write"].is_null()
+                && !cell["later_read"].is_null()),
+        "{pair:#}"
+    );
+}
+
+#[test]
+fn own_data_root_initializer_uses_the_shared_field_read_receipt() {
+    let source = "const record = { value: 42 }; const readLater = () => later; const result = record.value; const later = 1; console.log(result, readLater());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "work",
+                    &[
+                        Member::new("record"),
+                        Member::new("readLater"),
+                        Member::new("result"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        "own-data-root-read",
+    );
+    assert_preserved_entry_output(&fixture, "42 1\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_operation_receipt(&fixture, "result", 0);
+}
+
+#[test]
+fn own_data_root_initializer_keeps_getter_proxy_and_tdz_failures_uncovered() {
+    for (source, error) in [
+        (
+            "const record = { get value() { return later(); } }; const result = record.value; var later = () => 42; console.log(result);\n",
+            "TypeError",
+        ),
+        (
+            "const record = new Proxy({}, { get() { return later(); } }); const result = record.value; var later = () => 42; console.log(result);\n",
+            "TypeError",
+        ),
+        (
+            "const result = record.value; const record = { value: 42 }; console.log(result);\n",
+            "ReferenceError",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+    }
+}
+
+struct NativeDescriptorControl {
+    case: &'static str,
+    operations: &'static str,
+    observe: &'static str,
+    expected: &'static str,
+    extra_binding: Option<&'static str>,
+    body_calls: usize,
+}
+
+const NATIVE_DESCRIPTOR_CONTROLS: [NativeDescriptorControl; 3] = [
+    NativeDescriptorControl {
+        case: "capture",
+        operations: "const result = Object.getOwnPropertyDescriptors(record);",
+        observe: "result.value.value",
+        expected: "42 1\n",
+        extra_binding: None,
+        body_calls: 1,
+    },
+    NativeDescriptorControl {
+        case: "names",
+        operations: "const result = Object.getOwnPropertyNames(record);",
+        observe: "result.join(',')",
+        expected: "value 1\n",
+        extra_binding: None,
+        body_calls: 1,
+    },
+    NativeDescriptorControl {
+        case: "apply",
+        operations: "const descriptors = Object.getOwnPropertyDescriptors(record); const result = Object.defineProperties({}, descriptors);",
+        observe: "result.value",
+        expected: "42 1\n",
+        extra_binding: Some("descriptors"),
+        body_calls: 2,
+    },
+];
+
+fn assert_native_descriptor_relocation(fixture: &Fixture, expected: &str, calls: usize) {
+    assert_preserved_entry_output(fixture, expected);
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_operation_receipt(fixture, "result", calls);
+}
+
+fn assert_native_descriptor_root(control: &NativeDescriptorControl) {
+    let source = format!(
+        "const record = {{ value: 42 }};\nconst readLater = () => later;\n{}\nconst later = 1;\nconsole.log({}, readLater());\n",
+        control.operations, control.observe
+    );
+    let mut members = vec![
+        Member::new("record"),
+        Member::new("readLater"),
+        Member::new("result"),
+    ];
+    if let Some(binding) = control.extra_binding {
+        members.push(Member::new(binding));
+    }
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("work", &members),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &format!("native-descriptor-root-{}", control.case),
+    );
+    assert_native_descriptor_relocation(&fixture, control.expected, 1);
+    if control.extra_binding.is_some() {
+        assert_operation_receipt(&fixture, "descriptors", 1);
+    }
+}
+
+fn assert_native_descriptor_local_body(control: &NativeDescriptorControl) {
+    let source = format!(
+        "const readLater = () => later;\nfunction make() {{ const record = {{ value: 42 }}; {} return result; }}\nconst result = make();\nconst later = 1;\nconsole.log({}, readLater());\n",
+        control.operations, control.observe
+    );
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "work",
+                    &[
+                        Member::new("readLater"),
+                        Member::new("make"),
+                        Member::new("result"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &format!("native-descriptor-local-{}", control.case),
+    );
+    assert_native_descriptor_relocation(&fixture, control.expected, control.body_calls + 1);
+}
+
+fn assert_native_descriptor_imported_body(control: &NativeDescriptorControl) {
+    let source = format!(
+        "import {{ make }} from './peer.js';\nconst readLater = () => later;\nconst result = make();\nconst later = 1;\nconsole.log({}, readLater());\n",
+        control.observe
+    );
+    let provider = format!(
+        "export function make() {{ const record = {{ value: 42 }}; {} return result; }}\n",
+        control.operations
+    );
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("work", &[Member::new("readLater"), Member::new("result")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", &provider)]),
+        &format!("native-descriptor-imported-{}", control.case),
+    );
+    assert_native_descriptor_relocation(&fixture, control.expected, 1);
+}
+
+macro_rules! native_descriptor_control {
+    ($name:ident, $check:ident, $index:expr) => {
+        #[test]
+        fn $name() {
+            $check(&NATIVE_DESCRIPTOR_CONTROLS[$index]);
+        }
+    };
+}
+
+native_descriptor_control!(
+    native_descriptor_root_capture,
+    assert_native_descriptor_root,
+    0
+);
+native_descriptor_control!(
+    native_descriptor_root_names,
+    assert_native_descriptor_root,
+    1
+);
+native_descriptor_control!(
+    native_descriptor_root_apply,
+    assert_native_descriptor_root,
+    2
+);
+native_descriptor_control!(
+    native_descriptor_local_capture,
+    assert_native_descriptor_local_body,
+    0
+);
+native_descriptor_control!(
+    native_descriptor_local_names,
+    assert_native_descriptor_local_body,
+    1
+);
+native_descriptor_control!(
+    native_descriptor_local_apply,
+    assert_native_descriptor_local_body,
+    2
+);
+native_descriptor_control!(
+    native_descriptor_imported_capture,
+    assert_native_descriptor_imported_body,
+    0
+);
+native_descriptor_control!(
+    native_descriptor_imported_names,
+    assert_native_descriptor_imported_body,
+    1
+);
+native_descriptor_control!(
+    native_descriptor_imported_apply,
+    assert_native_descriptor_imported_body,
+    2
+);
+
+#[test]
+fn native_descriptor_key_enumeration_conflicts_with_added_keys() {
+    let source = "const target = {};\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 42 });\nconst names = Object.getOwnPropertyNames(target);\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(names.join(','), applied.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "writer",
+                &[
+                    Member::new("target"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 3 && pair["runs_later"]["unit"] == 2)
+        .unwrap_or_else(|| panic!("the property definition crossed enumeration: {rows:#?}"));
+    assert_eq!(
+        pair["havoc"], false,
+        "both operations must have checked coverage: {pair:#}"
+    );
+    assert!(
+        pair["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|cell| cell["cell"]["kind"] == "object_shape"
+                && !cell["first_write"].is_null()
+                && !cell["later_read"].is_null()),
+        "key enumeration must observe descriptor shape: {pair:#}"
+    );
+}
+
+#[test]
+fn own_data_read_support_allows_disjoint_descriptor_relocation() {
+    let source = "const record = { value: 7 };\nconst observed = record.value;\nconst other = { value: 1 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 2 });\nconst applied = Object.defineProperties(other, descriptors);\nconsole.log(observed);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "a_mutator",
+                &[
+                    Member::new("other"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+}
+
+#[test]
+fn own_data_read_support_conflicts_with_replaced_descriptor() {
+    let source = "const target = { value: 7 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 42 });\nconst observed = target.value;\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(observed, applied.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "a_mutator",
+                &[
+                    Member::new("target"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 42\n",
+        "",
+    );
+    assert_node_output(&fixture.entry_path(), "42 42\n", "");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| {
+            pair["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["cell"]["kind"] == "object_shape"
+                        && cell["later_operation_support_reads"]
+                            .as_array()
+                            .is_some_and(|receipts| {
+                                receipts
+                                    .iter()
+                                    .any(|receipt| receipt["operation"] == "own_data_read")
+                            })
+                })
+            })
+        })
+        .unwrap_or_else(|| panic!("own-data shape support must appear on the conflict: {rows:#?}"));
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| {
+            cell["cell"]["kind"] == "object_shape"
+                && cell["later_operation_support_reads"]
+                    .as_array()
+                    .is_some_and(|receipts| {
+                        receipts
+                            .iter()
+                            .any(|receipt| receipt["operation"] == "own_data_read")
+                    })
+        })
+        .unwrap();
+    let receipt = cell["later_operation_support_reads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|receipt| receipt["operation"] == "own_data_read")
+        .unwrap();
+    assert_eq!(
+        receipt["support"]["kind"], "pooled_object_shape",
+        "{cell:#}"
+    );
+    assert_eq!(
+        receipt["support"]["origin"], cell["cell"]["origin"],
+        "the report must bind the read receipt to the projected shape cell: {cell:#}"
+    );
+    assert_eq!(
+        cell["first_write"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(
+        cell["later_read"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(cell["observed_conflict"], false, "{cell:#}");
+}
+
+#[test]
+fn writable_own_data_store_support_conflicts_with_getter_only_descriptor_relocation() {
+    let source = "const target = { value: 0 };\nfunction store() { return (target.value = 7); }\nconst stored = store();\nconst descriptor_source = { get value() { return 7; } };\nconst descriptors = Object.getOwnPropertyDescriptors(descriptor_source);\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(stored, target.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "a_readonly",
+                &[
+                    Member::new("target"),
+                    Member::new("descriptor_source"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 7\n",
+        "",
+    );
+    assert_node_error(&fixture.entry_path(), "TypeError");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| {
+            pair["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["cell"]["kind"] == "object_shape"
+                        && cell["later_operation_support_reads"]
+                            .as_array()
+                            .is_some_and(|receipts| {
+                                receipts.iter().any(|receipt| {
+                                    receipt["operation"] == "writable_own_data_store"
+                                })
+                            })
+                })
+            })
+        })
+        .unwrap_or_else(|| {
+            panic!("the getter-only descriptor must conflict with store support: {rows:#?}")
+        });
+    assert_eq!(
+        pair["havoc"], false,
+        "the control needs modeled evidence: {pair:#}"
+    );
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| {
+            cell["cell"]["kind"] == "object_shape"
+                && cell["later_operation_support_reads"]
+                    .as_array()
+                    .is_some_and(|receipts| {
+                        receipts
+                            .iter()
+                            .any(|receipt| receipt["operation"] == "writable_own_data_store")
+                    })
+        })
+        .unwrap();
+    let receipt = cell["later_operation_support_reads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|receipt| receipt["operation"] == "writable_own_data_store")
+        .unwrap();
+    assert_eq!(
+        cell["first_write"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(
+        cell["later_read"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(cell["observed_conflict"], false, "{cell:#}");
+    assert_eq!(
+        receipt["support"]["kind"], "pooled_object_shape",
+        "{cell:#}"
+    );
+    assert_eq!(
+        receipt["support"]["origin"], cell["cell"]["origin"],
+        "the writable-store receipt must name the exact projected shape conflict: {cell:#}"
+    );
+}
+
+#[test]
+fn writable_own_data_store_stays_conservative_when_freeze_crosses_it() {
+    let source = "const target = { value: 0 };\nconst stored = (target.value = 7);\nconst frozen = Object.freeze(target);\nconsole.log(stored, target.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "a_freezer",
+                &[Member::new("target"), Member::new("frozen")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 7\n",
+        "",
+    );
+    assert_node_error(&fixture.entry_path(), "TypeError");
+
+    let report = fixture.effect_translation_validation();
+    assert_ne!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    assert!(
+        rows.iter().any(|pair| pair["havoc"] == true),
+        "existing-target Object.freeze remains an overlapping unknown invalidator: {rows:#?}"
+    );
+}
+
+#[test]
+fn native_descriptor_application_keeps_target_and_prototype_throws() {
+    for (setup, target) in [
+        ("", "Object.freeze({})"),
+        ("Object.prototype.get = () => 0;", "{}"),
+    ] {
+        let source = format!(
+            "{setup}\nconst target = {target};\nconst descriptors = Object.getOwnPropertyDescriptors({{ value: 42 }});\nconst result = Object.defineProperties(target, descriptors);\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "a target/protocol throw cannot mint normal body coverage: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn native_descriptor_imports_require_intact_operations_in_every_chunk() {
+    for (setup, body, error) in [
+        (
+            "Object.getOwnPropertyDescriptors = () => later;",
+            "const record = { value: 42 }; return Object.getOwnPropertyDescriptors(record);",
+            "ReferenceError",
+        ),
+        (
+            "Object.prototype.get = () => 0;",
+            "const record = { value: 42 }; const descriptors = Object.getOwnPropertyDescriptors(record); return Object.defineProperties({}, descriptors);",
+            "TypeError",
+        ),
+        (
+            "Object.assign = () => later;",
+            "const source = { value: 42 }; return Object.assign({}, source);",
+            "ReferenceError",
+        ),
+        (
+            "Object.defineProperty(Object.prototype, 'value', { set(next) { later; } });",
+            "const source = { value: 42 }; return Object.assign({}, source);",
+            "ReferenceError",
+        ),
+    ] {
+        let source = format!(
+            "import {{ make }} from './peer.js';\n{setup}\nconst result = make();\nconst later = 42;\nconsole.log(result);\n"
+        );
+        let provider = format!("export function make() {{ {body} }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "a defining-chunk identity cannot discharge an importer mutation: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn symbolic_descriptor_receivers_have_no_unconditional_provider_summary() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "import { make } from './peer.js';\nconst result = make(new Proxy({}, { ownKeys() { return later; } }));\nconst later = [];\nconsole.log(result);\n", vec![],
+    ).with_extra_chunks(&[("static/peer", "export function make(record) { return Object.getOwnPropertyDescriptors(record); }\n")]));
+    assert_preserved_entry_error(&fixture, "ReferenceError");
+    let report: Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert!(
+        report["imported_callables"]["make"]["foreign_call"].is_null(),
+        "an opaque parameter establishes no ordinary-record protocol: {report:#}"
+    );
+}
+
+#[test]
+fn native_descriptor_provider_results_retain_deferred_accessor_arguments() {
+    for (returned, use_result) in [
+        ("descriptors", "result.value.get()"),
+        ("Object.defineProperties({}, descriptors)", "result.value"),
+    ] {
+        let source = format!(
+            "import {{ make }} from './peer.js';\nconst result = make(() => later);\nconst observed = {use_result};\nconst later = 42;\nconsole.log(observed);\n"
+        );
+        let provider = format!(
+            "export function make(read) {{ const record = {{ get value() {{ return read(); }} }}; const descriptors = Object.getOwnPropertyDescriptors(record); return {returned}; }}\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_error(&fixture, "ReferenceError");
+        assert_operation_receipt(&fixture, "result", 1);
+        let report: Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert_eq!(
+            report["imported_callables"]["make"]["foreign_call"]["retained_arguments"],
+            serde_json::json!([0]),
+            "captured getters must retain their actual argument graph: {report:#}"
+        );
+    }
+}
+
+fn assert_empty_collection_relocation(fixture: &Fixture, binding: &str, calls: usize) -> Value {
+    assert_preserved_entry_output(fixture, "true 42\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_operation_receipt(fixture, binding, calls)
+}
+
+#[test]
+fn empty_native_construction_roots_have_operation_receipts() {
+    for constructor in ["Map", "Set", "WeakMap", "WeakSet"] {
+        let source = format!(
+            "const collection = new {constructor}();\nconst readLater = () => later;\nconst later = 42;\nconsole.log(collection instanceof {constructor}, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[Member::new("collection"), Member::new("readLater")],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("empty-construction-root-{constructor}"),
+        );
+        let receipt = assert_empty_collection_relocation(&fixture, "collection", 1);
+        assert_eq!(receipt["calls"][0]["target"]["kind"], "native_construction");
+    }
+}
+
+#[test]
+fn empty_native_construction_local_bodies_compose_effects() {
+    for constructor in ["Map", "Set", "WeakMap", "WeakSet"] {
+        let source = format!(
+            "const readLater = () => later;\nfunction make() {{ const collection = new {constructor}(); return {{ collection }}; }}\nconst record = make();\nconst later = 42;\nconsole.log(record.collection instanceof {constructor}, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[
+                            Member::new("readLater"),
+                            Member::new("make"),
+                            Member::new("record"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("empty-construction-local-{constructor}"),
+        );
+        let receipt = assert_empty_collection_relocation(&fixture, "record", 2);
+        assert!(
+            receipt["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|edge| edge["target"]["kind"] == "native_construction"),
+            "{receipt}"
+        );
+    }
+}
+
+#[test]
+fn empty_native_construction_imported_bodies_compose_effects() {
+    for constructor in ["Map", "Set", "WeakMap", "WeakSet"] {
+        let source = format!(
+            "import {{ make as build }} from './peer.js';\nconst readLater = () => later;\nconst record = build();\nconst later = 42;\nconsole.log(record.collection instanceof {constructor}, readLater());\n"
+        );
+        let provider = format!(
+            "export function make() {{ const collection = new {constructor}(); return {{ collection }}; }}\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("work", &[Member::new("readLater"), Member::new("record")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+            &format!("empty-construction-imported-{constructor}"),
+        );
+        let receipt = assert_empty_collection_relocation(&fixture, "record", 1);
+        assert_eq!(receipt["calls"][0]["target"]["kind"], "imported_callable");
+    }
+}
+
+fn assert_expression_root_receipt(fixture: &Fixture, owner: usize, expected_calls: usize) -> Value {
+    let graph = fixture.dependency_graph();
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == owner)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+    assert_eq!(authority["authority"], "operation_receipt", "{authority}");
+    assert_eq!(authority["receipt"]["root_kind"], "expression_statement");
+    assert_eq!(
+        authority["receipt"]["calls"].as_array().unwrap().len(),
+        expected_calls
+    );
+    authority["receipt"].clone()
+}
+
+#[test]
+fn global_publication_uses_an_ordered_root_without_claiming_store_coverage() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function create() { return () => later; }\nglobalThis.saved = create();\nconst later = 42;\nconsole.log(globalThis.saved());\n",
+        vec![],
+    ));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "global-publication-ordered-refusal",
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let graph = fixture.dependency_graph();
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 1)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+    assert_eq!(
+        authority["authority"], "ordered_root_expression_uncovered",
+        "{execution:#?}"
+    );
+    assert!(!execution.complete, "{execution:#?}");
+    assert!(!execution.precision_losses.is_empty(), "{execution:#?}");
+    let coverage = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            coverage["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap()
+                > 0,
+            "{coverage}"
+        );
+    }
+}
+
+#[test]
+fn anonymous_root_operations_compose_their_actual_effects() {
+    for (source, members, statement, expected, owner, calls) in [
+        (
+            "const record = { value: 0 };\nconst readLater = () => later;\nrecord.value = 1;\nconst later = 42;\nconsole.log(record.value, readLater());\n",
+            vec![Member::new("record"), Member::new("readLater")],
+            "record.value = 1;",
+            "1 42\n",
+            2,
+            0,
+        ),
+        (
+            "const readLater = () => later;\nMath.round(1.6);\nconst later = 42;\nconsole.log(readLater());\n",
+            vec![Member::new("readLater")],
+            "Math.round(1.6);",
+            "42\n",
+            1,
+            1,
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("work", &members, &[statement]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ));
+        save_relocation_reports(
+            &fixture.report_root,
+            &fixture.chunk_id,
+            &format!("anonymous-root-{owner}"),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+        assert_expression_root_receipt(&fixture, owner, calls);
+    }
+}
+
+#[test]
+fn root_call_admission_uses_the_executed_store_and_argument_effects() {
+    let statement = "(selected = value => value, result = selected(argument()));";
+    let source = format!(
+        "let calls = 0;\nfunction argument() {{ calls++; return 42; }}\nlet selected = 0;\nlet result = 0;\n{statement}\nconst later = 1;\nconsole.log(result, calls, later);\n"
+    );
+    let baseline = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "42 1 1\n");
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "work",
+                &[
+                    Member::new("calls"),
+                    Member::new("argument"),
+                    Member::new("selected"),
+                    Member::new("result"),
+                ],
+                &[statement],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42 1 1\n");
+    assert_expression_root_receipt(&fixture, 4, 2);
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 0, "{report}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report}");
+}
+
+#[test]
+fn root_call_admission_refuses_genuinely_ambiguous_targets() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let calls = 0;\nfunction argument() { calls++; return 42; }\nconst selected = globalThis.testFlag ? value => value : value => value + 1;\nconst result = selected(argument());\nconsole.log(result, calls);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "43 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "{execution:#}"
+    );
+    assert!(
+        execution["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| loss["reason"]["ordered_call_admission_refusal"] == "multiple_targets"),
+        "{execution:#}"
+    );
+}
+
+#[test]
+fn anonymous_write_receipts_preserve_receiver_initialization_order() {
+    let source = "const record = { value: 0 };\nrecord.value = 1;\nconst observed = record.value;\nconsole.log(observed);\n";
+    let baseline = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&baseline, "1\n");
+    let fixture = run_inspection_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("reader", &[Member::new("record"), Member::new("observed")]),
+            logical_module_with_anon("writer", &[], &["record.value = 1;"]),
+        ],
+    ));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "anonymous-receiver-tdz",
+    );
+    assert_node_error(&fixture.entry_path, "ReferenceError");
+    assert_expression_root_receipt(&fixture, 1, 0);
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report}");
+    assert!(
+        report["examples"].as_array().unwrap().iter().any(|pair| {
+            pair["cells"].as_array().unwrap().iter().any(|cell| {
+                cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "record"
+            })
+        }),
+        "the receiver's binding dependency must remain in the verdict: {report}"
+    );
+}
 
 #[test]
 fn linkage_export_does_not_add_runtime_havoc_to_relocation() {
@@ -18,13 +1726,682 @@ fn linkage_export_does_not_add_runtime_havoc_to_relocation() {
 }
 
 #[test]
+fn inferred_deferred_factory_composes_its_creation_effects() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
+            vec![
+                logical_module("wrapper", &[Member::new("wrapped")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let artifacts = save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "deferred-factory-creation",
+    );
+    let graph = fixture.dependency_graph();
+    let wrapped = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "wrapped")
+        })
+        .unwrap();
+    let execution = wrapped.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+    assert_eq!(
+        authority["authority"], "operation_receipt",
+        "creation effects must reach the root operation receipt: {execution:#?}"
+    );
+    let uses = serde_json::to_value(&execution.callback_factory_uses).unwrap();
+    for kind in ["call_timing", "return_shape"] {
+        assert!(
+            uses.as_array()
+                .unwrap()
+                .iter()
+                .any(|proof_use| proof_use["kind"] == kind),
+            "factory effects must preserve {kind} evidence: {uses}"
+        );
+    }
+    let candidate: Value = read_json(&artifacts.join("candidate_relocation_assessment.json"));
+    assert_eq!(candidate["status"], "accepted_within_checked_scope");
+}
+
+#[test]
+fn primitive_native_call_initializer_composes_its_exact_operations() {
+    for (method, expected) in [
+        ("round", "2"),
+        ("floor", "1"),
+        ("ceil", "2"),
+        ("trunc", "1"),
+        ("abs", "1.6"),
+        ("sign", "1"),
+    ] {
+        let source = format!(
+            "const readLater = () => later;\nconst seconds = 138240;\nconst rounded = Math.{method}(seconds / 86400);\nconst later = 42;\nconsole.log(rounded, readLater());\n"
+        );
+        let candidate = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "values/rounded",
+                    &[
+                        Member::new("readLater"),
+                        Member::new("seconds"),
+                        Member::new("rounded"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        );
+        let case = format!("native-primitive-{method}");
+        let fixture = match run_fixture_observing_gate(candidate) {
+            FixtureRunOutcome::Accepted(fixture) => fixture,
+            FixtureRunOutcome::Rejected(rejected) => {
+                save_relocation_reports(&rejected.report_root, &rejected.chunk_id, &case);
+                panic!(
+                    "primitive native initializer must compose its operation receipt: {}",
+                    rejected.stderr
+                );
+            }
+        };
+        save_relocation_reports(&fixture.report_root, &fixture.chunk_id, &case);
+        assert_preserved_entry_output(&fixture, &format!("{expected} 42\n"));
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+        assert_eq!(report["decision"]["status"], "accepted", "{report}");
+        let receipt = assert_operation_receipt(&fixture, "rounded", 1);
+        assert_eq!(receipt["calls"][0]["target"]["kind"], "native", "{receipt}");
+        assert_eq!(
+            receipt["calls"][0]["target"]["property"], method,
+            "{receipt}"
+        );
+    }
+}
+
+#[test]
+fn nested_native_calls_share_the_ordered_effect_kernel() {
+    let source = "const readLater = () => later;\nconst normalize = (value) => Math.round(value);\nconst rounded = normalize(1.6) + normalize(2.6);\nconst later = 42;\nconsole.log(rounded, readLater());\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values/rounded",
+                &[
+                    Member::new("readLater"),
+                    Member::new("normalize"),
+                    Member::new("rounded"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "nested-native-root",
+    );
+    assert_preserved_entry_output(&fixture, "5 42\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_operation_receipt(&fixture, "rounded", 3);
+}
+
+#[test]
+fn primitive_native_coercion_throws_do_not_mint_effect_receipts() {
+    for value in ["1n", "Symbol('argument')"] {
+        let source = format!("const rounded = Math.round({value});\nconsole.log(rounded);\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let execution = binding_execution_report(&fixture, "rounded");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution}"
+        );
+    }
+}
+
+#[test]
+fn primitive_native_return_kind_does_not_close_an_unmodeled_body() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const value = Symbol.for('registry-key');\nconsole.log(typeof value);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "symbol\n");
+    let execution = binding_execution_report(&fixture, "value");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution}"
+    );
+}
+
+#[test]
+fn native_root_receipts_require_the_actual_unshadowed_callee() {
+    let source = "const readLater = () => later;\nconst custom = { round(value) { try { return readLater(); } catch (error) { return error.name; } } };\nconst invoke = (Math = custom) => Math.round(1.6);\nvar rounded = invoke();\nconst later = 42;\nconsole.log(rounded, later);\n";
+    let baseline = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&baseline, "ReferenceError 42\n");
+    let candidate = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values/rounded",
+                &[
+                    Member::new("readLater"),
+                    Member::new("custom"),
+                    Member::new("invoke"),
+                    Member::new("rounded"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    );
+    match run_fixture_observing_gate(candidate) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            let artifacts = save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "shadowed-native-parameter",
+            );
+            let execution = binding_execution_report(&fixture, "rounded");
+            std::fs::write(
+                artifacts.join("rounded_execution.json"),
+                serde_json::to_vec_pretty(&execution).unwrap(),
+            )
+            .unwrap();
+            assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+            assert_ne!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "{execution}"
+            );
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(
+                &rejected.report_root,
+                &rejected.chunk_id,
+                "shadowed-native-parameter",
+            );
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
+}
+
+#[test]
+fn inferred_array_factory_composes_its_creation_effects() {
+    for (case, returned, projection) in [
+        ("dense", "[callback]", "wrapped[0]()"),
+        ("sparse", "[, callback]", "wrapped[1]()"),
+        ("nested", "{ nested: [callback] }", "wrapped.nested[0]()"),
+    ] {
+        let source = format!(
+            "import {{ pack }} from './peer.js';\nconst wrapped = pack(() => later);\nconst later = 42;\nconsole.log({projection});\n"
+        );
+        let provider = format!("export function pack(callback) {{ return {returned}; }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("wrapper", &[Member::new("wrapped")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        let artifacts = save_relocation_reports(
+            &fixture.report_root,
+            &fixture.chunk_id,
+            &format!("array-factory-creation-{case}"),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        let graph = fixture.dependency_graph();
+        let wrapped = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "wrapped")
+            })
+            .unwrap();
+        let execution = wrapped.synchronous_execution.as_ref().unwrap();
+        assert!(execution.complete, "{execution:#?}");
+        let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+        assert_eq!(authority["authority"], "operation_receipt", "{authority}");
+        let candidate: Value = read_json(&artifacts.join("candidate_relocation_assessment.json"));
+        assert_eq!(candidate["status"], "accepted_within_checked_scope");
+        assert!(candidate["swapped_pairs"].as_u64().unwrap() > 0);
+    }
+}
+
+#[test]
+fn inferred_method_factory_composes_its_definition_effects() {
+    for (case, body, entry, expected) in [
+        (
+            "method",
+            "return { run() { return callback(); } };",
+            "console.log(wrapped.run());",
+            "42\n",
+        ),
+        (
+            "getter",
+            "return { get value() { return callback(); } };",
+            "console.log(wrapped.value);",
+            "42\n",
+        ),
+        (
+            "accessor-pair",
+            "let stored = 0; return { get value() { return stored; }, set value(next) { stored = callback() + next; } };",
+            "wrapped.value = 7; console.log(wrapped.value);",
+            "49\n",
+        ),
+        (
+            "proto-method",
+            "return { __proto__() { return callback(); } };",
+            "console.log(wrapped.__proto__());",
+            "42\n",
+        ),
+        (
+            "proto-getter",
+            "return { get __proto__() { return callback(); } };",
+            "console.log(wrapped.__proto__);",
+            "42\n",
+        ),
+        (
+            "async-method",
+            "return { async run() { await 0; return callback(); } };",
+            "wrapped.run().then(value => console.log(value));",
+            "42\n",
+        ),
+        (
+            "generator-method",
+            "return { *run() { yield callback(); } };",
+            "console.log(wrapped.run().next().value);",
+            "42\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ make }} from './peer.js';\nconst wrapped = make(() => later);\nconst later = 42;\n{entry}\n"
+        );
+        let provider = format!("export function make(callback) {{ {body} }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("wrapper", &[Member::new("wrapped")]),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        let artifacts = save_relocation_reports(
+            &fixture.report_root,
+            &fixture.chunk_id,
+            &format!("method-factory-creation-{case}"),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        assert_operation_receipt(&fixture, "wrapped", 1);
+        let candidate: Value = read_json(&artifacts.join("candidate_relocation_assessment.json"));
+        assert_eq!(candidate["status"], "accepted_within_checked_scope");
+        assert!(candidate["swapped_pairs"].as_u64().unwrap() > 0);
+    }
+}
+
+#[test]
+fn accessor_definition_effects_do_not_cover_an_invoked_getter() {
+    let source = "import { make } from './peer.js';\nconst wrapped = make(() => later);\nconst later = 42;\nconsole.log(wrapped.value);\n";
+    let peers = [(
+        "static/peer",
+        "export function make(callback) { const record = { get value() { return callback(); } }; record.value; return record; }\n",
+    )];
+    let colocated = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peers));
+    assert_preserved_entry_error(&colocated, "ReferenceError");
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapper", &[Member::new("wrapped")]),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peers);
+    match run_fixture_observing_gate(split) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "invoked-getter-during-creation",
+            );
+            let graph = fixture.dependency_graph();
+            let unit = source_unit_for_binding(&graph, "wrapped");
+            let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+            let execution = node.synchronous_execution.as_ref().unwrap();
+            let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+            assert_ne!(
+                authority["authority"], "operation_receipt",
+                "{execution:#?}"
+            );
+            assert_preserved_entry_error(&fixture, "ReferenceError");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(
+                &rejected.report_root,
+                &rejected.chunk_id,
+                "invoked-getter-during-creation",
+            );
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
+}
+
+#[test]
+fn array_creation_keeps_child_call_effects_uncovered() {
+    let source = "function observe() { console.log('child'); return 42; }\nfunction pack(callback) { return [observe(), callback]; }\nconst wrapped = pack(() => later);\nconst later = 42;\nconsole.log(wrapped[1]());\n";
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapper", &[Member::new("wrapped")]),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    );
+    match run_fixture_observing_gate(split) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "array-child-effects",
+            );
+            let graph = fixture.dependency_graph();
+            let wrapped = graph
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.declared_bindings
+                        .iter()
+                        .any(|binding| binding.binding == "wrapped")
+                })
+                .unwrap();
+            let execution = wrapped.synchronous_execution.as_ref().unwrap();
+            let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+            assert_ne!(
+                authority["authority"], "operation_receipt",
+                "array creation cannot cover the child call: {execution:#?}"
+            );
+            assert_preserved_entry_output(&fixture, "child\n42\n");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            let effects = rejected.effect_translation_validation();
+            assert!(
+                matches!(
+                    effects["decision"]["status"].as_str(),
+                    Some("incomplete" | "conflict")
+                ),
+                "the child call's unproved effects must remain visible: {effects}"
+            );
+        }
+    }
+    let colocated = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&colocated, "child\n42\n");
+}
+
+#[test]
+fn callback_timing_does_not_supply_missing_provider_body_effects() {
+    let source = "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n";
+    let peers = [(
+        "static/peer",
+        "export function factory(callback) { console.log('factory'); return () => callback(); }\n",
+    )];
+    let marks = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["factory"])
+        .build()];
+    let split = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapper", &[Member::new("wrapped")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&marks),
+    );
+    assert_preserved_entry_output(&split, "factory\n42\n");
+    let report = split.effect_translation_validation();
+    assert_eq!(
+        report["decision"],
+        serde_json::json!({"status": "accepted", "scope": "statement_order_commutation"}),
+        "{report:#}"
+    );
+    assert_eq!(report["swapped_pairs"], 2, "{report:#}");
+    let wrapped = binding_execution_report(&split, "wrapped");
+    assert_eq!(wrapped["complete"], false, "{wrapped:#}");
+    assert_eq!(
+        wrapped["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "timing alone supplies no provider body proof: {wrapped:#}"
+    );
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&marks),
+    );
+    assert_preserved_entry_output(&colocated, "factory\n42\n");
+}
+
+#[test]
+fn reexport_dependency_initialization_must_precede_a_moved_observer() {
+    for linkage in [
+        "export { shared } from './peer.js';",
+        "export * from './peer.js';",
+    ] {
+        let source =
+            format!("{linkage}\nconst observed = globalThis.marker;\nconsole.log(observed);\n");
+        let opts = FixtureOpts::new(
+            &source,
+            vec![logical_module("observed", &[Member::new("observed")])],
+        )
+        .with_extra_files(&[
+            ("static/peer.js", REEXPORT_PEER_SOURCE),
+            ("static/app/peer.js", REEXPORT_PEER_SOURCE),
+        ]);
+        match run_fixture_observing_gate(opts) {
+            FixtureRunOutcome::Accepted(fixture) => {
+                assert_preserved_entry_output(&fixture, "peer\n1\n");
+            }
+            FixtureRunOutcome::Rejected(rejected) => {
+                assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+                assert_potential_suppression_rejection(
+                    &rejected.candidate_relocation_assessment(),
+                    &rejected.effect_translation_validation(),
+                    "blocked_by_effect",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn default_export_evaluation_retains_its_conflicting_runtime_effects() {
+    for export in [
+        "export default (globalThis.marker = 1);",
+        "export default class { static { globalThis.marker = 1; } }",
+    ] {
+        let source =
+            format!("{export}\nconst observed = globalThis.marker;\nconsole.log(observed);\n");
+        let rejected = run_rejection_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("observed", &[Member::new("observed")])],
+        ));
+        let report = rejected.effect_translation_validation();
+        assert_eq!(report["decision"]["status"], "conflict", "{report}");
+        assert!(
+            report["counts"]["cell_incidences"].as_u64().unwrap() > 0,
+            "{report}"
+        );
+    }
+}
+
+fn accepted_primitive_fixture_with_reports(
+    opts: FixtureOpts<'_>,
+    case: &str,
+) -> (Fixture, PathBuf) {
+    match run_fixture_observing_gate(opts) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            let artifacts = save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+            (fixture, artifacts)
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            let diagnostics = PathBuf::from(
+                std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+                    .expect("Bazel undeclared outputs directory is set"),
+            )
+            .join("relocation-controls")
+            .join(case);
+            fs::create_dir_all(&diagnostics).expect("create relocation diagnostic directory");
+            fs::write(diagnostics.join("cli.stdout"), &rejected.stdout)
+                .expect("preserve failed relocation CLI stdout");
+            fs::write(diagnostics.join("cli.stderr"), &rejected.stderr)
+                .expect("preserve failed relocation CLI stderr");
+            assert!(
+                rejected
+                    .report_root
+                    .join(&rejected.chunk_id)
+                    .join("candidate_relocation_assessment.json")
+                    .is_file(),
+                "positive control {case} failed before assessment with status {:?}; CLI diagnostics at {}",
+                rejected.status,
+                diagnostics.display(),
+            );
+            let artifacts =
+                save_relocation_reports(&rejected.report_root, &rejected.chunk_id, case);
+            panic!(
+                "positive primitive control was rejected with status {:?}; artifacts at {}; stdout={:?}; stderr={:?}",
+                rejected.status,
+                artifacts.display(),
+                rejected.stdout,
+                rejected.stderr,
+            );
+        }
+    }
+}
+
+fn assert_operation_receipt(
+    fixture: &impl FixtureGraphExt,
+    binding: &str,
+    expected_calls: usize,
+) -> Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == unit)
+        .expect("selected operation owner");
+    let execution = serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("operation owner execution report"),
+    )
+    .expect("serialize operation owner execution report");
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["binding"], binding, "{receipt:#}");
+    assert_eq!(receipt["owner"], node.statement_ordinal.0, "{receipt:#}");
+    assert!(receipt["initializer_span"].is_object(), "{receipt:#}");
+    assert_eq!(
+        receipt["calls"].as_array().unwrap().len(),
+        expected_calls,
+        "{receipt:#}"
+    );
+    receipt.clone()
+}
+
+fn assert_class_declaration_receipt(fixture: &impl FixtureGraphExt, binding: &str) -> Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == unit)
+        .expect("class declaration owner");
+    let execution = serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("class declaration execution report"),
+    )
+    .expect("serialize class declaration execution report");
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["root_kind"], "class_declaration", "{receipt:#}");
+    assert_eq!(receipt["binding"], binding, "{receipt:#}");
+    assert_eq!(receipt["owner"], node.statement_ordinal.0, "{receipt:#}");
+    assert!(receipt["declaration_span"].is_object(), "{receipt:#}");
+    assert!(receipt.get("initializer_span").is_none(), "{receipt:#}");
+    assert_eq!(receipt["calls"], serde_json::json!([]), "{receipt:#}");
+    receipt.clone()
+}
+
+fn assert_binary_reads_remain_ordered(fixture: &Fixture, binding: &str, reads: &[&str]) {
+    let graph = fixture.dependency_graph();
+    let owner = source_unit_for_binding(&graph, binding);
+    for read in reads {
+        let dependency = source_unit_for_binding(&graph, read);
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == owner
+                    && edge.target == dependency
+                    && edge.binding.as_deref() == Some(*read)
+                    && edge.constrains_init_order
+            }),
+            "the {binding} binary owner must retain its ordered {read} read: {graph:#?}"
+        );
+    }
+}
+
+fn assert_binary_remains_unsealed(fixture: &Fixture, binding: &str) {
+    let execution = binding_execution_report(fixture, binding);
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "throwing or coercing binary operations must not receive a complete receipt: {execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            report["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap_or_default()
+                >= 2,
+            "the selected binary and trailing console output remain uncovered in {domain}: {report:#}"
+        );
+    }
+}
+
+#[test]
 fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
     for linkage in [
         "export { shared } from './peer.js';",
         "export * from './peer.js';",
     ] {
         let source = format!("{linkage}\nconst second = 2;\nconsole.log(second);\n");
-        let fixture = run_fixture(
+        let rejected = run_rejection_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module("second", &[Member::new("second")])],
@@ -34,10 +2411,13 @@ fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
                 "console.log('peer'); export const shared = 1;\n",
             )]),
         );
-        assert_preserved_entry_output(&fixture, "peer\n2\n");
-        let report = fixture.effect_translation_validation();
+        let report = rejected.effect_translation_validation();
         assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
-        assert_eq!(report["decision"]["status"], "incomplete", "{report}");
+        assert_potential_suppression_rejection(
+            &rejected.candidate_relocation_assessment(),
+            &report,
+            "blocked_by_effect",
+        );
     }
 }
 
@@ -137,7 +2517,7 @@ fn empty_native_collection_inputs(
     ]
 }
 
-fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
+fn binding_execution_report(fixture: &impl FixtureGraphExt, binding: &str) -> Value {
     let graph = fixture.dependency_graph();
     let unit = source_unit_for_binding(&graph, binding);
     let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
@@ -149,26 +2529,256 @@ fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
     .expect("serialize execution report")
 }
 
-fn assert_inline_operation_receipt(
-    fixture: &Fixture,
-    binding: &str,
-    expected_calls: usize,
-    case: &str,
-) {
-    let execution = binding_execution_report(fixture, binding);
-    assert_eq!(execution["complete"], true, "{case}: {execution:#}");
+fn depth_limited_fixture(
+    tail: &str,
+    callback_result: bool,
+    inspect_rejection: bool,
+    call_expression: impl Fn(usize) -> String,
+) -> Fixture {
+    depth_limited_fixture_with_claim_order(
+        tail,
+        callback_result,
+        inspect_rejection,
+        false,
+        call_expression,
+    )
+}
+
+fn depth_limited_fixture_with_claim_order(
+    tail: &str,
+    callback_result: bool,
+    inspect_rejection: bool,
+    source_order_claims: bool,
+    call_expression: impl Fn(usize) -> String,
+) -> Fixture {
+    let mut source = String::from("const seed = 7;\n");
+    let mut members = vec![Member::new("seed"), Member::new("result")];
+    let mut source_order_members = vec![Member::new("seed")];
+    if callback_result {
+        source.push_str("const callback = () => seed;\n");
+        members.push(Member::new("callback"));
+        source_order_members.push(Member::new("callback"));
+    }
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return {}; }}\n",
+            call_expression(index + 1)
+        ));
+        members.push(Member::new(format!("step{index}").leak()));
+        source_order_members.push(Member::new(format!("step{index}").leak()));
+    }
+    source.push_str(&format!(
+        "function step66() {{ {tail} }}\nconst marker = 1;\nconst result = step0();\n"
+    ));
+    members.push(Member::new("step66"));
+    source_order_members.extend([
+        Member::new("step66"),
+        Member::new("marker"),
+        Member::new("result"),
+    ]);
+    source.push_str(if callback_result {
+        "console.log(result(), marker);\n"
+    } else {
+        "console.log(result, marker);\n"
+    });
+    let run = if inspect_rejection {
+        run_inspection_fixture
+    } else {
+        run_fixture
+    };
+    let members = if source_order_claims {
+        source_order_members
+    } else {
+        members
+    };
+    run(
+        FixtureOpts::new(&source, vec![logical_module("all", &members)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    )
+}
+
+#[test]
+fn retained_depth_suffix_closes_effects_without_claiming_execution_completion() {
+    let fixture =
+        depth_limited_fixture("return seed;", false, true, |next| format!("step{next}()"));
+    assert_preserved_entry_output(&fixture, "7 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(execution["complete"], false, "{execution:#}");
+    assert_eq!(
+        execution["precision_losses"].as_array().unwrap().len(),
+        1,
+        "{execution:#}"
+    );
+    assert_eq!(
+        execution["precision_losses"][0]["reason"],
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+        "{execution:#}"
+    );
     let authority = &execution["binding_effect_authority"];
     assert_eq!(
-        authority["authority"], "operation_receipt",
-        "{case}: {execution:#}"
+        authority["authority"], "retained_effect_closure",
+        "{execution:#}"
     );
-    let receipt = &authority["receipt"];
-    assert_eq!(receipt["binding"], binding, "{case}: {receipt:#}");
     assert_eq!(
-        receipt["calls"].as_array().unwrap().len(),
-        expected_calls,
-        "{case}: {receipt:#}"
+        authority["receipt"]["calls"].as_array().unwrap().len(),
+        67,
+        "{authority:#}"
     );
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let seed = source_unit_for_binding(&graph, "seed");
+    assert!(
+        graph.edges.iter().any(|edge| edge.source == result
+            && edge.target == seed
+            && edge.binding.as_deref() == Some("seed")),
+        "retained read must remain ordered: {graph:#?}"
+    );
+    assert!(
+        !graph.edges.iter().any(|edge| edge.source == result
+            && edge.target == seed
+            && edge
+                .role
+                .as_ref()
+                .is_some_and(|role| serde_json::to_value(role)
+                    .is_ok_and(|role| role["kind"] == "promoted_at_init"
+                        && role["callee_source_unit"].as_str() == Some(result)))),
+        "complete retained effects replace the syntactic closure: {graph:#?}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_potential_suppression_rejection(
+        &fixture.candidate_relocation_assessment(),
+        &report,
+        "blocked_by_effect",
+    );
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only output is uncovered: {report:#}"
+        );
+    }
+    assert!(
+        report["coverage"]["incomplete_execution_statements"]
+            .as_u64()
+            .unwrap()
+            > 0,
+        "raw execution diagnostics survive coverage: {report:#}"
+    );
+}
+
+#[test]
+fn retained_depth_suffix_with_no_reordering_keeps_effect_closure_accepted() {
+    for (tail, output, sequences) in [
+        ("return seed;", "7 1\n", false),
+        ("return seed + 1;", "8 1\n", true),
+    ] {
+        let fixture = depth_limited_fixture_with_claim_order(tail, false, false, true, |next| {
+            if sequences {
+                format!("(step{next}(), seed + 1)")
+            } else {
+                format!("step{next}()")
+            }
+        });
+        assert_preserved_entry_output(&fixture, output);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], "retained_effect_closure",
+            "{execution:#}"
+        );
+        assert_eq!(
+            execution["binding_effect_authority"]["receipt"]["calls"]
+                .as_array()
+                .unwrap()
+                .len(),
+            67,
+            "{execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+        assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+        assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    }
+}
+
+#[test]
+fn retained_depth_query_refuses_opaque_operations_and_returned_capabilities() {
+    for (tail, callback_result) in [("return Number(seed);", false), ("return callback;", true)] {
+        let fixture =
+            depth_limited_fixture(tail, callback_result, true, |next| format!("step{next}()"));
+        assert_preserved_entry_output(&fixture, "7 1\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(execution["complete"], false, "{tail}: {execution:#}");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{tail}: {execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        assert_ne!(
+            report["decision"]["status"], "accepted",
+            "{tail}: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn retained_depth_suffix_composes_primitive_operators_and_sequences() {
+    let fixture = depth_limited_fixture("return seed + 1;", false, true, |next| {
+        format!("(step{next}(), seed + 1)")
+    });
+    assert_preserved_entry_output(&fixture, "8 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(execution["complete"], false, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "retained_effect_closure",
+        "{execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_potential_suppression_rejection(
+        &fixture.candidate_relocation_assessment(),
+        &report,
+        "blocked_by_effect",
+    );
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+}
+
+#[test]
+fn retained_depth_primitive_result_does_not_prove_caller_operator_completion() {
+    let fixture = depth_limited_fixture("return seed;", false, true, |next| {
+        if next == 1 {
+            format!("step{next}() + 1")
+        } else {
+            format!("step{next}()")
+        }
+    });
+    assert_preserved_entry_output(&fixture, "8 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "{execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_ne!(report["decision"]["status"], "accepted", "{report:#}");
+}
+
+#[test]
+fn retained_depth_operator_query_keeps_throw_and_mutation_boundaries() {
+    for tail in ["return seed + 1n;", "return seed = 9;"] {
+        let fixture = depth_limited_fixture(tail, false, true, |next| format!("step{next}()"));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{tail}: {execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        assert_ne!(
+            report["decision"]["status"], "accepted",
+            "{tail}: {report:#}"
+        );
+    }
 }
 
 #[test]
@@ -270,10 +2880,14 @@ fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
 
 #[test]
 fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
-    for (alias, output) in [
-        ("globalThis", "1 2 1\n"),
-        ("globalThis.choose ? globalThis : {}", "1 2 undefined\n"),
-        ("global", "1 2 1\n"),
+    for (case, alias, output) in [
+        ("direct", "globalThis", "1 2 1\n"),
+        (
+            "conditional",
+            "globalThis.choose ? globalThis : {}",
+            "1 2 undefined\n",
+        ),
+        ("node", "global", "1 2 1\n"),
     ] {
         let host = || HostBehavior {
             predefined_globals: if alias == "global" {
@@ -323,6 +2937,19 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                 .join(&fixture.chunk_id)
                 .join("effect_conflicts.jsonl"),
         );
+        let artifacts = save_relocation_reports(
+            &fixture.report_root,
+            &fixture.chunk_id,
+            &format!("global-alias-{case}"),
+        );
+        fs::copy(
+            fixture
+                .report_root
+                .join(&fixture.chunk_id)
+                .join("effect_conflicts.jsonl"),
+            artifacts.join("effect_conflicts.jsonl"),
+        )
+        .expect("preserve global-alias conflict provenance before assertions");
         assert_eq!(
             rows.iter()
                 .flat_map(|row| row["cells"].as_array().unwrap())
@@ -330,7 +2957,7 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                     && cell["cell"]["key"] == "marker"
                     && cell["observed_conflict"] == false),
             alias != "global",
-            "only aliases modeled by the execution value domain contribute cells; census-only Node global stays opaque: {rows:#?}"
+            "only aliases modeled by the execution value domain contribute cells; census-only Node global stays opaque ({alias}): {rows:#?}"
         );
         assert!(
             rows.iter()
@@ -584,7 +3211,7 @@ fn a_pair_premise_does_not_hide_another_reader() {
         ),
     );
     let report = fixture.effect_translation_validation();
-    assert_eq!(report["report_only"], true, "{report:#}");
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
     assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
     assert_eq!(
         report["examples_truncated"], false,
@@ -598,10 +3225,27 @@ fn a_pair_premise_does_not_hide_another_reader() {
         assert_eq!(pair["disposition"], disposition, "{pair:#}");
         assert!(pair["cells"].as_array().unwrap().iter().any(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "state"), "{pair:#}");
     }
+    let premise_pair = examples(&report)
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 4 && pair["runs_later"]["unit"] == 2)
+        .expect("the third reader and first initializer retain their pair row");
+    let progress = premise_pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "execution_progress")
+        .expect("potential suppression remains represented by the shared progress cell");
+    assert_eq!(progress["observed_conflict"], false, "{progress:#}");
+    assert!(
+        ["first_write", "later_write"]
+            .iter()
+            .any(|field| { progress[*field]["kind"] == "potential_suppression" }),
+        "missing normality is a conservative but non-observed write: {progress:#}"
+    );
 }
 
 #[test]
-fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
+fn hoisted_literal_calls_commute_with_deferred_function_creation() {
     let fixture = run_fixture(FixtureOpts::new(
         "function hoisted() { return 1; }\nconst seen = hoisted();\nconst expr = () => 2;\nconsole.log(seen, expr());\nexport { hoisted, seen, expr };\n",
         vec![
@@ -633,6 +3277,14 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
                 && pair["havoc"] == true)),
         "covered primitive invocation cannot invent a conflict between distinct binding writes: {report:#}"
     );
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "output remains uncovered; function declarations and local export linkage have no evaluation body: {report:#}"
+        );
+    }
 }
 
 #[test]
@@ -693,7 +3345,9 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("parameter => globalThis.marker = parameter", true),
         ("(globalThis.marker = 1, 1)", false),
         ("(globalThis.marker = 1, () => 0)", false),
-        ("`text`", false),
+        ("`text`", true),
+        ("`${globalThis.marker = 1}`", false),
+        ("`${globalThis.missing}`", false),
         ("({value: 1})", true),
         ("[1]", true),
         ("(0, {value: 1})", true),
@@ -897,19 +3551,16 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
 
 #[test]
 fn inline_callee_creation_executes_with_exact_operation_receipts() {
-    for (case, expression) in [
-        ("arrow", "((value) => value)((() => 42)())"),
-        (
-            "anonymous function",
-            "(function(value) { return value; })((function() { return 42; })())",
-        ),
+    for expression in [
+        "((value) => value)((() => 42)())",
+        "(function(value) { return value; })((function() { return 42; })())",
     ] {
         let source = format!("const result = {expression};\nconsole.log(result);\n");
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_preserved_entry_output(&fixture, "42\n");
-        assert_inline_operation_receipt(&fixture, "result", 2, case);
+        assert_operation_receipt(&fixture, "result", 2);
     }
 }
 
@@ -923,7 +3574,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&captured, "41\n");
-    assert_inline_operation_receipt(&captured, "result", 2, "captured-read");
+    assert_operation_receipt(&captured, "result", 2);
     let graph = captured.dependency_graph();
     let result = source_unit_for_binding(&graph, "result");
     let seed = source_unit_for_binding(&graph, "seed");
@@ -959,11 +3610,9 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&named, "42\n");
-    let execution = binding_execution_report(&named, "result");
-    assert_ne!(
-        execution["binding_effect_authority"]["authority"], "operation_receipt",
-        "named function self scopes remain outside operation receipts: {execution:#}"
-    );
+    // This layer supplies the named-self establishment missing on the lower
+    // inline-callee PR. Its same nested named call must now carry a receipt.
+    assert_operation_receipt(&named, "result", 2);
 }
 
 #[test]
@@ -1543,17 +4192,19 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "41 0\n");
+    assert_operation_receipt(&fixture, "result", 2);
+    assert_expression_root_receipt(&fixture, 3, 0);
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "only later rebinding and output remain uncovered: {report:#}"
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only output remains uncovered after the checked rebinding: {report:#}"
         );
     }
 }
 
 #[test]
-fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
+fn local_declaration_operations_compose_complete_effect_receipts() {
     for body in [
         "const local = seed; return local;",
         "let local = seed; return local;",
@@ -1598,7 +4249,112 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
                 report["coverage"]["unknown_coverage"][domain], 1,
-                "the private cell has no nonlexical effects; only output remains unknown: {body}: {report:#}"
+                "only output remains uncovered after actual private-cell operations: {body}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn private_declarative_operations_and_literals_allow_effect_commutation() {
+    for (helper, invocation) in [
+        ("function factory() { return 41; }", "factory()"),
+        (
+            "function factory() { const value = 41; return value; }",
+            "factory()",
+        ),
+        (
+            "function factory(value = 41) { return value; }",
+            "factory()",
+        ),
+        (
+            "function factory(value) { let copy = value; return copy; }",
+            "(factory(41), factory(41))",
+        ),
+    ] {
+        for (marker, output, decision, unknown) in [
+            ("const marker = 1;", "41 1\n", "accepted", 1),
+            (
+                "const marker = console.log('marker');",
+                "marker\n41 undefined\n",
+                "conflict",
+                2,
+            ),
+        ] {
+            let source = format!(
+                "{helper}\n{marker}\nvar result = {invocation};\nconsole.log(result, marker);\n"
+            );
+            let run = if decision == "accepted" {
+                run_fixture
+            } else {
+                run_inspection_fixture
+            };
+            let fixture = run(FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &[Member::new("factory"), Member::new("result")],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()));
+            assert_preserved_entry_output(&fixture, output);
+            let report = fixture.effect_translation_validation();
+            assert_eq!(report["swapped_pairs"], 1, "{helper}: {report:#}");
+            if decision == "conflict" {
+                assert_potential_suppression_rejection(
+                    &fixture.candidate_relocation_assessment(),
+                    &report,
+                    "blocked_by_effect",
+                );
+            } else {
+                assert_eq!(
+                    report["decision"]["status"], decision,
+                    "{helper}: {report:#}"
+                );
+            }
+            for domain in ["global_properties", "general_heap", "host_effects"] {
+                assert_eq!(
+                    report["coverage"]["unknown_coverage"][domain], unknown,
+                    "the marker keeps its independent coverage: {helper}: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn private_declaration_coverage_requires_modeled_initializer_effects() {
+    for (body, unknown) in [
+        ("const local = seed + 0; return local;", 1),
+        ("const local = globalThis.Number(seed); return local;", 2),
+        (
+            "const local = { get value() { return seed; } }; return local.value;",
+            2,
+        ),
+    ] {
+        let source = format!(
+            "const seed = 41;\nfunction factory() {{ {body} }}\nvar result = factory();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("factory"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        if unknown == 1 {
+            assert_operation_receipt(&fixture, "result", 1);
+        }
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], unknown,
+                "only checked primitive operations close initializer coverage: {body}: {report:#}"
             );
         }
     }
@@ -1636,11 +4392,20 @@ fn local_declaration_receipts_preserve_callable_selection_requirements() {
 }
 
 #[test]
-fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
-    for body in [
-        "var local = seed; return local;",
-        "let local = seed; local = seed; return local;",
-        "const local = seed; const read = () => local; return read();",
+fn declarative_cell_receipts_distinguish_private_stores_from_uncovered_cells() {
+    for (body, authority) in [
+        (
+            "var local = seed; return local;",
+            "ordered_root_initializer_uncovered",
+        ),
+        (
+            "let local = seed; local = seed; return local;",
+            "operation_receipt",
+        ),
+        (
+            "const local = seed; const read = () => local; return read();",
+            "operation_receipt",
+        ),
     ] {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
@@ -1659,9 +4424,8 @@ fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
         assert_preserved_entry_output(&fixture, "41\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
-            execution["binding_effect_authority"]["authority"],
-            "ordered_root_initializer_uncovered",
-            "other cell kinds and assignment effects need their own receipts: {body}: {execution:#}"
+            execution["binding_effect_authority"]["authority"], authority,
+            "checked local and captured operations compose receipts; unsupported hoisting remains uncovered: {body}: {execution:#}"
         );
     }
 }
@@ -1725,7 +4489,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, expression);
+        assert_operation_receipt(&fixture, "result", 1);
         let report = fixture.effect_translation_validation();
         assert_eq!(report["swapped_pairs"], 1, "{expression}: {report:#}");
         assert_eq!(
@@ -1790,7 +4554,7 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, expression);
+        assert_operation_receipt(&fixture, "result", 1);
     }
 }
 
@@ -1808,7 +4572,7 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 false\n");
-    assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
+    assert_operation_receipt(&fixture, "result", 1);
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
@@ -1839,7 +4603,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, body);
+        assert_operation_receipt(&fixture, "result", 1);
         let report = fixture.effect_translation_validation();
         assert_eq!(report["swapped_pairs"], 1, "{body}: {report:#}");
         assert_eq!(
@@ -1867,7 +4631,7 @@ fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion(
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 2\n");
-    assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
+    assert_operation_receipt(&fixture, "result", 2);
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
@@ -1904,16 +4668,18 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
 }
 
 #[test]
-fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
-    for (body, expected) in [
-        ("let value = 1n; return value++;", "1n 0\n"),
+fn numeric_local_updates_distinguish_captured_cells_from_unknown_coercion() {
+    for (body, expected, covered_calls) in [
+        ("let value = 1n; return value++;", "1n 0\n", None),
         (
             "let value = { valueOf() { return ++calls; } }; return value++;",
             "1 1\n",
+            None,
         ),
         (
             "let value = 1; const read = () => value; value++; return read();",
             "2 0\n",
+            Some(2),
         ),
     ] {
         let source = format!(
@@ -1932,11 +4698,37 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
         ));
         assert_preserved_entry_output(&fixture, expected);
         let execution = binding_execution_report(&fixture, "result");
-        assert_eq!(
-            execution["binding_effect_authority"]["authority"],
-            "ordered_root_initializer_uncovered",
-            "{body}: {execution:#}"
-        );
+        if let Some(calls) = covered_calls {
+            assert_operation_receipt(&fixture, "result", calls);
+            let heap = &execution["heap_frontier"];
+            let accesses = &heap["heap_access_provenance"]["executed_operations"];
+            let cell = accesses["reads"]["sample"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|cell| cell["kind"] == "lexical_cell")
+                .expect("the captured read retains its actual cell");
+            assert!(
+                accesses["writes"]["sample"]
+                    .as_array()
+                    .unwrap()
+                    .contains(cell),
+                "the update and closure read must address the same captured cell: {heap:#}"
+            );
+            assert!(
+                heap["composed_synchronous_calls"]["allocations"]["sample"]
+                    .as_array()
+                    .unwrap()
+                    .contains(cell),
+                "the receipt must retain creation of the captured cell: {heap:#}"
+            );
+        } else {
+            assert_eq!(
+                execution["binding_effect_authority"]["authority"],
+                "ordered_root_initializer_uncovered",
+                "{body}: {execution:#}"
+            );
+        }
     }
 }
 
@@ -2113,6 +4905,193 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
 }
 
 #[test]
+fn checked_own_data_accesses_compose_coverage_and_prefix_conditions() {
+    for (helper, expected) in [
+        ("function access() { return record.value; }", "7 1 0\n"),
+        (
+            "function access() { record.value = 41; return record.value; }",
+            "41 1 0\n",
+        ),
+    ] {
+        let source = format!(
+            "const native = new Map();\nconst record = {{value: 7}};\n{helper}\nconst marker = 1;\nvar result = access();\nconsole.log(result, marker, native.size);\n"
+        );
+        let input = native_constructor_input(
+            &source,
+            "const native = new Map();",
+            "native",
+            NativeOperationKind::MapEmpty,
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &[
+                        Member::new("native"),
+                        Member::new("record"),
+                        Member::new("access"),
+                        Member::new("result"),
+                    ],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![input]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["swapped_pairs"], 1, "{helper}: {report:#}");
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{helper}: {report:#}"
+        );
+        assert_eq!(
+            report["relocation_dependencies"]["native_operation_inputs"],
+            serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
+            "the heap-operation receipt retains consumed prefix conditions: {report:#}"
+        );
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 1,
+                "only output remains uncovered: {helper}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn own_data_coverage_keeps_actual_property_conflicts() {
+    let source = "const record = {value: 7};\nfunction read() { return record.value; }\nfunction write() { record.value = 41; return record.value; }\nvar before = read();\nvar after = write();\nconsole.log(before, after);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "writer",
+                &[
+                    Member::new("record"),
+                    Member::new("read"),
+                    Member::new("write"),
+                    Member::new("after"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 4 && pair["runs_later"]["unit"] == 3)
+        .unwrap_or_else(|| panic!("the write crossed the earlier read: {rows:#?}"));
+    assert_eq!(
+        pair["havoc"], false,
+        "both operations have coverage: {pair:#}"
+    );
+    assert!(
+        pair["cells"].as_array().unwrap().iter().any(|cell| {
+            cell["cell"]["kind"] == "own_property"
+                && cell["cell"]["property"] == "value"
+                && !cell["first_write"].is_null()
+                && !cell["later_read"].is_null()
+        }),
+        "closed coverage must retain the actual property conflict: {pair:#}"
+    );
+}
+
+#[test]
+fn complete_operation_receipts_keep_independent_global_alias_opacity() {
+    let fixture = run_inspection_fixture(
+        FixtureOpts::new(
+            "const alias = globalThis;\nfunction value() { return 41; }\nconst marker = 1;\nvar result = (alias, value(), value());\nconsole.log(result, marker);\n",
+            vec![logical_module(
+                "all",
+                &[Member::new("alias"), Member::new("value"), Member::new("result")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "41 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "the independent opacity must survive even with actual lexical coverage: {execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "incomplete", "{report:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "the global-alias initializer and output retain their own coverage: {report:#}"
+        );
+    }
+    let pair = examples(&report)
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 3 && pair["runs_later"]["unit"] == 2)
+        .unwrap_or_else(|| panic!("the result crosses marker: {report:#}"));
+    assert_eq!(pair["havoc"], true, "{pair:#}");
+}
+
+#[test]
+fn own_data_coverage_does_not_cover_accessors_or_rhs_calls() {
+    for (case, (record, helper, expected)) in [
+        (
+            "{ get value() { return 41; } }",
+            "function access() { return record.value; }",
+            "41\n",
+        ),
+        (
+            "{ get value() { return 41; }, set value(next) { console.log(next); } }",
+            "function access() { record.value = 41; return record.value; }",
+            "41\n41\n",
+        ),
+        (
+            "{ value: 0 }",
+            "function access() { record.value = globalThis.Number(41); return record.value; }",
+            "41\n",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let source = format!(
+            "const record = {record};\n{helper}\nvar result = access();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("record"),
+                    Member::new("access"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        save_relocation_reports(
+            &fixture.report_root,
+            &fixture.chunk_id,
+            &format!("own-data-invocation-{case}"),
+        );
+        assert_ne!(
+            binding_execution_report(&fixture, "result")["binding_effect_authority"]["authority"],
+            "operation_receipt",
+            "defining an accessor cannot cover its later invocation or RHS"
+        );
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 2,
+                "reached accessor/RHS and output retain unknown coverage: {helper}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
 fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
     let fixture = run_fixture(FixtureOpts::new(
         "import { sep as seed } from 'node:path';\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
@@ -2141,19 +5120,19 @@ fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
 #[test]
 fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
     for (helper, result_kind, unknown) in [
-        ("function make() { return [seed]; }", "object", 2),
-        ("function make() { return [, seed]; }", "object", 2),
-        ("function make() { return { value: seed }; }", "object", 2),
+        ("function make() { return [seed]; }", "object", 1),
+        ("function make() { return [, seed]; }", "object", 1),
+        ("function make() { return { value: seed }; }", "object", 1),
         (
             "function make() { return { read() { return seed; }, get value() { return seed; }, set value(next) {} }; }",
             "object",
-            2,
+            1,
         ),
         ("function make() { return () => seed; }", "function", 1),
         (
             "const make = function self() { return seed; };",
             "number",
-            2,
+            1,
         ),
         (
             "function make() { return seed; var { unused } = {}; }",
@@ -2192,12 +5171,14 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             helper,
             "function make() { return seed; let unused; }"
                 | "function make() { return seed; class Unused {} }"
+                | "function make() { return [seed]; }"
+                | "function make() { return [, seed]; }"
+                | "function make() { return { value: seed }; }"
+                | "function make() { return { read() { return seed; }, get value() { return seed; }, set value(next) {} }; }"
+                | "function make() { return () => seed; }"
+                | "const make = function self() { return seed; };"
         ) {
-            let execution = binding_execution_report(&fixture, "result");
-            assert_eq!(
-                execution["binding_effect_authority"]["authority"], "operation_receipt",
-                "an unreached lexical declaration still creates a private cell without exterior effects: {execution:#}"
-            );
+            assert_operation_receipt(&fixture, "result", 2);
         }
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
@@ -2488,6 +5469,83 @@ console.log(marker);\n";
 }
 
 #[test]
+fn caught_internal_throw_completes_the_outer_root_for_a_harmless_inversion() {
+    let source = "let state = 0;\n\
+function initialize() {\n\
+  state = 1;\n\
+  try { throw 'caught'; state = 99; } catch (error) { state = state + 1; }\n\
+  return state;\n\
+}\n\
+const result = initialize();\n\
+const independent = 2;\n\
+console.log(result, state, independent);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("independent", &[Member::new("independent")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "2 2 2\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+}
+
+#[test]
+fn outward_throw_conflicts_with_a_moved_syntactic_suffix() {
+    let source = "console.log('prefix');\n\
+function fail() { throw 'sentinel'; }\n\
+const result = fail();\n\
+const suffix = (console.log('suffix'), 1);\n\
+export { result, suffix };\n";
+    let baseline = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_error(&baseline, "sentinel");
+    assert_node_error_with_stdout(&baseline.entry_path, "sentinel", "prefix\n");
+
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("suffix", &[Member::new("suffix")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_error_with_stdout(&rejected.entry_path(), "sentinel", "suffix\nprefix\n");
+    let report = rejected.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let graph = rejected.dependency_graph();
+    let statement_ordinal = |binding| {
+        let id = source_unit_for_binding(&graph, binding);
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == id)
+            .expect("binding owner source unit")
+            .statement_ordinal
+            .0
+    };
+    let throw_unit = statement_ordinal("result");
+    let suffix_unit = statement_ordinal("suffix");
+    let rows = read_jsonl(&rejected.report_path("effect_conflicts.jsonl"));
+    assert!(
+        rows.iter().any(|row| {
+            row["runs_first"]["unit"] == suffix_unit
+                && row["runs_later"]["unit"] == throw_unit
+                && row["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "execution_progress"
+                            && cell["observed_conflict"] == true
+                    })
+                })
+        }),
+        "the outward throw and moved suffix must share the observed progress fence: {rows:#?}"
+    );
+}
+
+#[test]
 fn no_swap_and_closed_empty_crossing_have_explicit_effect_decisions() {
     let no_swap = run_fixture(FixtureOpts::new(
         "const written = (globalThis.marker = 1);\n\
@@ -2609,7 +5667,9 @@ console.log(observed === observed, pattern.test('x'));\n";
         1,
     );
     assert!(
-        fixture.stderr.contains("atomic-group conflict"),
+        fixture
+            .stderr
+            .contains("candidate relocation BlockedByEffect"),
         "{}",
         fixture.stderr
     );
@@ -2751,7 +5811,7 @@ fn regexp_constructor_initialization_remains_opaque() {
 const RegExp = function () { throw new Error('constructor invoked'); };\n\
 const pattern = new RegExp('^x$');\n\
 console.log(marker);\n";
-    let fixture = run_fixture_with_args(
+    let fixture = run_inspection_fixture_with_args(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -2805,10 +5865,22 @@ console.log(selected, globalThis.parameterReads);\n";
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 1\n");
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "lazy-parameter-invocation",
+    );
+    assert_operation_receipt(&fixture, "input", 0);
+    assert_operation_receipt(&fixture, "select", 0);
+    assert_ne!(
+        binding_execution_report(&fixture, "selected")["binding_effect_authority"]["authority"],
+        "operation_receipt",
+        "definition effects cannot cover a getter reached by the parameter prologue"
+    );
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 3,
+            report["coverage"]["unknown_coverage"][domain], 2,
             "{report:#}"
         );
     }
@@ -2876,7 +5948,7 @@ var set = new Set();\n\
 const later = map.size + set.size;\n\
 console.log(earlierMap, earlierSet, later);\n";
     let inputs = empty_native_collection_inputs(SOURCE, "var");
-    let fixture = run_fixture_with_args(
+    let fixture = run_inspection_fixture_with_args(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module(
@@ -3012,7 +6084,7 @@ console.log(earlier, later);\n";
         "encoder",
         NativeOperationKind::TextEncoderEmpty,
     );
-    let fixture = run_fixture_with_args(
+    let fixture = run_inspection_fixture_with_args(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module("encoder", &[Member::new("encoder")])],
@@ -3063,7 +6135,7 @@ fn text_encoder_initializer_requires_identity_zero_arguments_and_root_shape() {
         (
             "var encoder = new TextEncoder();\n\
              globalThis.TextEncoder = function replacement() {};\n",
-            "initializer_result_unproved",
+            "unknown_call",
             2,
         ),
         (
@@ -3180,7 +6252,6 @@ fn unsupported_class_shapes_remain_uncovered() {
     for declaration in [
         "class WorkQueue extends Object {}",
         "class WorkQueue { [globalThis.queueKey]() {} }",
-        "class WorkQueue { get value() { return 1; } }",
         "class WorkQueue { static state = (globalThis.marker = 1); }",
         "class WorkQueue { static { globalThis.marker = 1; } }",
     ] {
@@ -3344,7 +6415,7 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     );
     // Outer imports the later literals before item0 runs. Other loader
     // ordering remains emitter-owned; every resulting swap must be counted.
-    let fixture = run_fixture_with_args(
+    let fixture = run_inspection_fixture_with_args(
         FixtureOpts::new(&source, modules),
         &["--effect-conflicts-jsonl"],
     );
@@ -3381,8 +6452,33 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     assert_full_rows_match_summary(&report, &rows);
 }
 
+fn effect_example_has_data_cell(row: &Value) -> bool {
+    row["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|cell| cell["cell"]["kind"] != "execution_progress")
+}
+
+fn effect_example_rank(row: &Value) -> u8 {
+    let cells = row["cells"].as_array().unwrap();
+    if cells.is_empty() {
+        assert_eq!(
+            row["havoc"], true,
+            "cell-free conflict is not Havoc: {row:#}"
+        );
+        2
+    } else if effect_example_has_data_cell(row)
+        || cells.iter().any(|cell| cell["observed_conflict"] == true)
+    {
+        0
+    } else {
+        1
+    }
+}
+
 #[test]
-fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
+fn bounded_examples_prefer_data_and_observed_control_over_potential_control_rows() {
     let names = [
         "item0", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9",
         "item10", "item11", "item12", "item13", "item14", "item15", "item16", "item17", "item18",
@@ -3391,7 +6487,7 @@ fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
     let mut source = String::new();
     for (index, name) in names.iter().enumerate() {
         // The template is pure but outside the source-covered value subset,
-        // retaining an early Havoc-only conflict inventory.
+        // retaining early potential-control-only conflicts.
         source.push_str(&format!("const {name} = (``, {index});\n"));
     }
     source.push_str(&format!(
@@ -3419,25 +6515,33 @@ fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
     let report = fixture.effect_translation_validation();
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let example_limit = report["example_limit"].as_u64().unwrap() as usize;
-    let first_modeled_row = rows
+    let first_data_row = rows
         .iter()
-        .position(|row| row["cell_count"].as_u64().unwrap() > 0)
-        .expect("the full stream contains modeled-cell conflicts");
+        .position(effect_example_has_data_cell)
+        .expect("the full stream contains a concrete data-cell conflict");
     assert!(
-        first_modeled_row >= example_limit,
-        "first modeled row {first_modeled_row} precedes example limit {example_limit}"
+        first_data_row >= example_limit,
+        "first data row {first_data_row} precedes example limit {example_limit}"
     );
     assert!(
-        rows[..example_limit]
+        rows[..first_data_row]
             .iter()
-            .all(|row| row["cell_count"] == 0 && row["havoc"] == true),
-        "the fixture begins with {example_limit} Havoc-only rows"
+            .any(|row| effect_example_rank(row) == 1),
+        "the fixture begins with potential-control-only rows"
     );
     assert!(
         examples(&report)
             .iter()
-            .any(|example| example["cell_count"].as_u64().unwrap() > 0),
-        "the bounded report should expose a modeled-cell witness after the initial Havoc-only rows"
+            .any(|example| effect_example_rank(example) == 0),
+        "the bounded report should expose a data or observed-control witness"
+    );
+    let first_data = &rows[first_data_row];
+    assert!(
+        examples(&report).iter().any(|example| {
+            example["runs_first"] == first_data["runs_first"]
+                && example["runs_later"] == first_data["runs_later"]
+        }),
+        "the bounded report should retain the first concrete data witness: {first_data:#}"
     );
     assert_eq!(report["examples_truncated"], true, "{report:#}");
     assert_eq!(report["decision"]["status"], "conflict");
@@ -3489,23 +6593,14 @@ fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
     let mut selected_indexes = rows
         .iter()
         .enumerate()
-        .filter(|(_, row)| row["cell_count"].as_u64().unwrap() > 0)
-        .take(limit)
-        .map(|(index, _)| index)
+        .map(|(index, row)| (effect_example_rank(row), index))
         .collect::<Vec<_>>();
-    let fallback_slots = limit.saturating_sub(selected_indexes.len());
-    selected_indexes.extend(
-        rows.iter()
-            .enumerate()
-            .filter(|(_, row)| row["cell_count"].as_u64().unwrap() == 0)
-            .take(fallback_slots)
-            .map(|(index, _)| index),
-    );
     selected_indexes.sort_unstable();
+    selected_indexes.truncate(limit);
     assert_eq!(examples(summary).len(), selected_indexes.len());
     for (example, full) in examples(summary)
         .iter()
-        .zip(selected_indexes.into_iter().map(|i| &rows[i]))
+        .zip(selected_indexes.into_iter().map(|(_, i)| &rows[i]))
     {
         for field in [
             "runs_first",
@@ -3598,14 +6693,46 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
         serde_json::json!([{"defining_chunk": "static/app", "input_index": 0}]),
         "the full assessment retains the premise dependency: {summary:#}"
     );
-    assert_eq!(covered["cells"].as_array().unwrap().len(), slots.len());
-    assert!(
-        covered["cells"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|cell| cell["first_read"]["kind"] == "fallback")
+    let covered_cells = covered["cells"].as_array().unwrap();
+    let binding_cells = covered_cells
+        .iter()
+        .filter(|cell| cell["cell"]["kind"] == "binding")
+        .collect::<Vec<_>>();
+    assert_eq!(binding_cells.len(), slots.len(), "{covered:#}");
+    let mut expected_bindings = slots.to_vec();
+    expected_bindings.sort_unstable();
+    let mut actual_bindings = binding_cells
+        .iter()
+        .map(|cell| cell["cell"]["binding"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    actual_bindings.sort_unstable();
+    assert_eq!(actual_bindings, expected_bindings, "{covered:#}");
+    for cell in binding_cells {
+        assert_eq!(cell["first_read"]["kind"], "fallback", "{cell:#}");
+    }
+    let module_cells = covered_cells
+        .iter()
+        .filter(|cell| cell["cell"]["kind"] == "module_cell")
+        .collect::<Vec<_>>();
+    assert_eq!(module_cells.len(), slots.len(), "{covered:#}");
+    for cell in module_cells {
+        assert!(cell["first_read"].is_object(), "{cell:#}");
+        assert_ne!(cell["first_read"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["later_write"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["observed_conflict"], false, "{cell:#}");
+    }
+    let progress_cells = covered_cells
+        .iter()
+        .filter(|cell| cell["cell"]["kind"] == "execution_progress")
+        .collect::<Vec<_>>();
+    assert_eq!(progress_cells.len(), 1, "{covered:#}");
+    let progress = progress_cells[0];
+    assert_eq!(progress["first_read"]["kind"], "observed", "{progress:#}");
+    assert_eq!(
+        progress["later_write"]["kind"], "potential_suppression",
+        "{progress:#}"
     );
+    assert_eq!(progress["observed_conflict"], false, "{progress:#}");
     assert!(
         !covered["first_opacity"]["execution_losses"]
             .as_array()
@@ -3702,6 +6829,236 @@ fn export_chunk_filter_requires_export_and_rejects_unknown_chunks() {
             "{result:?}"
         );
     }
+}
+
+#[test]
+fn primitive_binary_receipts_cover_split_declarators_and_preserve_reads() {
+    let source =
+        "const a = 1, b = 2, c = a + b;\nconst z = 'z';\nconsole.log(c);\nexport { c, z };\n";
+    let (fixture, artifacts) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(source, vec![logical_module("x", &[Member::new("c")])]),
+        "split-addition",
+    );
+
+    assert_preserved_entry_output(&fixture, "3\n");
+    let receipt = assert_operation_receipt(&fixture, "c", 0);
+    assert_binary_reads_remain_ordered(&fixture, "c", &["a", "b"]);
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    let assessment: Value = read_json(&artifacts.join("candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "console.log remains uncovered; local export linkage has no evaluation body: {report:#}"
+        );
+    }
+    assert!(
+        report["coverage"]["owner_coverage_refusals"]
+            .get("unsupported_initializer")
+            .is_none(),
+        "the primitive binary owner has an operation receipt: {report:#}"
+    );
+    assert!(
+        artifacts
+            .join("candidate_relocation_assessment.json")
+            .is_file()
+            && artifacts
+                .join("effect_translation_validation.json")
+                .is_file()
+            && artifacts.join("dependency_graph.json.gz").is_file(),
+        "positive reports were saved before receipt assertions: {}",
+        artifacts.display()
+    );
+    assert_eq!(receipt["binding"], "c", "{receipt:#}");
+}
+
+#[test]
+fn primitive_binary_receipt_composes_through_a_local_callable() {
+    let source = "const a = 1, b = 2;\nfunction sum() { return a + b; }\nconst c = sum();\nconst z = 'z';\nconsole.log(c);\n";
+    let (fixture, artifacts) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(source, vec![logical_module("x", &[Member::new("c")])]),
+        "local-call-addition",
+    );
+
+    assert_preserved_entry_output(&fixture, "3\n");
+    let receipt = assert_operation_receipt(&fixture, "c", 1);
+    let call = &receipt["calls"][0];
+    assert_eq!(call["caller"]["kind"], "root_initializer", "{receipt:#}");
+    assert_eq!(call["target"]["kind"], "callable", "{receipt:#}");
+    let graph = fixture.dependency_graph();
+    let sum = source_unit_for_binding(&graph, "sum");
+    let sum_node = graph.nodes.iter().find(|node| node.id == sum).unwrap();
+    assert_eq!(call["target"]["owner"], sum_node.statement_ordinal.0);
+    assert_binary_reads_remain_ordered(&fixture, "c", &["a", "b"]);
+
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    let assessment: Value = read_json(&artifacts.join("candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only console.log remains uncovered after the local arithmetic call: {report:#}"
+        );
+    }
+    assert!(
+        artifacts
+            .join("effect_translation_validation.json")
+            .is_file()
+    );
+}
+
+#[test]
+fn primitive_binary_throw_and_coercion_controls_keep_runtime_and_unknown_effects() {
+    let throwing_cases = [
+        (
+            "mixed-number-bigint",
+            "const a = 1n, b = 2;\nconst result = a + b;\nconst z = 'z';\nconsole.log(result);\nexport { result, z };\n",
+            &[Member::new("result")][..],
+            "TypeError",
+            true,
+        ),
+        (
+            "symbol-addition",
+            "const token = Symbol();\nconst result = token + 1;\nconst z = 'z';\nconsole.log(result);\nexport { result, z };\n",
+            &[Member::new("result")][..],
+            "TypeError",
+            true,
+        ),
+        (
+            "tdz-addition",
+            "const result = later + 1;\nconst later = 2;\nconst z = 'z';\nconsole.log(result);\nexport { result, later, z };\n",
+            &[Member::new("result"), Member::new("later")][..],
+            "ReferenceError",
+            false,
+        ),
+    ];
+
+    for (case, source, members, error, crosses_unknown) in throwing_cases {
+        let runner = if crosses_unknown {
+            run_inspection_fixture
+        } else {
+            run_fixture
+        };
+        let fixture = runner(FixtureOpts::new(source, vec![logical_module("x", members)]));
+        save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+        assert_preserved_entry_error(&fixture, error);
+        assert_binary_remains_unsealed(&fixture, "result");
+        let report = fixture.effect_translation_validation();
+        if crosses_unknown {
+            assert!(
+                report["swapped_pairs"].as_u64().unwrap() > 0,
+                "{case}: {report:#}"
+            );
+            assert!(
+                matches!(
+                    report["decision"]["status"].as_str(),
+                    Some("incomplete" | "conflict")
+                ),
+                "{case}: {report:#}"
+            );
+        } else {
+            assert_eq!(report["swapped_pairs"], 0, "{case}: {report:#}");
+            assert_eq!(
+                report["decision"]["status"], "accepted",
+                "{case}: {report:#}"
+            );
+        }
+    }
+
+    let object_coercion = run_inspection_fixture(FixtureOpts::new(
+        "const object = { valueOf() { globalThis.marker = 1; return 1; } };\nconst result = object + 1;\nconst z = 'z';\nconsole.log(result, globalThis.marker);\nexport { result, z };\n",
+        vec![logical_module("x", &[Member::new("result")])],
+    ));
+    save_relocation_reports(
+        &object_coercion.report_root,
+        &object_coercion.chunk_id,
+        "object-coercion",
+    );
+    assert_preserved_entry_output(&object_coercion, "2 1\n");
+    assert_binary_remains_unsealed(&object_coercion, "result");
+    let report = object_coercion.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert!(
+        matches!(
+            report["decision"]["status"].as_str(),
+            Some("incomplete" | "conflict")
+        ),
+        "{report:#}"
+    );
+
+    let value_sensitive = run_inspection_fixture(FixtureOpts::new(
+        "const seed = 1;\nconst anchor = (console.log('anchor'), 0);\nconst result = 1n + 1n;\nconsole.log(result);\nexport { seed, anchor, result };\n",
+        vec![logical_module(
+            "x",
+            &[Member::new("seed"), Member::new("result")],
+        )],
+    ));
+    save_relocation_reports(
+        &value_sensitive.report_root,
+        &value_sensitive.chunk_id,
+        "bigint-value-sensitive-throw",
+    );
+    assert_preserved_entry_output(&value_sensitive, "anchor\n2n\n");
+    assert_binary_remains_unsealed(&value_sensitive, "result");
+    let report = value_sensitive.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert!(
+        matches!(
+            report["decision"]["status"].as_str(),
+            Some("incomplete" | "conflict")
+        ),
+        "a value-sensitive BigInt throw must remain possible, not definite: {report:#}"
+    );
+}
+
+#[test]
+fn refused_call_operands_preserve_order_around_binary_and_equality() {
+    for (operator, right, expected) in [("+", "2", "after 3\n"), ("===", "1", "after true\n")] {
+        let source = format!(
+            "const left = (console.log('before'), 1);\n\
+             const result = left {operator} (console.log('operand'), {right});\n\
+             console.log('after', result);\n\
+             export {{ result }};\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+        assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+        assert_preserved_entry_output(&fixture, &format!("before\noperand\n{expected}"));
+        assert_binary_remains_unsealed(&fixture, "result");
+    }
+}
+
+#[test]
+fn exact_binary_throw_skips_the_source_suffix() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const result = 1n + 1;\nconsole.log('suffix-ran');\nexport { result };\n",
+        vec![],
+    ));
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+    assert_preserved_entry_error(&fixture, "Cannot mix BigInt and other types");
+    assert_node_error_with_stdout(&fixture.entry_path, "Cannot mix BigInt and other types", "");
 }
 
 #[test]
@@ -3831,7 +7188,12 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     }
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["uninitialized_read"], 1,
-        "the first declarator's ordered read observes a TDZ cell: {report:#}"
+        "the ordered first declarator retains its actual uninitialized-read refusal: {report:#}"
+    );
+    assert_ne!(
+        binding_execution_report(&tdz, "first")["binding_effect_authority"]["authority"],
+        "operation_receipt",
+        "a forward TDZ read cannot seal an initializer receipt"
     );
 }
 
@@ -3913,7 +7275,7 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
 }
 
 #[test]
-fn imported_primitive_return_does_not_inherit_local_operation_authority() {
+fn imported_primitive_return_receives_body_operation_receipt() {
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { literal } from './peer.js';\nconst result = literal();\nconsole.log(result);\n",
@@ -3921,6 +7283,53 @@ fn imported_primitive_return_does_not_inherit_local_operation_authority() {
         ).with_extra_chunks(&[("static/peer", "export function literal() { return 3; }\n")]),
     );
     assert_preserved_entry_output(&fixture, "3\n");
+    let receipt = assert_operation_receipt(&fixture, "result", 1);
+    assert_eq!(
+        receipt["read_dependencies"],
+        serde_json::json!({}),
+        "{receipt:#}"
+    );
+    assert_eq!(
+        receipt["rebind_dependencies"],
+        serde_json::json!({}),
+        "{receipt:#}"
+    );
+    let imported = receipt["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|call| call["target"]["kind"] == "imported_callable")
+        .expect("the result receipt records the executed imported body");
+    assert_eq!(imported["target"]["defining_module"], "static/peer");
+    assert_eq!(imported["target"]["export"], "literal");
+    assert_eq!(imported["target"]["local"], "literal");
+    assert!(imported["target"]["key"].as_u64().unwrap() > 0);
+    assert_eq!(imported["caller"]["kind"], "root_initializer");
+    assert_eq!(
+        imported["dependencies"],
+        serde_json::json!({}),
+        "{receipt:#}"
+    );
+}
+
+#[test]
+fn imported_primitive_return_with_provider_effect_stays_uncovered() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { literal } from './peer.js';\nconst result = literal();\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function literal() { console.log('provider'); return 3; }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "provider\n3\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "the primitive result cannot cover its observable provider body: {execution:#}"
+    );
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert!(
@@ -3928,7 +7337,7 @@ fn imported_primitive_return_does_not_inherit_local_operation_authority() {
                 .as_u64()
                 .unwrap()
                 >= 2,
-            "{report:#}"
+            "the provider log and caller log remain uncovered in {domain}: {report:#}"
         );
     }
 }
@@ -4003,6 +7412,126 @@ fn returned_callable_operation_coverage_discharges_only_its_dataflow_barrier() {
     let fixture =
         run_fixture(returned_callable_commutation_fixture().with_dataflow_aware_s_chain());
     assert_preserved_entry_output(&fixture, "2 3\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_expression_root_receipt(&fixture, 3, 0);
+    assert_expression_root_receipt(&fixture, 5, 0);
+}
+
+#[test]
+fn module_binding_stores_compose_ordered_rhs_calls() {
+    let statement = "(left = value(), right = value());";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "let calls = 0;\nfunction value() { calls++; return 7; }\nlet left = 0;\nlet right = 0;\nconst anchor = 1;\n(left = value(), right = value());\nconsole.log(left, right, calls, anchor);\n",
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("calls"), Member::new("value"), Member::new("left"), Member::new("right")],
+                &[statement],
+            )],
+        ).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 7 2 1\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_expression_root_receipt(&fixture, 5, 2);
+}
+
+#[test]
+fn module_binding_stores_compose_the_actual_parameter_prologue() {
+    let statement = "(left = value(), right = value(8));";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "let defaults = 0;\nlet calls = 0;\nfunction value(input = (defaults++, 7)) { calls++; return input; }\nlet left = 0;\nlet right = 0;\nconst anchor = 1;\n(left = value(), right = value(8));\nconsole.log(left, right, calls, defaults, anchor);\n",
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("defaults"), Member::new("calls"), Member::new("value"), Member::new("left"), Member::new("right")],
+                &[statement],
+            )],
+        ).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 8 2 1 1\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_expression_root_receipt(&fixture, 6, 2);
+}
+
+#[test]
+fn module_store_receipts_preserve_actual_binding_conflicts() {
+    let source =
+        "let state = 0;\nconst observed = state;\nstate = 1;\nconsole.log(observed, state);\n";
+    let baseline = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&baseline, "0 1\n");
+    let fixture = run_inspection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("state")],
+                &["state = 1;"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_expression_root_receipt(&fixture, 2, 0);
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let pair = examples(&report)
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 2 && pair["runs_later"]["unit"] == 1)
+        .unwrap_or_else(|| panic!("missing module binding conflict: {report:#}"));
+    assert_eq!(pair["havoc"], false, "{pair:#}");
+    assert!(
+        pair["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "state"),
+        "{pair:#}"
+    );
+}
+
+#[test]
+fn module_binding_stores_keep_tdz_immutability_and_unresolved_references() {
+    for (source, owner, error) in [
+        ("target = 1;\nlet target = 0;\n", 0, "ReferenceError"),
+        ("const target = 0;\ntarget = 1;\n", 1, "TypeError"),
+        (
+            "const { value: target } = { value: 0 };\ntarget = 1;\n",
+            1,
+            "TypeError",
+        ),
+        (
+            "import { value as target } from './peer.js';\ntarget = 1;\n",
+            1,
+            "TypeError",
+        ),
+        ("unresolvedTarget = 1;\n", 0, "ReferenceError"),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![])
+                .with_extra_chunks(&[("static/peer", "export const value = 0;\n")]),
+        );
+        assert_preserved_entry_error(&fixture, error);
+        let graph = fixture.dependency_graph();
+        let execution = graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == owner)
+            .unwrap()
+            .synchronous_execution
+            .as_ref()
+            .unwrap();
+        let authority = serde_json::to_value(&execution.binding_effect_authority).unwrap();
+        assert_ne!(
+            authority["authority"], "operation_receipt",
+            "{source}: {execution:#?}"
+        );
+    }
 }
 
 #[test]
@@ -4025,4 +7554,842 @@ fn operation_coverage_does_not_change_strict_callable_purity() {
         }),
         "strict-mode rejection must retain the strict chain: {graph:#?}"
     );
+}
+
+#[test]
+fn imported_source_body_effects_compose_through_direct_and_wrapped_calls() {
+    const PROVIDER: &str = "export function make() { const record = { kind: 0, value: 0 }; record.kind = 1; record.value = 2; return record; }\n";
+    for (case, source, expected_calls) in [
+        (
+            "imported-body-direct",
+            "import { make as build } from './peer.js';\nconst anchor = 0;\nconst result = build();\nconsole.log(result.kind, result.value, anchor);\n",
+            1,
+        ),
+        (
+            "imported-body-wrapped",
+            "import { make as build } from './peer.js';\nconst anchor = 0;\nfunction wrap() { return build(); }\nconst result = wrap();\nconsole.log(result.kind, result.value, anchor);\n",
+            2,
+        ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("records/result", &[Member::new("result")])],
+            )
+            .with_extra_chunks(&[("static/peer", PROVIDER)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, "1 2 0\n");
+        let effect = fixture.effect_translation_validation();
+        assert!(
+            effect["swapped_pairs"].as_u64().unwrap() > 0,
+            "actual reordered pair: {effect:#}"
+        );
+        assert_eq!(effect["decision"]["status"], "accepted", "{effect:#}");
+        let receipt = assert_operation_receipt(&fixture, "result", expected_calls);
+        let calls = receipt["calls"].as_array().unwrap();
+        let imported = calls
+            .iter()
+            .find(|call| call["target"]["kind"] == "imported_callable")
+            .expect("exact cross-module edge from executed source body");
+        assert_eq!(imported["target"]["defining_module"], "static/peer");
+        assert_eq!(imported["target"]["export"], "make");
+        assert_eq!(imported["target"]["local"], "make");
+        assert!(imported["target"]["key"].as_u64().unwrap() > 0);
+        assert_eq!(
+            imported["caller"]["kind"],
+            if expected_calls == 1 {
+                "root_initializer"
+            } else {
+                "callable"
+            }
+        );
+    }
+}
+
+#[test]
+fn provider_local_birth_support_requires_a_private_complete_body() {
+    const PRIVATE_SOURCE: &str = "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult.value);\n";
+    const PRIVATE_PROVIDER: &str = "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return record; }\n";
+    for (case, source, provider, output) in [
+        (
+            "provider-local-birth-support",
+            PRIVATE_SOURCE,
+            PRIVATE_PROVIDER,
+            "2\n",
+        ),
+        (
+            "provider-local-birth-primitive-return",
+            "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult);\n",
+            "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return observed; }\n",
+            "1\n",
+        ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, output);
+
+        let private = binding_execution_report(&fixture, "privateResult");
+        let _ = assert_operation_receipt(&fixture, "privateResult", 1);
+        let supports = private["operation_support_receipts"]
+            .as_array()
+            .expect("provider-local support stays in the diagnostic carrier");
+        assert!(
+            supports.iter().any(|receipt| {
+                receipt["support"]["kind"] == "provider_local_birth"
+                    && receipt["support"].get("origin").is_none()
+            }),
+            "sealed evidence must not retain an address that could alias another provider: {private:#}"
+        );
+        for operation in ["own_data_read", "writable_own_data_store"] {
+            assert!(
+                supports.iter().any(|receipt| {
+                    receipt["operation"] == operation
+                        && receipt["support"]["kind"] == "provider_local_birth"
+                }),
+                "the private body must seal its {operation} support: {private:#}"
+            );
+        }
+    }
+
+    for (case, source, provider, binding, output) in [
+        (
+            "provider-local-birth-borrowed",
+            "import { borrowed } from './peer.js';\nconst box = { value: 0 };\nconst borrowedResult = borrowed(box, box);\nconsole.log(borrowedResult.value);\n",
+            "export function borrowed(left, right) { const alias = left; alias.value = 1; return right; }\n",
+            "borrowedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-cached",
+            "import { cached } from './peer.js';\nconst cachedResult = cached();\nconsole.log(cachedResult.value);\n",
+            "let cache = { value: 0 };\nexport function cached() { cache.value = 1; return cache; }\n",
+            "cachedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-published",
+            "import { published } from './peer.js';\nconst publishedResult = published();\nconsole.log(publishedResult.value);\n",
+            "let escaped;\nexport function published() { const record = { value: 0 }; escaped = record; record.value = 1; return record; }\n",
+            "publishedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-unknown-call",
+            "import { unknownCall } from './peer.js';\nconst unknownResult = unknownCall(value => value);\nconsole.log(unknownResult.value);\n",
+            "export function unknownCall(publish) { const record = { value: 0 }; publish(record); record.value = 1; return record; }\n",
+            "unknownResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-borrowed-publication",
+            "import { publish } from './peer.js';\nconst sink = { record: null };\nconst publishedResult = publish(sink);\nconsole.log(publishedResult.value, sink.record === publishedResult);\n",
+            "export function publish(sink) { const record = { value: 0 }; sink.record = record; record.value = 1; return record; }\n",
+            "publishedResult",
+            "1 true\n",
+        ),
+        (
+            "provider-local-birth-omitted-suffix",
+            "import { make } from './peer.js';\nconst result = make();\nconsole.log(result.value);\n",
+            "export function make() { const record = { value: 0 }; record.value = 1; return record; record.value = 2; }\n",
+            "result",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-native",
+            "import { native } from './peer.js';\nconst nativeResult = native();\nconsole.log(nativeResult.value);\n",
+            "export function native() { const record = { native: new Map(), value: 0 }; record.value = 1; return record; }\n",
+            "nativeResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-nested-closure",
+            "import { nested } from './peer.js';\nconst nestedResult = nested();\nconsole.log(nestedResult.record.value);\n",
+            "export function nested() { const record = { value: 0 }; const read = () => record.value; record.value = 1; return { record, read }; }\n",
+            "nestedResult",
+            "1\n",
+        ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, output);
+        let execution = binding_execution_report(&fixture, binding);
+        assert!(
+            execution["operation_support_receipts"]
+                .as_array()
+                .is_none_or(|receipts| receipts
+                    .iter()
+                    .all(|receipt| { receipt["support"]["kind"] != "provider_local_birth" })),
+            "{case} cannot carry a sealed provider-local birth: {execution:#}"
+        );
+        if case != "provider-local-birth-borrowed" {
+            assert_ne!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "{case} lacks the complete private-body proof required for operation authority: {execution:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn allocation_summary_and_foreign_timing_cannot_supply_body_effect_coverage() {
+    for (case, provider, call, expected_output) in [
+        (
+            "imported-body-host",
+            "export function make() { console.log('body'); return { value: 2 }; }\n",
+            "build()",
+            "body\n2\n",
+        ),
+        (
+            "imported-body-capture",
+            "let value = 2; export function make() { return { value }; }\n",
+            "build()",
+            "2\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ make as build }} from './peer.js';\nfunction wrap() {{ return {call}; }}\nconst result = wrap();\nconsole.log(result.value);\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, expected_output);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{case} cannot turn an allocation summary, successful value or legacy completion into body coverage: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn empty_native_construction_nested_imported_body_composes_effects() {
+    let source = "import { make as build } from './peer.js';\nfunction wrap() { return build(); }\nconst result = wrap();\nconsole.log(result.value);\n";
+    let provider =
+        "export function make() { const record = { value: new Map() }; return record; }\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        "imported-body-native",
+    );
+    assert_preserved_entry_output(&fixture, "Map(0) {}\n");
+    let receipt = assert_operation_receipt(&fixture, "result", 2);
+    assert!(
+        receipt["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edge| edge["target"]["kind"] == "imported_callable"),
+        "{receipt}"
+    );
+}
+
+#[test]
+fn foreign_body_or_argument_throw_cannot_seal_a_root() {
+    for (case, provider, call, error) in [
+        (
+            "imported-body-throw",
+            "export function make() { throw 17; }\n",
+            "build()",
+            "17",
+        ),
+        (
+            "imported-body-argument-throw",
+            "export function make() { return { value: 2 }; }\n",
+            "build(fail())",
+            "23",
+        ),
+    ] {
+        let source = format!(
+            "import {{ make as build }} from './peer.js';\nfunction fail() {{ throw 23; }}\nfunction wrap() {{ return {call}; }}\nconst result = wrap();\nconsole.log(result.value);\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{case} preserves abrupt completion independently of any provider return summary: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn audited_imported_member_identity_composes_interpreted_body_effects() {
+    const PROVIDER: &str = "var marker = Symbol.for('fixture.context'), childMarker = Symbol.for('fixture.child');\nvar box = { exports: {} };\nvar namespace = {};\nnamespace.make = function(value) { return (value = { tag: marker, value, Self: null, Child: null }, value.Self = value, value.Child = { tag: childMarker, parent: value }, value); };\nbox.exports = namespace;\nvar api = box.exports;\nexport { api };\n";
+    for (case, expression, wrapper, expected_calls) in [
+        ("imported-member-direct", "remote.make(2)", "", 1),
+        (
+            "imported-member-wrapped",
+            "wrap()",
+            "function wrap() { return remote.make(2); }\n",
+            2,
+        ),
+    ] {
+        let source = format!(
+            "import {{ api as remote }} from './peer.js';\nconst anchor = 0;\n{wrapper}const result = {expression};\nconsole.log(result.value, result.Self === result, result.Child.parent === result, anchor);\n"
+        );
+        let policy = [ChunkExportPurityBuilder::new("static/peer")
+            .with_namespace_independent_members("api", &["make"])
+            .with_source_callable_members("api", &["make"])
+            .build()];
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("records/result", &[Member::new("result")])],
+            )
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_chunk_export_purity(&policy),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, "2 true true 0\n");
+        let effect = fixture.effect_translation_validation();
+        assert!(effect["swapped_pairs"].as_u64().unwrap() > 0, "{effect:#}");
+        assert_eq!(effect["decision"]["status"], "accepted", "{effect:#}");
+        assert_eq!(
+            effect["relocation_dependencies"]["source_callable_members"][0]["member"], "make",
+            "{effect:#}"
+        );
+        let receipt = assert_operation_receipt(&fixture, "result", expected_calls);
+        let imported = receipt["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|call| call["target"]["kind"] == "imported_callable")
+            .unwrap();
+        assert_eq!(imported["target"]["defining_module"], "static/peer");
+        assert_eq!(imported["target"]["export"], "api");
+        assert_eq!(imported["target"]["local"], "api");
+        assert_eq!(imported["target"]["member"], "make");
+        assert_eq!(
+            imported["dependencies"]["source_callable_members"][0]["member"],
+            "make"
+        );
+    }
+}
+
+#[test]
+fn member_identity_and_namespace_privacy_cannot_replace_body_or_operand_effects() {
+    for (case, provider, call, identity, expected) in [
+        (
+            "member-namespace-only",
+            "var api = {}; api.make = function(value) { return { value }; }; export { api };\n",
+            "remote.make(2)",
+            false,
+            "2\n",
+        ),
+        (
+            "member-host-body",
+            "var api = {}; api.make = function(value) { console.log('body'); return { value }; }; export { api };\n",
+            "remote.make(2)",
+            true,
+            "body\n2\n",
+        ),
+        (
+            "member-lexical-capture",
+            "let value = 2; var api = {}; api.make = function() { return { value }; }; export { api };\n",
+            "remote.make()",
+            true,
+            "2\n",
+        ),
+        (
+            "member-captured-call",
+            "var callback = () => 2; var api = {}; api.make = function() { return { value: callback() }; }; export { api };\n",
+            "remote.make()",
+            true,
+            "2\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ api as remote }} from './peer.js';\nfunction wrap() {{ return {call}; }}\nconst result = wrap();\nconsole.log(result.value);\n"
+        );
+        let mut contract = ChunkExportPurityBuilder::new("static/peer")
+            .with_namespace_independent_members("api", &["make"]);
+        if identity {
+            contract = contract.with_source_callable_members("api", &["make"]);
+        }
+        let policy = [contract.build()];
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(&source, vec![])
+                .with_extra_chunks(&[("static/peer", provider)])
+                .with_chunk_export_purity(&policy),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        assert_binary_remains_unsealed(&fixture, "result");
+    }
+    let policy = [ChunkExportPurityBuilder::new("static/peer")
+        .with_namespace_independent_members("api", &["make"])
+        .with_source_callable_members("api", &["make"])
+        .build()];
+    let source = "import { api as remote } from './peer.js';\nfunction fail() { throw 23; }\nfunction wrap() { return remote.make(fail()); }\nconst result = wrap();\nconsole.log(result);\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[(
+                "static/peer",
+                "var api = {}; api.make = function(value) { return { value }; }; export { api };\n",
+            )])
+            .with_chunk_export_purity(&policy),
+        "member-argument-throw",
+    );
+    assert_preserved_entry_error(&fixture, "23");
+    assert_binary_remains_unsealed(&fixture, "result");
+}
+
+#[test]
+fn simple_imported_parameters_receive_body_operation_receipts() {
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new("import { make as build } from './peer.js';\nconst anchor = 0;\nconst result = build(2);\nconsole.log(result.value, anchor);\n", vec![logical_module("records/result", &[Member::new("result")])])
+            .with_extra_chunks(&[("static/peer", "export function make(value) { return { value }; }\n")]), "imported-body-parameter");
+    assert_preserved_entry_output(&fixture, "2 0\n");
+    assert_operation_receipt(&fixture, "result", 1);
+}
+
+#[test]
+fn source_member_identity_requires_namespace_scope_and_one_source_callable() {
+    let source = "import { api as remote } from './peer.js';\nconst result = remote.make();\nconsole.log(result);\n";
+    for (provider, namespace, token) in [
+        (
+            "var api = { make() { return { value: 2 }; } }; export { api };\n",
+            false,
+            "namespace_independent_members",
+        ),
+        (
+            "var api = {}; export { api };\n",
+            true,
+            "source_callable_members",
+        ),
+        (
+            "var api = {}; api.make = function() { return { value: 2 }; }; api.make = function() { return { value: 3 }; }; export { api };\n",
+            true,
+            "source_callable_members",
+        ),
+    ] {
+        let mut contract = ChunkExportPurityBuilder::new("static/peer")
+            .with_source_callable_members("api", &["make"]);
+        if namespace {
+            contract = contract.with_namespace_independent_members("api", &["make"]);
+        }
+        let policy = [contract.build()];
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![])
+                .with_extra_chunks(&[("static/peer", provider)])
+                .with_chunk_export_purity(&policy),
+            &[token],
+        );
+    }
+}
+
+#[test]
+fn selected_member_closure_has_its_actual_enclosing_var_cells() {
+    let provider = "var api = {};\nfunction install() { var captured = 17; api.make = function(value) { const record = { value, captured }; return record; }; }\ninstall();\nexport { api };\n";
+    let policy = [ChunkExportPurityBuilder::new("static/peer")
+        .with_namespace_independent_members("api", &["make"])
+        .with_source_callable_members("api", &["make"])
+        .build()];
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new("import { api as remote } from './peer.js';\nconst anchor = 0;\nconst result = remote.make(2);\nconsole.log(result.value, result.captured, anchor);\n", vec![logical_module("records/result", &[Member::new("result")])])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_chunk_export_purity(&policy), "imported-member-enclosing-var");
+    assert_preserved_entry_output(&fixture, "2 17 0\n");
+    assert_operation_receipt(&fixture, "result", 1);
+}
+
+#[test]
+fn later_foreign_body_receipt_does_not_erase_an_uncovered_wrapper_prefix() {
+    let source = "import { make as build } from './peer.js';\nfunction wrap() { console.log('prefix'); return build(2); }\nconst result = wrap();\nconsole.log(result.value);\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function make(value) { return { value }; }\n",
+        )]),
+        "imported-body-uncovered-prefix",
+    );
+    assert_preserved_entry_output(&fixture, "prefix\n2\n");
+    assert_binary_remains_unsealed(&fixture, "result");
+}
+
+#[test]
+fn local_record_constructor_composes_actual_new_and_factory_receipts() {
+    let source = "class Box { constructor(record, callback) { this.record = record; this.callback = callback; } run() { return this.record.enabled ? this.callback() : 0; } }\nfunction make(record) { return new Box(record, () => later); }\nconst command = make({ enabled: !false });\nconst later = 1;\nconsole.log(command.record.enabled, command.run());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("Box"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "local-record-constructor-receipts",
+    );
+    assert_preserved_entry_output(&fixture, "true 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let receipt = assert_operation_receipt(&fixture, "command", 2);
+    assert!(
+        receipt["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|call| call["target"]["kind"] == "construction"),
+        "{receipt:#}"
+    );
+}
+
+#[test]
+fn local_new_target_keeps_constructor_effects_unsealed() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "class Box { constructor() { this.target = new.target; } } const result = new Box(); console.log(result.target === Box);\n", vec![])
+        .with_unassigned_mode(unassigned_mode_inline()));
+    assert_preserved_entry_output(&fixture, "true\n");
+    assert_binary_remains_unsealed(&fixture, "result");
+}
+
+#[test]
+fn local_private_field_construction_keeps_deferred_callback_and_brand() {
+    let source = "class Box { #read = () => 7; run() { return this.#read(); } } const result = new Box(); const readLater = () => later; const later = 1; console.log(result.run(), readLater());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("types/box", &[Member::new("Box")]),
+                logical_module("work", &[Member::new("result"), Member::new("readLater")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "local-private-constructor-receipt",
+    );
+    assert_preserved_entry_output(&fixture, "7 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([0, 3, 1, 2, 4]),
+        "{assessment:#}"
+    );
+    let receipt = assert_operation_receipt(&fixture, "result", 1);
+    assert_eq!(
+        receipt["calls"][0]["target"]["kind"], "construction",
+        "{receipt:#}"
+    );
+    let execution = binding_execution_report(&fixture, "result");
+    let write = &execution["heap_frontier"]["heap_access_provenance"]["executed_operations"]["writes"]
+        ["sample"][0];
+    assert_eq!(write["kind"], "private_slot", "{execution:#}");
+    assert_eq!(write["name"], "read", "{execution:#}");
+    let target_class = &receipt["calls"][0]["target"]["class"];
+    assert_eq!(
+        write["origin"]["module"], write["class"]["module"],
+        "{execution:#}"
+    );
+    assert_eq!(write["origin"]["origin"], *target_class, "{execution:#}");
+    assert_eq!(
+        write["origin"]["family"],
+        serde_json::json!({"identity": "constructor_instances"}),
+        "{execution:#}"
+    );
+    assert_eq!(write["class"]["origin"], *target_class, "{execution:#}");
+    assert_eq!(write["origin"]["module"]["scope"], "chunk", "{execution:#}");
+}
+
+#[test]
+fn private_new_and_class_definition_receipts_cover_reordering() {
+    let source = "class Box { #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[Member::new("Box"), Member::new("result")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "private-construction-class-root",
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([2, 0, 1, 3]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+
+    assert_class_declaration_receipt(&fixture, "Box");
+    let receipt = assert_operation_receipt(&fixture, "result", 1);
+    assert_eq!(
+        receipt["calls"][0]["target"]["kind"], "construction",
+        "{receipt:#}"
+    );
+    let execution = binding_execution_report(&fixture, "result");
+    let private_write = execution["heap_frontier"]["heap_access_provenance"]["executed_operations"]
+        ["writes"]["sample"][0]
+        .clone();
+    assert_eq!(private_write["kind"], "private_slot", "{execution:#}");
+    assert_eq!(private_write["name"], "read", "{execution:#}");
+    let target_class = &receipt["calls"][0]["target"]["class"];
+    assert_eq!(
+        private_write["origin"]["module"],
+        private_write["class"]["module"]
+    );
+    assert_eq!(private_write["origin"]["origin"], *target_class);
+    assert_eq!(
+        private_write["origin"]["family"],
+        serde_json::json!({"identity": "constructor_instances"})
+    );
+    assert_eq!(private_write["class"]["origin"], *target_class);
+    assert_eq!(private_write["origin"]["module"]["scope"], "chunk");
+}
+
+#[test]
+fn lexical_receiver_capture_closes_construction_without_invoking_the_arrow() {
+    for (callback, invocation) in [
+        ("() => this", "this.#read()"),
+        ("() => () => this", "this.#read()()"),
+    ] {
+        let source = format!(
+            "class Box {{ #read = {callback}; readLater() {{ return later; }} run() {{ return {invocation}; }} }} const result = new Box(); const later = 7; console.log(result.run() === result, later);\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "callbacks/box",
+                        &[Member::new("Box"), Member::new("result")],
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            ),
+            "lexical-receiver-construction",
+        );
+        assert_preserved_entry_output(&fixture, "true 7\n");
+        let assessment = fixture.effect_translation_validation();
+        assert_eq!(
+            assessment["decision"]["status"], "accepted",
+            "{assessment:#}"
+        );
+        assert_eq!(
+            assessment["emitted_order"],
+            serde_json::json!([2, 0, 1, 3]),
+            "{assessment:#}"
+        );
+        assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+        assert_class_declaration_receipt(&fixture, "Box");
+        let receipt = assert_operation_receipt(&fixture, "result", 1);
+        assert_eq!(
+            receipt["calls"][0]["target"]["kind"], "construction",
+            "{receipt:#}"
+        );
+        // Only New executes here. Neither the arrow nor readLater has run.
+        assert!(
+            receipt["read_dependencies"].get("later").is_none(),
+            "{receipt:#}"
+        );
+    }
+}
+
+#[test]
+fn captured_receiver_construction_receipt_does_not_cover_a_later_tdz_call() {
+    let source = "class Box { #read = () => this; readLater() { return later; } run() { return this.#read().readLater(); } } const result = new Box(); function probe() { try { return result.run(); } catch (error) { return error.name; } } const before = probe(); const later = 7; console.log(before);\n";
+    let source_witness = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "source",
+            &[
+                Member::new("Box"),
+                Member::new("result"),
+                Member::new("probe"),
+                Member::new("before"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&source_witness, "ReferenceError\n");
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[
+                        Member::new("Box"),
+                        Member::new("result"),
+                        Member::new("probe"),
+                        Member::new("before"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([4, 0, 1, 2, 3, 5]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 4, "{assessment:#}");
+    assert_operation_receipt(&rejected, "result", 1);
+    let before = binding_execution_report(&rejected, "before");
+    assert_ne!(
+        before["binding_effect_authority"]["authority"], "operation_receipt",
+        "{before:#}"
+    );
+}
+
+#[test]
+fn eager_class_definition_effect_does_not_receive_a_complete_root_receipt() {
+    let source = "class Box { static ready = later; #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let source_witness = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "source",
+            &[
+                Member::new("Box"),
+                Member::new("result"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&source_witness, "ReferenceError");
+
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[Member::new("Box"), Member::new("result")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([2, 0, 1, 3]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 2, "{assessment:#}");
+    assert_eq!(assessment["counts"]["havoc_pairs"], 2, "{assessment:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            assessment["coverage"]["unknown_coverage"][domain], 3,
+            "{assessment:#}"
+        );
+    }
+    assert_eq!(
+        assessment["coverage"]["owner_coverage_refusals"]["unsupported_owner_kind"], 2,
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "{assessment:#}"
+    );
+
+    let rows = read_jsonl(&rejected.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 2 && pair["runs_later"]["unit"] == 0)
+        .unwrap_or_else(|| panic!("later-before-class effect hazard: {rows:#?}"));
+    assert_eq!(pair["runs_first"]["module"], "values/later", "{pair:#}");
+    assert_eq!(pair["runs_later"]["module"], "callbacks/box", "{pair:#}");
+    assert_eq!(pair["disposition"], "uncovered", "{pair:#}");
+    assert_eq!(pair["havoc"], true, "{pair:#}");
+    assert_eq!(
+        pair["later_opacity"]["owner_coverage_refusal"]["reason"], "unsupported_owner_kind",
+        "{pair:#}"
+    );
+    assert_eq!(
+        pair["later_opacity"]["unknown_coverage"],
+        serde_json::json!(["global_properties", "general_heap", "host_effects"]),
+        "{pair:#}"
+    );
+    let later_cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "later")
+        .unwrap_or_else(|| panic!("eager Box/later lexical hazard: {pair:#}"));
+    assert_eq!(
+        later_cell["first_write"]["kind"], "observed",
+        "{later_cell:#}"
+    );
+    assert_eq!(
+        later_cell["later_read"]["kind"], "observed",
+        "{later_cell:#}"
+    );
+    assert_eq!(later_cell["observed_conflict"], true, "{later_cell:#}");
+
+    let execution = binding_execution_report(&rejected, "Box");
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "legacy_execution", "{execution:#}");
+    assert_eq!(authority["complete"], true, "{execution:#}");
+    assert!(authority.get("receipt").is_none(), "{execution:#}");
+}
+
+#[test]
+fn class_relocation_does_not_invoke_deferred_constructor_or_field_initializers() {
+    let source = "class Box { #read = () => later; #deferred = unavailable(); constructor(value = unavailable()) { this.value = value; } get value() { return unavailable(); } read() { return this.#read(); } } const later = 7; console.log(typeof Box, later);\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/box", &[Member::new("Box")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "deferred-class-initializers",
+    );
+    assert_preserved_entry_output(&fixture, "function 7\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([1, 0, 2]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 1, "{assessment:#}");
+    assert_class_declaration_receipt(&fixture, "Box");
 }

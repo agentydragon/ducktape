@@ -75,7 +75,7 @@ impl PurityBodyTransfer {
         obligations: Vec<PurityCallObligation>,
     ) -> Self {
         let (direct_reasons, dependencies) = match purity {
-            Purity::Pure { dependencies } => (Vec::new(), dependencies),
+            Purity::Pure { dependencies } => (Vec::new(), *dependencies),
             Purity::NotPure { reasons } => (reasons, ProofDependencies::default()),
         };
         let mut events = Vec::with_capacity(direct_reasons.len() + obligations.len());

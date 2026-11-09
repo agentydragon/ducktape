@@ -1,6 +1,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ChunkId, SourceUnitOrdinal};
 
 /// Controls only which of the source module's exports contribute synthetic
 /// execution roots and exposed capabilities to unknown-call fallback.
@@ -99,6 +99,25 @@ where
     ))
 }
 
+/// Structural analysis for one whole-program chunk. The explicit chunk ID is
+/// carried by heap-family addresses that may later cross module boundaries.
+pub fn analyze_chunk_structural_in_chunk<'a, F>(
+    module: &'a Module,
+    chunk: ChunkId,
+    source_path: Option<&str>,
+    line_range_for_span: F,
+) -> StructuralChunkAnalysis<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    complete_chunk_structural(collect_chunk_source_facts_in_chunk(
+        module,
+        chunk,
+        source_path,
+        line_range_for_span,
+    ))
+}
+
 /// Collect the source census once, before exact-site inputs are resolved.
 pub fn collect_chunk_source_facts<'a, F>(
     module: &'a Module,
@@ -108,11 +127,54 @@ pub fn collect_chunk_source_facts<'a, F>(
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
-    collect_chunk_source_facts_from_items(&module.body, source_path, line_range_for_span)
+    collect_chunk_source_facts_from_items_in_scope(
+        &module.body,
+        super::abstract_domain::value::HeapModuleScope::LocalAnalysis(
+            super::abstract_domain::value::LocalAnalysisScopeId::fresh(),
+        ),
+        source_path,
+        line_range_for_span,
+    )
+}
+
+pub fn collect_chunk_source_facts_in_chunk<'a, F>(
+    module: &'a Module,
+    chunk: ChunkId,
+    source_path: Option<&str>,
+    line_range_for_span: F,
+) -> StructuralChunkSourceFacts<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    collect_chunk_source_facts_from_items_in_scope(
+        &module.body,
+        super::abstract_domain::value::HeapModuleScope::Chunk(chunk),
+        source_path,
+        line_range_for_span,
+    )
 }
 
 pub fn collect_chunk_source_facts_from_items<'a, F>(
     items: &'a [ModuleItem],
+    source_path: Option<&str>,
+    line_range_for_span: F,
+) -> StructuralChunkSourceFacts<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    collect_chunk_source_facts_from_items_in_scope(
+        items,
+        super::abstract_domain::value::HeapModuleScope::LocalAnalysis(
+            super::abstract_domain::value::LocalAnalysisScopeId::fresh(),
+        ),
+        source_path,
+        line_range_for_span,
+    )
+}
+
+pub(crate) fn collect_chunk_source_facts_from_items_in_scope<'a, F>(
+    items: &'a [ModuleItem],
+    heap_scope: super::abstract_domain::value::HeapModuleScope,
     source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> StructuralChunkSourceFacts<'a>
@@ -232,6 +294,7 @@ where
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
     StructuralChunkSourceFacts {
+        heap_scope,
         body,
         stable_array_spread_shapes,
         imported_bindings,
@@ -278,14 +341,21 @@ pub fn complete_chunk_structural_with_argument_inputs<'a>(
 /// The canonical value flow `complete_chunk_structural_with_inputs` solves for
 /// `body` under these native-operation and Set-spread inputs.
 pub(crate) fn structural_value_flow(
+    heap_scope: super::abstract_domain::value::HeapModuleScope,
     body: &[TopLevelItemView<'_>],
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
     inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 ) -> ChunkValueFlow {
-    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
-    candidate_roots.extend(super::heap_contents::array_candidate_roots(body));
+    let heap_resolver = super::abstract_domain::value::SourceHeapResolver::new(heap_scope);
+    let mut candidate_roots =
+        super::abstract_domain::heap::tracked_allocation_roots(body, heap_resolver);
+    candidate_roots.extend(super::heap_contents::array_candidate_roots(
+        body,
+        heap_resolver,
+    ));
     ChunkValueFlow::analyze_with_native_set_allocations(
+        heap_resolver,
         body,
         &candidate_roots,
         &super::value_flow::native_set_allocation_roots(
@@ -306,7 +376,9 @@ pub fn complete_chunk_structural_with_inputs<'a>(
     inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
+    let heap_scope = source.heap_scope;
     let value_flow = structural_value_flow(
+        heap_scope,
         &source.body,
         native_operation_inputs,
         stable_spreads,
@@ -323,6 +395,7 @@ pub(crate) fn complete_chunk_structural_with_flow<'a>(
     value_flow: ChunkValueFlow,
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
+        heap_scope,
         body,
         stable_array_spread_shapes,
         imported_bindings,
@@ -330,6 +403,11 @@ pub(crate) fn complete_chunk_structural_with_flow<'a>(
         per_statement,
         top_level_await,
     } = source;
+    assert_eq!(
+        value_flow.heap_scope(),
+        heap_scope,
+        "structural source facts and value flow must share one heap resolver"
+    );
     let dynamic_scope = DynamicScopeFact::analyze(&body);
     let stable_var_number_candidates =
         stable_top_level_var_candidates(&per_statement, dynamic_scope);
@@ -365,6 +443,7 @@ pub(crate) fn complete_chunk_structural_with_flow<'a>(
         LocalClassConstructionShapes::analyze(&body, &shadowed, &value_flow, dynamic_scope);
     StructuralChunkAnalysis {
         body,
+        heap_scope,
         stable_array_spread_shapes,
         imported_bindings,
         value_flow,
@@ -474,6 +553,13 @@ fn analyze_chunk_with_policy_and_sync<F>(
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
+    if let Some(expected) = hints.heap_resolver {
+        assert_eq!(
+            structural.value_flow.heap_resolver(),
+            expected,
+            "analysis inputs and structural value flow must share one heap resolver"
+        );
+    }
     let StructuralChunkAnalysis {
         body,
         stable_array_spread_shapes,
@@ -490,8 +576,10 @@ where
         shadowed,
         per_statement,
         top_level_await,
+        heap_scope,
     } = structural;
-    let plain_array_bindings = super::abstract_domain::heap::plain_array_bindings(&body, &shadowed);
+    let plain_array_bindings =
+        super::abstract_domain::heap::plain_array_bindings(&body, &shadowed, heap_scope);
     let mut prepared_sync_index =
         super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index_with_source_facts(
             &body,
@@ -612,6 +700,7 @@ where
         })
         .collect();
     for fact in &mut facts {
+        fact.source_operation_sites = prepared_sync_index.source_operation_sites(fact.ordinal);
         if let Some(producers) = set_iterable_proof.stable_iterable_producers(fact.ordinal) {
             fact.stable_iterable_producers = producers.clone();
         }
@@ -709,6 +798,7 @@ where
             &graph,
             &global_object_names,
         );
+        fact.record_module_cell_accesses(&hints.module_cells);
     }
     let disagreements: Vec<_> = facts
         .iter()
@@ -894,7 +984,17 @@ pub fn analyze_chunk<F>(
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
-    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
+    let structural = match hints.heap_resolver {
+        Some(resolver) => {
+            complete_chunk_structural(collect_chunk_source_facts_from_items_in_scope(
+                &module.body,
+                resolver.scope(),
+                source_path,
+                &mut line_range_for_span,
+            ))
+        }
+        None => analyze_chunk_structural(module, source_path, &mut line_range_for_span),
+    };
     analyze_chunk_with_policy(
         structural,
         hints,
@@ -988,6 +1088,7 @@ fn assemble_statement_facts(
         calls,
         constructor,
         synchronous_calls: None,
+        source_operation_sites: Vec::new(),
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,

@@ -7,16 +7,29 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use js_ast::ParsedGlobalUses;
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ChunkTable, ModuleCellId, SourceUnitOrdinal};
 use swc_common::Span;
 use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
 use crate::execution_evidence::SourceLocation;
+use crate::facts::abstract_domain::value::SourceHeapResolver;
 use crate::purity::Purity;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
+use analysis_model::PrimKinds;
+
+pub use crate::facts::sync_effects::execution_index::provider_program::{
+    FrozenProviderPrograms, ProviderProgramSource,
+};
+
+mod retained_graph;
 pub mod saved;
+pub(crate) use retained_graph::{
+    ProviderGraphEdge, ProviderGraphInput, ProviderGraphNode, ProviderGraphNodeKind,
+    ProviderGraphRole, ProviderGraphValue, ProviderRetainedGraph,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum KnownEffect {
@@ -132,6 +145,17 @@ pub enum ForeignInvocation {
     Construct,
 }
 
+/// An original native operation required by an interpreted provider body.
+/// Every consumer checks the canonical row's complete slot requirements;
+/// a global constructor family alone cannot establish a static call's identity.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ForeignNativeOperation {
+    pub invocation: ForeignInvocation,
+    pub intrinsic: NativeIntrinsic,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+}
+
 /// One possible result of a derived foreign call.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -156,17 +180,19 @@ pub struct ForeignCallSummary {
     pub defining_module: String,
     pub export: String,
     pub local: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
     pub source_location: Option<SourceLocation>,
     pub invocation: ForeignInvocation,
     pub returns: BTreeSet<ForeignReturn>,
     pub retained_arguments: BTreeSet<usize>,
-    /// Source-private provider var values retained by the result. Their kinds
-    /// remain unknown; later use must retain opaque foreign capabilities.
+    /// Provider var values retained by the result whose kinds remain unknown;
+    /// later use must retain opaque foreign capabilities.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub retained_provider_captures: BTreeSet<String>,
-    /// Census families the body constructs from (`new WeakMap()`); their
-    /// integrity premise is in `dependencies`.
-    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// Exact native operations consumed by the body. Their integrity premises
+    /// are in `dependencies` and must hold in every analyzed chunk's census.
+    pub native_operations: BTreeSet<ForeignNativeOperation>,
     /// The vendor swap's replacement package when the emitted program runs it
     /// instead of this body; the summary then rests on the swap's equivalence
     /// promise (SPEC.md § Vendor swap equivalence).
@@ -175,6 +201,316 @@ pub struct ForeignCallSummary {
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
+    /// Independent source proof that provider evaluation precedes this imported
+    /// class binding's GetValue under every assignment (an isolated leaf).
+    /// Constructor-body closure alone never proves binding initialization.
+    #[serde(skip)]
+    pub(crate) initialized_class: Option<ProofDependencies>,
+    /// Actual shared-kernel operations, independent of the allocation-only
+    /// return judgment. Unknown domains and completion remain unknown.
+    #[serde(skip)]
+    pub(crate) body_effects: Option<Box<ForeignBodyEffects>>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct ForeignBodyEffects {
+    pub(crate) callable_key: u32,
+    /// Exact normal completion of the same provider execution that produced
+    /// these body effects. A return-value capability without this receipt is
+    /// still an opaque may-normal call.
+    pub(crate) completion: crate::facts::sync_effects::Completion<(), ()>,
+    pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
+}
+
+/// A finite ordinary input layout. Values and callback identities are deliberately
+/// absent: the consumer checks current descriptors after every operand runs.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub(crate) struct RecordInputShape {
+    pub(crate) properties: BTreeMap<String, RecordInputProperty>,
+    pub(crate) creation_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RecordInputProperty {
+    Data,
+    Accessor { getter: bool, setter: bool },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ParameterHeapRead {
+    ObjectShape { argument: usize },
+    OwnProperty { argument: usize, property: String },
+}
+
+/// One complete alternative of a conditional provider body's borrowed result.
+/// These projections retain caller values and never name provider allocations.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ConditionalResultAlternative {
+    Argument { index: usize },
+    Property { argument: usize, property: String },
+    Primitive { kinds: PrimKinds },
+}
+
+/// A nonempty, all-or-nothing set of result alternatives from one provider
+/// execution. An unrepresentable provider result has no projection.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ConditionalResultProjection {
+    pub(crate) alternatives: BTreeSet<ConditionalResultAlternative>,
+}
+
+impl ConditionalResultProjection {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        !self.alternatives.is_empty()
+            && self
+                .alternatives
+                .iter()
+                .all(|alternative| match alternative {
+                    ConditionalResultAlternative::Argument { index } => *index == 0,
+                    ConditionalResultAlternative::Property { argument, property } => {
+                        *argument == 0 && !property.is_empty()
+                    }
+                    ConditionalResultAlternative::Primitive { kinds } => {
+                        !kinds.is_empty() && kinds.without(PrimKinds::ANY).is_empty()
+                    }
+                })
+    }
+}
+
+/// Coordinates of a canonical callable in one exact parser input. Relative
+/// bounds identify the declaration; the producing parse base translates saved
+/// nested callable coordinates without treating them as current SWC positions.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub(crate) struct ProviderCallableSource {
+    pub(crate) sha256: String,
+    pub(crate) source_start: u32,
+    pub(crate) callable_start: u32,
+    pub(crate) callable_end: u32,
+}
+
+/// Source identity for one correlated provider transfer. The importer keeps
+/// this identity with the execution-derived input, result, effects, and module
+/// cell obligations through saved analysis and candidate instantiation.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub(crate) struct ConditionalProviderIdentity {
+    pub(crate) defining_module: String,
+    pub(crate) export: String,
+    pub(crate) local: String,
+    pub(crate) callable_key: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source: Option<ProviderCallableSource>,
+}
+
+/// The one value carried by one exact provider completion. A retained graph
+/// is rooted in that completion's value; it is never a separate normal-path
+/// result that can be paired with a throw from another branch.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum ConditionalProviderValue {
+    Projection(ConditionalResultProjection),
+    RetainedGraph(ProviderRetainedGraph),
+}
+
+/// Exact completion and its correlated escaped value for one strict provider
+/// path. Opaque or witnessless paths are not persisted as exact alternatives.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ConditionalProviderCompletion {
+    Normal {
+        value: ConditionalProviderValue,
+    },
+    Throw {
+        origin: crate::facts::sync_effects::SourceOperationSite,
+        value: ConditionalProviderValue,
+    },
+}
+
+/// One leaf of a conditional provider execution. Effects, parameter reads,
+/// module cells, dependencies and result/throw payload remain correlated.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ConditionalProviderAlternative {
+    pub(crate) completion: ConditionalProviderCompletion,
+    pub(crate) reads: BTreeSet<ParameterHeapRead>,
+    pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
+    /// Runtime-only effect evidence is transported through checked saved
+    /// receipts, never through the report-facing callable summary.
+    #[serde(skip)]
+    pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
+    /// Runtime-only lexical module-cell footprint. The saved artifact codec
+    /// transports these addresses and checked invariants explicitly.
+    #[serde(skip)]
+    pub(crate) module_cells: ModuleCellAccesses,
+    pub(crate) dependencies: ProofDependencies,
+}
+
+/// Correlated per-completion provider transfer, independent of the coarse
+/// generic `ForeignReturn` capability. Each feasible exact leaf keeps its own
+/// world-derived obligations and completion payload until the importer
+/// resumes the caller at that leaf.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ConditionalProviderTransfer {
+    #[serde(flatten)]
+    pub(crate) identity: ConditionalProviderIdentity,
+    pub(crate) input: RecordInputShape,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) alternatives: Vec<ConditionalProviderAlternative>,
+    /// Complete source closure of the consumer's actual first-hop import,
+    /// including typed admitted host leaves. Missing legacy evidence makes
+    /// this conditional transfer unusable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) provider_closure: Option<ResolvedProviderDependencyClosure>,
+    /// Union of the branch-local dependencies for summary aggregation. A
+    /// consumer must use the selected alternative's dependencies at runtime.
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) replacement_package: Option<String>,
+}
+
+impl ConditionalProviderTransfer {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        let ordered: BTreeSet<_> = self.input.creation_order.iter().cloned().collect();
+        if self.alternatives.is_empty()
+            || ordered.len() != self.input.creation_order.len()
+            || ordered.len() != self.input.properties.len()
+            || !self
+                .input
+                .properties
+                .keys()
+                .all(|property| ordered.contains(property))
+            || self.input.properties.contains_key("__proto__")
+        {
+            return false;
+        }
+
+        let mut alternative_dependencies = ProofDependencies::default();
+        self.alternatives.iter().all(|alternative| {
+            if matches!(
+                &alternative.completion,
+                ConditionalProviderCompletion::Throw { .. }
+            ) && self.identity.source.is_none()
+            {
+                return false;
+            }
+            alternative_dependencies.extend(&alternative.dependencies);
+            if alternative
+                .effects
+                .has_unresolved_provider_operation_support()
+                || alternative.reads.iter().any(|read| match read {
+                    ParameterHeapRead::ObjectShape { argument } => *argument != 0,
+                    ParameterHeapRead::OwnProperty { argument, property } => {
+                        *argument != 0
+                            || !matches!(
+                                self.input.properties.get(property),
+                                Some(RecordInputProperty::Data)
+                            )
+                    }
+                })
+            {
+                return false;
+            }
+
+            let payload_is_well_formed = |value: &ConditionalProviderValue| match value {
+                ConditionalProviderValue::RetainedGraph(graph) => {
+                    graph.is_well_formed(&self.input, &alternative.reads)
+                }
+                ConditionalProviderValue::Projection(projection) => {
+                    projection.is_well_formed()
+                        && projection
+                            .alternatives
+                            .iter()
+                            .all(|projection_alternative| match projection_alternative {
+                                ConditionalResultAlternative::Argument { index } => *index == 0,
+                                ConditionalResultAlternative::Property { argument, property } => {
+                                    *argument == 0
+                                        && matches!(
+                                            self.input.properties.get(property),
+                                            Some(RecordInputProperty::Data)
+                                        )
+                                        && alternative.reads.contains(
+                                            &ParameterHeapRead::ObjectShape { argument: 0 },
+                                        )
+                                        && alternative.reads.contains(
+                                            &ParameterHeapRead::OwnProperty {
+                                                argument: 0,
+                                                property: property.clone(),
+                                            },
+                                        )
+                                }
+                                ConditionalResultAlternative::Primitive { .. } => true,
+                            })
+                }
+            };
+            let payload_valid = match &alternative.completion {
+                ConditionalProviderCompletion::Normal { value }
+                | ConditionalProviderCompletion::Throw { value, .. } => {
+                    payload_is_well_formed(value)
+                }
+            };
+            if !payload_valid {
+                return false;
+            }
+
+            let mut accessed_cells = alternative.module_cells.reads.clone();
+            accessed_cells.extend(alternative.module_cells.writes.iter().copied());
+            let invariant_cells: BTreeSet<_> = alternative
+                .module_cells
+                .invariants
+                .keys()
+                .copied()
+                .collect();
+            accessed_cells == invariant_cells
+                && (accessed_cells.is_empty() || self.replacement_package.is_none())
+        }) && alternative_dependencies == self.dependencies
+    }
+}
+
+/// Qualified lexical cells read or written by one conditional body transfer.
+/// This is runtime proof transport; its addresses are never serialized here.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub(crate) struct ModuleCellAccesses {
+    pub(crate) reads: BTreeSet<ModuleCellId>,
+    pub(crate) writes: BTreeSet<ModuleCellId>,
+    pub(crate) invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+}
+
+/// Source operation used by the canonical module-cell writer census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BindingStoreKind {
+    Assignment,
+    Update,
+    LoopBinding,
+    DestructuringAssignment,
+}
+
+/// Canonical source identity of a module-cell declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindingCellDeclarationIdentity {
+    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) activation_callable: Option<u32>,
+    pub(crate) binding_span: Span,
+    pub(crate) initializer_span: Option<Span>,
+}
+
+/// One syntactic binding-store site retained by the canonical writer census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindingCellStoreEvidence {
+    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) activation_callable: Option<u32>,
+    pub(crate) span: Span,
+    pub(crate) kind: BindingStoreKind,
+}
+
+/// Checked post-initialization primitive-kind invariant for one module cell.
+/// Its fields are crate-private. The canonical analysis constructs the proof;
+/// the provider transfer reads its checked kind set, and consumers compare the
+/// complete proof through `Eq`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveCellInvariant {
+    pub(crate) declaration: BindingCellDeclarationIdentity,
+    pub(crate) post_init_kinds: PrimKinds,
+    pub(crate) stores: Vec<BindingCellStoreEvidence>,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
@@ -192,9 +528,39 @@ pub struct CallableSummary {
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_call: Option<ForeignCallSummary>,
+    /// Audited member identity with independently interpreted source bodies.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub foreign_members: BTreeMap<String, ForeignCallSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "conditional_bodies")]
+    pub(crate) provider_transfers: Vec<ConditionalProviderTransfer>,
 }
 
 impl CallableSummary {
+    /// Bind each conditional provider body to the complete route of its
+    /// importer's direct import. A route is retained only when it includes the
+    /// defining module and every module that owns one of the body's cell
+    /// obligations; otherwise the transfer stays unusable.
+    pub fn bind_provider_closure_from_direct_import(
+        &mut self,
+        direct_import_closure: Option<ResolvedProviderDependencyClosure>,
+        chunk_table: &ChunkTable,
+    ) {
+        for transfer in &mut self.provider_transfers {
+            let complete_route = direct_import_closure.as_ref().filter(|closure| {
+                closure.modules.contains(&transfer.identity.defining_module)
+                    && transfer.alternatives.iter().all(|alternative| {
+                        alternative.module_cells.invariants.keys().all(|cell| {
+                            chunk_table
+                                .try_name(cell.chunk)
+                                .is_some_and(|module| closure.modules.contains(module))
+                        })
+                    })
+            });
+            transfer.provider_closure = complete_route.cloned();
+        }
+    }
+
     pub fn callback_factory(evidence: CallbackFactoryEvidence) -> Self {
         Self {
             callback_factory_evidence: BTreeSet::from([evidence]),
@@ -203,6 +569,8 @@ impl CallableSummary {
             callback_object_arguments: None,
             descriptor_copy_factory: None,
             foreign_call: None,
+            foreign_members: BTreeMap::new(),
+            provider_transfers: Vec::new(),
         }
     }
 
@@ -243,6 +611,19 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        for transfer in other.provider_transfers {
+            if !self.provider_transfers.contains(&transfer) {
+                self.provider_transfers.push(transfer);
+            }
+        }
+        for (member, call) in other.foreign_members {
+            assert!(
+                self.foreign_members
+                    .get(&member)
+                    .is_none_or(|old| old == &call)
+            );
+            self.foreign_members.insert(member, call);
+        }
         if let Some(call) = other.foreign_call {
             assert!(
                 self.foreign_call
@@ -415,6 +796,23 @@ pub struct DescriptorCopyAuthorRef {
     pub spec_location: String,
 }
 
+/// The exact vendor export whose bundled source stands for the replacement.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct VendorSwapEquivalenceRef {
+    pub defining_module: String,
+    pub export: String,
+    pub replacement_package: String,
+}
+
+/// Runtime selection is an author assertion, independent of body effects.
+/// Source-marker policies use the resolved provider key from AnalysisSpec.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct SourceCallableMemberRef {
+    pub defining_module: String,
+    pub export: String,
+    pub member: String,
+}
+
 /// One audited exact imported-call initializer in the importer chunk.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct InitializerCallEffectInputRef {
@@ -444,9 +842,14 @@ pub struct ResolvedInitializerCallEffectInput {
     pub provider_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
-    /// Complete ordinary static dependency closure that evaluated before the
-    /// importer, with no path back to it. This proves the direct import read.
+    /// Resolved ordinary static dependency closure for the direct import,
+    /// with no path back to the importer. Candidate initialization proves
+    /// the final route's actual order.
     pub provider_dependency_closure: BTreeSet<String>,
+    /// Exact closure, including any admitted host leaves, retained separately
+    /// from the legacy module-name projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_closure: Option<ResolvedProviderDependencyClosure>,
 }
 
 /// Effective bundled implementation actually emitted for a swapped export.
@@ -471,6 +874,10 @@ pub struct ImportedPrimitiveArrayOperandEvidence {
     pub provider_export: String,
     pub provider_local: String,
     pub source_specifier: String,
+    /// Complete source route used to initialize this provider, including
+    /// admitted host leaves. Missing legacy evidence is unknown, not empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_closure: Option<ResolvedProviderDependencyClosure>,
     pub provider_source_match: spec::SourceMatchClaim,
     pub provider_source_sha256: String,
     pub primitive_slots: Vec<analysis_model::PrimKinds>,
@@ -534,6 +941,12 @@ pub struct ProofDependencies {
     pub program_premises: BTreeSet<ProgramPremiseKey>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub vendor_swap_equivalences: BTreeSet<VendorSwapEquivalenceRef>,
+    /// Rare author-conditioned member selections stay out of every domain's
+    /// inline set layout and allocate only when actually consumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_callable_members: Option<Arc<BTreeSet<SourceCallableMemberRef>>>,
 }
 
 /// A stable source module export cell that contributed to an imported
@@ -545,17 +958,67 @@ pub struct PrimitiveExportCell {
     pub export: String,
 }
 
-/// Source-derived primitive value evidence used only for an imported binding
-/// read after its provider's exact static dependency closure is shown to be
-/// acyclic with respect to the importer. It carries no provider effect
-/// authority.
+/// One static host-module leaf admitted while resolving a provider's source
+/// initialization closure. This records only the exact reentry-free host
+/// premise and route identity; it grants no host body, value, or effect
+/// summary.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct AdmittedHostModuleDependency {
+    pub source_module: String,
+    pub specifier: String,
+    pub module: spec::HostModule,
+    pub consumed_premise: HostBehaviorKey,
+}
+
+impl AdmittedHostModuleDependency {
+    pub fn is_well_formed(&self) -> bool {
+        !self.source_module.is_empty()
+            && spec::HostModule::from_static_specifier(&self.specifier) == Some(self.module)
+            && self.consumed_premise == HostBehaviorKey::reentry_free_module(self.module)
+    }
+}
+
+/// A complete resolved source provider closure. An empty host set is distinct
+/// from an unavailable closure; candidate initialization separately proves
+/// that the final module graph reaches its providers before each read.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ResolvedProviderDependencyClosure {
+    pub modules: BTreeSet<String>,
+    pub admitted_host_modules: BTreeSet<AdmittedHostModuleDependency>,
+}
+
+impl ResolvedProviderDependencyClosure {
+    pub fn is_well_formed(&self) -> bool {
+        !self.modules.is_empty()
+            && self.modules.iter().all(|module| !module.is_empty())
+            && self.admitted_host_modules.iter().all(|dependency| {
+                dependency.is_well_formed() && self.modules.contains(&dependency.source_module)
+            })
+    }
+}
+
+/// Source-derived primitive value evidence for an imported binding read. Its
+/// source closure excludes the importer; candidate initialization separately
+/// proves that the final module graph reaches its providers before the read.
+/// It carries no provider effect authority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImportedPrimitiveRead {
     pub kinds: analysis_model::PrimKinds,
+    /// Original request spelling for the imported binding whose GetValue this
+    /// capability may cover. Candidate analysis must compare it with the
+    /// prepared request and the output-first resolver.
+    pub source_specifier: String,
+    /// Name read from the first resolved module hop. This is distinct from
+    /// the ultimate primitive export when a provider forwards an alias.
+    pub imported_name: String,
     pub provider_module: String,
     /// Every analyzed module in the provider's resolved static dependency
     /// closure, including the provider and excluding the importer.
     pub dependency_closure: BTreeSet<String>,
+    /// Exact closure, including any admitted host leaves. `None` is legacy or
+    /// unresolved evidence and does not grant a read capability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_closure: Option<ResolvedProviderDependencyClosure>,
     pub source_cells: BTreeSet<PrimitiveExportCell>,
 }
 
@@ -636,6 +1099,11 @@ impl ProofDependencies {
             && self.host_behavior.is_empty()
             && self.program_premises.is_empty()
             && self.no_accessor_install_callables.is_empty()
+            && self.vendor_swap_equivalences.is_empty()
+            && self
+                .source_callable_members
+                .as_ref()
+                .is_none_or(|members| members.is_empty())
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -659,6 +1127,21 @@ impl ProofDependencies {
             .extend(other.program_premises.iter().copied());
         self.no_accessor_install_callables
             .extend(other.no_accessor_install_callables.iter().cloned());
+        self.vendor_swap_equivalences
+            .extend(other.vendor_swap_equivalences.iter().cloned());
+        if let Some(members) = &other.source_callable_members {
+            match &mut self.source_callable_members {
+                None => self.source_callable_members = Some(members.clone()),
+                Some(held) if !Arc::ptr_eq(held, members) => {
+                    Arc::make_mut(held).extend(members.iter().cloned());
+                }
+                Some(_) => {}
+            }
+        }
+    }
+
+    pub(crate) fn add_source_callable_member(&mut self, reference: SourceCallableMemberRef) {
+        Arc::make_mut(self.source_callable_members.get_or_insert_default()).insert(reference);
     }
 }
 
@@ -1092,7 +1575,18 @@ impl AnalysisAssumptions {
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
+    /// Immutable current prepared provider programs, never deserialized executable state.
+    pub provider_programs: FrozenProviderPrograms,
+    /// Shared resolver for all semantic heap values in one prepared analysis.
+    /// Whole-program callers provide a chunk-qualified resolver. Standalone
+    /// diagnostic callers may leave this empty; preparation then creates one
+    /// local scope and carries that same resolver through every later stage.
+    pub heap_resolver: Option<SourceHeapResolver>,
     pub native_integrity: Option<NativeIntegrity>,
+    /// Canonical source inventory for unresolved identifier reads. `Some`
+    /// with an empty `uses` map is complete empty evidence; `None` means no
+    /// parsed context. Neither certifies a host binding's value or effects.
+    pub global_uses: Option<Arc<ParsedGlobalUses>>,
     /// Source- and explicit-placement-certified spread uses, keyed by the
     /// exact constructor call start. Their dependencies retain the author
     /// native-operation inputs used to derive each certificate.
@@ -1115,9 +1609,21 @@ pub struct AnalysisInputs {
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
     /// Bare imported callable capabilities, retaining the evidence that
-    /// established each one. These may depend on defining-chunk author
-    /// contracts; they are never local author assumptions.
+    /// established each one. Provider transfers stay correlated with their
+    /// source identity, input shape, result, effects, and cell obligations.
+    /// These may depend on defining-chunk author contracts; they are never
+    /// local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
+    /// Resolved addresses of local and imported module bindings. This correspondence
+    /// carries no authority over the cell's value, initialization, or body.
+    pub module_cells: BTreeMap<Id, ModuleCellId>,
+    /// Canonical source-only post-initialization kind proofs for module cells.
+    pub module_cell_invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    /// Module cells initialized before this importer's execution context.
+    pub source_initialized_module_cells: BTreeSet<ModuleCellId>,
+    /// Host premises consumed by source provider closures that established
+    /// those initialized cells. `None` denotes a legacy/missing proof.
+    pub source_initialized_host_dependencies: Option<BTreeSet<AdmittedHostModuleDependency>>,
     /// Source-proved imported primitive values admitted to ordinary candidate
     /// execution, keyed by local binding name. The program-summary adapter
     /// supplies one only alongside a matching `imported_primitive_reads`
@@ -1126,8 +1632,9 @@ pub struct AnalysisInputs {
     /// read capability supplies its normal-read effect coverage.
     pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
     /// Imported stable primitive reads with exact source-cell provenance and
-    /// an acyclic, fully resolved static dependency closure. This is an
-    /// operation-local read capability, not provider effect authority.
+    /// a fully resolved source dependency closure. Candidate initialization
+    /// separately checks final order. This is an operation-local read
+    /// capability, not provider effect authority.
     pub imported_primitive_reads: BTreeMap<String, ImportedPrimitiveRead>,
 }
 

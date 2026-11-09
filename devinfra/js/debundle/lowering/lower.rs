@@ -8,14 +8,22 @@ use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use super::module_output::{LoweredModuleOutput, ModuleEmissionInputs, emit_module};
-use swc_common::{DUMMY_SP, GLOBALS};
+use super::body_facts::{
+    IndexedStaticModuleRequest, PreparedImportBinding, PreparedImportTarget, PreparedStaticRequest,
+    source_import_bindings, source_request_targets,
+};
+use super::module_output::{
+    LoweredModuleOutput, ModuleEmissionInputs, PreparedModuleEmission, prepare_module_emission,
+};
+use swc_common::{DUMMY_SP, GLOBALS, Span, Spanned};
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
+use super::imports::PreparedImportDecl;
 use super::imports::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
 };
+use super::imports::static_request_for_item;
 
 use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
@@ -40,15 +48,22 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{
+    CandidateImportTarget, CandidatePreparedRequestBinding, CandidatePreparedRequestRoute,
+    CandidateSourceBindingRoute, CandidateSourceUseLocation, OutputFileAddress,
+    SourceCorrespondenceStatus,
+};
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
-use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
+use frontend_elaboration::chunk_ast::{
+    TopLevelDecl, top_level_declaration_ids, top_level_declaration_names,
+};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
-use swc_ecma_visit::{VisitMutWith, VisitWith};
+use swc_ecma_visit::{Visit, VisitMutWith, VisitWith};
 
 pub(super) const ENTRY_IMPORT_LOCAL_CONTRIBUTOR: &str = "entry import-local disambiguation";
 
@@ -62,7 +77,666 @@ pub(super) struct LoweredChunk {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-/// Chunk-identity + file-path inputs to `lower_chunk`. Held in
+/// The exact entry and logical-module ASTs after import planning and body
+/// rewrites, ready for final file/report construction.
+pub(super) struct PreparedCandidateEmissionPlan<'a> {
+    files: Vec<JsFile>,
+    file_records: Vec<(String, FileRole)>,
+    modules: Vec<PreparedModuleEmission<'a>>,
+    cross_chunk_import_aliases: Vec<(String, String)>,
+    entry_static_requests: Vec<PreparedStaticRequest>,
+    entry_binding_renames: BTreeMap<Id, Id>,
+    entry_exports_by_original_local: HashMap<Id, String>,
+}
+
+impl PreparedCandidateEmissionPlan<'_> {
+    pub(super) fn output_file_for_destination(
+        &self,
+        destination: ModuleId,
+        entry_destination: ModuleId,
+    ) -> Option<&str> {
+        if destination == entry_destination {
+            return self.files.first().map(|file| file.path.as_str());
+        }
+        self.modules
+            .iter()
+            .find(|module| module.destination_id() == destination)
+            .map(|module| module.output_file_layout().0)
+    }
+
+    pub(super) fn source_binding_route(
+        &self,
+        source_chunk: ChunkId,
+        source_binding: &Id,
+        destination: ModuleId,
+        entry_destination: ModuleId,
+    ) -> Option<CandidateSourceBindingRoute> {
+        let file = self.output_file_for_destination(destination, entry_destination)?;
+        if destination == entry_destination {
+            let candidate_local = self
+                .entry_binding_renames
+                .get(source_binding)
+                .cloned()
+                .unwrap_or_else(|| source_binding.clone());
+            if !self
+                .files
+                .first()?
+                .ast()?
+                .module
+                .body
+                .iter()
+                .any(|item| item_declares_id(item, &candidate_local))
+            {
+                return None;
+            }
+            let (declaration_span, binding_span) = self
+                .files
+                .first()?
+                .ast()?
+                .module
+                .body
+                .iter()
+                .find(|item| item_declares_id(item, &candidate_local))
+                .map(|item| {
+                    (
+                        Some(item.span()),
+                        binding_identifier_span(item, &candidate_local),
+                    )
+                })
+                .unwrap_or((None, None));
+            return Some(CandidateSourceBindingRoute {
+                output: OutputFileAddress {
+                    chunk: source_chunk,
+                    file: file.to_owned(),
+                },
+                candidate_local: Some(candidate_local),
+                declaration_span,
+                binding_span,
+                exported_specifier_span: None,
+                exported_name: self
+                    .entry_exports_by_original_local
+                    .get(source_binding)
+                    .cloned(),
+            });
+        }
+        let module = self
+            .modules
+            .iter()
+            .find(|module| module.destination_id() == destination)?;
+        let name = module.plan.bindings.keys().find(|name| {
+            top_level_id(name, module.output_context.chunk_top_level_mark) == *source_binding
+        })?;
+        let emitted_name = module
+            .explicit_renames
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.clone());
+        let candidate_local =
+            top_level_id(&emitted_name, module.output_context.chunk_top_level_mark);
+        if !module
+            .body
+            .iter()
+            .any(|item| item_declares_id(item, &candidate_local))
+        {
+            return None;
+        }
+        let (declaration_span, binding_span) = module
+            .body
+            .iter()
+            .find(|item| item_declares_id(item, &candidate_local))
+            .map(|item| {
+                (
+                    Some(item.span()),
+                    binding_identifier_span(item, &candidate_local),
+                )
+            })
+            .unwrap_or((None, None));
+        Some(CandidateSourceBindingRoute {
+            output: OutputFileAddress {
+                chunk: source_chunk,
+                file: file.to_owned(),
+            },
+            candidate_local: Some(candidate_local),
+            declaration_span,
+            binding_span,
+            exported_specifier_span: None,
+            exported_name: module.plan.bindings.get(name).cloned(),
+        })
+    }
+
+    pub(super) fn candidate_source_unit_positions(
+        &self,
+        source_chunk: ChunkId,
+        source_item: &ModuleItem,
+        declarator_span: Option<Span>,
+        destination: ModuleId,
+        entry_destination: ModuleId,
+    ) -> Vec<(OutputFileAddress, usize, Span, Option<Span>, Option<usize>)> {
+        let (file, body): (&str, &[ModuleItem]) = if destination == entry_destination {
+            let Some(entry) = self.files.first().and_then(JsFile::ast) else {
+                return Vec::new();
+            };
+            (self.files[0].path.as_str(), &entry.module.body)
+        } else {
+            let Some(module) = self
+                .modules
+                .iter()
+                .find(|m| m.destination_id() == destination)
+            else {
+                return Vec::new();
+            };
+            (module.plan.target_file.as_str(), &module.body)
+        };
+        let mut positions = Vec::new();
+        for (item_index, candidate_item) in body.iter().enumerate() {
+            if let Some(expected_declarator) = declarator_span {
+                let Some(declaration) = var_declaration(candidate_item) else {
+                    continue;
+                };
+                for (candidate_offset, declarator) in declaration.decls.iter().enumerate() {
+                    if same_source_span(declarator.span, expected_declarator) {
+                        positions.push((
+                            OutputFileAddress {
+                                chunk: source_chunk,
+                                file: file.to_owned(),
+                            },
+                            item_index,
+                            candidate_item.span(),
+                            Some(declarator.span),
+                            Some(candidate_offset),
+                        ));
+                    }
+                }
+            } else if same_source_span(candidate_item.span(), source_item.span()) {
+                positions.push((
+                    OutputFileAddress {
+                        chunk: source_chunk,
+                        file: file.to_owned(),
+                    },
+                    item_index,
+                    candidate_item.span(),
+                    None,
+                    None,
+                ));
+            }
+        }
+        positions
+    }
+
+    pub(super) fn candidate_identifier_routes(
+        &self,
+        source_chunk: ChunkId,
+        source_span: Span,
+    ) -> Vec<CandidateSourceUseLocation> {
+        let mut routes = Vec::new();
+        for file in &self.files {
+            let Some(parsed) = file.ast() else { continue };
+            for (item_index, item) in parsed.module.body.iter().enumerate() {
+                let mut visitor = MatchingIdentVisitor {
+                    source_span,
+                    candidate_locals: Vec::new(),
+                };
+                item.visit_with(&mut visitor);
+                for (candidate_local, candidate_span) in visitor.candidate_locals {
+                    routes.push(CandidateSourceUseLocation {
+                        output: OutputFileAddress {
+                            chunk: source_chunk,
+                            file: file.path.clone(),
+                        },
+                        item_index,
+                        candidate_span,
+                        candidate_local,
+                    });
+                }
+            }
+        }
+        for module in &self.modules {
+            for (item_index, item) in module.body.iter().enumerate() {
+                let mut visitor = MatchingIdentVisitor {
+                    source_span,
+                    candidate_locals: Vec::new(),
+                };
+                item.visit_with(&mut visitor);
+                for (candidate_local, candidate_span) in visitor.candidate_locals {
+                    routes.push(CandidateSourceUseLocation {
+                        output: OutputFileAddress {
+                            chunk: source_chunk,
+                            file: module.plan.target_file.clone(),
+                        },
+                        item_index,
+                        candidate_span,
+                        candidate_local,
+                    });
+                }
+            }
+        }
+        routes
+    }
+
+    pub(super) fn materialized_vendor_outputs(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &super::module_output::MaterializedVendorOutput,
+            &[ModuleItem],
+        ),
+    > {
+        self.modules
+            .iter()
+            .map(PreparedModuleEmission::vendor_output)
+    }
+
+    pub(super) fn prepared_request_routes(
+        &self,
+        source_chunk: ChunkId,
+        source_body: &[ModuleItem],
+        source_cells: &BTreeMap<Id, source_identity::ModuleCellId>,
+    ) -> Vec<CandidatePreparedRequestRoute> {
+        let mut prepared = Vec::new();
+        for (file, _source_file, requests, is_entry) in self.prepared_static_request_inventories() {
+            let body = if is_entry {
+                self.files
+                    .first()
+                    .and_then(JsFile::ast)
+                    .map(|ast| &ast.module.body)
+            } else {
+                self.modules
+                    .iter()
+                    .find(|module| module.plan.target_file == file)
+                    .map(|module| &module.body)
+            };
+            let Some(body) = body else {
+                continue;
+            };
+            let output = OutputFileAddress {
+                chunk: source_chunk,
+                file: file.to_owned(),
+            };
+            let mut request_cursor = 0usize;
+            for (item_index, item) in body.iter().enumerate() {
+                let Some(actual_request) = static_request_for_item(item) else {
+                    continue;
+                };
+                let source_statement = source_body
+                    .iter()
+                    .position(|source_item| same_source_span(source_item.span(), item.span()))
+                    .map(StatementId);
+                let Some(request) = requests.get(request_cursor) else {
+                    prepared.push(CandidatePreparedRequestRoute {
+                        output: output.clone(),
+                        item_index,
+                        item_span: item.span(),
+                        request_kind: candidate_request_kind(item),
+                        source_statement,
+                        emitted_request: actual_request.specifier,
+                        mode: actual_request.mode,
+                        targets: vec![CandidateImportTarget::Unsupported],
+                        bindings: Vec::new(),
+                        status: SourceCorrespondenceStatus::MissingCandidateRoute,
+                    });
+                    continue;
+                };
+                request_cursor += 1;
+                if request.request.specifier != actual_request.specifier
+                    || request.request.mode != actual_request.mode
+                {
+                    prepared.push(CandidatePreparedRequestRoute {
+                        output: output.clone(),
+                        item_index,
+                        item_span: item.span(),
+                        request_kind: candidate_request_kind(item),
+                        source_statement,
+                        emitted_request: actual_request.specifier,
+                        mode: actual_request.mode,
+                        targets: vec![CandidateImportTarget::Unsupported],
+                        bindings: Vec::new(),
+                        status: SourceCorrespondenceStatus::Ambiguous,
+                    });
+                    continue;
+                }
+                let targets = request
+                    .targets
+                    .iter()
+                    .map(candidate_target)
+                    .collect::<Vec<_>>();
+                let bindings = request
+                    .bindings
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(specifier_index, binding)| CandidatePreparedRequestBinding {
+                            source_binding: candidate_import_local(item, specifier_index)
+                                .filter(|local| *local == binding.candidate_binding)
+                                .filter(|_| binding.exported_name.is_none())
+                                .map(|_| binding.source_binding.clone()),
+                            candidate_local: candidate_import_local(item, specifier_index)
+                                .filter(|local| *local == binding.candidate_binding),
+                            specifier_index,
+                            specifier_span: candidate_specifier_span(item, specifier_index)
+                                .unwrap_or(DUMMY_SP),
+                            imported_name: candidate_import_local(item, specifier_index)
+                                .map(|_| binding.imported_name.clone()),
+                            kind: binding.kind,
+                            exported_name: binding.exported_name.clone(),
+                            source_cell: source_cells.get(&binding.source_binding).copied(),
+                            target: candidate_target(&binding.target),
+                        },
+                    )
+                    .collect::<Vec<_>>();
+                let supported = bindings.iter().all(|binding| {
+                    binding.specifier_span != DUMMY_SP && binding.candidate_local.is_some()
+                }) && targets
+                    .iter()
+                    .chain(bindings.iter().map(|binding| &binding.target))
+                    .all(|target| {
+                        !matches!(
+                            target,
+                            CandidateImportTarget::Unsupported
+                                | CandidateImportTarget::OriginalSourceUnknownExports { .. }
+                        )
+                    });
+                prepared.push(CandidatePreparedRequestRoute {
+                    output: output.clone(),
+                    item_index,
+                    item_span: item.span(),
+                    request_kind: candidate_request_kind(item),
+                    source_statement,
+                    emitted_request: request.request.specifier.clone(),
+                    mode: request.request.mode,
+                    targets,
+                    bindings,
+                    status: if supported {
+                        SourceCorrespondenceStatus::Complete
+                    } else {
+                        SourceCorrespondenceStatus::UnsupportedRewrite
+                    },
+                });
+            }
+            for request in requests.iter().skip(request_cursor) {
+                prepared.push(CandidatePreparedRequestRoute {
+                    output: output.clone(),
+                    item_index: usize::MAX,
+                    item_span: DUMMY_SP,
+                    request_kind: match request.request.mode {
+                        artifact::reports::StaticModuleRequestMode::OrdinaryEsm => {
+                            artifact::reports::CandidateOutputRequestKind::Import
+                        }
+                        artifact::reports::StaticModuleRequestMode::Unsupported => {
+                            artifact::reports::CandidateOutputRequestKind::Import
+                        }
+                    },
+                    source_statement: None,
+                    emitted_request: request.request.specifier.clone(),
+                    mode: request.request.mode,
+                    targets: request.targets.iter().map(candidate_target).collect(),
+                    bindings: request
+                        .bindings
+                        .iter()
+                        .enumerate()
+                        .map(
+                            |(specifier_index, binding)| CandidatePreparedRequestBinding {
+                                source_binding: None,
+                                candidate_local: None,
+                                specifier_index,
+                                specifier_span: DUMMY_SP,
+                                imported_name: None,
+                                kind: binding.kind,
+                                exported_name: binding.exported_name.clone(),
+                                source_cell: source_cells.get(&binding.source_binding).copied(),
+                                target: candidate_target(&binding.target),
+                            },
+                        )
+                        .collect(),
+                    status: SourceCorrespondenceStatus::MissingCandidateRoute,
+                });
+            }
+        }
+        prepared
+    }
+
+    /// The exact file paths and source coordinates consumed by final emission.
+    pub(super) fn output_file_layout(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.files
+            .iter()
+            .map(|file| (file.path.as_str(), file.metadata.source_path.as_str()))
+            .chain(
+                self.modules
+                    .iter()
+                    .map(|module| module.output_file_layout()),
+            )
+    }
+
+    /// Ordered static requests from the same construction passes that prepare
+    /// each output body. The entry comes first, followed by logical-module
+    /// order; later whole-artifact postpasses are outside this inventory.
+    pub(super) fn prepared_static_request_inventories<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a str, &'a str, &'a [PreparedStaticRequest], bool)> + 'a {
+        let entry = self
+            .files
+            .first()
+            .expect("a candidate emission plan always contains its entry file");
+        std::iter::once((
+            entry.path.as_str(),
+            entry.metadata.source_path.as_str(),
+            self.entry_static_requests.as_slice(),
+            true,
+        ))
+        .chain(self.modules.iter().map(|module| {
+            let (output_file, source_file, requests) = module.prepared_static_request_inventory();
+            (output_file, source_file, requests, false)
+        }))
+    }
+
+    /// The one prepared body that owns a source-unit destination. The entry
+    /// inventory is addressed by the assignment's explicit entry destination;
+    /// logical bodies retain their canonical ModuleId from preparation.
+    pub(super) fn prepared_static_request_inventory_for_destination(
+        &self,
+        destination: ModuleId,
+        entry_destination: ModuleId,
+    ) -> Option<(&str, &str, &[PreparedStaticRequest], bool)> {
+        if destination == entry_destination {
+            let entry = self
+                .files
+                .first()
+                .expect("a candidate emission plan always contains its entry file");
+            return Some((
+                entry.path.as_str(),
+                entry.metadata.source_path.as_str(),
+                self.entry_static_requests.as_slice(),
+                true,
+            ));
+        }
+        self.modules
+            .iter()
+            .find(|module| module.destination_id() == destination)
+            .map(|module| {
+                let (output_file, source_file) = module.output_file_layout();
+                let (_, _, requests) = module.prepared_static_request_inventory();
+                (output_file, source_file, requests, false)
+            })
+    }
+
+    pub(super) fn prepend_entry_header_lines(&mut self, prefix: &[String]) {
+        let entry = self
+            .files
+            .first_mut()
+            .expect("a candidate emission plan always contains its entry file");
+        let mut header_lines = prefix.to_vec();
+        header_lines.append(&mut entry.header_lines);
+        entry.header_lines = header_lines;
+    }
+
+    pub(super) fn emit(self) -> LoweredChunk {
+        let Self {
+            mut files,
+            mut file_records,
+            modules,
+            cross_chunk_import_aliases,
+            ..
+        } = self;
+        let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| {
+            modules
+                .into_par_iter()
+                .map(|module| GLOBALS.set(globals, || module.emit()))
+                .collect()
+        });
+        let mut applied = Vec::new();
+        let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
+        for output in module_outputs {
+            files.push(output.file);
+            file_records.push(output.record);
+            let mut lowering = output.lowering;
+            lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
+            applied.push(lowering);
+            for (key, count) in output.vendor_reference_rewrites {
+                *vendor_reference_rewrites.entry(key).or_insert(0) += count;
+            }
+        }
+
+        LoweredChunk {
+            files,
+            file_records,
+            applied,
+            vendor_reference_rewrites,
+        }
+    }
+}
+
+fn candidate_target(target: &PreparedImportTarget) -> CandidateImportTarget {
+    match target {
+        PreparedImportTarget::OriginalSource { specifier } => {
+            CandidateImportTarget::OriginalSource {
+                request: specifier.clone(),
+            }
+        }
+        PreparedImportTarget::UnsupportedOriginalSource { specifier }
+            if !specifier.starts_with('.') && !specifier.starts_with('/') =>
+        {
+            CandidateImportTarget::OriginalExternal {
+                request: specifier.clone(),
+            }
+        }
+        PreparedImportTarget::UnsupportedOriginalSource { specifier } => {
+            CandidateImportTarget::OriginalSourceUnknownExports {
+                request: specifier.clone(),
+            }
+        }
+        PreparedImportTarget::CandidateOutput { chunk, file } => {
+            CandidateImportTarget::CandidateOutput {
+                chunk: *chunk,
+                file: file.clone(),
+            }
+        }
+        PreparedImportTarget::Unsupported => CandidateImportTarget::Unsupported,
+    }
+}
+
+fn candidate_request_kind(item: &ModuleItem) -> artifact::reports::CandidateOutputRequestKind {
+    use artifact::reports::CandidateOutputRequestKind as Kind;
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => Kind::Import,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_some() => {
+            Kind::NamedReExport
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => Kind::ExportAll,
+        _ => Kind::LocalExport,
+    }
+}
+
+fn candidate_specifier_span(item: &ModuleItem, index: usize) -> Option<Span> {
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+            .specifiers
+            .get(index)
+            .map(|specifier| specifier.span()),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => export
+            .specifiers
+            .get(index)
+            .map(|specifier| specifier.span()),
+        _ => None,
+    }
+}
+
+fn candidate_import_local(item: &ModuleItem, index: usize) -> Option<Id> {
+    let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+        return None;
+    };
+    match import.specifiers.get(index)? {
+        ImportSpecifier::Named(specifier) => Some(specifier.local.to_id()),
+        ImportSpecifier::Default(specifier) => Some(specifier.local.to_id()),
+        ImportSpecifier::Namespace(specifier) => Some(specifier.local.to_id()),
+    }
+}
+
+fn binding_identifier_span(item: &ModuleItem, wanted: &Id) -> Option<Span> {
+    struct Finder<'a> {
+        wanted: &'a Id,
+        span: Option<Span>,
+    }
+    impl Visit for Finder<'_> {
+        fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+            if binding.id.to_id() == *self.wanted {
+                self.span = Some(binding.id.span);
+            }
+            binding.visit_children_with(self);
+        }
+    }
+    let mut finder = Finder { wanted, span: None };
+    item.visit_with(&mut finder);
+    finder.span
+}
+
+fn item_declares_id(item: &ModuleItem, wanted: &Id) -> bool {
+    if top_level_declaration_ids(item)
+        .iter()
+        .any(|id| id == wanted)
+    {
+        return true;
+    }
+    let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+        return false;
+    };
+    import.specifiers.iter().any(|specifier| {
+        let local = match specifier {
+            ImportSpecifier::Named(named) => named.local.to_id(),
+            ImportSpecifier::Default(default) => default.local.to_id(),
+            ImportSpecifier::Namespace(namespace) => namespace.local.to_id(),
+        };
+        &local == wanted
+    })
+}
+
+fn var_declaration(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => Some(declaration),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            Decl::Var(declaration) => Some(declaration),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn same_source_span(left: Span, right: Span) -> bool {
+    left != DUMMY_SP && right != DUMMY_SP && left.lo == right.lo && left.hi == right.hi
+}
+
+struct MatchingIdentVisitor {
+    source_span: Span,
+    candidate_locals: Vec<(Id, Span)>,
+}
+
+impl Visit for MatchingIdentVisitor {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if same_source_span(ident.span, self.source_span) {
+            self.candidate_locals.push((ident.to_id(), ident.span));
+        }
+    }
+}
+
+/// Chunk-identity + file-path inputs to `prepare_candidate_emission_plan`. Held in
 /// `LowerChunkInputs::context`.
 pub(super) struct LowerChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
@@ -84,12 +758,12 @@ pub(super) struct LowerChunkAst<'a> {
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 
-/// Plan-side inputs: the per-chunk module plans and validated emission
+/// Plan-side inputs: the per-chunk module plans and preflight-derived emission
 /// placement.
 /// Held in `LowerChunkInputs::plan`.
-pub(super) struct LowerChunkPlan<'a> {
-    pub(super) module_plans: &'a [ModulePlan],
-    pub(super) placement: &'a EmissionPlacement<'a>,
+pub(super) struct LowerChunkPlan<'output, 'placement> {
+    pub(super) module_plans: &'output [ModulePlan],
+    pub(super) placement: &'placement EmissionPlacement<'output>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -125,14 +799,16 @@ pub(super) struct LowerChunkSpecFacts<'a> {
     pub(super) pre_existing_public_export_names: &'a HashSet<String>,
 }
 
-pub(super) struct LowerChunkInputs<'a> {
-    pub(super) context: LowerChunkContext<'a>,
-    pub(super) ast: LowerChunkAst<'a>,
-    pub(super) plan: LowerChunkPlan<'a>,
-    pub(super) spec_facts: LowerChunkSpecFacts<'a>,
+pub(super) struct LowerChunkInputs<'output, 'placement> {
+    pub(super) context: LowerChunkContext<'output>,
+    pub(super) ast: LowerChunkAst<'output>,
+    pub(super) plan: LowerChunkPlan<'output, 'placement>,
+    pub(super) spec_facts: LowerChunkSpecFacts<'output>,
 }
 
-pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
+pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
+    inputs: LowerChunkInputs<'output, 'placement>,
+) -> Result<PreparedCandidateEmissionPlan<'output>> {
     let LowerChunkInputs {
         context,
         ast,
@@ -186,12 +862,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     );
 
     let mut entry_body = Vec::new();
+    let mut entry_requests_by_item = Vec::<IndexedStaticModuleRequest>::new();
     split_entry_body(
         &runtime_ast.module.body,
         &selected_statements,
         whole_statement_assignment,
         binding_assignment,
         &mut entry_body,
+        &mut entry_requests_by_item,
         &mut selected_by_module,
     );
     // Two passes: build entry imports in plan order (so the
@@ -202,7 +880,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See docs/design.md "Module dep graphs"
     // and "Lemma 2".
-    let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
+    let mut entry_imports: Vec<(ModuleId, PreparedImportDecl)> = Vec::new();
     // Entry-side renames flow through ONE per-chunk ledger sealed once:
     // the chunk_renames entries staying in entry (Explicit, Chunk scope),
     // the entry import-local mints (ImportInduced, Chunk scope), and the
@@ -278,10 +956,17 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             if !selected_by_module[module_index].is_empty() {
                 entry_imports.push((
                     ModuleId(module_index),
-                    import_decl_module_item(
-                        Vec::new(),
-                        &relative_source(entry_file, &plan.target_file),
-                    ),
+                    PreparedImportDecl {
+                        item: import_decl_module_item(
+                            Vec::new(),
+                            &relative_source(entry_file, &plan.target_file),
+                        ),
+                        targets: vec![PreparedImportTarget::CandidateOutput {
+                            chunk: chunk_id_interned,
+                            file: plan.target_file.clone(),
+                        }],
+                        bindings: Vec::new(),
+                    },
                 ));
             }
             continue;
@@ -311,14 +996,36 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 });
             }
         }
+        let targets = vec![PreparedImportTarget::CandidateOutput {
+            chunk: chunk_id_interned,
+            file: plan.target_file.clone(),
+        }];
+        let bindings = live_bindings
+            .iter()
+            .map(|(source_local, imported_name)| PreparedImportBinding {
+                source_binding: top_level_id(source_local, chunk_top_level_mark),
+                candidate_binding: top_level_id(
+                    minted.get(source_local).unwrap_or(source_local),
+                    chunk_top_level_mark,
+                ),
+                imported_name: imported_name.clone(),
+                kind: artifact::reports::ImportSpecifierKind::Named,
+                exported_name: None,
+                target: targets[0].clone(),
+            })
+            .collect();
         entry_imports.push((
             ModuleId(module_index),
-            import_decl_for_plan(
-                entry_file,
-                &plan.target_file,
-                &resolved,
-                chunk_top_level_mark,
-            ),
+            PreparedImportDecl {
+                item: import_decl_for_plan(
+                    entry_file,
+                    &plan.target_file,
+                    &resolved,
+                    chunk_top_level_mark,
+                ),
+                targets,
+                bindings,
+            },
         ));
     }
     // Order entry imports through the shared `EsmImportOrder`
@@ -333,7 +1040,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     assignment_analysis
         .import_order()
         .sort_entry_imports(&mut entry_imports);
-    let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
+    let entry_imports: Vec<PreparedImportDecl> =
+        entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
     // the pending Chunk-scope map, reporting the reference-resolution
     // conflicts seal validates. It uses parser-owned unresolved identity
@@ -463,15 +1171,48 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             "entry rename executor captured despite seal validation: {:?}",
             renamer.captured,
         );
+        for request in &mut entry_requests_by_item {
+            for binding in &mut request.bindings {
+                if let Some(fresh) = entry_binding_renames_by_id.get(&binding.candidate_binding) {
+                    binding.candidate_binding = (fresh.clone(), binding.candidate_binding.1);
+                }
+                if entry_binding_renames_by_id.contains_key(&binding.source_binding) {
+                    binding.target = PreparedImportTarget::Unsupported;
+                }
+            }
+        }
     }
     if !entry_imports.is_empty() {
         let import_insert_index = entry_body
             .iter()
             .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
             .count();
+        let request_insert_index = entry_requests_by_item
+            .iter()
+            .take_while(|request| request.item_index < import_insert_index)
+            .count();
+        let inserted_requests: Vec<IndexedStaticModuleRequest> = entry_imports
+            .iter()
+            .enumerate()
+            .filter_map(|(item_offset, prepared)| {
+                static_request_for_item(&prepared.item).map(|request| IndexedStaticModuleRequest {
+                    item_index: import_insert_index + item_offset,
+                    request,
+                    targets: prepared.targets.clone(),
+                    bindings: prepared.bindings.clone(),
+                })
+            })
+            .collect();
+        for request in entry_requests_by_item.iter_mut().skip(request_insert_index) {
+            request.item_index += entry_imports.len();
+        }
         let tail = entry_body.split_off(import_insert_index);
-        entry_body.extend(entry_imports);
+        entry_body.extend(entry_imports.into_iter().map(|prepared| prepared.item));
         entry_body.extend(tail);
+        entry_requests_by_item.splice(
+            request_insert_index..request_insert_index,
+            inserted_requests,
+        );
     }
     for export in entry_exports_for_moved_bindings(
         declarations,
@@ -572,6 +1313,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let local_bindings = assignment_analysis
         .inputs()
         .local_bindings(chunk_id_interned)?;
+    // Dead-import trimming removes only specifiers and retains the directive
+    // as a side-effect import, so its request inventory is unchanged.
     trim_dead_named_specifiers(&mut entry_body, local_bindings.as_map());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
@@ -582,13 +1325,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         assignment_analysis,
         chunk_id_interned,
         module_plans.len(),
+        runtime_import_facts,
     )?;
     let source_import_cache = Mutex::new(ArtifactSourceImportResolutionCache::new(
         artifact,
         artifact_indexes,
     ));
 
-    let mut files = vec![JsFile {
+    let files = vec![JsFile {
         path: entry_file.to_string(),
         body: JsFileBody::Ast(ParsedJsModule {
             cm: runtime_ast.cm.clone(),
@@ -610,8 +1354,15 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             source_path: source_path.to_string(),
         },
     }];
-    let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
-    let mut applied = Vec::new();
+    let file_records = vec![(entry_file.to_string(), FileRole::Entry)];
+    let entry_static_requests = entry_requests_by_item
+        .into_iter()
+        .map(|indexed_request| PreparedStaticRequest {
+            request: indexed_request.request,
+            targets: indexed_request.targets,
+            bindings: indexed_request.bindings,
+        })
+        .collect();
 
     // Filter chunk_renames down to entries the per-module emit path
     // should apply: bindings *not* claimed by any logical module.
@@ -627,25 +1378,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Per-plan lowering: each plan's output (`JsFile`, file record,
-    // `SelectedModuleLowering`) is independent — the only shared
-    // mutable state the loop body touches is `source_import_cache`
-    // (memoization for source-chunk import resolution), wrapped in a
-    // `Mutex` above. Each worker consumes one naturalized body with its
-    // matching rename maps and facts, prepared upstream.
+    // Per-plan preparation is independent — the only shared mutable state
+    // the loop body touches is `source_import_cache` (memoization for
+    // source-chunk import resolution), wrapped in a `Mutex` above. Each
+    // worker consumes one naturalized body with its matching rename maps
+    // and facts and constructs the exact import/body AST used by emission.
     //
     // `swc_common::GLOBALS` is a `scoped_tls` thread-local; it does
     // NOT carry into rayon worker threads, so we capture the parent
     // thread's `Globals` and re-set it inside each worker closure.
     // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
-    let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| -> Result<_> {
+    let modules: Vec<PreparedModuleEmission<'output>> = GLOBALS.with(|globals| -> Result<_> {
         naturalized_modules
             .into_par_iter()
             .zip(module_plans.par_iter())
             .enumerate()
             .map(|(index, (module, plan))| {
                 GLOBALS.set(globals, || {
-                    emit_module(ModuleEmissionInputs {
+                    prepare_module_emission(ModuleEmissionInputs {
                         index,
                         plan,
                         naturalized: module,
@@ -670,23 +1420,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             })
             .collect()
     })?;
-    let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
-    for output in module_outputs {
-        files.push(output.file);
-        file_records.push(output.record);
-        let mut lowering = output.lowering;
-        lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
-        applied.push(lowering);
-        for (key, count) in output.vendor_reference_rewrites {
-            *vendor_reference_rewrites.entry(key).or_insert(0) += count;
-        }
-    }
 
-    Ok(LoweredChunk {
+    Ok(PreparedCandidateEmissionPlan {
         files,
         file_records,
-        applied,
-        vendor_reference_rewrites,
+        modules,
+        cross_chunk_import_aliases,
+        entry_static_requests,
+        entry_binding_renames: entry_binding_renames_by_id
+            .into_iter()
+            .map(|(source, fresh)| {
+                let candidate = (fresh, source.1);
+                (source, candidate)
+            })
+            .collect(),
+        entry_exports_by_original_local: entry_exports_by_original_local
+            .into_iter()
+            .map(|(source, export)| (source, export.exported_name))
+            .collect(),
     })
 }
 
@@ -738,12 +1489,13 @@ fn split_entry_body(
     whole_statement_assignment: &BTreeMap<StatementId, usize>,
     binding_assignment: &HashMap<Id, usize>,
     entry_body: &mut Vec<ModuleItem>,
+    entry_requests_by_item: &mut Vec<IndexedStaticModuleRequest>,
     selected_by_module: &mut [Vec<ModuleItem>],
 ) {
     for (index, item) in body.iter().enumerate() {
         let ordinal = StatementId(index);
         if !selected_statements.contains(&ordinal) {
-            entry_body.push(item.clone());
+            push_entry_item(entry_body, entry_requests_by_item, item.clone());
             continue;
         }
         if let Some(module_index) = whole_statement_assignment.get(&ordinal).copied() {
@@ -757,14 +1509,30 @@ fn split_entry_body(
                 item,
                 ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none()
             ) {
-                entry_body.push(item.clone());
+                push_entry_item(entry_body, entry_requests_by_item, item.clone());
             }
             continue;
         }
-        entry_body.extend(remaining_item_after_selection(
-            item,
-            binding_assignment,
-            selected_by_module,
-        ));
+        if let Some(entry_item) =
+            remaining_item_after_selection(item, binding_assignment, selected_by_module)
+        {
+            push_entry_item(entry_body, entry_requests_by_item, entry_item);
+        }
     }
+}
+
+fn push_entry_item(
+    body: &mut Vec<ModuleItem>,
+    static_requests: &mut Vec<IndexedStaticModuleRequest>,
+    item: ModuleItem,
+) {
+    if let Some(request) = static_request_for_item(&item) {
+        static_requests.push(IndexedStaticModuleRequest {
+            item_index: body.len(),
+            request,
+            targets: source_request_targets(&item),
+            bindings: source_import_bindings(&item),
+        });
+    }
+    body.push(item);
 }

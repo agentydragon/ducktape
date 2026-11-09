@@ -124,15 +124,13 @@ fn cut_names_the_written_cell_and_both_summarized_endpoints() {
         .into_iter()
         .find(|edge| {
             edge["kind"] == "sequenced"
-                && conflicts(sequenced_cause(edge)).contains(&json!({
-                    "kind": "write_after_write",
-                    "cell": tag_cell,
-                    "overlap": {
-                        "left": { "kind": "global_prop", "key": "tag" },
-                        "right": { "kind": "global_prop", "key": "tag" },
-                        "law": "exact_cell",
-                    },
-                }))
+                && conflicts(sequenced_cause(edge)).iter().any(|conflict| {
+                    conflict["kind"] == "write_after_write"
+                        && conflict["cell"] == tag_cell
+                        && conflict["overlap"]["law"] == "exact_cell"
+                        && conflict["overlap"]["left"] == tag_cell
+                        && conflict["overlap"]["right"] == tag_cell
+                })
         })
         .unwrap_or_else(|| panic!("no write-after-write cut edge on `tag`: {cycles:#?}"));
     let cause = sequenced_cause(edge);
@@ -210,12 +208,17 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     let heap = &execution["heap_frontier"];
     let own = &heap["own_at_init"];
     assert_eq!(own["opaque"], true, "{heap}");
-    assert_eq!(own["writes"]["count"], 1, "{heap}");
     let own_writes = own["writes"]["sample"]
         .as_array()
         .expect("own write sample");
-    assert_eq!(own_writes.len(), 1, "{heap}");
-    assert_eq!(own_writes[0]["kind"], "array_contents", "{heap}");
+    assert_eq!(
+        own_writes
+            .iter()
+            .filter(|cell| cell["kind"] == "array_contents")
+            .count(),
+        1,
+        "the initializer must retain its array write: {heap}"
+    );
     let composed = &heap["composed_synchronous_calls"];
     assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{heap}");
     let composed_writes = composed["writes"]["sample"]
@@ -224,18 +227,18 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     assert!(
         composed_writes
             .iter()
-            .any(|cell| !own_writes.contains(cell)),
+            .any(|cell| cell["kind"] == "array_contents" && !own_writes.contains(cell)),
         "local synchronous callee must contribute its own exact array cell: {heap}"
     );
-    let non_assumed_writes = &heap["non_assumed_heap_accesses"]["writes"];
-    assert!(non_assumed_writes["count"].as_u64().unwrap() > 0, "{edge}");
+    let executed_writes = &heap["heap_access_provenance"]["executed_operations"]["writes"];
+    assert!(executed_writes["count"].as_u64().unwrap() > 0, "{edge}");
     assert!(
-        non_assumed_writes["sample"]
+        executed_writes["sample"]
             .as_array()
-            .expect("non-assumed write sample")
+            .expect("executed write sample")
             .iter()
             .all(|cell| composed_writes.contains(cell)),
-        "non-assumed writes must be retained in the composed summary: {edge}"
+        "executed writes must be retained in the composed summary: {edge}"
     );
     for cells in [
         &own["allocations"],
@@ -244,8 +247,12 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         &composed["allocations"],
         &composed["reads"],
         &composed["writes"],
-        &heap["non_assumed_heap_accesses"]["reads"],
-        non_assumed_writes,
+        &heap["heap_access_provenance"]["executed_operations"]["reads"],
+        executed_writes,
+        &heap["heap_access_provenance"]["assumed_operations"]["reads"],
+        &heap["heap_access_provenance"]["assumed_operations"]["writes"],
+        &heap["heap_access_provenance"]["conservative_summaries"]["reads"],
+        &heap["heap_access_provenance"]["conservative_summaries"]["writes"],
     ] {
         assert!(
             cells["sample"].as_array().unwrap().len() <= 8,

@@ -121,7 +121,13 @@ impl LocalClassConstructionShapes {
                     .values_of_binding(&callee.to_id())
                     .into_iter()
                     .collect();
-                if values == [Value::Alloc(Kind::Class, class_key)] {
+                let class = flow.heap_resolver().class_definition(class_key);
+                if values
+                    == [Value::Alloc(
+                        Kind::Class,
+                        flow.heap_resolver().class_object(class),
+                    )]
+                {
                     proof
                         .constructions
                         .insert(construction.span.lo.0, class_key);

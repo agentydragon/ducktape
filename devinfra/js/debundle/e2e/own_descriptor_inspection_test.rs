@@ -23,16 +23,20 @@ fn descriptor_flags_receivers_and_deferred_counters_are_preserved() {
     let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![
-            logical_module_with_anon(
+            logical_module(
                 "descriptors",
                 &[
                     Member::new("getterCalls"),
                     Member::new("methodCalls"),
                     Member::new("descriptors"),
                 ],
+            ),
+            // Keep the opaque observation before later's initialization.
+            logical_module_with_anon(
+                "later",
+                &[Member::new("later")],
                 &["console.log(getterCalls, methodCalls);"],
             ),
-            logical_module("later", &[Member::new("later")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "0 0\ngetter:42 method:42 1 1 true true true\n");
@@ -343,79 +347,89 @@ fn copied_accessor_reads_and_opaque_target_consumption_retain_dependencies() {
     let reads_copied_accessor = format!(
         "{wrapper}const result = wrap({{ get value() {{ return later; }}, method() {{ return later; }} }});\nconst observed = result.value;\nconst later = 42;\n"
     );
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &reads_copied_accessor,
-            vec![
-                logical_module("wrapper", &[Member::new("wrap")]),
-                logical_module("result", &[Member::new("result"), Member::new("observed")]),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["result", "later"],
-        &[],
+    let fixture = run_fixture(FixtureOpts::new(
+        &reads_copied_accessor,
+        vec![
+            logical_module("wrapper", &[Member::new("wrap")]),
+            logical_module("result", &[Member::new("result"), Member::new("observed")]),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_error(
+        &fixture,
+        "ReferenceError: Cannot access 'later' before initialization",
     );
 
     let dynamic_read = format!(
-        "{wrapper}const result = wrap({{ get value() {{ return later; }} }});\nconst key = globalThis.key;\nconst observed = result[key];\nconst later = 42;\n"
+        "{wrapper}const result = wrap({{ get value() {{ return later; }} }});\nconst key = (globalThis.key = 'value');\nconst observed = result[key];\nconst later = 42;\n"
     );
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &dynamic_read,
-            vec![
-                logical_module("wrapper", &[Member::new("wrap")]),
-                logical_module(
-                    "result",
-                    &[
-                        Member::new("result"),
-                        Member::new("key"),
-                        Member::new("observed"),
-                    ],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["result", "later"],
-        &[],
+    let fixture = run_fixture(FixtureOpts::new(
+        &dynamic_read,
+        vec![
+            logical_module("wrapper", &[Member::new("wrap")]),
+            logical_module(
+                "result",
+                &[
+                    Member::new("result"),
+                    Member::new("key"),
+                    Member::new("observed"),
+                ],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_error(
+        &fixture,
+        "ReferenceError: Cannot access 'later' before initialization",
     );
 
     let getter_as_callee = format!(
         "{wrapper}const result = wrap({{ get value() {{ return later; }} }});\nresult.value();\nconst later = 42;\n"
     );
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &getter_as_callee,
-            vec![
-                logical_module_with_anon(
-                    "result",
-                    &[Member::new("wrap"), Member::new("result")],
-                    &["result.value();"],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["result", "later"],
-        &[],
+    let fixture = run_fixture(FixtureOpts::new(
+        &getter_as_callee,
+        vec![
+            logical_module_with_anon(
+                "result",
+                &[Member::new("wrap"), Member::new("result")],
+                &["result.value();"],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_error(
+        &fixture,
+        "ReferenceError: Cannot access 'later' before initialization",
     );
 
-    let opaque_consumption = format!(
-        "{wrapper}const result = wrap({{ get value() {{ return later; }}, method() {{ return later; }} }});\nglobalThis.consume(result);\nconst later = 42;\n"
-    );
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &opaque_consumption,
-            vec![
-                logical_module_with_anon(
-                    "result",
-                    &[Member::new("wrap"), Member::new("result")],
-                    &["globalThis.consume(result);"],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["result", "later"],
-        &[],
-    );
+    let run_imported_consumer = |body: &str| {
+        let source = format!(
+            "import {{ consume }} from './peer.js';\n{wrapper}const result = wrap({{ get value() {{ return later; }}, method() {{ return later; }} }});\nconst observed = consume(result);\nconst later = 42;\n"
+        );
+        let consumer_source = format!("export function consume(value) {{ return {body}; }}\n");
+        let peer_modules = [(
+            "static/peer",
+            vec![logical_module("consumer", &[Member::new("consume")])],
+        )];
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("wrapper", &[Member::new("wrap")]),
+                    logical_module("result", &[Member::new("result"), Member::new("observed")]),
+                    logical_module("later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", &consumer_source)])
+            .with_extra_chunk_logical_modules(&peer_modules),
+        );
+        assert_preserved_entry_error(
+            &fixture,
+            "ReferenceError: Cannot access 'later' before initialization",
+        );
+    };
+    run_imported_consumer("value.value");
+    run_imported_consumer("value.method()");
 }
 
 #[test]
@@ -428,26 +442,26 @@ fn conflicting_descriptor_carrier_self_reference_terminates() {
 #[test]
 fn descriptor_application_preserves_the_source_literal_capture_context() {
     let source = "function makeRecord(read) { return { get value() { return read(); } }; }\nfunction wrap(record) { const descriptors = Object.getOwnPropertyDescriptors(record); const target = {}; Object.defineProperties(target, descriptors); return target; }\nconst record = makeRecord(() => later);\nconst result = wrap(record);\nconst observed = result.value;\nconst later = 42;\n";
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("maker", &[Member::new("makeRecord")]),
-                logical_module("wrapper", &[Member::new("wrap")]),
-                logical_module_with_anon(
-                    "result",
-                    &[
-                        Member::new("record"),
-                        Member::new("result"),
-                        Member::new("observed"),
-                    ],
-                    &["const observed = result.value;"],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["result", "later"],
-        &[],
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("maker", &[Member::new("makeRecord")]),
+            logical_module("wrapper", &[Member::new("wrap")]),
+            logical_module_with_anon(
+                "result",
+                &[
+                    Member::new("record"),
+                    Member::new("result"),
+                    Member::new("observed"),
+                ],
+                &["const observed = result.value;"],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_error(
+        &fixture,
+        "ReferenceError: Cannot access 'later' before initialization",
     );
 }
 
@@ -496,9 +510,35 @@ fn descriptor_map_mutation_invalidates_application_but_keeps_callbacks() {
 }
 
 #[test]
-fn descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source() {
+fn descriptor_capture_keeps_the_assigned_source_in_its_destination() {
     let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
-    let fixture = run_fixture(FixtureOpts::new(source, descriptor_modules()));
+    let rejected = run_rejection_fixture(FixtureOpts::new(source, descriptor_modules()));
+    let assessment = rejected.candidate_relocation_assessment();
+    let effects = rejected.effect_translation_validation();
+    assert_potential_suppression_rejection(
+        &assessment,
+        &effects,
+        "blocked_by_effect_and_placement",
+    );
+    assert!(
+        !assessment["placement"]["cross_destination_rebinds"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "assigning to an imported record binding is invalid: {assessment:#}"
+    );
+
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "descriptors",
+            &[
+                Member::new("record"),
+                Member::new("descriptors"),
+                Member::new("later"),
+            ],
+        )],
+    ));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 

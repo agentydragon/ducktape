@@ -15,12 +15,17 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use analysis::facts::ChunkFactAnalysis;
+use analysis::analysis_inputs::ProviderProgramSource;
+use analysis::analysis_inputs::saved::ProviderSourceInventory;
+use analysis::facts::abstract_domain::value::HeapModuleScope;
 use analysis::facts::saved::SavedChunkFactAnalysis;
+use analysis::facts::{CanonicalSourceInventory, ChunkFactAnalysis};
 use analysis::purity::saved::{PuritySnapshot, SavedPurityGraph};
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
+use js_ast::ParsedJsModule;
 use serde::{Deserialize, Serialize};
+use source_identity::ChunkId;
 
 use super::ExportReentryReport;
 use super::program_summary::ProgramSummary;
@@ -77,15 +82,36 @@ impl<'a> SavedAnalysisBody<'a> {
         })
     }
 
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
+    fn restore(
+        self,
+        ordinals: &ContextOrdinals,
+        source_inventories: &BTreeMap<String, ProviderSourceInventory>,
+    ) -> Result<AnalysisArtifactBody> {
         let purities = self.purity_graph.restore()?;
+        let program_summary =
+            self.program_summary
+                .restore(ordinals, &purities, source_inventories)?;
+        ensure!(
+            self.chunks
+                .keys()
+                .all(|chunk| source_inventories.contains_key(chunk)),
+            "saved chunk inventory is not covered by prepared provider source metadata"
+        );
         Ok(AnalysisArtifactBody {
-            program_summary: self.program_summary.restore(ordinals, &purities)?,
+            program_summary,
             export_reentry: self.export_reentry.into_owned(),
             chunks: self
                 .chunks
                 .into_iter()
-                .map(|(name, chunk)| Ok((name, chunk.restore(ordinals, &purities)?)))
+                .map(|(name, chunk)| {
+                    let source_inventory = source_inventories
+                        .get(&name)
+                        .context("prepared provider source inventory is missing a saved chunk")?;
+                    Ok((
+                        name,
+                        chunk.restore(ordinals, &purities, &source_inventory.source_sites)?,
+                    ))
+                })
                 .collect::<Result<_>>()?,
         })
     }
@@ -123,9 +149,42 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
     Ok((rmp_serde::from_slice(header)?, body))
 }
 
-pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
+pub fn read_body(
+    body: &[u8],
+    ordinals: &ContextOrdinals,
+    source_inventories: &BTreeMap<String, ProviderSourceInventory>,
+) -> Result<AnalysisArtifactBody> {
     let saved: SavedAnalysisBody<'_> = analysis_codec::decode(body)?;
-    saved.restore(ordinals)
+    saved.restore(ordinals, source_inventories)
+}
+
+pub(super) fn provider_source_inventory(
+    module: &str,
+    chunk_id: ChunkId,
+    parsed: &ParsedJsModule,
+    locations: CanonicalSourceInventory,
+) -> Result<ProviderSourceInventory> {
+    let source_files = parsed.cm.files();
+    let source_file = source_files
+        .first()
+        .context("prepared provider source map has no source file")?;
+    ensure!(!module.is_empty(), "prepared provider module name is empty");
+    ensure!(
+        source_file.start_pos.0 <= source_file.end_pos.0,
+        "prepared provider source has an invalid source coordinate range"
+    );
+    Ok(ProviderSourceInventory {
+        source: ProviderProgramSource {
+            module: module.to_owned(),
+            scope: HeapModuleScope::Chunk(chunk_id),
+            sha256: graph_provenance::sha256(source_file.src.as_bytes()),
+            source_start: source_file.start_pos.0,
+            source_end: source_file.end_pos.0,
+        },
+        source_sites: locations.source_sites,
+        callable_spans: locations.callable_spans,
+        class_spans: locations.class_spans,
+    })
 }
 
 #[cfg(test)]
@@ -243,6 +302,38 @@ mod tests {
         })
     }
 
+    fn canonical_source_inventories(
+        artifact: &ChunkBundle,
+    ) -> BTreeMap<String, ProviderSourceInventory> {
+        artifact
+            .chunks
+            .iter()
+            .map(|chunk| {
+                let parsed = chunk
+                    .js
+                    .get_file(&chunk.js.entry_file)
+                    .and_then(JsFile::ast)
+                    .expect("retained entry AST");
+                let source = analysis::facts::analyze_chunk_structural_in_chunk(
+                    &parsed.module,
+                    chunk.chunk_id,
+                    None,
+                    |_| None,
+                );
+                (
+                    artifact.chunk_table.name(chunk.chunk_id).to_string(),
+                    provider_source_inventory(
+                        artifact.chunk_table.name(chunk.chunk_id),
+                        chunk.chunk_id,
+                        parsed,
+                        analysis::facts::canonical_source_inventory(&source),
+                    )
+                    .expect("source inventory comes from retained fixture parse"),
+                )
+            })
+            .collect()
+    }
+
     fn analyze(artifact: &ChunkBundle) -> AnalysisArtifactBody {
         let mut assertion = spec::ChunkExportPurity::default();
         assertion.pure_exports.insert("wrap".to_string());
@@ -279,6 +370,14 @@ mod tests {
             .map(|(chunk, module)| {
                 let name = artifact.chunk_table.name(chunk.chunk_id).to_string();
                 let inputs = AnalysisInputs {
+                    heap_resolver: Some(
+                        analysis::facts::abstract_domain::value::SourceHeapResolver::new(
+                            analysis::facts::abstract_domain::value::HeapModuleScope::Chunk(
+                                chunk.chunk_id,
+                            ),
+                        ),
+                    ),
+                    global_uses: program_summary.global_uses.get(&name).cloned(),
                     imported_purities: program_summary
                         .bindings
                         .get(&name)
@@ -340,7 +439,7 @@ mod tests {
             let artifact = bundle(&[0, 1]);
             let body = analyze(&artifact);
             assert_shared_imported_cause(&body);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
             (
                 write_artifact(&header(), &body, &ordinals).expect("encode"),
                 format!("{:?}", body.chunks),
@@ -352,10 +451,12 @@ mod tests {
             js_ast::parse_js_module("shift.js", "let a = () => { let b; };").expect("parses");
             let artifact = bundle(&[1, 0]);
             let fresh = analyze(&artifact);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
+            let canonical_source_inventories = canonical_source_inventories(&artifact);
             let (read, body) = read_header(&bytes).expect("header");
             assert_eq!(read, header());
-            let decoded = read_body(body, &ordinals).expect("decode");
+            let decoded =
+                read_body(body, &ordinals, &canonical_source_inventories).expect("decode");
             assert_shared_imported_cause(&decoded);
             let debug_fresh = format!("{:?}", fresh.chunks);
             assert_ne!(debug_fresh, debug_first, "contexts are renumbered");
@@ -363,6 +464,22 @@ mod tests {
             assert_eq!(
                 write_artifact(&header(), &decoded, &ordinals).expect("re-encode"),
                 write_artifact(&header(), &fresh, &ordinals).expect("encode fresh"),
+            );
+
+            let mut mismatched_source_inventories = canonical_source_inventories.clone();
+            let app_sites = &mut mismatched_source_inventories
+                .get_mut("static/app")
+                .expect("app source inventory")
+                .source_sites;
+            let site = app_sites
+                .iter()
+                .next()
+                .cloned()
+                .expect("fixture has source operation sites");
+            app_sites.remove(&site);
+            assert!(
+                read_body(body, &ordinals, &mismatched_source_inventories).is_err(),
+                "saved source tables must match the independently prepared source table"
             );
         });
     }
@@ -384,7 +501,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let artifact = bundle(order);
             let body = analyze(&artifact);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
             std::fs::write(
                 output.with_extension("dba"),
                 write_artifact(&header(), &body, &ordinals).expect("encode"),

@@ -75,7 +75,13 @@ impl MetadataDecorateCall {
         let Value::Alloc(Kind::Class, target) = targets.next()? else {
             return None;
         };
-        (helpers.next().is_none() && targets.next().is_none()).then_some((helper, target))
+        if helpers.next().is_some() || targets.next().is_some() {
+            return None;
+        }
+        let class = flow
+            .heap_resolver()
+            .source_class_origin(target.class_definition_id()?)?;
+        Some((flow.source_origin(helper)?, class))
     }
 }
 

@@ -18,7 +18,9 @@ use std::{cell::Cell, rc::Rc};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::abstract_domain::value::{Kind, Value};
+use super::abstract_domain::value::{
+    HeapAddress, HeapModuleScope, Kind, LocalAnalysisScopeId, SourceHeapResolver, Value,
+};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
@@ -117,48 +119,62 @@ impl OriginTable {
     }
 
     #[cfg(test)]
-    pub(super) fn for_expr(expr: &Expr) -> Arc<Self> {
-        let mut collector = AllocationCollector::default();
+    pub(super) fn for_expr(expr: &Expr, resolver: SourceHeapResolver) -> Arc<Self> {
+        let mut collector = AllocationCollector {
+            resolver,
+            origins: BTreeSet::new(),
+        };
         expr.visit_with(&mut collector);
         Arc::new(Self::from_origins(collector.origins))
     }
 }
 
 #[cfg(test)]
-#[derive(Default)]
 struct AllocationCollector {
+    resolver: SourceHeapResolver,
     origins: BTreeSet<Value>,
 }
 
 #[cfg(test)]
 impl Visit for AllocationCollector {
     fn visit_function(&mut self, node: &Function) {
-        self.origins
-            .insert(Value::Alloc(Kind::Function, node.span.lo.0));
+        self.origins.insert(Value::Alloc(
+            Kind::Function,
+            self.resolver.allocation(Kind::Function, node.span.lo.0),
+        ));
         node.visit_children_with(self);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        self.origins
-            .insert(Value::Alloc(Kind::Function, node.span.lo.0));
+        self.origins.insert(Value::Alloc(
+            Kind::Function,
+            self.resolver.allocation(Kind::Function, node.span.lo.0),
+        ));
         node.visit_children_with(self);
     }
 
     fn visit_class(&mut self, node: &Class) {
-        self.origins
-            .insert(Value::Alloc(Kind::Class, node.span.lo.0));
+        self.origins.insert(Value::Alloc(
+            Kind::Class,
+            self.resolver
+                .class_object(self.resolver.class_definition(node.span.lo.0)),
+        ));
         node.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, node: &ObjectLit) {
-        self.origins
-            .insert(Value::Alloc(Kind::Object, node.span.lo.0));
+        self.origins.insert(Value::Alloc(
+            Kind::Object,
+            self.resolver.allocation(Kind::Object, node.span.lo.0),
+        ));
         node.visit_children_with(self);
     }
 
     fn visit_array_lit(&mut self, node: &ArrayLit) {
-        self.origins
-            .insert(Value::Alloc(Kind::Object, node.span.lo.0));
+        self.origins.insert(Value::Alloc(
+            Kind::Object,
+            self.resolver.allocation(Kind::Object, node.span.lo.0),
+        ));
         node.visit_children_with(self);
     }
 }
@@ -721,9 +737,10 @@ fn union_bits(into: &mut [u64], from: &[u64]) -> bool {
     changed
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct ChunkValueFlow {
+    heap_resolver: SourceHeapResolver,
     origin_table: Arc<OriginTable>,
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
@@ -749,21 +766,53 @@ pub(crate) struct ChunkValueFlow {
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
 }
 
+impl Default for ChunkValueFlow {
+    fn default() -> Self {
+        Self::empty(SourceHeapResolver::new(HeapModuleScope::LocalAnalysis(
+            LocalAnalysisScopeId::fresh(),
+        )))
+    }
+}
+
 impl ChunkValueFlow {
+    fn empty(heap_resolver: SourceHeapResolver) -> Self {
+        Self {
+            heap_resolver,
+            origin_table: Arc::new(OriginTable::default()),
+            declared_ids: BTreeSet::new(),
+            bindings: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            property_unions: BTreeMap::new(),
+            returns: BTreeMap::new(),
+            params: BTreeMap::new(),
+            candidate_objects: Vec::new(),
+            candidate_reachability: BTreeMap::new(),
+            candidate_bindings: BTreeMap::new(),
+            canonical: BTreeMap::new(),
+            fresh_returned_record_keys: BTreeMap::new(),
+            callable_source_unit: BTreeMap::new(),
+            native_set_allocations: BTreeMap::new(),
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols::default();
-        let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
+        let value_expr = FlowValueExpr::from_ast(expr, &mut symbols, self.heap_resolver);
         let work = Rc::new(Cell::new(0));
         let mut flow = self.clone();
         if flow.bindings.is_empty() && flow.properties.is_empty() && flow.returns.is_empty() {
-            flow.origin_table = OriginTable::for_expr(expr);
+            flow.origin_table = OriginTable::for_expr(expr, flow.heap_resolver);
         }
         let mut values = ValuesBuilder::with_work(flow.origin_table.clone(), work.clone());
         let declared = symbols.declared(&flow.declared_ids);
-        append_value_expr(&value_expr, &mut values, &declared, &mut |key| {
-            flow.values_for_key(&symbols, key)
-        });
+        append_value_expr(
+            flow.heap_resolver,
+            &value_expr,
+            &mut values,
+            &declared,
+            &mut |key| flow.values_for_key(&symbols, key),
+        );
         (values.finish(), work.get())
     }
 
@@ -802,17 +851,17 @@ impl ChunkValueFlow {
         let mut reverse: BTreeMap<Value, BTreeSet<Value>> = BTreeMap::new();
         for (function, values) in &self.returns {
             for value in values {
-                reverse
-                    .entry(value)
-                    .or_default()
-                    .insert(Value::Alloc(Kind::Function, *function));
+                reverse.entry(value).or_default().insert(Value::Alloc(
+                    Kind::Function,
+                    self.heap_address(Kind::Function, *function),
+                ));
             }
         }
         for (object, properties) in &self.properties {
             let container = if self.native_set_allocations.contains_key(object) {
-                Value::Alloc(Kind::Set, *object)
+                Value::Alloc(Kind::Set, self.heap_address(Kind::Set, *object))
             } else {
-                Value::Alloc(Kind::Object, *object)
+                Value::Alloc(Kind::Object, self.heap_address(Kind::Object, *object))
             };
             for values in properties.values() {
                 for value in values {
@@ -891,18 +940,55 @@ impl ChunkValueFlow {
         (reachable, bindings)
     }
 
+    #[cfg(test)]
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
-        FlowProgram::collect(body, &BTreeSet::new()).solve().0
+        Self::analyze_in_scope(
+            HeapModuleScope::LocalAnalysis(LocalAnalysisScopeId::fresh()),
+            body,
+        )
     }
 
+    #[cfg(test)]
+    pub(crate) fn analyze_in_scope(
+        heap_scope: HeapModuleScope,
+        body: &[TopLevelItemView<'_>],
+    ) -> Self {
+        FlowProgram::collect(SourceHeapResolver::new(heap_scope), body, &BTreeSet::new())
+            .solve()
+            .0
+    }
+
+    #[cfg(test)]
     pub(crate) fn analyze_with_candidates(
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
     ) -> Self {
-        FlowProgram::collect(body, candidates).solve().0
+        let heap_scope = candidates
+            .iter()
+            .find_map(|value| match value {
+                Value::Alloc(_, address) => address.module(),
+                _ => None,
+            })
+            .unwrap_or_else(|| HeapModuleScope::LocalAnalysis(LocalAnalysisScopeId::fresh()));
+        Self::analyze_with_candidates_in_resolver(
+            SourceHeapResolver::new(heap_scope),
+            body,
+            candidates,
+        )
+    }
+
+    pub(crate) fn analyze_with_candidates_in_resolver(
+        heap_resolver: SourceHeapResolver,
+        body: &[TopLevelItemView<'_>],
+        candidates: &BTreeSet<Value>,
+    ) -> Self {
+        FlowProgram::collect(heap_resolver, body, candidates)
+            .solve()
+            .0
     }
 
     pub(crate) fn analyze_with_native_set_allocations(
+        heap_resolver: SourceHeapResolver,
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
         allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
@@ -912,17 +998,38 @@ impl ChunkValueFlow {
             allocations
                 .keys()
                 .copied()
-                .map(|site| Value::Alloc(Kind::Set, site)),
+                .map(|site| Value::Alloc(Kind::Set, heap_resolver.allocation(Kind::Set, site))),
         );
-        FlowProgram::collect_with_native_set_allocations(body, &candidates, allocations)
-            .solve()
-            .0
+        FlowProgram::collect_with_native_set_allocations(
+            heap_resolver,
+            body,
+            &candidates,
+            allocations,
+        )
+        .solve()
+        .0
     }
 
     pub(crate) fn native_set_allocations(
         &self,
     ) -> &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
         &self.native_set_allocations
+    }
+
+    pub(crate) fn heap_scope(&self) -> HeapModuleScope {
+        self.heap_resolver.scope()
+    }
+
+    pub(crate) const fn heap_resolver(&self) -> SourceHeapResolver {
+        self.heap_resolver
+    }
+
+    pub(crate) fn heap_address(&self, kind: Kind, origin: u32) -> HeapAddress {
+        self.heap_resolver.allocation(kind, origin)
+    }
+
+    pub(crate) fn source_origin(&self, address: HeapAddress) -> Option<u32> {
+        self.heap_resolver.source_origin(address)
     }
 
     #[cfg(test)]
@@ -935,8 +1042,15 @@ impl ChunkValueFlow {
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
     ) -> (Self, FlowWorkStats) {
+        let heap_scope = candidates
+            .iter()
+            .find_map(|value| match value {
+                Value::Alloc(_, address) => address.module(),
+                _ => None,
+            })
+            .unwrap_or_else(|| HeapModuleScope::LocalAnalysis(LocalAnalysisScopeId::fresh()));
         let (flow, event_executions, argument_evaluations) =
-            FlowProgram::collect(body, candidates).solve();
+            FlowProgram::collect(SourceHeapResolver::new(heap_scope), body, candidates).solve();
         (
             flow,
             FlowWorkStats {
@@ -947,12 +1061,13 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub(crate) fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
-        let program = FlowProgram::collect(body, &BTreeSet::new());
-        let mut flow = Self {
-            origin_table: program.origin_table,
-            ..Self::default()
-        };
+    pub(crate) fn analyze_reference_in_resolver(
+        heap_resolver: SourceHeapResolver,
+        body: &[TopLevelItemView<'_>],
+    ) -> Self {
+        let program = FlowProgram::collect(heap_resolver, body, &BTreeSet::new());
+        let mut flow = Self::empty(heap_resolver);
+        flow.origin_table = program.origin_table;
         let mut declarations = DeclaredBindingCollector::default();
         for item in body {
             item.as_module_item().visit_with(&mut declarations);
@@ -1056,33 +1171,46 @@ impl ChunkValueFlow {
     pub(crate) fn values_of_expr(&self, expr: &Expr) -> Values {
         match expr.unwrap_parens() {
             Expr::Ident(ident) => self.values_of_binding(&ident.to_id()),
-            Expr::Fn(function) => {
-                self.singleton_value(Value::Alloc(Kind::Function, function.function.span.lo.0))
-            }
-            Expr::Arrow(arrow) => {
-                self.singleton_value(Value::Alloc(Kind::Function, arrow.span.lo.0))
-            }
-            Expr::Class(class) => {
-                self.singleton_value(Value::Alloc(Kind::Class, class.class.span.lo.0))
-            }
-            Expr::Object(object) => {
-                self.singleton_value(Value::Alloc(Kind::Object, object.span.lo.0))
-            }
-            Expr::Array(array) => self.singleton_value(Value::Alloc(Kind::Object, array.span.lo.0)),
+            Expr::Fn(function) => self.singleton_value(Value::Alloc(
+                Kind::Function,
+                self.heap_address(Kind::Function, function.function.span.lo.0),
+            )),
+            Expr::Arrow(arrow) => self.singleton_value(Value::Alloc(
+                Kind::Function,
+                self.heap_address(Kind::Function, arrow.span.lo.0),
+            )),
+            Expr::Class(class) => self.singleton_value(Value::Alloc(
+                Kind::Class,
+                self.heap_resolver
+                    .class_object(self.heap_resolver.class_definition(class.class.span.lo.0)),
+            )),
+            Expr::Object(object) => self.singleton_value(Value::Alloc(
+                Kind::Object,
+                self.heap_address(Kind::Object, object.span.lo.0),
+            )),
+            Expr::Array(array) => self.singleton_value(Value::Alloc(
+                Kind::Object,
+                self.heap_address(Kind::Object, array.span.lo.0),
+            )),
             Expr::New(construction)
                 if self
                     .native_set_allocations
                     .contains_key(&construction.span.lo.0) =>
             {
-                self.singleton_value(Value::Alloc(Kind::Set, construction.span.lo.0))
+                self.singleton_value(Value::Alloc(
+                    Kind::Set,
+                    self.heap_address(Kind::Set, construction.span.lo.0),
+                ))
             }
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(&member.obj) {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
-                    {
+                    if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
+                        let Some(object) = self.source_origin(object) else {
+                            out.insert(Value::Top);
+                            continue;
+                        };
                         if let Some(prop) = &prop {
                             if let Some(values) = self
                                 .properties
@@ -1115,7 +1243,9 @@ impl ChunkValueFlow {
                 };
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(callee) {
-                    if let Value::Alloc(Kind::Function, function) = origin {
+                    if let Value::Alloc(Kind::Function, function) = origin
+                        && let Some(function) = self.source_origin(function)
+                    {
                         if let Some(values) = self.returns.get(&function) {
                             out.union_with(values);
                         }
@@ -1197,11 +1327,12 @@ impl ChunkValueFlow {
         }
         let values = self.values_of_binding(&ident.to_id());
         let mut origins = values.iter();
-        let Value::Alloc(Kind::Function, function) = origins.next()? else {
+        let Value::Alloc(Kind::Function, function_address) = origins.next()? else {
             return None;
         };
+        let function = self.source_origin(function_address)?;
         if origins.next().is_some()
-            || self.canonical_callable(Value::Alloc(Kind::Function, function))
+            || self.canonical_callable(Value::Alloc(Kind::Function, function_address))
                 != Some(&ident.to_id())
         {
             return None;
@@ -1319,6 +1450,7 @@ impl ChunkValueFlow {
 }
 
 fn append_value_expr(
+    heap_resolver: SourceHeapResolver,
     expr: &FlowValueExpr,
     values: &mut ValuesBuilder,
     declared: &[bool],
@@ -1343,11 +1475,13 @@ fn append_value_expr(
             FlowValueExpr::Value(value) => values.push(*value),
             FlowValueExpr::Member { object, property } => {
                 let mut objects = values.child();
-                append_value_expr(object, &mut objects, declared, read_values);
+                append_value_expr(heap_resolver, object, &mut objects, declared, read_values);
                 for origin in objects.finish() {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
-                    {
+                    if let Value::Alloc(Kind::Object | Kind::Set, address) = origin {
+                        let Some(object) = heap_resolver.source_origin(address) else {
+                            values.push(Value::Top);
+                            continue;
+                        };
                         if let Some(property) = property {
                             // Unknown is durable even when a later write adds a value.
                             if let Some(found) = read_values(FlowKey::Property(object, *property)) {
@@ -1368,9 +1502,11 @@ fn append_value_expr(
             }
             FlowValueExpr::Call(callee) => {
                 let mut targets = values.child();
-                append_value_expr(callee, &mut targets, declared, read_values);
+                append_value_expr(heap_resolver, callee, &mut targets, declared, read_values);
                 for origin in targets.finish() {
-                    if let Value::Alloc(Kind::Function, function) = origin {
+                    if let Value::Alloc(Kind::Function, address) = origin
+                        && let Some(function) = heap_resolver.source_origin(address)
+                    {
                         if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
@@ -1473,22 +1609,27 @@ enum FlowValueExpr {
 }
 
 impl FlowValueExpr {
-    fn from_ast(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
+    fn from_ast(expr: &Expr, symbols: &mut FlowSymbols, resolver: SourceHeapResolver) -> Self {
         match expr.unwrap_parens() {
-            Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols),
+            Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols, resolver),
             Expr::Bin(bin)
                 if matches!(
                     bin.op,
                     BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
                 ) =>
             {
-                Self::from_union_branches(&bin.left, &bin.right, symbols)
+                Self::from_union_branches(&bin.left, &bin.right, symbols, resolver)
             }
-            expr => Self::from_ast_leaf(expr, symbols),
+            expr => Self::from_ast_leaf(expr, symbols, resolver),
         }
     }
 
-    fn from_union_branches(left: &Expr, right: &Expr, symbols: &mut FlowSymbols) -> Self {
+    fn from_union_branches(
+        left: &Expr,
+        right: &Expr,
+        symbols: &mut FlowSymbols,
+        resolver: SourceHeapResolver,
+    ) -> Self {
         let mut pending = vec![right, left];
         let mut leaves = Vec::new();
         while let Some(expr) = pending.pop() {
@@ -1506,7 +1647,7 @@ impl FlowValueExpr {
                     pending.push(&bin.right);
                     pending.push(&bin.left);
                 }
-                leaf => leaves.push(Self::from_ast_leaf(leaf, symbols)),
+                leaf => leaves.push(Self::from_ast_leaf(leaf, symbols, resolver)),
             }
         }
 
@@ -1531,29 +1672,43 @@ impl FlowValueExpr {
         leaves.pop().unwrap_or(Self::Empty)
     }
 
-    fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
+    fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols, resolver: SourceHeapResolver) -> Self {
         match expr {
             Expr::Ident(ident) => Self::Binding(symbols.binding(ident.to_id())),
-            Expr::Fn(function) => {
-                Self::Value(Value::Alloc(Kind::Function, function.function.span.lo.0))
-            }
-            Expr::Arrow(arrow) => Self::Value(Value::Alloc(Kind::Function, arrow.span.lo.0)),
-            Expr::Class(class) => Self::Value(Value::Alloc(Kind::Class, class.class.span.lo.0)),
-            Expr::Object(object) => Self::Value(Value::Alloc(Kind::Object, object.span.lo.0)),
-            Expr::Array(array) => Self::Value(Value::Alloc(Kind::Object, array.span.lo.0)),
+            Expr::Fn(function) => Self::Value(Value::Alloc(
+                Kind::Function,
+                resolver.allocation(Kind::Function, function.function.span.lo.0),
+            )),
+            Expr::Arrow(arrow) => Self::Value(Value::Alloc(
+                Kind::Function,
+                resolver.allocation(Kind::Function, arrow.span.lo.0),
+            )),
+            Expr::Class(class) => Self::Value(Value::Alloc(
+                Kind::Class,
+                resolver.class_object(resolver.class_definition(class.class.span.lo.0)),
+            )),
+            Expr::Object(object) => Self::Value(Value::Alloc(
+                Kind::Object,
+                resolver.allocation(Kind::Object, object.span.lo.0),
+            )),
+            Expr::Array(array) => Self::Value(Value::Alloc(
+                Kind::Object,
+                resolver.allocation(Kind::Object, array.span.lo.0),
+            )),
             Expr::Member(member) => Self::Member {
-                object: Box::new(Self::from_ast(&member.obj, symbols)),
+                object: Box::new(Self::from_ast(&member.obj, symbols, resolver)),
                 property: static_prop(&member.prop).map(|name| symbols.property(name)),
             },
             Expr::Call(call) => match &call.callee {
-                Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee, symbols))),
+                Callee::Expr(callee) => {
+                    Self::Call(Box::new(Self::from_ast(callee, symbols, resolver)))
+                }
                 _ => Self::Unknown,
             },
-            Expr::Seq(seq) => seq
-                .exprs
-                .last()
-                .map_or(Self::Unknown, |last| Self::from_ast(last, symbols)),
-            Expr::Assign(assign) => Self::from_ast(&assign.right, symbols),
+            Expr::Seq(seq) => seq.exprs.last().map_or(Self::Unknown, |last| {
+                Self::from_ast(last, symbols, resolver)
+            }),
+            Expr::Assign(assign) => Self::from_ast(&assign.right, symbols, resolver),
             Expr::Lit(_) | Expr::This(_) | Expr::Tpl(_) => Self::Empty,
             _ => Self::Unknown,
         }
@@ -1645,6 +1800,7 @@ enum CandidateRule {
 }
 
 struct FlowProgram {
+    heap_resolver: SourceHeapResolver,
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
@@ -1657,16 +1813,27 @@ struct FlowProgram {
 }
 
 impl FlowProgram {
-    fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<Value>) -> Self {
-        Self::collect_with_native_set_allocations(body, candidate_objects, &BTreeMap::new())
+    fn collect(
+        heap_resolver: SourceHeapResolver,
+        body: &[TopLevelItemView<'_>],
+        candidate_objects: &BTreeSet<Value>,
+    ) -> Self {
+        Self::collect_with_native_set_allocations(
+            heap_resolver,
+            body,
+            candidate_objects,
+            &BTreeMap::new(),
+        )
     }
 
     fn collect_with_native_set_allocations(
+        heap_resolver: SourceHeapResolver,
         body: &[TopLevelItemView<'_>],
         candidate_objects: &BTreeSet<Value>,
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     ) -> Self {
         let mut collector = FlowProgramCollector {
+            heap_resolver,
             declared_ids: BTreeSet::new(),
             symbols: FlowSymbols::default(),
             events: Vec::new(),
@@ -1687,9 +1854,10 @@ impl FlowProgram {
             native_set_allocations
                 .keys()
                 .copied()
-                .map(|site| Value::Alloc(Kind::Set, site)),
+                .map(|site| Value::Alloc(Kind::Set, heap_resolver.allocation(Kind::Set, site))),
         );
         Self {
+            heap_resolver,
             declared_ids: collector.declared_ids,
             symbols: collector.symbols,
             events: collector.events,
@@ -1704,6 +1872,7 @@ impl FlowProgram {
 
     fn solve(self) -> (ChunkValueFlow, usize, usize) {
         let Self {
+            heap_resolver,
             declared_ids,
             symbols,
             events,
@@ -1720,6 +1889,7 @@ impl FlowProgram {
         #[cfg(test)]
         let event_executions = Rc::new(Cell::new(0));
         let rules = FlowRules {
+            heap_resolver,
             events,
             declared: symbols.declared(&declared_ids),
             origin_table: origin_table.clone(),
@@ -1733,6 +1903,7 @@ impl FlowProgram {
             values.into_values()
         } else {
             let rules = CandidateRules::new(
+                heap_resolver,
                 origin_table.clone(),
                 native_set_allocations.keys().copied().collect(),
                 values.keys(),
@@ -1754,16 +1925,14 @@ impl FlowProgram {
         let evaluations = event_executions.get();
         #[cfg(not(test))]
         let evaluations = 0;
-        let mut flow = ChunkValueFlow {
-            candidate_objects,
-            origin_table,
-            declared_ids,
-            canonical,
-            callable_source_unit,
-            native_set_allocations,
-            fresh_returned_record_keys,
-            ..ChunkValueFlow::default()
-        };
+        let mut flow = ChunkValueFlow::empty(heap_resolver);
+        flow.candidate_objects = candidate_objects;
+        flow.origin_table = origin_table;
+        flow.declared_ids = declared_ids;
+        flow.canonical = canonical;
+        flow.callable_source_unit = callable_source_unit;
+        flow.native_set_allocations = native_set_allocations;
+        flow.fresh_returned_record_keys = fresh_returned_record_keys;
         for (key, fact) in facts {
             match (key, fact) {
                 (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive)
@@ -1812,6 +1981,7 @@ impl FlowProgram {
 }
 
 struct FlowProgramCollector {
+    heap_resolver: SourceHeapResolver,
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
@@ -1824,6 +1994,20 @@ struct FlowProgramCollector {
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
+impl FlowProgramCollector {
+    fn allocation(&self, kind: Kind, origin: u32) -> Value {
+        Value::Alloc(kind, self.heap_resolver.allocation(kind, origin))
+    }
+
+    fn class_object(&self, origin: u32) -> Value {
+        Value::Alloc(
+            Kind::Class,
+            self.heap_resolver
+                .class_object(self.heap_resolver.class_definition(origin)),
+        )
+    }
+}
+
 impl Visit for FlowProgramCollector {
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.declared_ids.insert(node.id.to_id());
@@ -1831,7 +2015,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let id = node.ident.to_id();
-        let origin = Value::Alloc(Kind::Function, node.function.span.lo.0);
+        let origin = self.allocation(Kind::Function, node.function.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
         self.events.push(FlowEvent::FunctionDeclaration {
@@ -1843,7 +2027,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_class_decl(&mut self, node: &ClassDecl) {
         let id = node.ident.to_id();
-        let origin = Value::Alloc(Kind::Class, node.class.span.lo.0);
+        let origin = self.class_object(node.class.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
         self.callable_source_unit
@@ -1859,7 +2043,7 @@ impl Visit for FlowProgramCollector {
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let (Pat::Ident(binding), Some(init)) = (&node.name, node.init.as_deref()) {
             if self.current_function.is_none()
-                && let Some(origin) = direct_callable_origin(init)
+                && let Some(origin) = direct_callable_origin(init, self.heap_resolver)
             {
                 self.canonical
                     .entry(origin)
@@ -1873,9 +2057,9 @@ impl Visit for FlowProgramCollector {
                             .native_set_allocations
                             .contains_key(&construction.span.lo.0) =>
                     {
-                        FlowValueExpr::Value(Value::Alloc(Kind::Set, construction.span.lo.0))
+                        FlowValueExpr::Value(self.allocation(Kind::Set, construction.span.lo.0))
                     }
-                    other => FlowValueExpr::from_ast(other, &mut self.symbols),
+                    other => FlowValueExpr::from_ast(other, &mut self.symbols, self.heap_resolver),
                 },
             });
         }
@@ -1887,15 +2071,27 @@ impl Visit for FlowProgramCollector {
             Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
                 self.events.push(FlowEvent::AssignBinding {
                     id: self.symbols.binding(binding),
-                    right: FlowValueExpr::from_ast(&node.right, &mut self.symbols),
+                    right: FlowValueExpr::from_ast(
+                        &node.right,
+                        &mut self.symbols,
+                        self.heap_resolver,
+                    ),
                 });
             }
             Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                 if let Some(property) = static_prop(&member.prop) {
                     self.events.push(FlowEvent::AssignProperty {
-                        object: FlowValueExpr::from_ast(&member.obj, &mut self.symbols),
+                        object: FlowValueExpr::from_ast(
+                            &member.obj,
+                            &mut self.symbols,
+                            self.heap_resolver,
+                        ),
                         property: self.symbols.property(property),
-                        right: FlowValueExpr::from_ast(&node.right, &mut self.symbols),
+                        right: FlowValueExpr::from_ast(
+                            &node.right,
+                            &mut self.symbols,
+                            self.heap_resolver,
+                        ),
                     });
                 }
             }
@@ -1906,7 +2102,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_object_lit(&mut self, node: &ObjectLit) {
         let object = node.span.lo.0;
-        self.origins.insert(Value::Alloc(Kind::Object, object));
+        self.origins.insert(self.allocation(Kind::Object, object));
         for prop in &node.props {
             if let PropOrSpread::Prop(prop) = prop {
                 match prop.as_ref() {
@@ -1915,7 +2111,11 @@ impl Visit for FlowProgramCollector {
                             self.events.push(FlowEvent::WritePropertyExpr {
                                 object,
                                 property: self.symbols.property(property),
-                                value: FlowValueExpr::from_ast(&kv.value, &mut self.symbols),
+                                value: FlowValueExpr::from_ast(
+                                    &kv.value,
+                                    &mut self.symbols,
+                                    self.heap_resolver,
+                                ),
                             });
                         }
                     }
@@ -1931,7 +2131,7 @@ impl Visit for FlowProgramCollector {
                             self.events.push(FlowEvent::WritePropertyValue {
                                 object,
                                 property: self.symbols.property(property),
-                                value: Value::Alloc(Kind::Function, method.function.span.lo.0),
+                                value: self.allocation(Kind::Function, method.function.span.lo.0),
                             });
                         }
                     }
@@ -1944,13 +2144,17 @@ impl Visit for FlowProgramCollector {
 
     fn visit_array_lit(&mut self, node: &ArrayLit) {
         let object = node.span.lo.0;
-        self.origins.insert(Value::Alloc(Kind::Object, object));
+        self.origins.insert(self.allocation(Kind::Object, object));
         for (index, element) in node.elems.iter().enumerate() {
             if let Some(element) = element {
                 self.events.push(FlowEvent::WritePropertyExpr {
                     object,
                     property: self.symbols.property(index.to_string()),
-                    value: FlowValueExpr::from_ast(&element.expr, &mut self.symbols),
+                    value: FlowValueExpr::from_ast(
+                        &element.expr,
+                        &mut self.symbols,
+                        self.heap_resolver,
+                    ),
                 });
             }
         }
@@ -1966,9 +2170,10 @@ impl Visit for FlowProgramCollector {
         {
             self.fresh_returned_record_keys.insert(function, keys);
         }
-        self.origins.insert(Value::Alloc(Kind::Function, function));
+        self.origins
+            .insert(self.allocation(Kind::Function, function));
         self.callable_source_unit
-            .entry(Value::Alloc(Kind::Function, function))
+            .entry(self.allocation(Kind::Function, function))
             .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
@@ -1994,9 +2199,10 @@ impl Visit for FlowProgramCollector {
         {
             self.fresh_returned_record_keys.insert(function, keys);
         }
-        self.origins.insert(Value::Alloc(Kind::Function, function));
+        self.origins
+            .insert(self.allocation(Kind::Function, function));
         self.callable_source_unit
-            .entry(Value::Alloc(Kind::Function, function))
+            .entry(self.allocation(Kind::Function, function))
             .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
@@ -2013,7 +2219,7 @@ impl Visit for FlowProgramCollector {
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
             self.events.push(FlowEvent::Return {
                 function,
-                value: FlowValueExpr::from_ast(expr, &mut self.symbols),
+                value: FlowValueExpr::from_ast(expr, &mut self.symbols, self.heap_resolver),
             });
         }
         node.visit_children_with(self);
@@ -2021,8 +2227,7 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_class(&mut self, node: &Class) {
-        self.origins
-            .insert(Value::Alloc(Kind::Class, node.span.lo.0));
+        self.origins.insert(self.class_object(node.span.lo.0));
         node.visit_children_with(self);
     }
 
@@ -2030,7 +2235,7 @@ impl Visit for FlowProgramCollector {
         if let (Some(function), Some(value)) = (self.current_function, node.arg.as_deref()) {
             self.events.push(FlowEvent::Return {
                 function,
-                value: FlowValueExpr::from_ast(value, &mut self.symbols),
+                value: FlowValueExpr::from_ast(value, &mut self.symbols, self.heap_resolver),
             });
         }
         node.visit_children_with(self);
@@ -2039,11 +2244,13 @@ impl Visit for FlowProgramCollector {
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee {
             self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(callee, &mut self.symbols),
+                callee: FlowValueExpr::from_ast(callee, &mut self.symbols, self.heap_resolver),
                 args: node
                     .args
                     .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
+                    .map(|arg| {
+                        FlowValueExpr::from_ast(&arg.expr, &mut self.symbols, self.heap_resolver)
+                    })
                     .collect(),
             });
         }
@@ -2053,10 +2260,16 @@ impl Visit for FlowProgramCollector {
     fn visit_new_expr(&mut self, node: &NewExpr) {
         if let Some(args) = &node.args {
             self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(&node.callee, &mut self.symbols),
+                callee: FlowValueExpr::from_ast(
+                    &node.callee,
+                    &mut self.symbols,
+                    self.heap_resolver,
+                ),
                 args: args
                     .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
+                    .map(|arg| {
+                        FlowValueExpr::from_ast(&arg.expr, &mut self.symbols, self.heap_resolver)
+                    })
                     .collect(),
             });
         }
@@ -2064,11 +2277,20 @@ impl Visit for FlowProgramCollector {
     }
 }
 
-fn direct_callable_origin(expr: &Expr) -> Option<Value> {
+fn direct_callable_origin(expr: &Expr, resolver: SourceHeapResolver) -> Option<Value> {
     match expr.unwrap_parens() {
-        Expr::Fn(function) => Some(Value::Alloc(Kind::Function, function.function.span.lo.0)),
-        Expr::Arrow(arrow) => Some(Value::Alloc(Kind::Function, arrow.span.lo.0)),
-        Expr::Class(class) => Some(Value::Alloc(Kind::Class, class.class.span.lo.0)),
+        Expr::Fn(function) => Some(Value::Alloc(
+            Kind::Function,
+            resolver.allocation(Kind::Function, function.function.span.lo.0),
+        )),
+        Expr::Arrow(arrow) => Some(Value::Alloc(
+            Kind::Function,
+            resolver.allocation(Kind::Function, arrow.span.lo.0),
+        )),
+        Expr::Class(class) => Some(Value::Alloc(
+            Kind::Class,
+            resolver.class_object(resolver.class_definition(class.class.span.lo.0)),
+        )),
         _ => None,
     }
 }
@@ -2132,6 +2354,7 @@ struct CachedArgument {
 }
 
 struct FlowRules {
+    heap_resolver: SourceHeapResolver,
     events: Vec<FlowEvent>,
     /// Indexed by binding slot.
     declared: Vec<bool>,
@@ -2151,20 +2374,26 @@ impl FlowRules {
     ) -> Values {
         let mut binding_dependencies = binding_dependencies;
         let mut values = ValuesBuilder::new(self.origin_table.clone());
-        append_value_expr(expr, &mut values, &self.declared, &mut |key| {
-            if let FlowKey::Binding(slot) = key
-                && let Some(binding_dependencies) = binding_dependencies.as_deref_mut()
-            {
-                binding_dependencies.insert(slot);
-            }
-            match context.read(key) {
-                Some(FlowFact::Values(values)) => Some(values.clone()),
-                Some(_) => {
-                    unreachable!("value expressions cannot read parameter metadata")
+        append_value_expr(
+            self.heap_resolver,
+            expr,
+            &mut values,
+            &self.declared,
+            &mut |key| {
+                if let FlowKey::Binding(slot) = key
+                    && let Some(binding_dependencies) = binding_dependencies.as_deref_mut()
+                {
+                    binding_dependencies.insert(slot);
                 }
-                None => None,
-            }
-        });
+                match context.read(key) {
+                    Some(FlowFact::Values(values)) => Some(values.clone()),
+                    Some(_) => {
+                        unreachable!("value expressions cannot read parameter metadata")
+                    }
+                    None => None,
+                }
+            },
+        );
         values.finish()
     }
 
@@ -2238,10 +2467,10 @@ impl IterativeRules for FlowRules {
                 let values = self.values_of_expr_tracking(right, context, None);
                 let objects = self.values_of_expr_tracking(object, context, None);
                 for origin in objects {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
+                    if let Value::Alloc(Kind::Object | Kind::Set, address) = origin
+                        && let Some(source_origin) = self.heap_resolver.source_origin(address)
                     {
-                        Self::propose_property(context, object, *property, values.clone());
+                        Self::propose_property(context, source_origin, *property, values.clone());
                     }
                 }
             }
@@ -2293,7 +2522,10 @@ impl IterativeRules for FlowRules {
                 let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
 
                 for target in targets {
-                    let Value::Alloc(Kind::Function, function) = target else {
+                    let Value::Alloc(Kind::Function, address) = target else {
+                        continue;
+                    };
+                    let Some(function) = self.heap_resolver.source_origin(address) else {
                         continue;
                     };
                     let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
@@ -2348,6 +2580,7 @@ impl IterativeRules for FlowRules {
 }
 
 struct CandidateRules {
+    heap_resolver: SourceHeapResolver,
     origin_table: Arc<OriginTable>,
     native_set_allocations: BTreeSet<u32>,
     /// Bitmap over `OriginId` of the origins whose reachability can ever be
@@ -2358,12 +2591,14 @@ struct CandidateRules {
 
 impl CandidateRules {
     fn new<'a>(
+        heap_resolver: SourceHeapResolver,
         origin_table: Arc<OriginTable>,
         native_set_allocations: BTreeSet<u32>,
         completed_keys: impl IntoIterator<Item = &'a FlowKey>,
         candidates: &[Value],
     ) -> Self {
         let mut rules = Self {
+            heap_resolver,
             may_reach: vec![0; origin_table.origins.len().div_ceil(64)],
             origin_table,
             native_set_allocations,
@@ -2383,11 +2618,17 @@ impl CandidateRules {
     /// The origin whose reachability a completed property-union or return fact carries.
     fn carrier_origin(&self, key: &FlowKey) -> Option<Value> {
         match key {
-            FlowKey::Properties(object) if self.native_set_allocations.contains(object) => {
-                Some(Value::Alloc(Kind::Set, *object))
-            }
-            FlowKey::Properties(object) => Some(Value::Alloc(Kind::Object, *object)),
-            FlowKey::Return(function) => Some(Value::Alloc(Kind::Function, *function)),
+            FlowKey::Properties(object) if self.native_set_allocations.contains(object) => Some(
+                Value::Alloc(Kind::Set, self.heap_resolver.allocation(Kind::Set, *object)),
+            ),
+            FlowKey::Properties(object) => Some(Value::Alloc(
+                Kind::Object,
+                self.heap_resolver.allocation(Kind::Object, *object),
+            )),
+            FlowKey::Return(function) => Some(Value::Alloc(
+                Kind::Function,
+                self.heap_resolver.allocation(Kind::Function, *function),
+            )),
             _ => None,
         }
     }
@@ -2485,10 +2726,18 @@ impl IterativeRules for CandidateRules {
             }
             CandidateRule::Reachability(origin) => {
                 let carrier = match self.origin_table.origin(*origin) {
-                    Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) => {
-                        FlowKey::Properties(object)
+                    Value::Alloc(Kind::Object | Kind::Set, address) => {
+                        let Some(source_origin) = self.heap_resolver.source_origin(address) else {
+                            return;
+                        };
+                        FlowKey::Properties(source_origin)
                     }
-                    Value::Alloc(Kind::Function, function) => FlowKey::Return(function),
+                    Value::Alloc(Kind::Function, address) => {
+                        let Some(source_origin) = self.heap_resolver.source_origin(address) else {
+                            return;
+                        };
+                        FlowKey::Return(source_origin)
+                    }
                     Value::Alloc(Kind::Class, _) | Value::Top => return,
                     other => unreachable!("value flow tracks no {other:?}"),
                 };
@@ -2612,7 +2861,10 @@ impl FlowPass<'_> {
     fn invoke(&mut self, callee: &Expr, args: &[ExprOrSpread]) {
         let targets = self.flow.values_of_expr(callee);
         for target in targets {
-            let Value::Alloc(Kind::Function, function) = target else {
+            let Value::Alloc(Kind::Function, address) = target else {
+                continue;
+            };
+            let Some(function) = self.flow.source_origin(address) else {
                 continue;
             };
             let Some(params) = self.flow.params.get(&function).cloned() else {
@@ -2630,7 +2882,10 @@ impl FlowPass<'_> {
     fn visit_function_body(&mut self, function: u32, visit: impl FnOnce(&mut Self)) {
         self.flow
             .callable_source_unit
-            .entry(Value::Alloc(Kind::Function, function))
+            .entry(Value::Alloc(
+                Kind::Function,
+                self.flow.heap_address(Kind::Function, function),
+            ))
             .or_insert(self.source_unit);
         let previous = self.current_function.replace(function);
         visit(self);
@@ -2642,7 +2897,7 @@ impl FlowPass<'_> {
 impl Visit for FlowPass<'_> {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let key = node.function.span.lo.0;
-        let value = Value::Alloc(Kind::Function, key);
+        let value = Value::Alloc(Kind::Function, self.flow.heap_address(Kind::Function, key));
         self.flow
             .canonical
             .entry(value)
@@ -2653,7 +2908,14 @@ impl Visit for FlowPass<'_> {
     }
 
     fn visit_class_decl(&mut self, node: &ClassDecl) {
-        let value = Value::Alloc(Kind::Class, node.class.span.lo.0);
+        let value = Value::Alloc(
+            Kind::Class,
+            self.flow.heap_resolver.class_object(
+                self.flow
+                    .heap_resolver
+                    .class_definition(node.class.span.lo.0),
+            ),
+        );
         self.flow
             .canonical
             .entry(value)
@@ -2702,7 +2964,9 @@ impl Visit for FlowPass<'_> {
             Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                 if let Some(prop) = static_prop(&member.prop) {
                     for origin in self.flow.values_of_expr(&member.obj) {
-                        if let Value::Alloc(Kind::Object, object) = origin {
+                        if let Value::Alloc(Kind::Object, object) = origin
+                            && let Some(object) = self.flow.source_origin(object)
+                        {
                             *self.changed |=
                                 self.flow
                                     .merge_property(object, prop.clone(), values.clone());
@@ -2736,7 +3000,8 @@ impl Visit for FlowPass<'_> {
                         if let Some(name) = object_prop(&method.key) {
                             let values = self.flow.singleton_value(Value::Alloc(
                                 Kind::Function,
-                                method.function.span.lo.0,
+                                self.flow
+                                    .heap_address(Kind::Function, method.function.span.lo.0),
                             ));
                             *self.changed |= self.flow.merge_property(object, name, values);
                         }

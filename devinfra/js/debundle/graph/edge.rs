@@ -3,14 +3,15 @@ use std::fmt;
 
 use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
-use source_identity::{SourceUnitId, SourceUnitOrdinal};
+use source_identity::{ChunkId, SourceUnitId, SourceUnitOrdinal};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell};
+use crate::facts::abstract_domain::value::{ClassDefinitionId, HeapAddress, HeapModuleScope, Kind};
+use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell, LexicalCellId};
 
 use super::build::PremiseVerdict;
 
@@ -281,22 +282,22 @@ pub enum HeapBarrierCause {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CellConflict {
-    /// `from` reads `cell`; `to` was the last writer to an overlapping footprint.
+    /// `from` reads `cell`; `to` was its last writer.
     ReadAfterWrite {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
     },
-    /// `from` writes `cell`; `to` was the last writer to an overlapping footprint.
+    /// `from` writes `cell`; `to` was its last writer.
     WriteAfterWrite {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
     },
-    /// `from` writes `cell`; `to` read an overlapping footprint since its last write.
+    /// `from` writes `cell`; `to` read it since its last write.
     WriteAfterRead {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
     },
-    /// `from` reads or writes `cell`; `to` allocated an overlapping footprint.
+    /// `from` reads or writes `cell`; `to` allocated it.
     UseAfterAllocation {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
@@ -316,12 +317,139 @@ pub enum CellConflict {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectCellReport {
-    Binding { binding: Atom },
-    GlobalProp { key: String },
-    ArrayContents { origin: u32 },
-    SetContents { origin: u32 },
-    ObjectShape { origin: u32 },
-    OwnProperty { origin: u32, property: String },
+    Binding {
+        binding: Atom,
+    },
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
+    ModuleCell {
+        chunk: ChunkId,
+        declaration_origin: u32,
+    },
+    GlobalProp {
+        key: String,
+    },
+    ExecutionProgress,
+    ArrayContents {
+        origin: HeapAddressReport,
+    },
+    SetContents {
+        origin: HeapAddressReport,
+    },
+    GlobalSymbolRegistry,
+    ObjectShape {
+        origin: HeapAddressReport,
+    },
+    DescriptorMapContents {
+        origin: HeapAddressReport,
+    },
+    OwnProperty {
+        origin: HeapAddressReport,
+        property: String,
+    },
+    PrivateSlot {
+        origin: HeapAddressReport,
+        class: ClassDefinitionReport,
+        name: String,
+    },
+}
+
+/// A report-only heap identity. Local analysis scopes intentionally omit
+/// their process-local nonce; this DTO is never converted back into proof
+/// authority or used for equality decisions.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum HeapModuleReport {
+    GlobalObject,
+    LocalAnalysis,
+    Chunk { chunk: ChunkId },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "identity", rename_all = "snake_case")]
+pub enum HeapAddressFamilyReport {
+    GlobalObject,
+    AllocationFamily {
+        kind: Kind,
+    },
+    ProviderAllocationFamily {
+        kind: Kind,
+        call_origin: u32,
+        producer_module: HeapModuleReport,
+        producer_origin: u32,
+        slot: u32,
+    },
+    ClassObject,
+    ConstructorInstances,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct HeapAddressReport {
+    pub module: HeapModuleReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<u32>,
+    pub family: HeapAddressFamilyReport,
+}
+
+impl From<HeapAddress> for HeapAddressReport {
+    fn from(address: HeapAddress) -> Self {
+        let family = match address {
+            HeapAddress::GlobalObject => HeapAddressFamilyReport::GlobalObject,
+            HeapAddress::AllocationFamily { kind, .. } => {
+                HeapAddressFamilyReport::AllocationFamily { kind }
+            }
+            HeapAddress::ProviderAllocationFamily {
+                kind,
+                call_origin,
+                producer,
+                slot,
+                ..
+            } => HeapAddressFamilyReport::ProviderAllocationFamily {
+                kind,
+                call_origin,
+                producer_module: match producer.module {
+                    HeapModuleScope::LocalAnalysis(_) => HeapModuleReport::LocalAnalysis,
+                    HeapModuleScope::Chunk(chunk) => HeapModuleReport::Chunk { chunk },
+                },
+                producer_origin: producer.origin,
+                slot,
+            },
+            HeapAddress::ClassObject { .. } => HeapAddressFamilyReport::ClassObject,
+            HeapAddress::ConstructorInstances { .. } => {
+                HeapAddressFamilyReport::ConstructorInstances
+            }
+        };
+        let module = match address.module() {
+            None => HeapModuleReport::GlobalObject,
+            Some(HeapModuleScope::LocalAnalysis(_)) => HeapModuleReport::LocalAnalysis,
+            Some(HeapModuleScope::Chunk(chunk)) => HeapModuleReport::Chunk { chunk },
+        };
+        Self {
+            module,
+            origin: address.source_origin(),
+            family,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ClassDefinitionReport {
+    pub module: HeapModuleReport,
+    pub origin: u32,
+}
+
+impl From<ClassDefinitionId> for ClassDefinitionReport {
+    fn from(class: ClassDefinitionId) -> Self {
+        Self {
+            module: match class.module {
+                HeapModuleScope::LocalAnalysis(_) => HeapModuleReport::LocalAnalysis,
+                HeapModuleScope::Chunk(chunk) => HeapModuleReport::Chunk { chunk },
+            },
+            origin: class.origin,
+        }
+    }
 }
 
 /// The two access footprints and the address law that joined them.
@@ -348,13 +476,41 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::Binding(id) => Self::Binding {
                 binding: id.0.clone(),
             },
-            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
-            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
-            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
-            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
-            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+            EffectCell::LexicalCell { origin, instance } => Self::LexicalCell {
                 origin: *origin,
+                instance: *instance,
+            },
+            EffectCell::ModuleCell(cell) => Self::ModuleCell {
+                chunk: cell.chunk,
+                declaration_origin: cell.declaration_origin,
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ExecutionProgress => Self::ExecutionProgress,
+            EffectCell::ArrayContents(origin) => Self::ArrayContents {
+                origin: (*origin).into(),
+            },
+            EffectCell::SetContents(origin) => Self::SetContents {
+                origin: (*origin).into(),
+            },
+            EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
+            EffectCell::ObjectShape(origin) => Self::ObjectShape {
+                origin: (*origin).into(),
+            },
+            EffectCell::DescriptorMapContents(origin) => Self::DescriptorMapContents {
+                origin: (*origin).into(),
+            },
+            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+                origin: (*origin).into(),
                 property: property.clone(),
+            },
+            EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => Self::PrivateSlot {
+                origin: (*origin).into(),
+                class: (*class).into(),
+                name: name.clone(),
             },
         }
     }
@@ -364,13 +520,37 @@ impl fmt::Display for EffectCellReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Binding { binding } => write!(f, "binding `{binding}`"),
-            Self::GlobalProp { key } => write!(f, "global property `{key}`"),
-            Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
-            Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
-            Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
-            Self::OwnProperty { origin, property } => {
-                write!(f, "own property `{property}` of allocation #{origin}")
+            Self::LexicalCell { origin, instance } => {
+                write!(f, "lexical cell #{origin} instance {instance}")
             }
+            Self::ModuleCell {
+                chunk,
+                declaration_origin,
+            } => write!(
+                f,
+                "module cell in chunk {} at declaration #{declaration_origin}",
+                chunk.0
+            ),
+            Self::GlobalProp { key } => write!(f, "global property `{key}`"),
+            Self::ExecutionProgress => f.write_str("synchronous initialization progress"),
+            Self::ArrayContents { origin } => write!(f, "array contents {origin:?}"),
+            Self::SetContents { origin } => write!(f, "Set contents {origin:?}"),
+            Self::GlobalSymbolRegistry => write!(f, "global symbol registry"),
+            Self::ObjectShape { origin } => write!(f, "object shape {origin:?}"),
+            Self::DescriptorMapContents { origin } => {
+                write!(f, "descriptor map contents {origin:?}")
+            }
+            Self::OwnProperty { origin, property } => {
+                write!(f, "own property `{property}` of allocation {origin:?}")
+            }
+            Self::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => write!(
+                f,
+                "private slot `#{name}` of class {class:?} on allocation {origin:?}"
+            ),
         }
     }
 }
@@ -431,26 +611,34 @@ impl HeapBarrierCause {
 impl fmt::Display for CellConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ReadAfterWrite { overlap, .. } => write!(
-                f,
-                "reads {} overlapping target write {}",
-                overlap.right, overlap.left
-            ),
-            Self::WriteAfterWrite { overlap, .. } => write!(
-                f,
-                "writes {} overlapping target write {}",
-                overlap.right, overlap.left
-            ),
-            Self::WriteAfterRead { overlap, .. } => write!(
-                f,
-                "writes {} overlapping target read {}",
-                overlap.right, overlap.left
-            ),
-            Self::UseAfterAllocation { overlap, .. } => write!(
-                f,
-                "uses {} overlapping target allocation {}",
-                overlap.right, overlap.left
-            ),
+            Self::ReadAfterWrite { overlap, .. } => {
+                write!(
+                    f,
+                    "reads {} overlapping target write {}",
+                    overlap.right, overlap.left
+                )
+            }
+            Self::WriteAfterWrite { overlap, .. } => {
+                write!(
+                    f,
+                    "writes {} overlapping target write {}",
+                    overlap.right, overlap.left
+                )
+            }
+            Self::WriteAfterRead { overlap, .. } => {
+                write!(
+                    f,
+                    "writes {} overlapping target read {}",
+                    overlap.right, overlap.left
+                )
+            }
+            Self::UseAfterAllocation { overlap, .. } => {
+                write!(
+                    f,
+                    "uses {} overlapping target allocation {}",
+                    overlap.right, overlap.left
+                )
+            }
             Self::AfterBarrier => f.write_str("target is the opaque barrier in force"),
             Self::BarrierAfterPrior => f.write_str("source is an opaque barrier after target"),
             Self::FrontierAfterCell { cell } => write!(f, "heap barrier after target's {cell}"),
@@ -781,4 +969,92 @@ pub struct DependencyEdge {
     pub from: SourceUnitId,
     pub to: SourceUnitId,
     pub reason: EdgeReason,
+}
+
+#[cfg(test)]
+mod heap_report_tests {
+    use super::*;
+    use crate::facts::abstract_domain::value::ProviderCallableId;
+    use source_identity::ChunkId;
+
+    #[test]
+    fn private_slot_report_keeps_qualified_allocation_and_class_identity() {
+        let chunk = ChunkId(7);
+        let class = ClassDefinitionId {
+            module: HeapModuleScope::Chunk(chunk),
+            origin: 19,
+        };
+        let allocation = HeapAddress::constructor_instances(class);
+        let report = EffectCellReport::from(&EffectCell::PrivateSlot {
+            origin: allocation,
+            class,
+            name: "field".into(),
+        });
+
+        let EffectCellReport::PrivateSlot {
+            origin,
+            class: reported_class,
+            name,
+        } = report
+        else {
+            unreachable!();
+        };
+        assert_eq!(name, "field");
+        assert_eq!(
+            origin,
+            HeapAddressReport {
+                module: HeapModuleReport::Chunk { chunk },
+                origin: Some(19),
+                family: HeapAddressFamilyReport::ConstructorInstances,
+            }
+        );
+        assert_eq!(
+            reported_class,
+            ClassDefinitionReport {
+                module: HeapModuleReport::Chunk { chunk },
+                origin: 19,
+            }
+        );
+    }
+
+    #[test]
+    fn global_object_report_has_no_synthetic_chunk_or_source_origin() {
+        assert_eq!(
+            HeapAddressReport::from(HeapAddress::GlobalObject),
+            HeapAddressReport {
+                module: HeapModuleReport::GlobalObject,
+                origin: None,
+                family: HeapAddressFamilyReport::GlobalObject,
+            }
+        );
+    }
+
+    #[test]
+    fn provider_family_report_keeps_consumer_scope_without_faking_source_origin() {
+        let address = HeapAddress::ProviderAllocationFamily {
+            consumer: HeapModuleScope::Chunk(ChunkId(8)),
+            call_origin: 31,
+            producer: ProviderCallableId {
+                module: HeapModuleScope::Chunk(ChunkId(4)),
+                origin: 42,
+            },
+            producer_birth: None,
+            slot: 2,
+            kind: Kind::Object,
+        };
+        assert_eq!(
+            HeapAddressReport::from(address),
+            HeapAddressReport {
+                module: HeapModuleReport::Chunk { chunk: ChunkId(8) },
+                origin: None,
+                family: HeapAddressFamilyReport::ProviderAllocationFamily {
+                    kind: Kind::Object,
+                    call_origin: 31,
+                    producer_module: HeapModuleReport::Chunk { chunk: ChunkId(4) },
+                    producer_origin: 42,
+                    slot: 2,
+                },
+            }
+        );
+    }
 }

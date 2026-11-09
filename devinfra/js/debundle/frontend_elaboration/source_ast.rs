@@ -1,7 +1,9 @@
 //! Source-level import facts shared by selector elaboration and lowering.
 
 use js_ast::str_value;
+use source_identity::StatementId;
 use std::collections::HashMap;
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 
 #[derive(Debug)]
@@ -15,6 +17,13 @@ pub enum RuntimeImportKind {
 pub struct RuntimeImportInfo {
     pub kind: RuntimeImportKind,
     pub src: String,
+    /// Canonical source coordinates captured with the same ordered AST walk
+    /// used for statement identities and source-unit ownership.
+    pub statement: StatementId,
+    pub declaration_span: Span,
+    pub specifier_index: usize,
+    pub specifier_span: Span,
+    pub source_local: Id,
 }
 
 pub struct RuntimeImportFacts {
@@ -31,12 +40,16 @@ impl RuntimeImportFacts {
     }
 }
 
-pub fn record_runtime_imports(item: &ModuleItem, imports: &mut HashMap<Id, RuntimeImportInfo>) {
+pub fn record_runtime_imports(
+    item: &ModuleItem,
+    statement: StatementId,
+    imports: &mut HashMap<Id, RuntimeImportInfo>,
+) {
     let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
         return;
     };
     let src = str_value(&import.src);
-    for specifier in &import.specifiers {
+    for (specifier_index, specifier) in import.specifiers.iter().enumerate() {
         match specifier {
             ImportSpecifier::Named(named) => {
                 let imported = match &named.imported {
@@ -49,6 +62,11 @@ pub fn record_runtime_imports(item: &ModuleItem, imports: &mut HashMap<Id, Runti
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Named { imported },
                         src: src.clone(),
+                        statement,
+                        declaration_span: import.span,
+                        specifier_index,
+                        specifier_span: specifier.span(),
+                        source_local: named.local.to_id(),
                     },
                 );
             }
@@ -58,6 +76,11 @@ pub fn record_runtime_imports(item: &ModuleItem, imports: &mut HashMap<Id, Runti
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Default,
                         src: src.clone(),
+                        statement,
+                        declaration_span: import.span,
+                        specifier_index,
+                        specifier_span: specifier.span(),
+                        source_local: default.local.to_id(),
                     },
                 );
             }
@@ -67,6 +90,11 @@ pub fn record_runtime_imports(item: &ModuleItem, imports: &mut HashMap<Id, Runti
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Namespace,
                         src: src.clone(),
+                        statement,
+                        declaration_span: import.span,
+                        specifier_index,
+                        specifier_span: specifier.span(),
+                        source_local: namespace.local.to_id(),
                     },
                 );
             }

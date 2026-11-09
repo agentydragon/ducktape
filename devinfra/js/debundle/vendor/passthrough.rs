@@ -29,6 +29,7 @@
 use source_identity::{ChunkId, ChunkTable};
 use std::collections::BTreeMap;
 
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -40,9 +41,11 @@ use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, make_named_reexport, make_namespace_reexport, new_url_expr,
-    resolve_partial_swap_import_target,
+    CandidateVendorDestination, CandidateVendorPlanAction, DeferredImport, DeferredImportMarker,
+    MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportAction,
+    VendorImportRewrites, VendorUseRewriteObservation, bundled_facade_import_source,
+    checked_boundary_rename_action, checked_vendor_replacement_action, make_named_reexport,
+    make_namespace_reexport, new_url_expr, resolve_partial_swap_import_target,
 };
 
 pub(crate) struct PassthroughContext<'a> {
@@ -50,6 +53,45 @@ pub(crate) struct PassthroughContext<'a> {
     pub(crate) references: &'a ArtifactIndexes,
     pub(crate) chunk_table: &'a ChunkTable,
     pub(crate) materialized_index: &'a MaterializedOutputChunkIndex,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PassthroughVendorBindingRewrite {
+    pub(crate) declaration_span: Span,
+    pub(crate) source_request: String,
+    pub(crate) source_request_kind: artifact::reports::SourceStaticRequestKind,
+    pub(crate) source_specifier_index: usize,
+    pub(crate) source_specifier_span: Span,
+    pub(crate) source_binding: Option<Id>,
+    pub(crate) source_export: String,
+    pub(crate) source_exported_name: Option<String>,
+    pub(crate) source_kind: artifact::reports::ImportSpecifierKind,
+    pub(crate) target_chunk: ChunkId,
+    /// Exact file resolved from this source request, when the artifact
+    /// resolver can establish it. Chunk-only materialized fallback is not
+    /// enough to authorize a replacement receipt.
+    pub(crate) source_target_file: Option<String>,
+    /// None means the runtime-selected action could not be tied back to the
+    /// checked plan. The caller emits an explicit unsupported receipt.
+    pub(crate) checked_action: Option<(CandidateVendorPlanAction, CandidateVendorDestination)>,
+    pub(crate) emitted_requests: Vec<DeferredImportMarker>,
+    pub(crate) emitted_exports: Vec<PassthroughVendorExportMarker>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PassthroughVendorExportMarker {
+    pub(crate) declaration_span: Span,
+    pub(crate) specifier_span: Span,
+    pub(crate) request: String,
+    pub(crate) imported_name: Option<String>,
+    pub(crate) exported_name: Option<String>,
+    pub(crate) kind: artifact::reports::ImportSpecifierKind,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PassthroughRewriteResult {
+    pub(crate) vendor_bindings: Vec<PassthroughVendorBindingRewrite>,
+    pub(crate) use_rewrites: Vec<VendorUseRewriteObservation>,
 }
 
 /// Rewrite one pass-through module in place; rewritten partial-swap
@@ -61,8 +103,9 @@ pub(crate) fn rewrite_passthrough_module(
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
     references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
-) {
+) -> PassthroughRewriteResult {
     let mut state = VendorImportRewrites::default();
+    let mut vendor_bindings = Vec::new();
 
     // Pass A: vendor directive surgery — partial/bundled swap import
     // replacement plus boundary-rename name mapping, in position.
@@ -72,6 +115,7 @@ pub(crate) fn rewrite_passthrough_module(
         caller_file_path,
         context,
         &mut state,
+        &mut vendor_bindings,
     );
 
     // Pass B: specifier canonicalization (the old stage 0) over every
@@ -89,16 +133,22 @@ pub(crate) fn rewrite_passthrough_module(
 
     // Pass C: body reference rewrites for member-access / named-rename
     // bindings collected in Pass A.
+    let mut use_rewrites = Vec::new();
     if !state.body_rewrites.is_empty() {
         let mut rewriter = PartialSwapIdentRewriter {
             bindings: &state.body_rewrites,
             references_by_symbol: &mut state.references_rewritten,
+            observations: Some(&mut use_rewrites),
         };
         module.visit_mut_with(&mut rewriter);
     }
 
     for (key, count) in state.references_rewritten {
         *references_by_symbol.entry(key).or_insert(0) += count;
+    }
+    PassthroughRewriteResult {
+        vendor_bindings,
+        use_rewrites,
     }
 }
 
@@ -108,6 +158,7 @@ fn rewrite_directive_items(
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
     state: &mut VendorImportRewrites,
+    vendor_bindings: &mut Vec<PassthroughVendorBindingRewrite>,
 ) -> Vec<ModuleItem> {
     let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
     for item in original_body {
@@ -119,6 +170,7 @@ fn rewrite_directive_items(
                     caller_file_path,
                     context,
                     state,
+                    vendor_bindings,
                     &mut new_body,
                 );
             }
@@ -129,6 +181,7 @@ fn rewrite_directive_items(
                     caller_file_path,
                     context,
                     state,
+                    vendor_bindings,
                     &mut new_body,
                 );
             }
@@ -144,6 +197,7 @@ fn rewrite_import_decl(
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
     state: &mut VendorImportRewrites,
+    vendor_bindings: &mut Vec<PassthroughVendorBindingRewrite>,
     new_body: &mut Vec<ModuleItem>,
 ) {
     let source = str_value(&import_decl.src);
@@ -183,7 +237,11 @@ fn rewrite_import_decl(
             .contains_key(&target_chunk_id);
     if is_swapped {
         let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
-        for specifier in std::mem::take(&mut import_decl.specifiers) {
+        for (specifier_index, specifier) in std::mem::take(&mut import_decl.specifiers)
+            .into_iter()
+            .enumerate()
+        {
+            let source_specifier_span = specifier.span();
             let ImportSpecifier::Named(named) = specifier else {
                 retained_specifiers.push(specifier);
                 continue;
@@ -197,12 +255,59 @@ fn rewrite_import_decl(
                 target_chunk_id,
                 &imported_name,
                 &named.local,
+                source_specifier_span,
                 caller_chunk_id,
                 caller_file_path,
                 context,
                 state,
             ) {
-                Some(imports) => {
+                Some((action, imports, emitted_requests)) => {
+                    let source_target_file = resolved
+                        .as_ref()
+                        .map(|resolved| resolved.target_file.clone());
+                    let expected_entry_file = context
+                        .plan
+                        .partial_swaps
+                        .get(&target_chunk_id)
+                        .map(|swap| swap.entry_file.as_str())
+                        .or_else(|| {
+                            context
+                                .plan
+                                .bundled_partial_swaps
+                                .get(&target_chunk_id)
+                                .map(|swap| swap.entry_file.as_str())
+                        });
+                    let checked_action = source_target_file
+                        .as_deref()
+                        .zip(expected_entry_file)
+                        .filter(|(actual, expected)| actual == expected)
+                        .and_then(|_| {
+                            emitted_requests.first().and_then(|first| {
+                                checked_vendor_replacement_action(
+                                    context.plan,
+                                    target_chunk_id,
+                                    &imported_name,
+                                    &action,
+                                    &first.request,
+                                )
+                            })
+                        });
+                    vendor_bindings.push(PassthroughVendorBindingRewrite {
+                        declaration_span: import_decl.span,
+                        source_request: source.clone(),
+                        source_request_kind: artifact::reports::SourceStaticRequestKind::Import,
+                        source_specifier_index: specifier_index,
+                        source_specifier_span,
+                        source_binding: Some(named.local.to_id()),
+                        source_export: imported_name,
+                        source_exported_name: None,
+                        source_kind: artifact::reports::ImportSpecifierKind::Named,
+                        target_chunk: target_chunk_id,
+                        source_target_file,
+                        checked_action,
+                        emitted_requests,
+                        emitted_exports: Vec::new(),
+                    });
                     for deferred in imports {
                         new_body.push(deferred.into_module_item());
                     }
@@ -233,7 +338,8 @@ fn rewrite_import_decl(
             .is_some(),
     };
     if targets_entry_file {
-        for specifier in &mut import_decl.specifiers {
+        for (specifier_index, specifier) in import_decl.specifiers.iter_mut().enumerate() {
+            let source_specifier_span = specifier.span();
             let ImportSpecifier::Named(named) = specifier else {
                 continue;
             };
@@ -251,6 +357,40 @@ fn rewrite_import_decl(
             if mapped == imported_name {
                 continue;
             }
+            let checked_action = resolved.as_ref().and_then(|resolved| {
+                checked_boundary_rename_action(
+                    context.plan,
+                    target_chunk_id,
+                    &imported_name,
+                    mapped,
+                    artifact::reports::OutputFileAddress {
+                        chunk: target_chunk_id,
+                        file: resolved.target_file.clone(),
+                    },
+                )
+            });
+            vendor_bindings.push(PassthroughVendorBindingRewrite {
+                declaration_span: import_decl.span,
+                source_request: source.clone(),
+                source_request_kind: artifact::reports::SourceStaticRequestKind::Import,
+                source_specifier_index: specifier_index,
+                source_specifier_span,
+                source_binding: Some(named.local.to_id()),
+                source_export: imported_name,
+                source_exported_name: None,
+                source_kind: artifact::reports::ImportSpecifierKind::Named,
+                target_chunk: target_chunk_id,
+                source_target_file: resolved
+                    .as_ref()
+                    .map(|resolved| resolved.target_file.clone()),
+                checked_action,
+                emitted_requests: vec![DeferredImportMarker {
+                    source_span: source_specifier_span,
+                    request: source.clone(),
+                    local: named.local.to_id(),
+                }],
+                emitted_exports: Vec::new(),
+            });
             named.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
                 mapped.into(),
                 swc_common::DUMMY_SP,
@@ -269,19 +409,25 @@ fn plan_named_import_replacement(
     target_chunk_id: ChunkId,
     imported_name: &str,
     local: &Ident,
+    source_span: Span,
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
     state: &mut VendorImportRewrites,
-) -> Option<Vec<DeferredImport>> {
+) -> Option<(
+    VendorImportAction,
+    Vec<DeferredImport>,
+    Vec<DeferredImportMarker>,
+)> {
     let action = context
         .plan
         .swapped_named_import_action(target_chunk_id, imported_name)?;
-    Some(state.materialize(
-        action,
+    let imports = state.materialize_at(
+        action.clone(),
         local.to_id(),
         target_chunk_id,
         imported_name.to_string(),
+        source_span,
         |path| {
             bundled_facade_import_source(
                 context.chunk_table,
@@ -290,7 +436,13 @@ fn plan_named_import_replacement(
                 path,
             )
         },
-    ))
+    );
+    let markers = state
+        .materialized_request_markers
+        .get(&local.to_id())
+        .cloned()
+        .unwrap_or_default();
+    Some((action, imports, markers))
 }
 
 /// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
@@ -311,6 +463,7 @@ fn rewrite_export_from_decl(
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
     state: &mut VendorImportRewrites,
+    vendor_bindings: &mut Vec<PassthroughVendorBindingRewrite>,
     new_body: &mut Vec<ModuleItem>,
 ) {
     let Some(src) = named.src.as_deref() else {
@@ -318,14 +471,26 @@ fn rewrite_export_from_decl(
         return;
     };
     let source = str_value(src);
-    let Some(target_chunk_id) = resolve_partial_swap_import_target(
+    let resolved = context.references.resolve_runtime_import_reference(
         &source,
         caller_chunk_id,
         caller_file_path,
-        context.references,
         context.chunk_table,
-        context.materialized_index,
-    ) else {
+    );
+    let Some(target_chunk_id) = resolved
+        .as_ref()
+        .map(|resolved| resolved.target_chunk_id)
+        .or_else(|| {
+            resolve_partial_swap_import_target(
+                &source,
+                caller_chunk_id,
+                caller_file_path,
+                context.references,
+                context.chunk_table,
+                context.materialized_index,
+            )
+        })
+    else {
         new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
         return;
     };
@@ -340,7 +505,10 @@ fn rewrite_export_from_decl(
     };
     let mut retained: Vec<ExportSpecifier> = Vec::new();
     let mut replacements: Vec<ModuleItem> = Vec::new();
-    for specifier in std::mem::take(&mut named.specifiers) {
+    for (specifier_index, specifier) in std::mem::take(&mut named.specifiers)
+        .into_iter()
+        .enumerate()
+    {
         let ExportSpecifier::Named(named_spec) = &specifier else {
             retained.push(specifier);
             continue;
@@ -374,6 +542,82 @@ fn rewrite_export_from_decl(
             retained.push(specifier);
             continue;
         };
+        let source_specifier_span = specifier.span();
+        let upstream_export = match target.kind {
+            PartialSwapKind::Named => target.upstream_export.clone(),
+            PartialSwapKind::Default => Some("default".to_owned()),
+            PartialSwapKind::Namespace => None,
+            PartialSwapKind::Member => None,
+        };
+        let check_action =
+            match target.kind {
+                PartialSwapKind::Named => upstream_export.as_ref().map(|upstream_export| {
+                    VendorImportAction::PackageNamed {
+                        package: target.package.clone(),
+                        upstream_export: upstream_export.clone(),
+                    }
+                }),
+                PartialSwapKind::Default => Some(VendorImportAction::PackageDefault {
+                    package: target.package.clone(),
+                }),
+                PartialSwapKind::Namespace => Some(VendorImportAction::PackageNamespace {
+                    package: target.package.clone(),
+                }),
+                PartialSwapKind::Member => None,
+            };
+        let source_target_file = resolved
+            .as_ref()
+            .map(|resolved| resolved.target_file.clone());
+        let checked_action = source_target_file
+            .as_deref()
+            .filter(|actual| *actual == chunk_mapping.entry_file)
+            .and_then(|_| check_action)
+            .and_then(|action| {
+                checked_vendor_replacement_action(
+                    context.plan,
+                    target_chunk_id,
+                    &orig_name,
+                    &action,
+                    &target.package,
+                )
+            });
+        let mut replacement = replacement;
+        let output_specifier =
+            set_replacement_export_spans(&mut replacement, named.span, source_specifier_span)
+                .then_some(source_specifier_span);
+        let emitted_exports = output_specifier
+            .map(|specifier_span| {
+                vec![PassthroughVendorExportMarker {
+                    declaration_span: named.span,
+                    specifier_span,
+                    request: target.package.clone(),
+                    imported_name: upstream_export.clone(),
+                    exported_name: Some(exported_name.clone()),
+                    kind: match target.kind {
+                        PartialSwapKind::Namespace => {
+                            artifact::reports::ImportSpecifierKind::Namespace
+                        }
+                        _ => artifact::reports::ImportSpecifierKind::Named,
+                    },
+                }]
+            })
+            .unwrap_or_default();
+        vendor_bindings.push(PassthroughVendorBindingRewrite {
+            declaration_span: named.span,
+            source_request: source.clone(),
+            source_request_kind: artifact::reports::SourceStaticRequestKind::NamedReExport,
+            source_specifier_index: specifier_index,
+            source_specifier_span,
+            source_binding: None,
+            source_export: orig_name.clone(),
+            source_exported_name: Some(exported_name),
+            source_kind: artifact::reports::ImportSpecifierKind::Named,
+            target_chunk: target_chunk_id,
+            source_target_file,
+            checked_action,
+            emitted_requests: Vec::new(),
+            emitted_exports,
+        });
         replacements.push(replacement);
         *state
             .references_rewritten
@@ -385,6 +629,26 @@ fn rewrite_export_from_decl(
         named.specifiers = retained;
         new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
     }
+}
+
+fn set_replacement_export_spans(
+    item: &mut ModuleItem,
+    declaration_span: Span,
+    specifier_span: Span,
+) -> bool {
+    let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+        return false;
+    };
+    if export.specifiers.len() != 1 {
+        return false;
+    }
+    export.span = declaration_span;
+    match &mut export.specifiers[0] {
+        ExportSpecifier::Named(named) => named.span = specifier_span,
+        ExportSpecifier::Namespace(namespace) => namespace.span = specifier_span,
+        ExportSpecifier::Default(default) => default.span = specifier_span,
+    }
+    true
 }
 
 /// Specifier canonicalization visitor — the relocated stage-0

@@ -651,7 +651,7 @@ fn elimination_tree() -> GraphFixture {
         .iter()
         .map(|(path, yaml)| (*path, yaml.as_str()))
         .collect();
-    GraphFixture::new(ELIMINATION_CHUNK, &modules)
+    GraphFixture::new_full_tree(ELIMINATION_CHUNK, &modules)
 }
 
 /// Every command that resolves a spec resolves `Either` jointly, by
@@ -727,12 +727,25 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
     assert_eq!(describe["source_unit_ids"], json!(["unit:0"]), "describe");
 
     // The edit gate resolves every module's claims before accepting an edit.
-    let unassign = tree.command(&["bindings", "unassign", "third"]);
+    let unassign = tree
+        .process_with_assessment(
+            &["bindings", "unassign", "third", "--format", "json"],
+            &tree.stage_analysis(),
+        )
+        .output()
+        .unwrap();
     let stderr = String::from_utf8_lossy(&unassign.stderr);
     assert!(unassign.status.success(), "edit gate: {stderr}");
     assert!(
         stderr.contains("resolved by elimination"),
         "edit gate: {stderr}"
+    );
+    let report = parse_stdout_json(&unassign);
+    assert_eq!(report.get("needs_full_assessment"), None, "{report}");
+    assert_eq!(report["gate"], "passed", "{report}");
+    assert_eq!(
+        report["effect_relocation_assessment"]["status"], "accepted_within_checked_scope",
+        "{report}"
     );
     tree.assert_runs("shared other ok\n");
 }
@@ -791,7 +804,7 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
 
     let either =
         format!("source_matches: [{{match: {EITHER:?}, bindings: [{{local: f, name: Either}}]}}]");
-    let tree = GraphFixture::new(
+    let tree = GraphFixture::new_full_tree(
         RELATIONAL_ELIMINATION_CHUNK,
         &[
             ("elimination/either.yaml", &either),
@@ -824,12 +837,25 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
     let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
     assert_eq!(describe["source_unit_ids"], json!(["unit:1"]), "describe");
 
-    let unassign = tree.command(&["bindings", "unassign", "marker"]);
+    let unassign = tree
+        .process_with_assessment(
+            &["bindings", "unassign", "marker", "--format", "json"],
+            &tree.stage_analysis(),
+        )
+        .output()
+        .unwrap();
     let stderr = String::from_utf8_lossy(&unassign.stderr);
     assert!(unassign.status.success(), "edit gate: {stderr}");
     assert!(
         stderr.contains("resolved by elimination"),
         "edit gate: {stderr}"
+    );
+    let report = parse_stdout_json(&unassign);
+    assert_eq!(report.get("needs_full_assessment"), None, "{report}");
+    assert_eq!(report["gate"], "passed", "{report}");
+    assert_eq!(
+        report["effect_relocation_assessment"]["status"], "accepted_within_checked_scope",
+        "{report}"
     );
     tree.assert_runs("shared o\n");
 }

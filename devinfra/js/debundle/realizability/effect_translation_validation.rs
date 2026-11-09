@@ -1,4 +1,4 @@
-//! Conservative effect-set assessment beside the authoritative legacy gate.
+//! Effect-set validation for an exact emitted statement order.
 //!
 //! Enumerate every inverted conflicting pair, but retain only the current
 //! pair's cells and a bounded deterministic sample. Pair premises
@@ -11,13 +11,14 @@ use std::ops::Bound::{Excluded, Unbounded};
 use analysis::DependencyGraph;
 use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
-    CellOverlap, CellOverlapIndex, InitializationEffectEvidence, InitializationEffects,
+    CellOverlap, CellOverlapIndex, EffectCell, InitializationEffectEvidence, InitializationEffects,
     OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, StatementFacts,
     UnknownEffectCoverage,
 };
 use analysis::graph::{AppliedCommutingPremise, CellOverlapReport, EffectCellReport};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
+use analysis::reports::schema::OperationSupportReceiptReport;
 use serde::{Serialize, Serializer, ser::SerializeSeq};
 use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
@@ -61,7 +62,6 @@ pub struct EffectCoverageReport {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectTranslationValidationReport {
-    pub report_only: bool,
     pub full_semantic_precision: bool,
     pub decision: EffectRelocationDecision,
     pub legacy_gate_accepts: bool,
@@ -89,8 +89,8 @@ pub struct EffectTranslationValidationReport {
 /// Effect-set verdict for the exact emitted statement order passed to the
 /// assessment. `Conflict` identifies an uncovered modeled may-conflict or a
 /// contradiction of an authored premise. `Incomplete` identifies uncovered
-/// Havoc or a pair that needs an authored commuting premise. Neither status
-/// changes the legacy gate.
+/// Havoc. Exact validated authored commuting premises condition acceptance and
+/// remain separate from inferred effect coverage.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum EffectRelocationDecision {
@@ -121,6 +121,9 @@ pub enum EffectRelocationAcceptanceScope {
     /// Every inverted conflicting pair commutes under complete effect-domain
     /// coverage, or crosses a statement proved to have no evaluation effects.
     StatementOrderCommutation,
+    /// Every remaining conflicting pair is discharged by its exact, validated
+    /// authored commuting premise, retained in `premise_dependencies`.
+    AssumedStatementOrderCommutation,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,9 +153,8 @@ pub enum EffectConflictDisposition {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
-    /// The later statement's footprint, kept as the stable primary cell.
+    /// The later statement's footprint, retained as the stable primary cell.
     pub cell: EffectCellReport,
-    /// The earlier and later footprints and the law that joined them.
     pub overlap: CellOverlapReport,
     pub first_read: Option<Evidence>,
     pub first_write: Option<Evidence>,
@@ -160,6 +162,12 @@ pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
     pub later_write: Option<Evidence>,
     pub allocation_involved: bool,
     pub observed_conflict: bool,
+    /// Typed reason a mutable ObjectShape read supports a selected own-data
+    /// operation. This is report evidence only; it does not discharge havoc.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub first_operation_support_reads: Vec<OperationSupportReceiptReport>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub later_operation_support_reads: Vec<OperationSupportReceiptReport>,
 }
 
 impl<Evidence> EffectConflictCell<Evidence> {
@@ -176,6 +184,8 @@ impl<Evidence> EffectConflictCell<Evidence> {
             later_write: self.later_write.map(&mut project),
             allocation_involved: self.allocation_involved,
             observed_conflict: self.observed_conflict,
+            first_operation_support_reads: self.first_operation_support_reads,
+            later_operation_support_reads: self.later_operation_support_reads,
         }
     }
 }
@@ -304,8 +314,8 @@ impl<'a> From<&'a InitializationEffects<'_>> for EffectOpacity<'a> {
         Self {
             unknown_coverage: &effects.unknown_coverage,
             dataflow_opacity: &effects.dataflow_opacity,
-            incomplete_execution: effects.incomplete_execution,
-            execution_losses: effects.execution_losses,
+            incomplete_execution: effects.uncovered_execution(),
+            execution_losses: effects.uncovered_execution_losses(),
             opaque_heap: effects.opaque_heap,
             owner_coverage_refusal: effects.owner_coverage_refusal.as_ref(),
         }
@@ -332,6 +342,18 @@ impl EffectConflictCells<'_> {
                 allocation_involved: self.first.allocates.contains(overlap.left())
                     || self.later.allocates.contains(overlap.right()),
                 observed_conflict: *observed,
+                first_operation_support_reads: self
+                    .first
+                    .operation_support_reads_for(overlap.left())
+                    .iter()
+                    .map(OperationSupportReceiptReport::from)
+                    .collect(),
+                later_operation_support_reads: self
+                    .later
+                    .operation_support_reads_for(overlap.right())
+                    .iter()
+                    .map(OperationSupportReceiptReport::from)
+                    .collect(),
             })
     }
 }
@@ -364,19 +386,64 @@ impl EffectConflictRow<'_> {
     }
 }
 
-fn should_capture_example(examples: &[EffectConflictExample], has_modeled_cells: bool) -> bool {
-    examples.len() < EXAMPLE_LIMIT
-        || (has_modeled_cells && examples.iter().any(|example| example.cell_count == 0))
+#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum EffectConflictExampleRank {
+    ConcreteDataOrObservedControl,
+    PotentialControlOnly,
+    CellFreeHavoc,
 }
 
-fn retain_example(examples: &mut Vec<EffectConflictExample>, example: EffectConflictExample) {
+struct RankedEffectConflictExample {
+    rank: EffectConflictExampleRank,
+    sweep_order: usize,
+    example: EffectConflictExample,
+}
+
+fn example_rank(conflict: &EffectRelocationConflict<'_>) -> EffectConflictExampleRank {
+    if conflict.cell_count == 0 {
+        return EffectConflictExampleRank::CellFreeHavoc;
+    }
+
+    if conflict.cells.cells.iter().any(|(overlap, observed)| {
+        !matches!(overlap.left(), EffectCell::ExecutionProgress)
+            || !matches!(overlap.right(), EffectCell::ExecutionProgress)
+            || *observed
+    }) {
+        EffectConflictExampleRank::ConcreteDataOrObservedControl
+    } else {
+        EffectConflictExampleRank::PotentialControlOnly
+    }
+}
+
+fn should_capture_example(
+    examples: &[RankedEffectConflictExample],
+    rank: EffectConflictExampleRank,
+) -> bool {
+    examples.len() < EXAMPLE_LIMIT || examples.iter().any(|example| example.rank > rank)
+}
+
+fn retain_example(
+    examples: &mut Vec<RankedEffectConflictExample>,
+    rank: EffectConflictExampleRank,
+    sweep_order: usize,
+    example: EffectConflictExample,
+) {
+    let candidate = RankedEffectConflictExample {
+        rank,
+        sweep_order,
+        example,
+    };
     if examples.len() < EXAMPLE_LIMIT {
-        examples.push(example);
-    } else if example.cell_count > 0
-        && let Some(last_havoc_only) = examples.iter().rposition(|sample| sample.cell_count == 0)
+        examples.push(candidate);
+    } else if let Some((worst_index, worst_rank)) = examples
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, example)| (example.rank, example.sweep_order))
+        .map(|(index, example)| (index, example.rank))
+        && candidate.rank < worst_rank
     {
-        examples.remove(last_havoc_only);
-        examples.push(example);
+        examples.remove(worst_index);
+        examples.push(candidate);
     }
 }
 
@@ -448,9 +515,9 @@ pub struct EffectTranslationValidationResult {
 }
 
 /// Run the candidate-order effect sweep once and return both its typed result
-/// and the existing report projection. This does not alter the legacy gate or
-/// its oracle. An active visitor still receives every conflict in sweep order;
-/// only the bounded `examples` selection changes.
+/// and its report projection. Legacy edge comparison remains diagnostic. An
+/// active visitor receives every conflict in sweep order; bounded examples do
+/// not limit the final verdict or its premise dependencies.
 pub(crate) fn effect_translation_assess<E>(
     inputs: EffectTranslationValidationInputs<'_>,
     mut visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
@@ -466,18 +533,22 @@ pub(crate) fn effect_translation_assess<E>(
     let mut legacy_pairs = legacy.conflict_pairs.clone();
     let mut legacy_comparison = LegacyEdgeComparisonCounts::default();
     let mut examples = Vec::new();
+    let mut conflict_sweep_order = 0;
     let mut diagnostic_visitor = |conflict: &EffectRelocationConflict<'_>| -> Result<(), E> {
+        let sweep_order = conflict_sweep_order;
+        conflict_sweep_order += 1;
         let legacy_edge_conflict = legacy_pairs.remove(&(conflict.first_unit, conflict.later_unit));
         if legacy_edge_conflict {
             legacy_comparison.both_pairs += 1;
         } else {
             legacy_comparison.effect_only_pairs += 1;
         }
-        let capture_example = should_capture_example(&examples, conflict.cell_count > 0);
+        let rank = example_rank(conflict);
+        let capture_example = should_capture_example(&examples, rank);
         if capture_example || visitor.is_some() {
             let row = conflict.report_row(module_path);
             if capture_example {
-                retain_example(&mut examples, row.bounded_example());
+                retain_example(&mut examples, rank, sweep_order, row.bounded_example());
             }
             if let Some(visitor) = &mut visitor {
                 visitor(&EffectConflictDiagnosticRow {
@@ -499,8 +570,12 @@ pub(crate) fn effect_translation_assess<E>(
     )?;
     legacy_comparison.legacy_edge_only_pairs = legacy_pairs.len() as u64;
     let examples_truncated = assessment.counts.pairs > examples.len() as u64;
+    examples.sort_by_key(|example| (example.rank, example.sweep_order));
+    let examples = examples
+        .into_iter()
+        .map(|example| example.example)
+        .collect();
     let report = EffectTranslationValidationReport {
-        report_only: true,
         // Closed domains still contain may-effects and do not establish every
         // runtime property such as heap identity or conditional execution.
         full_semantic_precision: false,
@@ -523,8 +598,8 @@ pub(crate) fn effect_translation_assess<E>(
         limitations: vec![
             "Unknown global/property/host coverage remains global Havoc, independently of purity or execution completeness.",
             "Composed heap accesses lack per-access provenance; allocation sites do not prove heap locality.",
-            "Counts cover every conflicting swapped pair; bounded examples prefer modeled-cell rows, then retain the earliest Havoc-only rows. Request --effect-conflicts-jsonl for full rows.",
-            "The edge comparison excludes forward-edge and placement diagnostics; this assessment does not change acceptance or prove emission placement/rebinding obligations.",
+            "Counts cover every conflicting swapped pair; bounded examples rank data or observed-control rows first, potential-control-only rows second, and cell-free Havoc rows last, preserving sweep order within each tier. Request --effect-conflicts-jsonl for full rows.",
+            "The edge comparison is diagnostic. Final acceptance also requires the same candidate's complete structural placement and rebinding assessment.",
         ],
     };
     Ok(EffectTranslationValidationResult { assessment, report })
@@ -572,20 +647,19 @@ fn assess_effect_relocation<E>(
         havoc_statements: 0,
     };
     for effect in effects.values() {
-        if let Some(dependencies) = effect.coverage_dependencies {
+        if let Some(dependencies) = &effect.coverage_dependencies {
             coverage.covered_owner_dependencies.extend(dependencies);
         }
         for domain in &effect.unknown_coverage {
             *coverage.unknown_coverage.entry(*domain).or_default() += 1;
         }
+        coverage.legacy_dataflow_opaque_statements += usize::from(effect.legacy_dataflow_opaque);
         if let Some(refusal) = &effect.owner_coverage_refusal {
             *coverage
                 .owner_coverage_refusals
                 .entry(refusal.reason)
                 .or_default() += 1;
         }
-        coverage.legacy_dataflow_opaque_statements +=
-            usize::from(!effect.dataflow_opacity.is_empty());
         coverage.incomplete_execution_statements += usize::from(effect.incomplete_execution);
         coverage.precision_loss_statements += usize::from(!effect.execution_losses.is_empty());
         coverage.opaque_heap_statements += usize::from(effect.opaque_heap);
@@ -601,8 +675,11 @@ fn assess_effect_relocation<E>(
     let mut relocation_dependencies = ProofDependencies::default();
     for unit in &swapped_units {
         let effect = &effects[unit];
+        if let Some(dependencies) = &effect.control_dependencies {
+            relocation_dependencies.extend(dependencies);
+        }
         if effect_domains_closed(effect)
-            && let Some(dependencies) = effect.coverage_dependencies
+            && let Some(dependencies) = &effect.coverage_dependencies
         {
             relocation_dependencies.extend(dependencies);
         }
@@ -801,7 +878,7 @@ fn assess_effect_relocation<E>(
             premise_contradiction: has_premise_contradiction,
             premise_covered: has_premise_covered,
         }
-    } else if has_uncovered_havoc || has_premise_covered {
+    } else if has_uncovered_havoc {
         EffectRelocationDecision::Incomplete {
             havoc: has_havoc_conflict,
             uncovered_havoc: has_uncovered_havoc,
@@ -813,7 +890,11 @@ fn assess_effect_relocation<E>(
         // open statement crossed only statements whose complete effects are
         // empty; no assumption about the open side is needed for that pair.
         EffectRelocationDecision::Accepted {
-            scope: EffectRelocationAcceptanceScope::StatementOrderCommutation,
+            scope: if has_premise_covered {
+                EffectRelocationAcceptanceScope::AssumedStatementOrderCommutation
+            } else {
+                EffectRelocationAcceptanceScope::StatementOrderCommutation
+            },
         }
     };
     Ok(EffectRelocationAssessment {

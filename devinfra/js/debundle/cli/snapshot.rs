@@ -89,6 +89,8 @@ struct SnapshotOutcome {
     source_root: PathBuf,
     tree_config: PathBuf,
     modules: PathBuf,
+    analysis_input_args: Vec<String>,
+    transform_context_args: Vec<String>,
     regeneration_argv: Vec<String>,
 }
 
@@ -599,29 +601,32 @@ fn contained(root: &Path, relative: &Path) -> Result<PathBuf> {
 fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutcome> {
     let path =
         |relative: &Path| -> String { directory.join(relative).to_string_lossy().into_owned() };
-    let mut argv = vec![
-        path(&manifest.engine),
-        "run".to_owned(),
+    let mut analysis_input_args = vec![
+        "--tree-source-root".to_owned(),
+        path(&manifest.roots.source),
+    ];
+    for (name, root) in &manifest.run.package_roots {
+        analysis_input_args.extend([
+            "--package-root".to_owned(),
+            format!("{name}={}", path(root)),
+        ]);
+    }
+    if let Some(root) = &manifest.run.packages_root {
+        analysis_input_args.extend(["--packages-root".to_owned(), path(root)]);
+    }
+    let mut transform_context_args = vec![
         "--tree-config".to_owned(),
         path(&manifest.run.config),
         "--tree-modules".to_owned(),
         path(&manifest.run.modules),
         "--tree-vendor-marks".to_owned(),
         path(&manifest.run.vendor_marks),
-        "--tree-source-root".to_owned(),
-        path(&manifest.roots.source),
         "--out-root".to_owned(),
         path(Path::new("output")),
     ];
-    for (name, root) in &manifest.run.package_roots {
-        argv.extend([
-            "--package-root".to_owned(),
-            format!("{name}={}", path(root)),
-        ]);
-    }
-    if let Some(root) = &manifest.run.packages_root {
-        argv.extend(["--packages-root".to_owned(), path(root)]);
-    }
+    transform_context_args.extend(analysis_input_args.iter().cloned());
+    let mut argv = vec![path(&manifest.engine), "run".to_owned()];
+    argv.extend(transform_context_args.iter().cloned());
     argv.push("--graphs".to_string());
     if manifest.run.fail_fast {
         argv.push("--fail-fast".to_owned());
@@ -641,6 +646,8 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
         source_root: directory.join(&manifest.selector_source_root),
         tree_config: directory.join(&manifest.run.config),
         modules: directory.join(&manifest.run.modules),
+        analysis_input_args,
+        transform_context_args,
         regeneration_argv: argv,
     })
 }

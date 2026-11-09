@@ -102,9 +102,17 @@ pub struct ModuleDecompositionReport {
     /// Resolved local anchor relationships when the opt-in mode is enabled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selector_anchor_relations: Option<Vec<ModuleDecompositionSelectorAnchor>>,
-    /// True only when the candidate preserves whole structural atoms and
-    /// passes the shared assignment gate over the complete dependency graph.
-    pub candidate_is_realizable: bool,
+    /// Graph-only result: true only when the candidate preserves whole
+    /// structural atoms and passes the graph assignment gate.
+    pub graph_candidate_is_realizable: bool,
+    /// Canonical result is null until the complete candidate assessment runs.
+    /// When present, it mirrors that assessment's acceptance status. The graph
+    /// result remains a separate planning diagnostic.
+    pub candidate_is_realizable: Option<bool>,
+    /// Full canonical assessment when the caller supplied the complete
+    /// transform context and staged analysis artifact.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
     pub coverage_complete: bool,
     pub source_unit_count: usize,
     pub assigned_source_unit_count: usize,
@@ -121,6 +129,45 @@ pub struct ModuleDecompositionReport {
     /// candidate and the gate-reported merges used to reach it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coarsening: Option<ModuleDecompositionCoarsening>,
+    /// Exact moved source units used to construct the final candidate. Kept
+    /// in memory so the CLI can reuse `modules refine` candidate construction;
+    /// the serialized decomposition already carries its fragment/group view.
+    #[serde(skip)]
+    candidate_source_unit_assignments: Vec<ModuleDecompositionSourceUnitAssignment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleDecompositionSourceUnitAssignment {
+    pub source_unit_id: String,
+    pub current_module_path: ModulePath,
+    pub candidate_module_path: ModulePath,
+}
+
+impl ModuleDecompositionReport {
+    pub fn candidate_source_unit_assignments(
+        &self,
+    ) -> Vec<&ModuleDecompositionSourceUnitAssignment> {
+        if self.coarsening.is_some() {
+            return self
+                .candidate_source_unit_assignments
+                .iter()
+                .filter(|assignment| {
+                    assignment.current_module_path != assignment.candidate_module_path
+                })
+                .collect();
+        }
+        let reported_source_units: BTreeSet<&str> = self
+            .modules
+            .iter()
+            .flat_map(|module| &module.fragments)
+            .flat_map(|fragment| &fragment.source_unit_ids)
+            .map(String::as_str)
+            .collect();
+        self.candidate_source_unit_assignments
+            .iter()
+            .filter(|assignment| reported_source_units.contains(assignment.source_unit_id.as_str()))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -947,10 +994,26 @@ fn decompose_modules(
         graph.nodes.iter().map(|node| node.id.as_str()).collect();
     let coverage_complete = covered_source_unit_ids.len() == graph.nodes.len()
         && candidate_source_unit_modules.len() == graph.nodes.len();
-    let candidate_is_realizable = coverage_complete
+    let graph_candidate_is_realizable = coverage_complete
         && validation.atomic_group_conflicts.is_empty()
         && validation.cycles.is_empty()
         && validation.cross_rebind_edges.is_empty();
+    let candidate_source_unit_assignments = graph
+        .nodes
+        .iter()
+        .zip(
+            source_unit_modules
+                .iter()
+                .zip(&candidate_source_unit_modules),
+        )
+        .map(|(node, (current_module_path, candidate_module_path))| {
+            ModuleDecompositionSourceUnitAssignment {
+                source_unit_id: node.id.clone(),
+                current_module_path: current_module_path.clone(),
+                candidate_module_path: candidate_module_path.clone(),
+            }
+        })
+        .collect();
     let original_modules: BTreeSet<ModulePath> = source_unit_modules.into_iter().collect();
     let unchanged_module_count = original_modules.len().saturating_sub(split_module_count);
 
@@ -958,7 +1021,9 @@ fn decompose_modules(
         strategy,
         preserve_selector_anchors: decomposition.preserve_selector_anchors,
         selector_anchor_relations,
-        candidate_is_realizable,
+        graph_candidate_is_realizable,
+        candidate_is_realizable: None,
+        candidate_assessment: None,
         coverage_complete,
         source_unit_count: graph.nodes.len(),
         assigned_source_unit_count: candidate_source_unit_modules.len(),
@@ -968,6 +1033,7 @@ fn decompose_modules(
         cycles: validation.cycles,
         cross_rebinds: validation.cross_rebinds,
         coarsening,
+        candidate_source_unit_assignments,
     })
 }
 

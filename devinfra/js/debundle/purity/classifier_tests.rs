@@ -94,11 +94,17 @@ fn graph_with_conditioned_set_proof(
 ) -> ChunkCodeGraph {
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let heap_scope = crate::facts::abstract_domain::value::HeapModuleScope::LocalAnalysis(
+        crate::facts::abstract_domain::value::LocalAnalysisScopeId::fresh(),
+    );
+    let heap_resolver = crate::facts::abstract_domain::value::SourceHeapResolver::new(heap_scope);
+    let candidates = tracked_allocation_roots(&views, heap_resolver);
+    let flow =
+        ChunkValueFlow::analyze_with_candidates_in_resolver(heap_resolver, &views, &candidates);
     let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
         .plain_data_bindings()
         .bindings;
-    let plain_arrays = plain_array_bindings(&views, &shadowed);
+    let plain_arrays = plain_array_bindings(&views, &shadowed, heap_scope);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
     let set_shapes = crate::facts::SetIterableShapes::analyze(
         &views,
@@ -1631,11 +1637,17 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let module = parse("class Box { state = new Set(); }\nconst instance = new Box();");
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let heap_scope = crate::facts::abstract_domain::value::HeapModuleScope::LocalAnalysis(
+        crate::facts::abstract_domain::value::LocalAnalysisScopeId::fresh(),
+    );
+    let heap_resolver = crate::facts::abstract_domain::value::SourceHeapResolver::new(heap_scope);
+    let candidates = tracked_allocation_roots(&views, heap_resolver);
+    let flow =
+        ChunkValueFlow::analyze_with_candidates_in_resolver(heap_resolver, &views, &candidates);
     let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
         .plain_data_bindings()
         .bindings;
-    let plain_arrays = plain_array_bindings(&views, &shadowed);
+    let plain_arrays = plain_array_bindings(&views, &shadowed, heap_scope);
     let dependencies = value_input_dependencies("static/provider.js", 2);
     let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
         &views,

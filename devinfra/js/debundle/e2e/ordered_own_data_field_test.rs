@@ -1,9 +1,209 @@
+use analysis::graph::{
+    CellConflict, CellOverlapReport, EffectCellReport, HeapAddressReport, KnownConflict,
+    PremiseVerdict, SequencedCause,
+};
 use analysis::{
-    DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
+    CellOverlapLaw, DependencyGraphReport,
+    reports::schema::{BindingEffectAuthorityReport, SynchronousExecutionReport},
 };
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+const ARRAY_LENGTH_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst gamma = read();\nconst anchor = 0;\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
+fn array_length_relocation() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        ARRAY_LENGTH_SOURCE,
+        vec![
+            logical_module(
+                "provider",
+                &[
+                    Member::new("store"),
+                    Member::new("read"),
+                    Member::new("write"),
+                    Member::new("anchor"),
+                ],
+            ),
+            logical_module("observer", &[Member::new("gamma")]),
+            logical_module("mutator", &[Member::new("alpha")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_dataflow_aware_s_chain()
+    .with_trusted_dataflow_summaries()
+}
+
+fn execution_for_binding<'a>(
+    graph: &'a DependencyGraphReport,
+    binding: &str,
+) -> &'a SynchronousExecutionReport {
+    graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .and_then(|node| node.synchronous_execution.as_ref())
+        .unwrap_or_else(|| panic!("no synchronous execution report for {binding}: {graph:#?}"))
+}
+
+fn assert_length_write_follows_read(graph: &DependencyGraphReport, reader: &str, writer: &str) {
+    let reader = source_unit_for_binding(graph, reader);
+    let writer = source_unit_for_binding(graph, writer);
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == writer
+                && edge.target == reader
+                && matches!(
+                    &edge.sequenced_cause,
+                    Some(SequencedCause::CellOrder { conflicts, .. })
+                        if conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::OwnProperty { property, .. },
+                                ..
+                            } if property == "length"
+                        ))
+                )
+        }),
+        "the later push must depend on the array length read: {graph:#?}"
+    );
+}
+
+fn assert_no_operation_receipt(graph: &DependencyGraphReport, binding: &str, case: &str) {
+    let execution = execution_for_binding(graph, binding);
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "{case} must not seal an operation receipt: {execution:#?}"
+    );
+}
+
+#[test]
+fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
+    let fixture = run_fixture(array_length_relocation());
+    assert_preserved_entry_output(&fixture, "0 0 undefined\n");
+
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the independent anchor must cross the read: {assessment:#}"
+    );
+
+    let graph = fixture.dependency_graph();
+    let gamma_id = source_unit_for_binding(&graph, "gamma");
+    let alpha_id = source_unit_for_binding(&graph, "alpha");
+    let gamma = graph.nodes.iter().find(|node| node.id == gamma_id).unwrap();
+    let alpha = graph.nodes.iter().find(|node| node.id == alpha_id).unwrap();
+    assert_ne!(
+        gamma.destination, alpha.destination,
+        "the read and push are relocated into separate modules"
+    );
+
+    let execution = execution_for_binding(&graph, "gamma");
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("the relocated array length read needs an operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+    assert_length_write_follows_read(&graph, "gamma", "alpha");
+}
+
+#[test]
+fn array_length_read_write_inversion_is_rejected_with_a_known_cell_conflict() {
+    const SOURCE: &str = "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(SOURCE, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 1\n");
+    // Group allocation and push so the candidate moves the writer before the
+    // reader. The canonical verdict must identify their exact length cell.
+    let fixture = run_inspection_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module("mutator", &[Member::new("store"), Member::new("alpha")]),
+                logical_module("observer", &[Member::new("gamma")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries(),
+    );
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the candidate must invert the reader and writer: {assessment:#}"
+    );
+
+    let graph = fixture.dependency_graph();
+    let execution = execution_for_binding(&graph, "gamma");
+    assert!(execution.complete, "{execution:#?}");
+    assert!(matches!(
+        execution.binding_effect_authority.as_ref(),
+        Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+    ));
+    assert_length_write_follows_read(&graph, "gamma", "alpha");
+
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-length-forced-inversion",
+    );
+    // The rejected inspection tree retains the legacy ordering cycle. Its
+    // observer sees store in TDZ; the original above completes with "0 1".
+    assert_node_error(
+        &fixture.entry_path,
+        "Cannot access 'store' before initialization",
+    );
+}
+
+#[test]
+fn ordinary_length_getters_and_unknown_receivers_do_not_get_array_length_receipts() {
+    let getter = run_fixture(FixtureOpts::new(
+        "const events = [];\nconst record = { get length() { events.push('get'); return 7; } };\nconst observed = record.length;\nconsole.log(observed, events.join(','));\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("events"),
+                Member::new("record"),
+                Member::new("observed"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&getter, "7 get\n");
+    let getter_graph = getter.dependency_graph();
+    assert_no_operation_receipt(&getter_graph, "observed", "ordinary length getter");
+    assert!(
+        !execution_for_binding(&getter_graph, "observed").complete,
+        "getter effects must stay conservative"
+    );
+
+    let unknown = run_fixture(
+        FixtureOpts::new(
+            "globalThis.makeArray = () => [1];\nfunction read(receiver) { return receiver.length; }\nconst observed = read(globalThis.makeArray());\nconsole.log(observed);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&unknown, "1\n");
+    let unknown_graph = unknown.dependency_graph();
+    assert_no_operation_receipt(&unknown_graph, "observed", "unknown receiver");
+    assert!(
+        !execution_for_binding(&unknown_graph, "observed").complete,
+        "unknown receiver effects must stay conservative"
+    );
+}
 
 fn assert_property_frontier(
     graph: &DependencyGraphReport,
@@ -38,7 +238,50 @@ fn assert_property_frontier(
     );
 }
 
-fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) -> u32 {
+fn assert_property_shared_cell_premise(
+    graph: &DependencyGraphReport,
+    later: usize,
+    earlier: usize,
+    property: &str,
+) {
+    let unit = |ordinal| {
+        &graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .unwrap()
+            .id
+    };
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && &edge.source == unit(later)
+                && &edge.target == unit(earlier)
+                && matches!(
+                    &edge.premise_verdict,
+                    Some(PremiseVerdict::Known { conflict })
+                        if matches!(
+                            conflict.as_ref(),
+                            KnownConflict::SharedCell {
+                                cell: EffectCellReport::OwnProperty {
+                                    property: observed,
+                                    ..
+                                },
+                                ..
+                            } if observed == property
+                        )
+                )
+        }),
+        "property shared-cell premise {later} -> {earlier}: {:#?}",
+        graph.edges
+    );
+}
+
+fn assert_executed_own_property_read(
+    graph: &DependencyGraphReport,
+    binding: &str,
+    property: &str,
+) -> HeapAddressReport {
     let source = graph
         .nodes
         .iter()
@@ -56,7 +299,40 @@ fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) 
         .heap_frontier
         .as_ref()
         .unwrap_or_else(|| panic!("missing {binding} heap evidence: {execution:#?}"));
-    let reads = &heap.non_assumed_heap_accesses.reads;
+    let reads = &heap.heap_access_provenance.executed_operations.reads;
+    assert_eq!(reads.count, reads.sample.len(), "{reads:#?}");
+    reads
+        .sample
+        .iter()
+        .find_map(|cell| match cell {
+            EffectCellReport::OwnProperty {
+                origin,
+                property: observed,
+            } if observed == property => Some(origin.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{binding} lacks an own-property read of {property}: {reads:#?}"))
+}
+
+fn assert_executed_length_read(graph: &DependencyGraphReport, binding: &str) -> HeapAddressReport {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} heap evidence: {execution:#?}"));
+    let reads = &heap.heap_access_provenance.executed_operations.reads;
     assert_eq!(
         reads.count,
         reads.sample.len(),
@@ -67,7 +343,7 @@ fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) 
         .iter()
         .find_map(|cell| match cell {
             EffectCellReport::OwnProperty { origin, property } if property == "length" => {
-                Some(*origin)
+                Some(origin.clone())
             }
             _ => None,
         })
@@ -76,7 +352,7 @@ fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) 
         })
 }
 
-fn assert_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str) -> u32 {
+fn assert_executed_index_read(graph: &DependencyGraphReport, binding: &str) -> HeapAddressReport {
     let source = graph
         .nodes
         .iter()
@@ -94,19 +370,21 @@ fn assert_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str) -
         .heap_frontier
         .as_ref()
         .unwrap_or_else(|| panic!("missing {binding} heap frontier: {execution:#?}"));
-    let reads = &heap.non_assumed_heap_accesses.reads;
+    let reads = &heap.heap_access_provenance.executed_operations.reads;
     assert_eq!(reads.count, reads.sample.len(), "{reads:#?}");
     reads
         .sample
         .iter()
         .find_map(|cell| match cell {
-            EffectCellReport::OwnProperty { origin, property } if property == "0" => Some(*origin),
+            EffectCellReport::OwnProperty { origin, property } if property == "0" => {
+                Some(origin.clone())
+            }
             _ => None,
         })
         .unwrap_or_else(|| panic!("{binding} lacks an exact index read: {reads:#?}"))
 }
 
-fn assert_no_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str) {
+fn assert_no_executed_index_read(graph: &DependencyGraphReport, binding: &str) {
     let source = graph
         .nodes
         .iter()
@@ -121,7 +399,7 @@ fn assert_no_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str
         .as_ref()
         .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
     if let Some(heap) = &execution.heap_frontier {
-        let reads = &heap.non_assumed_heap_accesses.reads;
+        let reads = &heap.heap_access_provenance.executed_operations.reads;
         assert!(
             !reads.sample.iter().any(|cell| matches!(
                 cell,
@@ -133,7 +411,7 @@ fn assert_no_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str
     }
 }
 
-fn assert_no_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str, case: &str) {
+fn assert_no_executed_length_read(graph: &DependencyGraphReport, binding: &str, case: &str) {
     let source = graph
         .nodes
         .iter()
@@ -155,7 +433,7 @@ fn assert_no_non_assumed_length_read(graph: &DependencyGraphReport, binding: &st
         "{case}: unsupported length read acquired ordered operation authority: {execution:#?}"
     );
     if let Some(heap) = &execution.heap_frontier {
-        let reads = &heap.non_assumed_heap_accesses.reads;
+        let reads = &heap.heap_access_provenance.executed_operations.reads;
         assert_eq!(
             reads.count,
             reads.sample.len(),
@@ -178,7 +456,7 @@ fn assert_push_preserves_root_length_read(
     graph: &DependencyGraphReport,
     later_binding: &str,
     earlier_binding: &str,
-    read_origin: u32,
+    read_origin: HeapAddressReport,
 ) {
     let source_unit = |binding: &str| {
         graph
@@ -200,25 +478,57 @@ fn assert_push_preserves_root_length_read(
             edge.edge_kind == DepKind::Sequenced
                 && edge.source == source
                 && edge.target == target
-                && serde_json::to_value(&edge.sequenced_cause).unwrap()["rule"] == "cell_order"
-                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
-                    .as_array()
-                    .is_some_and(|conflicts| {
-                        let has_array_content_read = conflicts.iter().any(|conflict| {
-                            conflict["kind"] == "write_after_read"
-                                && conflict["cell"]["kind"] == "array_contents"
-                                && conflict["cell"]["origin"] == read_origin
-                        });
-                        let has_length_frontier = conflicts.iter().any(|conflict| {
-                            conflict["kind"] == "frontier_after_cell"
-                                && conflict["cell"]["kind"] == "own_property"
-                                && conflict["cell"]["property"] == "length"
-                                && conflict["cell"]["origin"] == read_origin
-                        });
-                        has_array_content_read && has_length_frontier
-                    })
+                && matches!(
+                    &edge.sequenced_cause,
+                    Some(SequencedCause::CellOrder { conflicts, .. })
+                        if conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::ArrayContents { origin },
+                                ..
+                            } if origin == &read_origin
+                        )) && conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::OwnProperty { origin, property },
+                                ..
+                            } if origin == &read_origin && property == "length"
+                        ))
+                )
         }),
         "push {later_binding} must preserve root length read {earlier_binding}: {:#?}",
+        graph.edges,
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == source
+                && edge.target == target
+                && matches!(
+                    &edge.sequenced_cause,
+                    Some(SequencedCause::CellOrder { conflicts, .. })
+                        if conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::ArrayContents { origin: cell_origin },
+                                overlap: CellOverlapReport {
+                                    left: EffectCellReport::OwnProperty {
+                                        origin: left_origin,
+                                        property,
+                                    },
+                                    right: EffectCellReport::ArrayContents {
+                                        origin: right_origin,
+                                    },
+                                    law: CellOverlapLaw::ArrayContentsIndexOrLength,
+                                },
+                            } if cell_origin == &read_origin
+                                && left_origin == &read_origin
+                                && right_origin == &read_origin
+                                && property == "length"
+                        ))
+                )
+        }),
+        "push {later_binding} must expose the array-content overlap witness: {:#?}",
         graph.edges,
     );
 }
@@ -300,6 +610,62 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
 }
 
 #[test]
+fn root_ordinary_object_write_is_a_typed_shared_cell_premise_fact() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = { value: 7 };\nconst before = record.value;\nrecord.value = 42;\nconst after = record.value;\nconsole.log(before, after);\n",
+        vec![
+            logical_module("record", &[Member::new("record")]),
+            logical_module("before", &[Member::new("before")]),
+            logical_module_with_anon("write", &[], &["record.value = 42;"]),
+            logical_module("after", &[Member::new("after")]),
+            logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+
+    let graph = fixture.dependency_graph();
+    let origin = assert_executed_own_property_read(&graph, "before", "value");
+    let writer = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .unwrap_or_else(|| panic!("missing member-write source unit: {graph:#?}"));
+    let execution = writer
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing member-write execution evidence: {writer:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing member-write heap evidence: {execution:#?}"));
+    let writes = &heap.heap_access_provenance.executed_operations.writes;
+    assert_eq!(writes.count, writes.sample.len(), "{writes:#?}");
+    assert!(
+        writes.sample.iter().any(|cell| matches!(
+            cell,
+            EffectCellReport::OwnProperty {
+                origin: observed_origin,
+                property,
+            } if observed_origin == &origin && property == "value"
+        )),
+        "the source-covered member write must retain its possible own-property cell: {writes:#?}"
+    );
+    // The ordinary write invalidates the later read. Its may-write cell
+    // must still conflict with the earlier, settled own-data read.
+    assert_property_shared_cell_premise(&graph, 2, 1, "value");
+
+    // Exact own-cell evidence supplements the established source opacity; it
+    // does not certify all possible effects of a member write.
+    let coverage = fixture.effect_translation_validation();
+    assert!(
+        coverage["coverage"]["unknown_coverage"]["general_heap"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
+#[test]
 fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
     let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 7 };\nfunction mutate() { record.value = 42; return 1; }\nconst combined = record.value + mutate();\nconst after = record.value;\nconsole.log(combined, after);\n",
@@ -315,26 +681,40 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
     ));
     assert_preserved_entry_output(&fixture, "8 42\n");
     let graph = fixture.dependency_graph();
-    let compound = &graph
+    let compound = graph
         .nodes
         .iter()
         .find(|node| node.statement_ordinal.0 == 2)
-        .unwrap()
-        .id;
+        .unwrap();
+    let execution = compound.synchronous_execution.as_ref().unwrap();
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("the ordered read and mutating call retain their receipt: {execution:#?}");
+    };
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+    // The compound owner reads the old value and writes the new value. The
+    // following read must stay after that write, even with exact coverage.
+    assert_sequenced_order(&graph, 3, 2);
     assert!(
-        graph
-            .edges
-            .iter()
-            .filter(|edge| &edge.source == compound || &edge.target == compound)
-            .all(|edge| {
-                !serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
-                    .as_array()
-                    .is_some_and(|conflicts| {
-                        conflicts
-                            .iter()
-                            .any(|conflict| conflict["cell"]["kind"] == "own_property")
-                    })
-            })
+        graph.edges.iter().any(|edge| {
+            edge.statement_ordinal.0 == 3
+                && edge.target == compound.id
+                && matches!(
+                    &edge.premise_verdict,
+                    Some(PremiseVerdict::Known { conflict })
+                        if matches!(
+                            conflict.as_ref(),
+                            KnownConflict::SharedCell {
+                                cell: EffectCellReport::OwnProperty { property, .. },
+                                ..
+                            } if property == "value"
+                        )
+                )
+        }),
+        "the following read observes the compound owner's write: {:#?}",
+        graph.edges
     );
 }
 
@@ -615,7 +995,7 @@ fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
     );
     assert_preserved_entry_output(&fixture, "0 1\n");
     let graph = fixture.dependency_graph();
-    let length_origin = assert_non_assumed_length_read(&graph, "gamma");
+    let length_origin = assert_executed_length_read(&graph, "gamma");
     assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
 }
 
@@ -636,8 +1016,8 @@ fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
     );
     assert_preserved_entry_output(&fixture, "7 42\n");
     let graph = fixture.dependency_graph();
-    assert_non_assumed_index_read(&graph, "before");
-    assert_no_non_assumed_index_read(&graph, "after");
+    assert_executed_index_read(&graph, "before");
+    assert_no_executed_index_read(&graph, "after");
     assert_property_frontier(&graph, 2, 1, "0");
 }
 
@@ -657,7 +1037,7 @@ fn push_conflicts_with_a_prior_exact_array_index_read() {
     );
     assert_preserved_entry_output(&fixture, "7 2 42\n");
     let graph = fixture.dependency_graph();
-    assert_non_assumed_index_read(&graph, "before");
+    assert_executed_index_read(&graph, "before");
     let unit = |binding: &str| {
         graph
             .nodes
@@ -738,7 +1118,7 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
     ] {
         let fixture = run_fixture(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, output);
-        assert_no_non_assumed_index_read(&fixture.dependency_graph(), "read");
+        assert_no_executed_index_read(&fixture.dependency_graph(), "read");
     }
 }
 
@@ -770,24 +1150,25 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
         "0 1\n",
         "",
     );
-    assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
-    // The forced cyclic layout reaches append's lexical binding before its
-    // initializer, while the original evaluates normally.
+    assert_gate_rejected_banner(
+        &rejected.entry_path(),
+        &rejected.report_path("candidate_relocation_assessment.json"),
+    );
+    // The rejected output reaches an uninitialized lexical binding, while
+    // the original evaluates normally.
     assert_node_error(&rejected.entry_path(), "ReferenceError");
 
     let graph = rejected.dependency_graph();
-    let length_origin = assert_non_assumed_length_read(&graph, "gamma");
+    let length_origin = assert_executed_length_read(&graph, "gamma");
     assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
-    let cycles = rejected.cycles();
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
     assert!(
-        cycles.iter().any(|cycle| {
-            cycle["rejection"] == "mutual_constraining_cycle"
-                && cycle["modules"].as_array().is_some_and(|modules| {
-                    modules.iter().any(|module| module.as_str() == Some("read"))
-                        && modules.iter().any(|module| module.as_str() == Some("push"))
-                })
-        }),
-        "the forced module inversion must be refused as a read/push cycle: {cycles:#?}"
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the rejected layout must invert executable source units: {assessment:#}"
     );
 }
 
@@ -805,7 +1186,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&getter, "7 get\n");
-    assert_no_non_assumed_length_read(&getter.dependency_graph(), "gamma", "length getter");
+    assert_no_executed_length_read(&getter.dependency_graph(), "gamma", "length getter");
 
     let unknown = run_fixture(FixtureOpts::new(
         "const store = Math.random() ? [] : [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
@@ -819,7 +1200,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&unknown, "0 1\n");
-    assert_no_non_assumed_length_read(
+    assert_no_executed_length_read(
         &unknown.dependency_graph(),
         "gamma",
         "unknown or multi-array receiver",
@@ -837,7 +1218,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&holey, "2 3\n");
-    assert_no_non_assumed_length_read(&holey.dependency_graph(), "gamma", "holey array");
+    assert_no_executed_length_read(&holey.dependency_graph(), "gamma", "holey array");
 
     let pooled = run_fixture(FixtureOpts::new(
         "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
@@ -853,7 +1234,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&pooled, "0 1\n");
-    assert_no_non_assumed_length_read(
+    assert_no_executed_length_read(
         &pooled.dependency_graph(),
         "gamma",
         "pooled array literal site",

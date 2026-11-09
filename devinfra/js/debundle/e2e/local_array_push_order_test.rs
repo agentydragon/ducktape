@@ -1,5 +1,8 @@
 //! A local array content mutation must stay ordered before a separate reader.
-use analysis::DependencyGraphReport;
+use analysis::{
+    DependencyGraphReport,
+    reports::schema::{BindingEffectAuthorityReport, LexicalEffectRoot},
+};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
@@ -66,6 +69,63 @@ fn assert_no_sequenced_edge(graph: &DependencyGraphReport, a: usize, b: usize) {
     assert!(
         found.is_empty(),
         "independent array cells must not be sequenced: {found:#?}"
+    );
+}
+
+fn assert_array_read_is_uncovered(opts: FixtureOpts<'_>, binding: &str, expected_stdout: &str) {
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, expected_stdout);
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} read owner: {graph:#?}"));
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "unsupported array read {binding} must remain uncovered: {execution:#?}"
+    );
+}
+
+fn assert_array_read_has_operation_receipt(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} read owner: {graph:#?}"));
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("array read {binding} lacks an operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.owner, node.statement_ordinal, "{receipt:#?}");
+    assert!(
+        matches!(
+            &receipt.root,
+            LexicalEffectRoot::BindingInitializer { binding: receipt_binding, .. }
+                if receipt_binding == binding
+        ),
+        "receipt must identify the exact read initializer {binding}: {receipt:#?}"
     );
 }
 
@@ -357,7 +417,115 @@ fn independent_array_readers_do_not_create_a_sequence_edge() {
     );
     assert_preserved_entry_output(&fixture, "1 2\n");
     let graph = fixture.dependency_graph();
+    assert_array_read_has_operation_receipt(&fixture, "leftFirst");
+    assert_array_read_has_operation_receipt(&fixture, "rightFirst");
     assert_no_sequenced_edge(&graph, 2, 3);
+}
+
+#[test]
+fn array_index_read_refuses_holes_spreads_and_out_of_bounds_slots() {
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            "const values = [, 1];\nconst read = values[0];\nconst later = [9];\nconsole.log(read, later[0]);\n",
+            vec![],
+        ),
+        "read",
+        "undefined 9\n",
+    );
+
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            "const seed = [1];\nconst values = [...seed];\nconst read = values[0];\nconst later = [9];\nconsole.log(read, later[0]);\n",
+            vec![],
+        ),
+        "read",
+        "1 9\n",
+    );
+
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            "const values = [1];\nconst read = values[1];\nconst later = [9];\nconsole.log(read, later[0]);\n",
+            vec![],
+        ),
+        "read",
+        "undefined 9\n",
+    );
+}
+
+#[test]
+fn array_index_read_refuses_pooled_reuse_and_mutated_prefixes() {
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            "function makeValues() { return [1]; }\nconst first = makeValues();\nconst second = makeValues();\nconst read = second[0];\nconst later = [9];\nconsole.log(read, later[0]);\n",
+            vec![],
+        ),
+        "read",
+        "1 9\n",
+    );
+
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            "const values = [1];\nvalues.push(2);\nconst read = values[0];\nconst later = [9];\nconsole.log(read, later[0]);\n",
+            vec![],
+        ),
+        "read",
+        "1 9\n",
+    );
+
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            r#"const values = [1];
+globalThis.mutate = () => { values[0] = 7; };
+globalThis.mutate();
+const read = values[0];
+const later = [9];
+console.log(read, later[0]);
+"#,
+            vec![],
+        ),
+        "read",
+        "7 9\n",
+    );
+
+    assert_array_read_is_uncovered(
+        FixtureOpts::new(
+            r#"const values = [1];
+Object.defineProperty(values, '0', { get() { return 7; }, configurable: true });
+const read = values[0];
+const later = [9];
+console.log(read, later[0]);
+"#,
+            vec![],
+        ),
+        "read",
+        "7 9\n",
+    );
+}
+
+#[test]
+fn array_index_read_uses_literal_element_snapshot_after_binding_reassignment() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const left = [1];\nconst right = [2];\nlet callback = () => left[0];\nconst callbacks = [callback];\ncallback = () => right[0];\nconst selected = callbacks[0];\nconst result = selected();\nconsole.log(result);\n",
+            vec![
+                logical_module("left", &[Member::new("left")]),
+                logical_module("right", &[Member::new("right")]),
+                logical_module_with_anon(
+                    "callbacks",
+                    &[Member::new("callback"), Member::new("callbacks")],
+                    &["callback = () => right[0];"],
+                ),
+                logical_module("selected", &[Member::new("selected")]),
+                logical_module("result", &[Member::new("result")]),
+                logical_module_with_anon("observe", &[], &["console.log(result);"]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+    let graph = fixture.dependency_graph();
+    assert_sequenced_edge(&graph, 6, 0);
+    assert_no_sequenced_edge(&graph, 1, 6);
 }
 
 #[test]
@@ -753,6 +921,60 @@ fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
 }
 
 #[test]
+fn standalone_push_receipts_require_native_selection_and_primitive_arguments() {
+    use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+
+    for (setup, argument, native, output) in [
+        ("", "1", true, "1\n"),
+        (
+            "values.push = function () { return 0; };",
+            "1",
+            false,
+            "0\n",
+        ),
+        (
+            "Array.prototype.push = function () { return 0; };",
+            "1",
+            false,
+            "0\n",
+        ),
+        ("", "{}", false, "1\n"),
+    ] {
+        let source = format!(
+            "const values = [];\n{setup}\nvalues.push({argument});\nconsole.log(values.length);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let graph = fixture.dependency_graph();
+        let execution = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.source_location
+                    .as_ref()
+                    .is_some_and(|location| location.start_line == 3)
+            })
+            .expect("standalone push owner")
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        let native_receipt = match &execution.binding_effect_authority {
+            Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) => {
+                receipt.calls.iter().any(|call| {
+                    matches!(
+                        &call.target,
+                        LexicalBindingEffectBody::Native { property: Some(property), .. }
+                            if property == "prototype.push"
+                    )
+                })
+            }
+            _ => false,
+        };
+        assert_eq!(native_receipt, native, "{source}: {execution:#?}");
+    }
+}
+
+#[test]
 fn dense_array_push_retains_mutation_argument_and_escape_guards() {
     for operation in [
         "Array.prototype.push = function () { return Later; };\nvalues.push(1);",
@@ -792,30 +1014,60 @@ fn dense_array_push_retains_mutation_argument_and_escape_guards() {
 #[test]
 fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
     let source = "const values = [];\nfunction read() { return values.map(() => Later); }\nconst before = read();\nvalues.push(1);\nconst after = read();\nclass Later {}\n";
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module_with_anon(
-                    "values",
-                    &[
-                        Member::new("values"),
-                        Member::new("read"),
-                        Member::new("before"),
-                        Member::new("after"),
-                    ],
-                    &["values.push(1);"],
-                ),
-                logical_module("later", &[Member::new("Later")]),
-            ],
-        ),
-        &["values", "later"],
-        &["eager_use"],
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values",
+                &[
+                    Member::new("values"),
+                    Member::new("read"),
+                    Member::new("before"),
+                    Member::new("after"),
+                ],
+                &["values.push(1);"],
+            ),
+            logical_module("later", &[Member::new("Later")]),
+        ],
+    ));
+    assert_preserved_entry_error(&fixture, "Cannot access 'Later' before initialization");
+    let graph = fixture.dependency_graph();
+    let owner = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("source owner")
+            .statement_ordinal
+            .0
+    };
+    let assessment = fixture.candidate_relocation_assessment();
+    let order = assessment["emitted_order"]
+        .as_array()
+        .expect("emitted order");
+    let position = |ordinal: usize| {
+        order
+            .iter()
+            .position(|value| value.as_u64() == Some(ordinal as u64))
+            .expect("source owner in emitted order")
+    };
+    assert!(
+        position(owner("after")) < position(owner("Later")),
+        "the post-push callback must run before Later initializes: {assessment}"
     );
 
-    expect_atomic_conflict_rejection(
+    let source = "import { consume } from './peer.js';\nconst values = [() => Later];\nvalues.push(1);\nconsume(values);\nclass Later {}\n";
+    let peers = [(
+        "static/peer",
+        "export function consume(values) { return values[0](); }\n",
+    )];
+    let fixture = run_fixture(
         FixtureOpts::new(
-            "const values = [() => Later];\nvalues.push(1);\nconsume(values);\nclass Later {}\n",
+            source,
             vec![
                 logical_module_with_anon(
                     "values",
@@ -824,8 +1076,8 @@ fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
                 ),
                 logical_module("later", &[Member::new("Later")]),
             ],
-        ),
-        &["values", "later"],
-        &["eager_use"],
+        )
+        .with_extra_chunks(&peers),
     );
+    assert_preserved_entry_error(&fixture, "Cannot access 'Later' before initialization");
 }

@@ -1,5 +1,6 @@
 //! A local primitive array spread can preserve narrow module boundaries.
 
+use analysis::graph::EffectCellReport;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
@@ -63,6 +64,51 @@ fn declaration(source: &str) -> &str {
         .expect("fixture contains the multi-declarator initializer")
 }
 
+fn assert_index_read_is_not_exact(fixture: &Fixture, binding: &str, index: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} read owner: {graph:#?}"));
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {node:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} heap frontier: {execution:#?}"));
+    let provenance = &heap.heap_access_provenance;
+    let executed_reads = &provenance.executed_operations.reads;
+    let summary_reads = &provenance.conservative_summaries.reads;
+    assert_eq!(
+        executed_reads.count,
+        executed_reads.sample.len(),
+        "{executed_reads:#?}"
+    );
+    assert_eq!(
+        summary_reads.count,
+        summary_reads.sample.len(),
+        "{summary_reads:#?}"
+    );
+    let reads = executed_reads
+        .sample
+        .iter()
+        .chain(summary_reads.sample.iter());
+    assert!(
+        !reads.clone().any(|cell| matches!(
+            cell,
+            EffectCellReport::OwnProperty { property, .. } if property == index
+        )),
+        "pooled array generation with a missing index acquired a non-assumed exact own-property read: executed={executed_reads:#?}, summary={summary_reads:#?}"
+    );
+}
+
 #[test]
 fn same_declaration_primitive_array_spreads_keep_three_modules_realizable() {
     let fixture = run_fixture(FixtureOpts::new(SOURCE, modules()));
@@ -89,6 +135,14 @@ fn same_declaration_primitive_array_spreads_keep_three_modules_realizable() {
 fn literal_spread_control_keeps_three_modules_realizable() {
     let fixture = run_fixture(FixtureOpts::new(LITERAL_CONTROL, modules()));
     assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
+}
+
+#[test]
+fn pooled_array_spread_with_varying_lengths_keeps_missing_indices_unknown() {
+    let source = "function make(values) { return [...values]; }\nconst wide = make([10, 20]);\nconst narrow = make([10]);\nconst observed = narrow[1];\nconsole.log(wide[1], observed);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "20 undefined\n");
+    assert_index_read_is_not_exact(&fixture, "observed", "1");
 }
 
 #[test]
