@@ -28,22 +28,25 @@ import (
 // ServiceAccount. Its reader must read the API server directly: a certificate
 // never preserves the authority of a deleted Sandbox or an old credential.
 type SVIDResolver struct {
-	objects    client.Reader
-	namespaces map[string]struct{}
+	readers map[string]*sandboxreader.Reader
 }
 
 func NewSVIDResolver(objects client.Reader, namespaces []string) (*SVIDResolver, error) {
 	if objects == nil || len(namespaces) == 0 {
 		return nil, errors.New("Sandbox reader and allowed namespaces are required")
 	}
-	allowed := make(map[string]struct{}, len(namespaces))
+	readers := make(map[string]*sandboxreader.Reader, len(namespaces))
 	for _, namespace := range namespaces {
 		if namespace == "" {
 			return nil, errors.New("allowed namespace must not be empty")
 		}
-		allowed[namespace] = struct{}{}
+		reader, err := sandboxreader.New(namespace, objects)
+		if err != nil {
+			return nil, err
+		}
+		readers[namespace] = reader
 	}
-	return &SVIDResolver{objects: objects, namespaces: allowed}, nil
+	return &SVIDResolver{readers: readers}, nil
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
@@ -99,12 +102,9 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 	if err != nil {
 		return Principal{}, ErrInvalidBearer
 	}
-	if _, allowed := r.namespaces[namespace]; !allowed {
+	reader := r.readers[namespace]
+	if reader == nil {
 		return Principal{}, ErrInvalidBearer
-	}
-	reader, err := sandboxreader.New(namespace, r.objects)
-	if err != nil {
-		return Principal{}, err
 	}
 	view, account, found, err := reader.RunnerCredentialAccount(ctx, uid, credentialID)
 	if err != nil {

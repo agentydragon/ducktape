@@ -3,6 +3,7 @@ package sandboxreader
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -287,6 +288,85 @@ func TestFindRunnerCredentialDoesNotMatchRemovedSandbox(t *testing.T) {
 	reader := newReader(t)
 	if view, found, err := reader.FindRunnerCredential(context.Background(), "uid-a", "cred-a"); err != nil || found || view.Resource != nil {
 		t.Fatalf("FindRunnerCredential() = %#v, %v, %v; want no match", view, found, err)
+	}
+}
+
+type countingReader struct {
+	client.Reader
+	lists int
+}
+
+func (r *countingReader) List(ctx context.Context, objects client.ObjectList, options ...client.ListOption) error {
+	r.lists++
+	return r.Reader.List(ctx, objects, options...)
+}
+
+func TestRunnerLookupReusesNamesButReadsLiveAcceptance(t *testing.T) {
+	for _, kind := range []sandboxapi.RunnerCredentialKind{sandboxapi.RunnerCredentialKindPod, sandboxapi.RunnerCredentialKindVM} {
+		t.Run(string(kind), func(t *testing.T) {
+			resource := runnerSandbox("sandbox-a", "uid-a", kind, "cred-a", "cred-a", "pod-a", "pod-a")
+			objects := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
+			reads := &countingReader{Reader: objects}
+			reader, err := New(testNamespace, reads)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); err != nil || !found {
+					t.Fatalf("accepted runner: found=%v, err=%v", found, err)
+				}
+			}
+			resource.Status.RunnerCredential.AcceptedID = ""
+			if err := objects.Update(t.Context(), resource); err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); err != nil || found {
+				t.Fatalf("revoked runner: found=%v, err=%v", found, err)
+			}
+			if reads.lists != 1 {
+				t.Fatalf("listed Sandboxes %d times; want only initial name discovery", reads.lists)
+			}
+		})
+	}
+}
+
+func TestRunnerNameHintCannotAuthenticateADeletedOrReplacedSandbox(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replace=%v", replace), func(t *testing.T) {
+			resource := runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a")
+			objects := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
+			reader, err := New(testNamespace, objects)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); err != nil || !found {
+				t.Fatalf("accepted runner: found=%v, err=%v", found, err)
+			}
+			if err := objects.Delete(t.Context(), resource); err != nil {
+				t.Fatal(err)
+			}
+			if replace {
+				replacement := runnerSandbox("sandbox-a", "uid-replacement", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a")
+				if err := objects.Create(t.Context(), replacement); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); err != nil || found {
+				t.Fatalf("stale runner: found=%v, err=%v", found, err)
+			}
+		})
+	}
+}
+
+func TestRunnerNameHintDoesNotHideLiveReadFailures(t *testing.T) {
+	reader := newReader(t, runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a"))
+	if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); err != nil || !found {
+		t.Fatalf("accepted runner: found=%v, err=%v", found, err)
+	}
+	failure := errors.New("API unavailable")
+	reader.objects = failingObjectReader{Reader: reader.objects, sandboxErr: failure}
+	if _, found, err := reader.FindRunnerCredential(t.Context(), "uid-a", "cred-a"); !errors.Is(err, failure) || found {
+		t.Fatalf("live read failure: found=%v, err=%v", found, err)
 	}
 }
 
