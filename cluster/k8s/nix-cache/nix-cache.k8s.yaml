@@ -422,6 +422,8 @@ spec:
             - --mode
             - monolithic
           env:
+            - name: RUST_LOG
+              value: error,attic_server::gc=info
             - name: ATTIC_SERVER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
