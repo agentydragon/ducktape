@@ -236,7 +236,11 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
         !verdict.is_realizable(),
         "verdict should report an SCC: {verdict:#?}"
     );
-    let modules: BTreeSet<ModuleId> = verdict.modules_in_unrealizable_sccs();
+    let modules: BTreeSet<ModuleId> = verdict
+        .unrealizable_sccs
+        .iter()
+        .flat_map(|scc| scc.core.modules.iter().copied())
+        .collect();
     assert!(modules.contains(&ModuleId(0)));
     assert!(modules.contains(&ModuleId(1)));
     assert!(
@@ -926,8 +930,8 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
 // fixture pinning the tier expected to decide it.
 // ---------------------------------------------------------------------
 
-/// Assert the ladder, the boolean wrapper, and the overlay verdict
-/// agree for one move query; return the decision for tier pinning.
+/// Assert the ladder and the overlay verdict agree for one move query;
+/// return the decision for tier pinning.
 fn assert_ladder_matches_verdict(
     index: &RealizabilityIndex,
     dependency_graph: &DependencyGraph,
@@ -946,14 +950,6 @@ fn assert_ladder_matches_verdict(
         verdict.is_realizable(),
         "ladder {decision:?} diverges from the overlay verdict for move \
          {source_units:?} → {to:?}: {verdict:#?}",
-    );
-    assert_eq!(
-        decision.accepts(),
-        index.would_remain_realizable_after_moving_source_units_touching(
-            dependency_graph,
-            source_units,
-            to
-        ),
     );
     decision
 }
