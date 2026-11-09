@@ -90,8 +90,9 @@ does not wait for the decision.
   SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
   (`cluster/cdk8s/agentplane/egress.py`), and the services' listeners, which take their CA file from
   `workload_tls.TRUST_BUNDLE_FILE` today. Clients verifying service SVIDs may keep the cluster bundle.
-- **Who may request.** A Kyverno policy pairs requester and URI kind for Certificates that reference
-  the workload issuer. The Sandbox Controller may request only `environment-runtime` URIs in its
+- **Who may request.** A `ValidatingAdmissionPolicy` pairs requester and URI kind for Certificates
+  that reference the workload issuer: CEL compares `request.userInfo` with `spec.issuerRef` and
+  each `spec.uris` prefix. The Sandbox Controller may request only `environment-runtime` URIs in its
   own namespace, and Flux only the service URIs. Only cert-manager may create `CertificateRequest`s
   for the issuer. Once a component owns issuance, its entry replaces the Sandbox Controller's.
 
@@ -205,7 +206,7 @@ On top of the shared CA step:
   The Sandbox Controller may write only `environment-runtime`, owned by a Sandbox whose UID is the
   name. The Action Service may write only `action-box`, owned by a Pod of that name. Flux may write
   only `standing`. The status subresource belongs to the Policy Controller alone.
-- **Gates Certificates.** The shared step's Kyverno pairing swaps its Sandbox Controller entry
+- **Gates Certificates.** The shared step's Certificate policy swaps its Sandbox Controller entry
   for the Policy Controller, for all three kinds. The Sandbox Controller loses Certificate create.
 
 ### Standing workloads
@@ -241,15 +242,15 @@ admission reads the request's accepted binding instead of Sandbox status.
 
 | Step                                                                                              | Mixed mode                | Proven in k3s before staging                                                                                                     | Rollback                                             |
 | ------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 1. The shared workload CA: ClusterIssuer, trust Bundle, Kyverno pairing                           | Bearer still on           | Sandbox SVID route on the narrowed trust; a `cluster-internal-ca` leaf with a live Sandbox's URI is refused                      | Revert the pins                                      |
+| 1. The shared workload CA: ClusterIssuer, trust Bundle, Certificate admission policy              | Bearer still on           | Sandbox SVID route on the narrowed trust; a `cluster-internal-ca` leaf with a live Sandbox's URI is refused                      | Revert the pins                                      |
 | 2. CRD, `issuer` in the Policy Controller, `resolver`; the Sandbox Controller becomes a requester | as above                  | Sandbox SVID route on all three runtimes through the request; VMI replacement rotates; deleting a Sandbox after its seal revokes | Revert the pins                                      |
 | 3. Action boxes request `action-box`; the box sidecar selects SPIFFE                              | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B                          | Revert the Action Service image and templates        |
 | 4. `standing` requests; `haku-state` switches its sidecars                                        | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                             | Revert the `haku-state` commit; the request is inert |
 | 5. Remove the bearer hop                                                                          | none                      | Nothing projects the `agentplane-egress` hop audience                                                                            | Revert; no caller depends on it                      |
 
-Steps 1 and 2 have one precondition: zero running Sandboxes. Step 2's request policy is a
-`ValidatingAdmissionPolicy`, which envtest evaluates. Step 1's Kyverno policy and CA move have no
-system test, so they reach staging first. That PR says so and checks one Sandbox start and one
+Steps 1 and 2 have one precondition: zero running Sandboxes. Both admission policies are
+`ValidatingAdmissionPolicy` objects, which envtest evaluates with the cert-manager CRDs installed.
+Step 1's CA move and trust Bundle have no system test, so they reach staging first. That PR says so and checks one Sandbox start and one
 refused foreign Certificate there.
 
 Step 5 removes the `CLEANUP(added 2026-11-09)` set from #15065:
@@ -284,9 +285,10 @@ and 5 may land on either side.
    metadata name the request and credential ID.
 4. **Anki's identity.** Recommendation: its own request now, with subject `haku-ui`. Split the
    identity when its grants diverge.
-5. **Admission mechanism.** Recommendation: a `ValidatingAdmissionPolicy` for the CRD, since
-   envtest covers it, and Kyverno only where the cluster already gates cert-manager objects.
-   approver-policy would need the cluster's default approver disabled.
+5. **Admission mechanism.** Recommendation: `ValidatingAdmissionPolicy` for both the request and
+   the Certificate gates, since the apiserver evaluates it and envtest covers it. Kyverno stays only
+   for the existing launcher-relay admission. approver-policy would need the cluster's default
+   approver disabled.
 6. **`Identity.status.workloadCredentials`.** The requests are that list, keyed the other way.
    Recommendation: `IDENTITY_KINDS` omits the field.
 7. **Off-cluster callers.** A Secret mount does not reach them. Recommendation: design delivery when
