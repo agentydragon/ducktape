@@ -14,9 +14,6 @@ metrics_bind_address: ":9090"
 health_probe_bind_address: ":9091"
 runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
 runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-runner_certificate_issuer:
-  name: test-workload-issuer
-  kind: ClusterIssuer
 `
 
 func writeSettings(t *testing.T, content string) string {
@@ -36,7 +33,6 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		"HEALTH_PROBE_BIND_ADDRESS",
 		"RUNNER_GATEWAY_TARGET",
 		"RUNNER_GATEWAY_TOKEN_FILE",
-		"RUNNER_CERTIFICATE_ISSUER",
 	} {
 		t.Setenv("AGENTPLANE_SANDBOX_CONTROLLER_"+name, "from-environment")
 	}
@@ -50,20 +46,8 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
 	}
-	c.RunnerCertificateIssuer = nil
 	if c != want {
 		t.Fatalf("unexpected settings: %+v", c)
-	}
-}
-
-// The previous image requires runner_certificate_issuer, so the manifests keep setting it until this
-// image is deployed; this one reads nothing of it.
-func TestTheRetiredIssuerSettingIsOptional(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, strings.Replace(
-		validSettings, "runner_certificate_issuer:\n  name: test-workload-issuer\n  kind: ClusterIssuer\n", "", 1,
-	)))
-	if _, err := loadConfig(); err != nil {
-		t.Fatal(err)
 	}
 }
 

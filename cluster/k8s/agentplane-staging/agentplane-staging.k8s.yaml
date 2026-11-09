@@ -6280,9 +6280,6 @@ data:
     health_probe_bind_address: :8081
     runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
     runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_certificate_issuer:
-      name: agentplane-workload
-      kind: ClusterIssuer
 immutable: false
 ---
 apiVersion: v1

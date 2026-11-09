@@ -619,7 +619,6 @@ def build_chart(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
-        runner_certificate_issuer=workload_certificate_admission.RUNNER_CERTIFICATE_ISSUER,
         placement=None,
         registry_secret_name=None,
         memory_limit=None,

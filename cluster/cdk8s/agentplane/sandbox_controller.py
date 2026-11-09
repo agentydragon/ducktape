@@ -11,7 +11,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI
-from agentplane.sandbox_controller.settings import CertificateIssuer, Settings
+from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -59,7 +59,6 @@ class SandboxController(Construct):
         gateway: ServiceRef,
         gateway_audience: str,
         gateway_control_target: str,
-        runner_certificate_issuer: CertificateIssuer,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
@@ -78,7 +77,6 @@ class SandboxController(Construct):
             health_probe_bind_address=f":{_HEALTH_PORT}",
             runner_gateway_target=gateway_control_target,
             runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
-            runner_certificate_issuer=runner_certificate_issuer,
         )
         settings_file = SettingsFile(
             self,

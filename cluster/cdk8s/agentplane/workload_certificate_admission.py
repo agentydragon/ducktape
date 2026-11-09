@@ -11,14 +11,9 @@ from collections.abc import Set
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from agentplane.sandbox_controller.settings import CertificateIssuer, IssuerKind
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 
-# CLEANUP(added 2026-11-09): remove with the Sandbox Controller's runner_certificate_issuer setting
-#   (agentplane/sandbox_controller/settings.py), which only the controller image before the
-#   WorkloadCredential cutover reads.
-RUNNER_CERTIFICATE_ISSUER = CertificateIssuer(name=WORKLOAD_ISSUER.name, kind=IssuerKind.CLUSTER_ISSUER)
 POLICY = "agentplane-workload-certificates"
 _GROUP = "cert-manager.io"
 
