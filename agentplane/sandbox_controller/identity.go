@@ -62,7 +62,7 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *sandboxapi.Sand
 	return r.applyOwned(ctx, sandbox, policyapplyv1.PolicyBinding(sandbox.Name, sandbox.Namespace).
 		WithLabels(map[string]string{sandboxapi.SandboxLabel: sandbox.Name}).
 		WithSpec(policyapplyv1.PolicyBindingSpec().
-			WithSubject(policyapplyv1.ServiceAccountRef().WithNamespace(sandbox.Namespace).WithName(sandbox.Name)).
+			WithSubject(policyapplyv1.Subject().WithNamespace(sandbox.Namespace).WithName(sandbox.Name)).
 			WithPolicySets(sandbox.Spec.PolicySets...)), "PolicyBindingConflict")
 }
 

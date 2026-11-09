@@ -55,7 +55,6 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership(runfi
     subject = {"namespace": "workloads", "name": "runner"}
     assert validator.is_valid({"subject": subject, "policySets": ["basic"]})
     for invalid in (
-        {"subject": {}, "policySets": ["basic"]},
         {"subject": {"namespace": "", "name": "runner"}, "policySets": ["basic"]},
         {"subject": {"namespace": "workloads", "name": ""}, "policySets": ["basic"]},
         {"subject": subject, "policySets": []},

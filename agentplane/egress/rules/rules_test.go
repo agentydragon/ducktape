@@ -69,7 +69,7 @@ func binding(account, name string, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.ServiceAccountRef{Namespace: namespace, Name: account}, PolicySets: sets,
+			Subject: policyapi.Subject{Namespace: namespace, Name: account}, PolicySets: sets,
 		},
 	}
 }

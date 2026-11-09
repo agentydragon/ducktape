@@ -3055,12 +3055,16 @@ flowchart LR
 
 ### `IDENTITY_KINDS` — identity and grant kinds
 
-**Ready.** Go types, controller-gen output, `crds/generate.py` manifests and admission tests for
-`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`;
-`PolicyBinding.spec.subject` becomes an identity reference; the two Kubernetes rule types leave
-`PolicySet`; `EgressCredential` gains the `kubernetesServiceAccount` source. Generated clients and
-the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the envtest apiserver,
-admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
+**In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
+`crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
+`Identity`, `KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount`, and an
+additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject (exactly one), so
+identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
+so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
+subject and `PolicySet`'s Kubernetes rule types; the `kubernetesServiceAccount` source on
+`EgressCredential` is added additively in its own change. No reader resolves an identity subject
+yet; each treats such a binding as naming no caller. **Exit:** the CRDs install on the envtest
+apiserver, admission accepts the plan's example objects and rejects malformed ones, and existing
 tests of untouched kinds still pass.
 
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
@@ -3097,7 +3101,7 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `KubernetesAccountGrant` and
+**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `ServiceAccountGrant` and
 `KubernetesRoleSet` instead of `PolicyBinding` Kubernetes rules, keeping native RoleBindings per
 grant, role and namespace with the existing additive, pruned, never-adopt-on-name semantics;
 expiry extends to grants and managed accounts; `ManagedServiceAccount` creates the SA in the
@@ -3129,15 +3133,13 @@ identity reference plus the workload incarnation as provenance. The seam is `wor
 `Principal`: `SVIDResolver` currently returns the same ServiceAccount-shaped value a TokenReview
 does, reading the Sandbox and its controller-owned ServiceAccount uncached per request, so no
 handler can tell the two apart; the SVID path yields the identity reference and incarnation
-directly and stops reading the ServiceAccount; the central sampler delegates as
-the Session's identity and its own account never becomes the agent's; `CreateSession` names an
+directly and stops reading the ServiceAccount; `CreateSession` names an
 identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
 a Session whose identity differs from its environment's current one, so a bypassed identity change
 strands Sessions rather than re-attributing them. Migrations rewrite rows whose
 Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
 existing service tests pass with identity principals, a retained Session with a deleted Sandbox
-reads as historical, and the sampler scenario in the k3s stack submits an Action as an identity
-with no environment.
+reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
@@ -3188,7 +3190,9 @@ scenarios pass on the new rendering in CI; they are the gate the cutover PR cite
 ### `IDENTITY_CUTOVER` — the staging cutover
 
 **Blocked on `IDENTITY_SYSTEM_TESTS` and `APP_IDENTITIES_UI`.** One PR flips the staging rendering
-and settings, deletes the old code paths (SA binding subject, Kubernetes rule types in `PolicySet`,
+and settings, removes the ServiceAccount variant of `PolicyBinding.spec.subject` (admission rejects
+a binding with no identity and a Kubernetes rule in a `PolicySet`), deletes the old code paths (SA
+binding subject, Kubernetes rule types in `PolicySet`,
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
 the objects of the new kinds. Running Sandboxes are replaced, not patched. Expected downtime: every

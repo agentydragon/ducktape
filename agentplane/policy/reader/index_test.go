@@ -47,12 +47,15 @@ func TestGrantsAreTheCallersBindingsWithRulesOfTheType(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-other-reader"},
 		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "kubernetes_cluster_role_binding", ClusterRole: "test-role"}}},
 	})
-	other := policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: "test-other-workload"}
+	other := policyapi.Subject{Namespace: subject.Namespace, Name: "test-other-workload"}
+	// No reader resolves an Identity subject yet: it names no ServiceAccount caller.
+	identity := policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
 	for name, binding := range map[string]policyapi.PolicyBindingSpec{
-		"test-b":           {Subject: subject, PolicySets: []string{"test-mixed", "test-missing", "test-own"}},
-		"test-a":           {Subject: subject, PolicySets: []string{"test-own"}},
-		"test-other-sets":  {Subject: subject, PolicySets: []string{"test-other-reader"}},
+		"test-b":           {Subject: bindingSubject, PolicySets: []string{"test-mixed", "test-missing", "test-own"}},
+		"test-a":           {Subject: bindingSubject, PolicySets: []string{"test-own"}},
+		"test-other-sets":  {Subject: bindingSubject, PolicySets: []string{"test-other-reader"}},
 		"test-other-agent": {Subject: other, PolicySets: []string{"test-own"}},
+		"test-identity":    {Subject: identity, PolicySets: []string{"test-own"}},
 	} {
 		index.PutBinding(&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: binding})
 	}
@@ -81,11 +84,14 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 		ObjectMeta: metav1.ObjectMeta{Name: "test-broken"},
 		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: testRuleType}}},
 	})
-	other := policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: "test-other-workload"}
+	other := policyapi.Subject{Namespace: subject.Namespace, Name: "test-other-workload"}
+	// No reader resolves an Identity subject yet: it names no ServiceAccount caller.
+	identity := policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
 	for name, binding := range map[string]policyapi.PolicyBindingSpec{
-		"test-b":           {Subject: subject, PolicySets: []string{"test-broken", "test-own", "test-missing"}},
-		"test-a":           {Subject: subject, PolicySets: []string{"test-other-reader"}},
+		"test-b":           {Subject: bindingSubject, PolicySets: []string{"test-broken", "test-own", "test-missing"}},
+		"test-a":           {Subject: bindingSubject, PolicySets: []string{"test-other-reader"}},
 		"test-other-agent": {Subject: other, PolicySets: []string{"test-own"}},
+		"test-identity":    {Subject: identity, PolicySets: []string{"test-own"}},
 	} {
 		index.PutBinding(&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: binding})
 	}
@@ -93,6 +99,9 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 	got := index.Bindings(subject)
 	if len(got) != 2 || got[0].Binding.Name != "test-a" || got[1].Binding.Name != "test-b" {
 		t.Fatalf("Bindings = %+v", got)
+	}
+	if got := index.Bindings(policyapi.ServiceAccountRef{}); len(got) != 0 {
+		t.Errorf("Bindings of the zero ServiceAccount = %+v, want none", got)
 	}
 	// A set of another reader's rules still stands, with what it grants this one: nothing.
 	if sets := got[0].Sets; len(sets) != 1 || sets[0].Name != "test-other-reader" || sets[0].Generation != 3 || len(sets[0].Rules) != 0 {

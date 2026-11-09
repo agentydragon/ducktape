@@ -130,7 +130,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 			}},
 		},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()},
+			Subject:    policyapi.Subject{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()},
 			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
 		},
 	}

@@ -134,7 +134,7 @@ func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandb
 		return err
 	}
 	return e.createOwned(ctx, &policyapi.PolicyBinding{ObjectMeta: *meta.DeepCopy(), Spec: policyapi.PolicyBindingSpec{
-		Subject:    policyapi.ServiceAccountRef{Namespace: caller.Namespace, Name: caller.Name},
+		Subject:    policyapi.Subject{Namespace: caller.Namespace, Name: caller.Name},
 		PolicySets: []string{meta.Name},
 	}}, sandbox.UID)
 }

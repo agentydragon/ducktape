@@ -57,7 +57,7 @@ func newReconciler(t *testing.T, expiresAt *metav1.Time, clusterRoles ...string)
 		&policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-grant", UID: "uid-grant"},
 			Spec: policyapi.PolicyBindingSpec{
-				Subject:    policyapi.ServiceAccountRef{Namespace: subjectNamespace, Name: "test-account"},
+				Subject:    policyapi.Subject{Namespace: subjectNamespace, Name: "test-account"},
 				PolicySets: []string{"test-diagnostics"},
 				ExpiresAt:  expiresAt,
 			},

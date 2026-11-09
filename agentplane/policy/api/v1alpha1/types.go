@@ -1,4 +1,4 @@
-// Package v1alpha1 defines Agentplane's v1alpha1 PolicySet and PolicyBinding Kubernetes API.
+// Package v1alpha1 defines Agentplane's v1alpha1 policy, identity and Kubernetes account Kubernetes API.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works
@@ -184,10 +184,29 @@ type ServiceAccountRef struct {
 	Name string `json:"name"`
 }
 
+// IdentityRef names an Identity in the binding's namespace.
+type IdentityRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name" proto:"1"`
+}
+
+// Subject is who a binding grants to: a ServiceAccount by namespace and name, or an Identity. No
+// reader resolves an Identity subject yet; each treats such a binding as naming no caller.
+// CLEANUP(added 2026-11-08): remove the ServiceAccount variant (namespace, name) in IDENTITY_CUTOVER
+// (agentplane/plans/task_dag.md), which rewrites every binding to an Identity subject.
+// +kubebuilder:validation:XValidation:rule="has(self.identity) ? !has(self.namespace) && !has(self.name) : has(self.namespace) && has(self.name)",message="Name either a ServiceAccount (namespace and name) or an identity."
+type Subject struct {
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace,omitempty" proto:"1"`
+	// +kubebuilder:validation:MinLength=1
+	Name     string       `json:"name,omitempty" proto:"2"`
+	Identity *IdentityRef `json:"identity,omitempty" proto:"3"`
+}
+
 type PolicyBindingSpec struct {
-	// The ServiceAccount this binding grants to. Native bindings also carry its UID so that
-	// recreating a same-named account replaces the grant.
-	Subject ServiceAccountRef `json:"subject" proto:"1"`
+	// The subject this binding grants to. Native bindings also carry a ServiceAccount subject's UID so
+	// that recreating a same-named account replaces the grant.
+	Subject Subject `json:"subject" proto:"1"`
 	// PolicySet names in this binding's namespace.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:items:MinLength=1
@@ -218,4 +237,177 @@ type PolicyBindingList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PolicyBinding `json:"items"`
+}
+
+type IdentitySpec struct {
+	// Description says who this agent is, for the operator. An identity is a subject only; it holds no harness,
+	// model or environment configuration.
+	// +kubebuilder:validation:MinLength=1
+	Description string `json:"description" proto:"1"`
+}
+
+// Identity is who an agent is: the subject of PolicyBindings, independent of any environment it runs in.
+// Nothing in Kubernetes owns an identity; its creator deletes it.
+// +genclient
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=identities,singular=identity
+// +kubebuilder:printcolumn:name="Description",type=string,JSONPath=".spec.description"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+type Identity struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              IdentitySpec `json:"spec"`
+}
+
+// +kubebuilder:object:root=true
+type IdentityList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Identity `json:"items"`
+}
+
+// KubernetesRule is one native RBAC binding the Policy Controller provisions for a granted account.
+// +kubebuilder:validation:XValidation:rule="self.type == 'role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole)) : (has(self.clusterRole) && !has(self.role) && !has(self.namespaces))",message="Rule fields must match type."
+type KubernetesRule struct {
+	// +kubebuilder:validation:Enum=role_binding;cluster_role_binding
+	Type string `json:"type" proto:"1"`
+	// Role names the Role or ClusterRole to bind in each namespace; the named object must already exist.
+	Role *RoleRef `json:"role,omitempty" proto:"2"`
+	// Namespaces names the target namespaces explicitly, never by selection; labeling a namespace grants nothing.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	Namespaces []string `json:"namespaces,omitempty" proto:"3"`
+	// ClusterRole names the ClusterRole bound cluster-wide.
+	// +kubebuilder:validation:MinLength=1
+	ClusterRole string `json:"clusterRole,omitempty" proto:"4"`
+}
+
+type KubernetesRoleSetSpec struct {
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=256
+	Rules []KubernetesRule `json:"rules" proto:"1"`
+}
+
+// KubernetesRoleSet is a reusable, named set of Kubernetes RBAC rules that grants attach to ServiceAccounts.
+// A set names no apiserver by design: the Policy Controller resolves its roles where each grant's ServiceAccount
+// is, reporting any that do not exist there as missing.
+// +genclient
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=kubernetesrolesets,singular=kubernetesroleset
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+type KubernetesRoleSet struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              KubernetesRoleSetSpec `json:"spec"`
+}
+
+// +kubebuilder:object:root=true
+type KubernetesRoleSetList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []KubernetesRoleSet `json:"items"`
+}
+
+// ServiceAccountTarget names a ServiceAccount by namespace and name.
+// The account is on the apiserver the egress proxy and the Policy Controller themselves authenticate to: impersonation
+// only works there. A named apiserver field is the intended extension for remote clusters, left out because no
+// use case needs one yet, and additive when one does.
+type ServiceAccountTarget struct {
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace" proto:"2"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name" proto:"3"`
+}
+
+type ServiceAccountGrantSpec struct {
+	ServiceAccount ServiceAccountTarget `json:"serviceAccount" proto:"1"`
+	// RoleSets names KubernetesRoleSets in this grant's namespace. Grants on one ServiceAccount combine additively.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	RoleSets []string `json:"roleSets" proto:"2"`
+	// The Policy Controller deletes the grant at this instant. Do not set it on a GitOps-owned grant, which GitOps
+	// would recreate.
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty" proto:"3"`
+}
+
+type ServiceAccountGrantStatus struct {
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" proto:"1"`
+	// The roles this grant's role sets name that do not exist; each is bound once it appears.
+	// +listType=atomic
+	MissingRoles []MissingRole `json:"missingRoles,omitempty" proto:"2"`
+}
+
+// ServiceAccountGrant attaches KubernetesRoleSets to one ServiceAccount.
+// +genclient
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=serviceaccountgrants,singular=serviceaccountgrant
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=".spec.serviceAccount.namespace"
+// +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".spec.serviceAccount.name"
+// +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+type ServiceAccountGrant struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ServiceAccountGrantSpec   `json:"spec"`
+	Status            ServiceAccountGrantStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type ServiceAccountGrantList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ServiceAccountGrant `json:"items"`
+}
+
+// The ServiceAccount is created on the apiserver the egress proxy and the Policy Controller themselves authenticate to: impersonation
+// only works there. A named apiserver field is the intended extension for remote clusters, left out because no
+// use case needs one yet, and additive when one does.
+type ManagedServiceAccountSpec struct {
+	// The Policy Controller deletes the account, and with it everything it owns, at this instant.
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty" proto:"2"`
+}
+
+// CreatedServiceAccount is the ServiceAccount incarnation the Policy Controller created.
+type CreatedServiceAccount struct {
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace" proto:"1"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name" proto:"2"`
+	// +kubebuilder:validation:Format=uuid
+	UID types.UID `json:"uid" proto:"3"`
+}
+
+type ManagedServiceAccountStatus struct {
+	ServiceAccount *CreatedServiceAccount `json:"serviceAccount,omitempty" proto:"1"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" proto:"2"`
+}
+
+// ManagedServiceAccount is a ServiceAccount Agentplane creates and deletes, holding the expiry and owner the
+// ServiceAccount itself cannot carry across namespaces or apiservers.
+// +genclient
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,path=managedserviceaccounts,singular=managedserviceaccount
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".status.serviceAccount.name"
+// +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+type ManagedServiceAccount struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ManagedServiceAccountSpec   `json:"spec"`
+	Status            ManagedServiceAccountStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type ManagedServiceAccountList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ManagedServiceAccount `json:"items"`
 }

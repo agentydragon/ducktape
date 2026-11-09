@@ -409,7 +409,7 @@ func testPolicyBinding(name, account, set string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: subjectNamespace, Name: account},
+			Subject:    policyapi.Subject{Namespace: subjectNamespace, Name: account},
 			PolicySets: []string{set},
 		},
 	}

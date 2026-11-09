@@ -115,7 +115,7 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 		return expansion{reason: "SubjectNotWatched", message: fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace)}, nil
 	}
 	var account corev1.ServiceAccount
-	if err := r.Get(ctx, types.NamespacedName(spec.Subject), &account); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: spec.Subject.Namespace, Name: spec.Subject.Name}, &account); err != nil {
 		if apierrors.IsNotFound(err) {
 			return expansion{reason: "SubjectMissing", message: fmt.Sprintf("ServiceAccount %s/%s not found", spec.Subject.Namespace, spec.Subject.Name)}, nil
 		}

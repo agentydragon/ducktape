@@ -123,7 +123,7 @@ func newTestBridge(t *testing.T) testBridge {
 	index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "policies"},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: "workloads", Name: "runner"},
+			Subject:    policyapi.Subject{Namespace: "workloads", Name: "runner"},
 			PolicySets: []string{"egress"},
 		},
 	})

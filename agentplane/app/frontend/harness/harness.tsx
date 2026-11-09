@@ -51,6 +51,7 @@ import {
 } from "../../../egress/egress_admin_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SubjectSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
 import { ServiceAccountIdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
 import {
   ConnectionSchema,
@@ -3605,7 +3606,7 @@ routes.unshift(
     (_match, query, signal) => {
       const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
       const bindings = BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
-        item.spec!.subject = create(ServiceAccountIdentitySchema, { account: subject }).account;
+        item.spec!.subject = create(SubjectSchema, subject);
         return item;
       });
       return ndjsonWatch(

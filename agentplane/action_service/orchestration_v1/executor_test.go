@@ -79,7 +79,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.launcher"}, &binding); err != nil {
 		t.Fatal(err)
 	}
-	if binding.Spec.Subject != (policyapi.ServiceAccountRef{Namespace: f.caller.Namespace, Name: f.caller.Name}) ||
+	if binding.Spec.Subject != (policyapi.Subject{Namespace: f.caller.Namespace, Name: f.caller.Name}) ||
 		!slices.Equal(binding.Spec.PolicySets, []string{"test-worker.launcher"}) {
 		t.Errorf("the launcher grant binds %+v", binding.Spec)
 	}

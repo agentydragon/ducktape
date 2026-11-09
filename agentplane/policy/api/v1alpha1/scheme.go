@@ -12,7 +12,14 @@ var (
 )
 
 func init() {
-	SchemeBuilder.Register(&PolicySet{}, &PolicySetList{}, &PolicyBinding{}, &PolicyBindingList{})
+	SchemeBuilder.Register(
+		&PolicySet{}, &PolicySetList{},
+		&PolicyBinding{}, &PolicyBindingList{},
+		&Identity{}, &IdentityList{},
+		&KubernetesRoleSet{}, &KubernetesRoleSetList{},
+		&ServiceAccountGrant{}, &ServiceAccountGrantList{},
+		&ManagedServiceAccount{}, &ManagedServiceAccountList{},
+	)
 }
 
 // Resource qualifies a resource name in this API group.

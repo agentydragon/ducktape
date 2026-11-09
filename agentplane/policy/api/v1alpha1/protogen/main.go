@@ -15,7 +15,12 @@ import (
 	"unicode"
 )
 
-var types = []string{"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "PolicyBindingSpec"}
+var types = []string{
+	"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "IdentityRef", "Subject", "PolicyBindingSpec",
+	"IdentitySpec", "KubernetesRule", "KubernetesRoleSetSpec", "ServiceAccountTarget",
+	"ServiceAccountGrantSpec", "ServiceAccountGrantStatus", "ManagedServiceAccountSpec", "CreatedServiceAccount",
+	"ManagedServiceAccountStatus",
+}
 
 func main() {
 	if len(os.Args) != 2 {
@@ -43,7 +48,6 @@ func main() {
 syntax = "proto3";
 package agentplane.policy.resource.v1;
 option go_package = "github.com/agentydragon/ducktape/agentplane/policy/api/resourcev1;resourcev1";
-import "agentplane/proto/identity.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -115,8 +119,6 @@ func protoType(expr ast.Expr) (string, error) {
 			return "string", nil
 		case "bool":
 			return "bool", nil
-		case "ServiceAccountRef":
-			return "agentplane.proto.ServiceAccount", nil
 		default:
 			for _, name := range types {
 				if x.Name == name {
