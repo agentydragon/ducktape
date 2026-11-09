@@ -369,28 +369,42 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 // selectBindings answers which binding subjects a watch request selects, refusing a subject the
 // caller may not read.
 func selectBindings(request *policypb.WatchPolicyBindingsRequest, caller auth.Account, broad bool) (func(policyapi.Subject) bool, error) {
-	if name := request.GetIdentity(); name != "" {
-		if request.GetSubject() != nil {
-			return nil, status.Error(codes.InvalidArgument, "select either a ServiceAccount subject or an identity")
+	switch selector := request.GetSelector().(type) {
+	case *policypb.WatchPolicyBindingsRequest_Identity:
+		if selector.Identity == "" {
+			return nil, status.Error(codes.InvalidArgument, "identity name is required")
 		}
 		if !broad {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
 		}
-		return func(bound policyapi.Subject) bool { return bound.Identity != nil && bound.Identity.Name == name }, nil
+		return func(bound policyapi.Subject) bool {
+			return bound.Identity != nil && bound.Identity.Name == selector.Identity
+		}, nil
+	case *policypb.WatchPolicyBindingsRequest_EveryIdentity:
+		if !selector.EveryIdentity {
+			return nil, status.Error(codes.InvalidArgument, "every_identity must be true when set")
+		}
+		if !broad {
+			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
+		}
+		return func(bound policyapi.Subject) bool { return bound.Identity != nil }, nil
+	case *policypb.WatchPolicyBindingsRequest_Subject, nil:
+		subject := request.GetSubject()
+		if subject == nil {
+			subject = &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
+		}
+		if subject.GetNamespace() == "" || subject.GetName() == "" {
+			return nil, status.Error(codes.InvalidArgument, "subject namespace and name are required")
+		}
+		if !broad && (caller.Namespace != subject.GetNamespace() || caller.Name != subject.GetName()) {
+			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
+		}
+		return func(bound policyapi.Subject) bool {
+			return bound.Identity == nil && bound.Namespace == subject.GetNamespace() && bound.Name == subject.GetName()
+		}, nil
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown binding selector")
 	}
-	subject := request.GetSubject()
-	if subject == nil {
-		subject = &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
-	}
-	if subject.GetNamespace() == "" || subject.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "subject namespace and name are required")
-	}
-	if !broad && (caller.Namespace != subject.GetNamespace() || caller.Name != subject.GetName()) {
-		return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
-	}
-	return func(bound policyapi.Subject) bool {
-		return bound.Identity == nil && bound.Namespace == subject.GetNamespace() && bound.Name == subject.GetName()
-	}, nil
 }
 
 func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
