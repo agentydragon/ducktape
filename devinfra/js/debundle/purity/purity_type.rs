@@ -86,8 +86,11 @@ impl PurityReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum PurityRule {
     AssignOrUpdate,
     AwaitOrYield,
@@ -130,34 +133,6 @@ pub enum PurityRule {
     /// fire the iterator protocol on the bound value.
     DestructuringPattern,
     Other,
-}
-
-impl PurityRule {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AssignOrUpdate => "assign_or_update",
-            Self::AwaitOrYield => "await_or_yield",
-            Self::DeleteOperator => "delete_operator",
-            Self::ThrowStmt => "throw_stmt",
-            Self::DebuggerStmt => "debugger_stmt",
-            Self::UnknownCall => "unknown_call",
-            Self::ImpureFunctionCall => "impure_function_call",
-            Self::UnknownNew => "unknown_new",
-            Self::UnknownMember => "unknown_member",
-            Self::SuperProp => "super_prop",
-            Self::TaggedTpl => "tagged_tpl",
-            Self::ArraySpread => "array_spread",
-            Self::ObjectSpread => "object_spread",
-            Self::ObjectAssignProp => "object_assign_prop",
-            Self::ClassStaticObservable => "class_static_observable",
-            Self::BareControlFlow => "bare_control_flow",
-            Self::CoercingOperator => "coercing_operator",
-            Self::ToPropertyKeyCoercion => "to_property_key_coercion",
-            Self::IterationProtocol => "iteration_protocol",
-            Self::DestructuringPattern => "destructuring_pattern",
-            Self::Other => "other",
-        }
-    }
 }
 
 /// The effects of evaluating source, in evaluation order, with the proof

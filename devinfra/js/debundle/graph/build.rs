@@ -86,25 +86,18 @@ fn report_heap_frontier(
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "duplicate top-level declaration of binding `{binding}`: statements #{} and #{} both \
+     declare it; only repeated `var` declarations are supported.",
+    .first.0,
+    .second.0
+)]
 pub struct DuplicateTopLevelDeclaration {
     pub binding: swc_atoms::Atom,
     pub first: SourceUnitOrdinal,
     pub second: SourceUnitOrdinal,
 }
-
-impl fmt::Display for DuplicateTopLevelDeclaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "duplicate top-level declaration of binding `{}`: statements #{} and #{} both \
-             declare it; only repeated `var` declarations are supported.",
-            self.binding, self.first.0, self.second.0,
-        )
-    }
-}
-
-impl std::error::Error for DuplicateTopLevelDeclaration {}
 
 /// A derived source fact an author `commuting_statements` premise contradicts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,7 +147,17 @@ pub struct ContradictingEdge {
 
 /// A `commuting_statements` entry whose endpoints have a modeled effect-set
 /// conflict (SPEC.md § Commuting statements).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[error(
+    "{spec_location} contradicts a source fact: source units {} and {} have a modeled effect conflict: {}",
+    source_unit_label(*.a, .a_binding),
+    source_unit_label(*.b, .b_binding),
+    .conflicts
+        .iter()
+        .map(|edge| format!("#{} -> #{}: {}", edge.from.0, edge.to.0, edge.conflict))
+        .collect::<Vec<_>>()
+        .join("; ")
+)]
 pub struct CommutingStatementsContradiction {
     pub spec_location: String,
     pub a: SourceUnitOrdinal,
@@ -181,27 +184,6 @@ fn source_unit_location(
         .and_then(|node| node.source_location.clone())
 }
 
-impl fmt::Display for CommutingStatementsContradiction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} contradicts a source fact: source units {} and {} have a modeled effect conflict: ",
-            self.spec_location,
-            source_unit_label(self.a, &self.a_binding),
-            source_unit_label(self.b, &self.b_binding),
-        )?;
-        for (i, edge) in self.conflicts.iter().enumerate() {
-            if i > 0 {
-                f.write_str("; ")?;
-            }
-            write!(f, "#{} -> #{}: {}", edge.from.0, edge.to.0, edge.conflict)?;
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for CommutingStatementsContradiction {}
-
 /// Why a `commuting_statements` entry inerts nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -218,7 +200,18 @@ pub enum UnusedPremiseReason {
 /// A `commuting_statements` entry whose endpoints resolve but which inerts
 /// no edge: the premise buys nothing and the spec carries a stale trust
 /// assertion.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[error(
+    "{spec_location} inerts no sequenced edge: endpoints {} and {} {}; remove the entry",
+    unused_endpoint_label(*.a, .a_binding, .a_logical_members, .a_source_location),
+    unused_endpoint_label(*.b, .b_binding, .b_logical_members, .b_source_location),
+    match .reason {
+        UnusedPremiseReason::NoSequencedEdge => "are already unordered",
+        UnusedPremiseReason::SummarizedEndpoints =>
+            "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` \
+             already leaves unordered",
+    }
+)]
 pub struct CommutingStatementsUnused {
     pub spec_location: String,
     pub a: SourceUnitOrdinal,
@@ -276,36 +269,6 @@ fn unused_endpoint_label(
     label
 }
 
-impl fmt::Display for CommutingStatementsUnused {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} inerts no sequenced edge: endpoints {} and {} {}; remove the entry",
-            self.spec_location,
-            unused_endpoint_label(
-                self.a,
-                &self.a_binding,
-                &self.a_logical_members,
-                &self.a_source_location,
-            ),
-            unused_endpoint_label(
-                self.b,
-                &self.b_binding,
-                &self.b_logical_members,
-                &self.b_source_location,
-            ),
-            match self.reason {
-                UnusedPremiseReason::NoSequencedEdge => "are already unordered",
-                UnusedPremiseReason::SummarizedEndpoints =>
-                    "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` \
-                     already leaves unordered",
-            },
-        )
-    }
-}
-
-impl std::error::Error for CommutingStatementsUnused {}
-
 /// The typed diagnostic of a `commuting_statements` entry the graph build
 /// rejected, as `spec validate` reports it beside the selector outcomes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -327,10 +290,13 @@ impl fmt::Display for CommutingStatementsDiagnostic {
 /// Graph construction is intentionally source-free. Captured value and native
 /// author inputs must be resolved by the prepared whole-program AST/index
 /// pipeline before callers extract StatementFacts and build this graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DependencyGraphBuildError {
+    #[error(transparent)]
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
+    #[error(transparent)]
     CommutingStatementsContradicted(CommutingStatementsContradiction),
+    #[error(transparent)]
     CommutingStatementsUnused(Box<CommutingStatementsUnused>),
 }
 
@@ -349,18 +315,6 @@ impl DependencyGraphBuildError {
         }
     }
 }
-
-impl fmt::Display for DependencyGraphBuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateTopLevelDeclaration(error) => error.fmt(f),
-            Self::CommutingStatementsContradicted(error) => error.fmt(f),
-            Self::CommutingStatementsUnused(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for DependencyGraphBuildError {}
 
 impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
     fn from(error: DuplicateTopLevelDeclaration) -> Self {

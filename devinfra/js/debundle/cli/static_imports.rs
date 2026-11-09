@@ -56,36 +56,20 @@ struct RequestEdge {
     source_line: Option<usize>,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum EdgeKind {
     OrdinaryStaticEsm,
     ConditionalImportMetaRequire,
 }
 
-impl EdgeKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::OrdinaryStaticEsm => "ordinary_static_esm",
-            Self::ConditionalImportMetaRequire => "conditional_import_meta_require",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum ResolutionKind {
     ArtifactPath,
     SourcePath,
-}
-
-impl ResolutionKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::ArtifactPath => "artifact_path",
-            Self::SourcePath => "source_path",
-        }
-    }
 }
 
 #[derive(Clone, Serialize)]
@@ -97,8 +81,9 @@ struct RequestIssue {
     resolved_target: Option<String>,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum RequestIssueReason {
     NonordinaryStaticRequest,
     UnresolvedStaticRequest,
@@ -107,20 +92,6 @@ enum RequestIssueReason {
     UnresolvedHostLoaderCandidate,
     NonentryHostLoaderCandidate,
     MissingHostLoaderTarget,
-}
-
-impl RequestIssueReason {
-    fn label(self) -> &'static str {
-        match self {
-            Self::NonordinaryStaticRequest => "nonordinary_static_request",
-            Self::UnresolvedStaticRequest => "unresolved_static_request",
-            Self::MissingTargetChunk => "missing_target_chunk",
-            Self::NonentryStaticRequest => "nonentry_static_request",
-            Self::UnresolvedHostLoaderCandidate => "unresolved_host_loader_candidate",
-            Self::NonentryHostLoaderCandidate => "nonentry_host_loader_candidate",
-            Self::MissingHostLoaderTarget => "missing_host_loader_target",
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -175,26 +146,15 @@ struct InteropSite {
     resolution: Option<CandidateResolution>,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum CandidateResolution {
     ArtifactPath,
     SourcePath,
     Unresolved,
     MissingTargetChunk,
     NonentryTarget,
-}
-
-impl CandidateResolution {
-    fn label(self) -> &'static str {
-        match self {
-            Self::ArtifactPath => "artifact_path",
-            Self::SourcePath => "source_path",
-            Self::Unresolved => "unresolved",
-            Self::MissingTargetChunk => "missing_target_chunk",
-            Self::NonentryTarget => "nonentry_target",
-        }
-    }
 }
 
 struct RequestGraph {
@@ -307,8 +267,8 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                                 edge.from,
                                 edge.specifier,
                                 edge.to,
-                                edge.edge_kind.label(),
-                                edge.resolution.label(),
+                                edge.edge_kind,
+                                edge.resolution,
                                 edge.target_file
                             ));
                         }
@@ -325,7 +285,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                     "  {} --{}: {}{}\n",
                     issue.from,
                     issue.specifier,
-                    issue.reason.label(),
+                    issue.reason,
                     issue
                         .resolved_target
                         .as_ref()
@@ -363,7 +323,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                             format!(
                                 " -> {} ({})",
                                 site.resolved_target.as_deref().unwrap_or("?"),
-                                resolution.label()
+                                resolution
                             )
                         })
                     ));

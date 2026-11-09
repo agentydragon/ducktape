@@ -17,7 +17,7 @@
 //! `fact_near_miss_golden_per_variant` test (one input per reachable variant).
 
 use super::*;
-use chunk_facts::NodeId;
+use chunk_facts::{NodeId, NodeKind};
 use selector_match::{Index, Mode};
 
 /// The exact-match top-level alignments of a parsed selector body against a chunk
@@ -446,9 +446,12 @@ pub(crate) fn fact_first_mismatch_reason(
     {
         return Ok(None);
     }
-    let nkind = needle_index.kind(nroot);
-    let ckind = candidate_index.kind(croot);
-    let reason = match (is_module_decl_kind(nkind), is_module_decl_kind(ckind)) {
+    let nkind = needle_index.node_kind(nroot);
+    let ckind = candidate_index.node_kind(croot);
+    let reason = match (
+        module_decl_kind_label(nkind).is_some(),
+        module_decl_kind_label(ckind).is_some(),
+    ) {
         (false, false) | (true, true) => first_item_divergence(
             needle,
             needle_index,
@@ -470,89 +473,71 @@ pub(crate) fn fact_first_mismatch_reason(
     Ok(Some(reason))
 }
 
-/// The module-declaration fact root kinds (the extractor's tags for the
-/// `ModuleDecl` variants). Everything else the extractor projects at top level is
-/// a statement, so this is the `(Stmt, ModuleDecl)` split `module_item_kind`
-/// reports.
-fn is_module_decl_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "Import"
-            | "ExportDecl"
-            | "ExportNamed"
-            | "ExportDefault"
-            | "ExportDefaultDecl"
-            | "ExportAll"
-    )
-}
-
-/// Top-level item-kind label: "module declaration" or "statement".
-fn module_item_kind_label(kind: &str) -> &'static str {
-    if is_module_decl_kind(kind) {
+/// Top-level item-kind label: "module declaration" or "statement". Everything the
+/// extractor projects at top level besides a module declaration is a statement,
+/// so this is the `(Stmt, ModuleDecl)` split `module_item_kind` reports.
+fn module_item_kind_label(kind: NodeKind) -> &'static str {
+    if module_decl_kind_label(kind).is_some() {
         "module declaration"
     } else {
         "statement"
     }
 }
 
-/// Module-declaration kind label. The fact extractor only projects the JS
-/// (non-TS) module declarations; a TS-only variant would fail extraction
-/// upstream, so it cannot reach here.
-fn module_decl_kind_label(kind: &str) -> &'static str {
-    match kind {
-        "Import" => "import",
-        "ExportDecl" => "export declaration",
-        "ExportNamed" => "named export",
-        "ExportDefaultDecl" => "default declaration export",
-        "ExportDefault" => "default expression export",
-        "ExportAll" => "export all",
-        other => panic!("fact near-miss: non-module-declaration kind {other}"),
-    }
+/// Module-declaration kind label, or `None` for a statement kind. The fact
+/// extractor only projects the JS (non-TS) module declarations; a TS-only variant
+/// would fail extraction upstream, so it cannot reach here.
+fn module_decl_kind_label(kind: NodeKind) -> Option<&'static str> {
+    Some(match kind {
+        NodeKind::Import => "import",
+        NodeKind::ExportDecl => "export declaration",
+        NodeKind::ExportNamed => "named export",
+        NodeKind::ExportDefaultDecl => "default declaration export",
+        NodeKind::ExportDefault => "default expression export",
+        NodeKind::ExportAll => "export all",
+        _ => return None,
+    })
 }
 
 /// Statement-kind label. The extractor projects a declaration statement as its
 /// inner declaration node directly, so `ClassDecl`/`FnDecl`/`VarDecl` map to
 /// `"declaration"` (the `Stmt::Decl` label); every other statement node
 /// (`ExprStmt` and the control-flow kinds) maps to its own label.
-fn stmt_kind_label(kind: &str) -> &'static str {
+fn stmt_kind_label(kind: NodeKind) -> &'static str {
     match kind {
-        "Block" => "block",
-        "Empty" => "empty",
-        "Debugger" => "debugger",
-        "Return" => "return",
-        "Labeled" => "labeled",
-        "Break" => "break",
-        "Continue" => "continue",
-        "If" => "if",
-        "Switch" => "switch",
-        "Throw" => "throw",
-        "Try" => "try",
-        "While" => "while",
-        "DoWhile" => "do while",
-        "For" => "for",
-        "ForIn" => "for in",
-        "ForOf" => "for of",
-        _ if is_decl_kind(kind) => "declaration",
+        NodeKind::Block => "block",
+        NodeKind::Empty => "empty",
+        NodeKind::Debugger => "debugger",
+        NodeKind::Return => "return",
+        NodeKind::Labeled => "labeled",
+        NodeKind::Break => "break",
+        NodeKind::Continue => "continue",
+        NodeKind::If => "if",
+        NodeKind::Switch => "switch",
+        NodeKind::Throw => "throw",
+        NodeKind::Try => "try",
+        NodeKind::While => "while",
+        NodeKind::DoWhile => "do while",
+        NodeKind::For => "for",
+        NodeKind::ForIn => "for in",
+        NodeKind::ForOf => "for of",
+        _ if decl_kind_label(kind).is_some() => "declaration",
         // `ExprStmt` and any other statement node.
         _ => "expression",
     }
 }
 
-/// Declaration-kind label: class / function / variable.
-fn decl_kind_label(kind: &str) -> &'static str {
-    match kind {
-        "ClassDecl" => "class",
-        "FnDecl" => "function",
-        "VarDecl" => "variable",
-        other => panic!("fact near-miss: non-declaration kind {other}"),
-    }
-}
-
-/// The fact root kinds the extractor uses for a `Stmt::Decl` (the kinds
-/// `first_decl_divergence` dispatches on). At top level the extractor projects a
-/// declaration statement as its inner declaration node directly.
-fn is_decl_kind(kind: &str) -> bool {
-    matches!(kind, "ClassDecl" | "FnDecl" | "VarDecl")
+/// Declaration-kind label (class / function / variable), or `None` for a kind
+/// that is not one of the fact root kinds the extractor uses for a `Stmt::Decl`
+/// (the kinds `first_decl_divergence` dispatches on). At top level the extractor
+/// projects a declaration statement as its inner declaration node directly.
+fn decl_kind_label(kind: NodeKind) -> Option<&'static str> {
+    Some(match kind {
+        NodeKind::ClassDecl => "class",
+        NodeKind::FnDecl => "function",
+        NodeKind::VarDecl => "variable",
+        _ => return None,
+    })
 }
 
 fn first_item_divergence(
@@ -564,16 +549,16 @@ fn first_item_divergence(
     croot: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nkind = needle_index.kind(nroot);
-    let ckind = candidate_index.kind(croot);
-    let declarations = if nkind == "ExportDecl" && ckind == "ExportDecl" {
+    let nkind = needle_index.node_kind(nroot);
+    let ckind = candidate_index.node_kind(croot);
+    let declarations = if nkind == NodeKind::ExportDecl && ckind == NodeKind::ExportDecl {
         Some((
             export_decl_inner(needle),
             needle_index.children(nroot)[0],
             export_decl_inner(candidate),
             candidate_index.children(croot)[0],
         ))
-    } else if is_decl_kind(nkind) && is_decl_kind(ckind) {
+    } else if decl_kind_label(nkind).is_some() && decl_kind_label(ckind).is_some() {
         Some((
             stmt_decl_inner(needle),
             nroot,
@@ -594,11 +579,9 @@ fn first_item_divergence(
             mode,
         );
     }
-    let (category, label): (&str, fn(&str) -> &'static str) = if is_module_decl_kind(nkind) {
-        ("module declaration", module_decl_kind_label)
-    } else {
-        ("statement", stmt_kind_label)
-    };
+    // The caller only compares items of one category, so both kinds share it.
+    let category = module_item_kind_label(nkind);
+    let label = |kind| module_decl_kind_label(kind).unwrap_or_else(|| stmt_kind_label(kind));
     Ok(if nkind != ckind {
         MismatchReason {
             score: 10,
@@ -629,24 +612,26 @@ fn first_decl_divergence(
     croot: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nkind = needle_index.kind(nroot);
-    let ckind = candidate_index.kind(croot);
+    let nkind = needle_index.node_kind(nroot);
+    let ckind = candidate_index.node_kind(croot);
+    let (Some(nlabel), Some(clabel)) = (decl_kind_label(nkind), decl_kind_label(ckind)) else {
+        panic!("fact near-miss: non-declaration kinds {nkind:?}/{ckind:?}");
+    };
     let alpha = mode == Mode::AlphaAll;
     Ok(match (nkind, ckind) {
-        ("ClassDecl", "ClassDecl") | ("FnDecl", "FnDecl") => {
+        (NodeKind::ClassDecl, NodeKind::ClassDecl) | (NodeKind::FnDecl, NodeKind::FnDecl) => {
             let nname = needle_index.ident(needle_index.children(nroot)[0]);
             let cname = candidate_index.ident(candidate_index.children(croot)[0]);
             if !alpha && nname != cname {
                 MismatchReason {
                     score: 40,
                     reason: format!(
-                        "{} name differs: selector `{}`, candidate `{}`",
-                        decl_kind_label(nkind),
+                        "{nlabel} name differs: selector `{}`, candidate `{}`",
                         nname.unwrap_or_default(),
                         cname.unwrap_or_default()
                     ),
                 }
-            } else if nkind == "ClassDecl" {
+            } else if nkind == NodeKind::ClassDecl {
                 first_class_divergence(
                     needle_index,
                     needle_index.children(nroot)[1],
@@ -661,7 +646,7 @@ fn first_decl_divergence(
                 }
             }
         }
-        ("VarDecl", "VarDecl") => first_var_decl_divergence(
+        (NodeKind::VarDecl, NodeKind::VarDecl) => first_var_decl_divergence(
             decl_var(needle_decl),
             needle_index,
             nroot,
@@ -673,9 +658,7 @@ fn first_decl_divergence(
         _ if nkind != ckind => MismatchReason {
             score: 30,
             reason: format!(
-                "declaration kind differs: selector is {}, candidate is {}",
-                decl_kind_label(nkind),
-                decl_kind_label(ckind),
+                "declaration kind differs: selector is {nlabel}, candidate is {clabel}"
             ),
         },
         _ => MismatchReason {
@@ -941,10 +924,10 @@ fn first_class_divergence(
 /// `prop_name`, labeled `<computed>`). Private and auto-accessor members are not
 /// projected by the extractor, so they never reach the near-miss path.
 fn fact_class_member_label(index: &Index, member: NodeId) -> Option<String> {
-    match index.kind(member) {
-        "Constructor" => Some("constructor".to_string()),
-        "StaticBlock" => Some("static block".to_string()),
-        "Method" | "ClassProp" => {
+    match index.node_kind(member) {
+        NodeKind::Constructor => Some("constructor".to_string()),
+        NodeKind::StaticBlock => Some("static block".to_string()),
+        NodeKind::Method | NodeKind::ClassProp => {
             let &key = index.children(member).first()?;
             fact_prop_name_label(index, key)
         }
@@ -956,9 +939,9 @@ fn fact_class_member_label(index: &Index, member: NodeId) -> Option<String> {
 /// (ident/string/number) name as a `prop_name` fact; a `ComputedKey` node carries
 /// none and labels `<computed>`.
 fn fact_prop_name_label(index: &Index, key: NodeId) -> Option<String> {
-    match index.kind(key) {
-        "PropName" => index.prop_name(key).map(str::to_string),
-        "ComputedKey" => Some("<computed>".to_string()),
+    match index.node_kind(key) {
+        NodeKind::PropName => index.prop_name(key).map(str::to_string),
+        NodeKind::ComputedKey => Some("<computed>".to_string()),
         _ => None,
     }
 }

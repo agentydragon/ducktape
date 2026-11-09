@@ -124,23 +124,16 @@ impl BindingId {
 
 /// Error returned when a binding identity or local catalogue view belongs to
 /// a different chunk than the catalogue's scope.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error(
+    "binding belongs to chunk {}, but catalogue is scoped to chunk {}",
+    .actual.0,
+    .expected.0
+)]
 pub struct BindingScopeError {
     expected: ChunkId,
     actual: ChunkId,
 }
-
-impl std::fmt::Display for BindingScopeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "binding belongs to chunk {}, but catalogue is scoped to chunk {}",
-            self.actual.0, self.expected.0
-        )
-    }
-}
-
-impl std::error::Error for BindingScopeError {}
 
 /// Per-chunk binding metadata, keyed by the original hygiene-aware SWC ID.
 ///

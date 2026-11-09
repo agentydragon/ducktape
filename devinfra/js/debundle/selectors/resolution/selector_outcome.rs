@@ -307,7 +307,10 @@ pub enum ResolvedBy {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// The `kind` tag [`Outcome`] serializes with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum OutcomeKind {
     Resolved,
     NoMatch,
@@ -328,29 +331,6 @@ pub enum Severity {
     Warning,
     /// Did not resolve; the run fails.
     Error,
-}
-
-impl OutcomeKind {
-    /// The `kind` tag [`Outcome`] serializes with.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Resolved => "resolved",
-            Self::NoMatch => "no_match",
-            Self::Unsatisfiable => "unsatisfiable",
-            Self::Ambiguous => "ambiguous",
-            Self::Conflict => "conflict",
-            Self::TooBroad => "too_broad",
-            Self::DuplicateClaim => "duplicate_claim",
-            Self::Invalid => "invalid",
-            Self::Undecided => "undecided",
-        }
-    }
-}
-
-impl Serialize for OutcomeKind {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
 }
 
 impl Outcome {
@@ -611,7 +591,7 @@ impl SelectorOutcome {
             Severity::Warning => "warning: ",
             Severity::Ok | Severity::Error => "",
         };
-        let kind = self.outcome.kind().as_str();
+        let kind = self.outcome.kind();
         let mut line = format!("[{label}{kind}] {}", self.chunk);
         let mut statements = false;
         match &self.placement {
@@ -866,7 +846,7 @@ impl SelectorOutcomeReport {
         let counts = self
             .counts()
             .into_iter()
-            .map(|(kind, count)| format!("{}={count}", kind.as_str()))
+            .map(|(kind, count)| format!("{kind}={count}"))
             .collect::<Vec<_>>()
             .join(", ");
         let _ = writeln!(out, "{} selector outcome(s): {counts}", self.outcomes.len());

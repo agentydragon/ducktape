@@ -1152,7 +1152,7 @@ fn render_sequenced_source_unit_causes_with_limit(
         if let Purity::NotPure { reasons } = &cause.purity {
             for reason in reasons {
                 *reason_class_counts
-                    .entry(reason.rule.as_str())
+                    .entry(<&str>::from(reason.rule))
                     .or_insert(0usize) += 1;
             }
         }
@@ -1207,7 +1207,7 @@ fn render_sequenced_source_unit_causes_with_limit(
                     )
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());
-            let rule = reason.rule.as_str();
+            let rule = reason.rule;
             let detail = reason
                 .detail
                 .as_deref()

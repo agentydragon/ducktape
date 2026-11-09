@@ -18,7 +18,6 @@ use source_identity::SourceUnitOrdinal;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
@@ -222,32 +221,17 @@ pub(super) const ACCEPTED_IDENTIFIER_EXAMPLES: &[&str] = &[
     "auto_partition_0007",
 ];
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "unsupported identifier prefix {prefix:?} in {identifier:?}{}; accepted prefixes are {}",
+    .suggestion.as_ref().map_or(String::new(), |suggestion| format!("; use {suggestion:?} for a logical module id")),
+    ACCEPTED_IDENTIFIER_PREFIXES.join(", ")
+)]
 pub(super) struct UnsupportedIdentifierPrefix {
     pub identifier: String,
     pub prefix: String,
     pub suggestion: Option<String>,
 }
-
-impl fmt::Display for UnsupportedIdentifierPrefix {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "unsupported identifier prefix {:?} in {:?}",
-            self.prefix, self.identifier
-        )?;
-        if let Some(suggestion) = &self.suggestion {
-            write!(formatter, "; use {suggestion:?} for a logical module id")?;
-        }
-        write!(
-            formatter,
-            "; accepted prefixes are {}",
-            ACCEPTED_IDENTIFIER_PREFIXES.join(", ")
-        )
-    }
-}
-
-impl std::error::Error for UnsupportedIdentifierPrefix {}
 
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
 /// paths and logical module ids resolve through the same dependency-graph/spec
@@ -1040,7 +1024,7 @@ fn render_edge_census(rows: &[peel::plan::EdgeCensusRow]) -> String {
         return "none".to_string();
     }
     rows.iter()
-        .map(|row| format!("{}/{}={}", row.edge_kind, row.role.as_str(), row.count))
+        .map(|row| format!("{}/{}={}", row.edge_kind, row.role, row.count))
         .collect::<Vec<_>>()
         .join(", ")
 }
