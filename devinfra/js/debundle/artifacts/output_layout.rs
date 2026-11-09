@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+use relative_path::RelativePath;
 
 pub const APP_DIR: &str = "app";
 pub const REPORTS_DIR: &str = "reports";
@@ -113,7 +114,7 @@ impl DebundleOutputLayout {
 
 pub fn report_path_for_file(tree_root: &Path, app_relative_path: &str) -> PathBuf {
     tree_root
-        .join(app_relative_path.split('/').collect::<PathBuf>())
+        .join(RelativePath::new(app_relative_path).to_path(""))
         .with_file_name(format!(
             "{}.json",
             Path::new(app_relative_path)
@@ -128,7 +129,7 @@ pub fn report_path_for_directory(tree_root: &Path, directory: &str) -> PathBuf {
         tree_root.join(INDEX_REPORT)
     } else {
         tree_root
-            .join(directory.split('/').collect::<PathBuf>())
+            .join(RelativePath::new(directory).to_path(""))
             .join(INDEX_REPORT)
     }
 }

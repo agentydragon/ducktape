@@ -5,9 +5,9 @@
 //! completeness: the pipeline rejects such a spec with a diagnostic
 //! instead of emitting a miscompiled body.
 
+use artifact::paths::path_from_module_path;
 use debundle_e2e_support::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
 
 const UNDEFINED_CAPTURE_SOURCE: &str = r#"const source_value = "A";
 function read() {
@@ -54,7 +54,7 @@ fn expect_rename_refusal_with_candidate_output(
         };
         let entry = preserved
             .join("app")
-            .join(chunk_id.split('/').collect::<PathBuf>())
+            .join(path_from_module_path(&chunk_id))
             .join("entry.js");
         assert_node_output(&entry, candidate_output, "");
         panic!(
