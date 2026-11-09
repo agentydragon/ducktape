@@ -31,12 +31,12 @@ Runtime may finish its History seal until the credential is cleared or the Sandb
 ## The workload CA
 
 Every Agentplane SVID, the Runtime certificates and the services' own, comes from the
-`agentplane-workload` ClusterIssuer (`cluster/cdk8s/cert_manager/cluster_ca.py`). Its CA is a
-self-signed root whose key lives in cert-manager's namespace. Every listener that verifies client
-SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that CA alone: a
-`cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate, so the live Sandbox
-lookup is no longer the only check. `cluster-internal-ca-bundle` also carries the workload CA, so
-clients verifying an Agentplane server certificate keep that bundle. Runtime certificates and their
+`agentplane-workload` ClusterIssuer (`cluster/cdk8s/cert_manager/cluster_ca.py`). Its CA is an
+intermediate under the cluster root whose key lives in cert-manager's namespace, so its leaves still
+verify against `cluster-internal-ca-bundle` for clients checking a server. Every listener that
+verifies client SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that
+intermediate alone: a `cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate,
+so the live Sandbox lookup is no longer the only check. Runtime certificates and their
 Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbox-uid` label.
 
 A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the

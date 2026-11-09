@@ -1,5 +1,5 @@
-"""Staging's SVIDs come from the workload CA, every SPIFFE verifier trusts that CA alone, and clients
-verifying a server certificate with the cluster bundle trust it too."""
+"""Staging's SVIDs come from the workload CA, which chains to the cluster root, and every SPIFFE
+verifier trusts that CA alone."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def test_agentplane_svids_come_from_the_workload_ca(staging_manifests: list[Body
     } == set()
 
 
-def test_the_workload_ca_is_a_root_both_bundles_carry(scratch_app: App) -> None:
+def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:
     documents = cdk8s.Testing.synth(cluster_ca.chart(scratch_app))
     issuer = _resource(documents, "ClusterIssuer", cluster_ca.WORKLOAD_ISSUER.name)
     ca_secret = issuer["spec"]["ca"]["secretName"]
@@ -91,18 +91,20 @@ def test_the_workload_ca_is_a_root_both_bundles_carry(scratch_app: App) -> None:
     # A ClusterIssuer reads its CA from cert-manager's own namespace.
     assert ca["metadata"]["namespace"] == "cert-manager"
     assert ca["spec"]["isCA"] is True
-    signer = ca["spec"]["issuerRef"]
-    assert signer["kind"] == "ClusterIssuer"
-    assert _resource(documents, "ClusterIssuer", signer["name"])["spec"] == {"selfSigned": {}}
+    # Chained to the cluster root, so clients verifying server certificates with the cluster bundle accept its leaves.
+    assert ca["spec"]["issuerRef"] == {"name": cluster_ca.INTERNAL_ISSUER.name, "kind": cluster_ca.INTERNAL_ISSUER.kind}
 
-    ca_source = {"secret": {"name": ca_secret, "key": "ca.crt"}}
+    # The intermediate alone: cert-manager writes a CA's `tls.crt` without the self-signed root.
     workload = _resource(documents, "Bundle", cluster_ca.WORKLOAD_BUNDLE)["spec"]
-    assert workload["sources"] == [ca_source]
+    assert workload["sources"] == [{"secret": {"name": ca_secret, "key": "tls.crt"}}]
     # Every namespace, like the cluster bundle: it is public trust data.
     assert "namespaceSelector" not in workload["target"]
     assert workload["target"]["configMap"]["key"] == cluster_ca.BUNDLE_KEY
-    # Clients verifying an Agentplane server certificate keep the cluster bundle.
-    assert ca_source in _resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
+    # The cluster bundle carries roots only, not the intermediate.
+    assert not any(
+        source.get("secret", {}).get("name") == ca_secret
+        for source in _resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
+    )
 
 
 if __name__ == "__main__":
