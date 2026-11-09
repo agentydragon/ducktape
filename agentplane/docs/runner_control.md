@@ -294,10 +294,10 @@ An old credential ID never authorizes a replacement workload. Names and addresse
 are not identity evidence.
 
 cert-manager owns leaf renewal through the `agentplane-workload` ClusterIssuer, the
-[Agentplane workload CA](workload_authentication.md#the-workload-ca), an intermediate signed by
-the cluster internal CA. trust-manager distributes the cluster internal root bundle, which runners
-and backend clients verify servers with, and the workload CA alone, which SVID listeners verify
-clients with.
+[Agentplane workload CA](workload_authentication.md#the-workload-ca), a self-signed root.
+trust-manager distributes the cluster internal root bundle, which carries the workload CA too and
+which runners and backend clients verify servers with, and the workload CA alone, which SVID
+listeners verify clients with.
 Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
 launchers stream the same material through the host-initiated vsock Workload API to the root guest
 agent, which serves Runtime through its restricted Unix socket. Runtime retains pinned credential

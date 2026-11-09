@@ -415,7 +415,7 @@ func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandb
 		return nil, err
 	}
 	if secret.Annotations[runnerCertificateNameAnnotation] != secretName ||
-		secret.Labels[sandboxapi.SandboxLabel] != sandbox.Name ||
+		secret.Labels[sandboxapi.SandboxLabel] != sandbox.Name || secret.Labels[sandboxapi.SandboxUIDLabel] != string(sandbox.UID) ||
 		secret.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] != credentialID || secret.Type != corev1.SecretTypeTLS {
 		return &unready{reason: "CertificateSecretConflict", message: fmt.Sprintf("Secret %s is not the cert-manager Secret for this runner identity", secretName)}, nil
 	}
@@ -437,6 +437,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer CertificateIssu
 			"namespace": sandbox.Namespace,
 			"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			},
 			"ownerReferences": []interface{}{map[string]interface{}{
@@ -461,6 +462,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer CertificateIssu
 			"privateKey": map[string]interface{}{"algorithm": "ECDSA", "size": int64(256), "rotationPolicy": "Always"},
 			"secretTemplate": map[string]interface{}{"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			}},
 		},

@@ -31,14 +31,15 @@ Runtime may finish its History seal until the credential is cleared or the Sandb
 ## The workload CA
 
 Every Agentplane SVID, the Runtime certificates and the services' own, comes from the
-`agentplane-workload` ClusterIssuer (`cluster/cdk8s/agentplane/workload_ca.py`). Its CA is an
-intermediate under the cluster root with its key in cert-manager's namespace, so its leaves still
-verify against `cluster-internal-ca-bundle` for clients checking a server. Every listener that
-verifies client SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that CA alone:
-a `cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate, so the live Sandbox
-lookup is no longer the only check.
+`agentplane-workload` ClusterIssuer (`cluster/cdk8s/cert_manager/cluster_ca.py`). Its CA is a
+self-signed root whose key lives in cert-manager's namespace. Every listener that verifies client
+SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that CA alone: a
+`cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate, so the live Sandbox
+lookup is no longer the only check. `cluster-internal-ca-bundle` also carries the workload CA, so
+clients verifying an Agentplane server certificate keep that bundle. Runtime certificates and their
+Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbox-uid` label.
 
-A `ValidatingAdmissionPolicy` on cert-manager `Certificate`s and `CertificateRequest`s that name the
+A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the
 issuer keeps it from being a cluster-wide minting service. The Sandbox Controller may request only
 `spiffe://agentplane/environment-runtime/<its namespace>/<Sandbox UID>/<credential ID>` URIs in its
 own namespace, and Flux's applier only one-segment service URIs such as `spiffe://agentplane/actions`.

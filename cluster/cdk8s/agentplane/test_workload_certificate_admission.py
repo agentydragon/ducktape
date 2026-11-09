@@ -26,7 +26,8 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
-from cluster.cdk8s.agentplane import sandbox_controller, staging, workload_ca
+from cluster.cdk8s.agentplane import sandbox_controller, staging, workload_certificate_admission
+from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 
 Body = dict[str, Any]
 Admits = Callable[[str, Body], Awaitable[bool]]
@@ -39,7 +40,7 @@ SANDBOX_CONTROLLER = ServiceAccountRef(namespace=NAMESPACE, name="test-sandbox-c
 OTHER_ACCOUNT = f"system:serviceaccount:{NAMESPACE}:test-other-account"
 APPLIER = "test-manifest-applier"
 CERT_MANAGER = ServiceAccountRef(namespace="test-cert-manager", name="test-cert-manager")
-WORKLOAD_ISSUER: Body = {"name": workload_ca.ISSUER.name, "kind": workload_ca.ISSUER.kind, "group": GROUP}
+ISSUER_REF: Body = {"name": WORKLOAD_ISSUER.name, "kind": WORKLOAD_ISSUER.kind, "group": GROUP}
 _PLURALS = {"Certificate": "certificates", "CertificateRequest": "certificaterequests"}
 
 
@@ -51,7 +52,7 @@ def _runtime_uri(namespace: str) -> str:
     return f"spiffe://agentplane/environment-runtime/{namespace}/3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1/test-credential"
 
 
-def _certificate(*, uris: list[str], namespace: str = NAMESPACE, issuer: Body = WORKLOAD_ISSUER) -> Body:
+def _certificate(*, uris: list[str], namespace: str = NAMESPACE, issuer: Body = ISSUER_REF) -> Body:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "Certificate",
@@ -109,7 +110,9 @@ async def _install_cert_manager_crds(server: KubernetesApiServer) -> None:
 
 
 def _policy_object(documents: list[Body], kind: str) -> Body:
-    return one(d for d in documents if d["kind"] == kind and d["metadata"]["name"] == workload_ca.POLICY)
+    return one(
+        d for d in documents if d["kind"] == kind and d["metadata"]["name"] == workload_certificate_admission.POLICY
+    )
 
 
 @asynccontextmanager
@@ -151,12 +154,8 @@ async def _await_policy(admitted: Admits, user: str, refused: Body) -> None:
 
 
 async def test_only_named_requesters_get_workload_certificates(scratch_chart: Chart) -> None:
-    workload_ca.add_workload_ca(
-        scratch_chart,
-        trust_namespaces={NAMESPACE},
-        sandbox_controllers={SANDBOX_CONTROLLER},
-        service_requester=APPLIER,
-        cert_manager=CERT_MANAGER,
+    workload_certificate_admission.add_workload_certificate_admission(
+        scratch_chart, sandbox_controllers={SANDBOX_CONTROLLER}, service_requester=APPLIER, cert_manager=CERT_MANAGER
     )
     documents = cast(list[Body], cdk8s.Testing.synth(scratch_chart))
     controller = _username(SANDBOX_CONTROLLER)
@@ -169,18 +168,16 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
         await _await_policy(admitted, OTHER_ACCOUNT, runner)
         assert await admitted(controller, runner)
         # cdk8s renders an issuerRef without a group; cert-manager defaults it.
-        assert await admitted(
-            controller, _with_spec(runner, issuerRef={k: WORKLOAD_ISSUER[k] for k in ("name", "kind")})
-        )
+        assert await admitted(controller, _with_spec(runner, issuerRef={k: ISSUER_REF[k] for k in ("name", "kind")}))
         assert await admitted(APPLIER, service)
-        assert await admitted(_username(CERT_MANAGER), _certificate_request(WORKLOAD_ISSUER))
+        assert await admitted(_username(CERT_MANAGER), _certificate_request(ISSUER_REF))
 
         refused = {
             "the runner Certificate from another account": (OTHER_ACCOUNT, runner),
             "the runner Certificate from the applier": (APPLIER, runner),
             "the runner Certificate without a group from another account": (
                 OTHER_ACCOUNT,
-                _with_spec(runner, issuerRef={k: WORKLOAD_ISSUER[k] for k in ("name", "kind")}),
+                _with_spec(runner, issuerRef={k: ISSUER_REF[k] for k in ("name", "kind")}),
             ),
             "a service URI from the Sandbox Controller": (controller, _with_spec(runner, uris=service["spec"]["uris"])),
             "a service URI from another account": (OTHER_ACCOUNT, service),
@@ -208,7 +205,7 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
             ),
             "a CA": (controller, _with_spec(runner, isCA=True)),
             "a certificate-signing usage": (APPLIER, _with_spec(service, usages=["digital signature", "cert sign"])),
-            "a CertificateRequest from the Sandbox Controller": (controller, _certificate_request(WORKLOAD_ISSUER)),
+            "a CertificateRequest from the Sandbox Controller": (controller, _certificate_request(ISSUER_REF)),
         }
         for case, (user, body) in refused.items():
             assert not await admitted(user, body), case
@@ -220,8 +217,8 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
         # Other issuers, including a namespaced Issuer of the same name, are not this policy's concern.
         for issuer in (
             {"name": "cluster-internal-ca", "kind": "ClusterIssuer"},
-            {"name": workload_ca.ISSUER.name, "kind": "Issuer"},
-            {"name": workload_ca.ISSUER.name},
+            {"name": WORKLOAD_ISSUER.name, "kind": "Issuer"},
+            {"name": WORKLOAD_ISSUER.name},
         ):
             assert await admitted(OTHER_ACCOUNT, _with_spec(runner, issuerRef=issuer)), issuer
             assert await admitted(OTHER_ACCOUNT, _certificate_request(issuer)), issuer
@@ -276,8 +273,8 @@ async def test_staging_requesters_get_the_certificates_staging_renders(staging_m
         doc
         for doc in staging_manifests
         if doc["kind"] == "Certificate"
-        and doc["spec"]["issuerRef"].get("name") == workload_ca.ISSUER.name
-        and doc["spec"]["issuerRef"].get("kind") == workload_ca.ISSUER.kind
+        and doc["spec"]["issuerRef"].get("name") == WORKLOAD_ISSUER.name
+        and doc["spec"]["issuerRef"].get("kind") == WORKLOAD_ISSUER.kind
     ]
     assert workload, "staging renders no workload Certificate"
     applier = "system:serviceaccount:flux-system:kustomize-controller"

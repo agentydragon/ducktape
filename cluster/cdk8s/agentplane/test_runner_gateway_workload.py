@@ -25,10 +25,10 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     session_dispatcher,
     staging,
-    workload_ca,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 from util.settings_contract import env_name
 
 
@@ -56,7 +56,7 @@ def _gateway_objects(app: App) -> list[dict[str, Any]]:
 def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    workload_issuer = {"kind": workload_ca.ISSUER.kind, "name": workload_ca.ISSUER.name}
+    workload_issuer = {"kind": WORKLOAD_ISSUER.kind, "name": WORKLOAD_ISSUER.name}
     gateway_certificate = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_GATEWAY_CERTIFICATE)
     spec = gateway_certificate["spec"]
     assert spec["secretName"] == runner_gateway.GATEWAY_TLS_SECRET

@@ -103,8 +103,11 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   listener. The issuer the `runner_certificate_issuer` setting names by name and kind signs it; in
   deployments that is the `agentplane-workload` ClusterIssuer, the Agentplane workload CA, from
   which admission lets only this controller request Runtime URIs in its own namespace. cert-manager
-  owns key generation and renewal. Runner TLS files mount from that generation's unique Secret, and
-  the shared trust-manager CA bundle supplies the root. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path
+  owns key generation and renewal. The Certificate and, through its `secretTemplate`, its Secret
+  carry the Sandbox's name, its UID (`agentplane.allegedly.works/sandbox-uid`) and the credential
+  ID as labels, so a former incarnation's Secrets are found by label; the controller does not mount
+  a Secret whose labels name another Sandbox UID or credential. Runner TLS files mount from that
+  generation's unique Secret, and the shared trust-manager CA bundle supplies the root. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path
   in any regular or init container. A renewed key can update only its own generation's Secret.
   Reconciliation upgrades the usages of a previously issued controller-owned Certificate only when
   every other identity and key-policy field still matches; SAN, issuer or other drift remains a

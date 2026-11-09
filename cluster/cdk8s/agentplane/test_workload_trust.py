@@ -1,4 +1,5 @@
-"""Staging's SVIDs come from the workload CA, and every SPIFFE verifier trusts that CA alone."""
+"""Staging's SVIDs come from the workload CA, every SPIFFE verifier trusts that CA alone, and clients
+verifying a server certificate with the cluster bundle trust it too."""
 
 from __future__ import annotations
 
@@ -6,12 +7,14 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 from typing import Any
 
+import cdk8s
 import pytest_bazel
 import yaml
+from cdk8s import App
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import egress, workload_ca
-from cluster.cdk8s.cert_manager.cluster_ca import INTERNAL_ISSUER
+from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.cert_manager import cluster_ca
 
 Body = dict[str, Any]
 
@@ -61,7 +64,7 @@ def test_every_spiffe_verifier_trusts_only_the_workload_ca(staging_manifests: li
     trust = _spiffe_trust(staging_manifests)
     # The egress proxy's forward listener and the services' listeners, through `workload_tls`.
     assert {egress.NAME, "actions", "llm-ingress"} <= trust.keys()
-    assert {name: bundles for name, bundles in trust.items() if bundles != {workload_ca.BUNDLE}} == {}
+    assert {name: bundles for name, bundles in trust.items() if bundles != {cluster_ca.WORKLOAD_BUNDLE}} == {}
 
 
 def test_agentplane_svids_come_from_the_workload_ca(staging_manifests: list[Body]) -> None:
@@ -75,37 +78,31 @@ def test_agentplane_svids_come_from_the_workload_ca(staging_manifests: list[Body
     assert {
         doc["metadata"]["name"]
         for doc in svids
-        if doc["spec"]["issuerRef"] != {"name": workload_ca.ISSUER.name, "kind": workload_ca.ISSUER.kind}
+        if doc["spec"]["issuerRef"]
+        != {"name": cluster_ca.WORKLOAD_ISSUER.name, "kind": cluster_ca.WORKLOAD_ISSUER.kind}
     } == set()
 
 
-def test_the_workload_trust_bundle_carries_the_issuers_ca_where_verifiers_run(staging_manifests: list[Body]) -> None:
-    issuer = _resource(staging_manifests, "ClusterIssuer", workload_ca.ISSUER.name)
+def test_the_workload_ca_is_a_root_both_bundles_carry(scratch_app: App) -> None:
+    documents = cdk8s.Testing.synth(cluster_ca.chart(scratch_app))
+    issuer = _resource(documents, "ClusterIssuer", cluster_ca.WORKLOAD_ISSUER.name)
     ca_secret = issuer["spec"]["ca"]["secretName"]
-    ca = one(
-        doc for doc in staging_manifests if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == ca_secret
-    )
+    ca = one(doc for doc in documents if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == ca_secret)
     # A ClusterIssuer reads its CA from cert-manager's own namespace.
     assert ca["metadata"]["namespace"] == "cert-manager"
     assert ca["spec"]["isCA"] is True
-    # Chained to the cluster root, so clients verifying server certificates with the cluster bundle accept its leaves.
-    assert ca["spec"]["issuerRef"] == {"name": INTERNAL_ISSUER.name, "kind": INTERNAL_ISSUER.kind}
+    signer = ca["spec"]["issuerRef"]
+    assert signer["kind"] == "ClusterIssuer"
+    assert _resource(documents, "ClusterIssuer", signer["name"])["spec"] == {"selfSigned": {}}
 
-    bundle = _resource(staging_manifests, "Bundle", workload_ca.BUNDLE)
-    assert bundle["spec"]["sources"] == [{"secret": {"name": ca_secret, "key": "tls.crt"}}]
-    selected = one(bundle["spec"]["target"]["namespaceSelector"]["matchExpressions"])
-    assert selected["key"] == "kubernetes.io/metadata.name"
-    assert selected["operator"] == "In"
-    mounted_in = {
-        deployment["metadata"]["namespace"]
-        for deployment in staging_manifests
-        if deployment["kind"] == "Deployment"
-        for volume in deployment["spec"]["template"]["spec"].get("volumes", [])
-        if volume.get("configMap", {}).get("name") == workload_ca.BUNDLE
-    }
-    assert mounted_in
-    assert mounted_in <= set(selected["values"])
-    assert bundle["spec"]["target"]["configMap"]["key"] == workload_ca.BUNDLE_KEY
+    ca_source = {"secret": {"name": ca_secret, "key": "ca.crt"}}
+    workload = _resource(documents, "Bundle", cluster_ca.WORKLOAD_BUNDLE)["spec"]
+    assert workload["sources"] == [ca_source]
+    # Every namespace, like the cluster bundle: it is public trust data.
+    assert "namespaceSelector" not in workload["target"]
+    assert workload["target"]["configMap"]["key"] == cluster_ca.BUNDLE_KEY
+    # Clients verifying an Agentplane server certificate keep the cluster bundle.
+    assert ca_source in _resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
 
 
 if __name__ == "__main__":

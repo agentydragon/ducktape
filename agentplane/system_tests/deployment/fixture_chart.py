@@ -68,7 +68,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
-    workload_ca,
+    workload_certificate_admission,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.chart import (
@@ -92,6 +92,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
+from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_CA_SOURCE, add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -351,7 +352,7 @@ def _add_runner_root(chart: Chart) -> None:
         chart,
         "environment-runtime-trust",
         metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
-        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
+        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt")), WORKLOAD_CA_SOURCE],
         target=BundleSpecTarget(
             config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
             namespace_selector=BundleSpecTargetNamespaceSelector(
@@ -433,9 +434,9 @@ def build_chart(
     Namespace(chart, "namespace", env)
     _add_runner_root(chart)
     add_runner_certificates(chart, env)
-    workload_ca.add_workload_ca(
+    add_workload_ca(chart)
+    workload_certificate_admission.add_workload_certificate_admission(
         chart,
-        trust_namespaces={NAMESPACE},
         sandbox_controllers={ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME)},
         # The user k3s writes its admin kubeconfig for, which applies these manifests.
         service_requester="system:admin",
@@ -619,7 +620,7 @@ def build_chart(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
-        runner_certificate_issuer=workload_ca.ISSUER,
+        runner_certificate_issuer=workload_certificate_admission.RUNNER_CERTIFICATE_ISSUER,
         placement=None,
         registry_secret_name=None,
         memory_limit=None,

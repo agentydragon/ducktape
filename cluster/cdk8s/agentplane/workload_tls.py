@@ -1,8 +1,8 @@
 """cert-manager serving leaves and trust-manager roots for workload SVID listeners.
 
-A listener verifies client SVIDs against the Agentplane workload CA alone (`workload_ca`). A client
-verifies a service's server certificate against the cluster's internal roots, which the workload CA
-chains to.
+A listener verifies client SVIDs against the Agentplane workload CA alone (`cluster_ca.WORKLOAD_BUNDLE`).
+A client verifies a service's server certificate against the cluster's internal roots, which include
+the workload CA.
 """
 
 from pathlib import Path
@@ -13,15 +13,15 @@ from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationP
 from constructs import Construct
 
 from agentplane.environment_runtime_transport.config import TLS, ClientTLS
-from cluster.cdk8s.agentplane import workload_ca
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 
 _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
 TRUST_BUNDLE_FILE = f"{_TRUST_PATH}/ca-certificates.crt"
 _CLIENT_TRUST_PATH = "/run/agentplane/workload-client-trust"
-CLIENT_TRUST_BUNDLE_FILE = f"{_CLIENT_TRUST_PATH}/{workload_ca.BUNDLE_KEY}"
+CLIENT_TRUST_BUNDLE_FILE = f"{_CLIENT_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}"
 
 
 def mount_trust_bundle(scope: Construct, container: Container) -> Path:
@@ -46,7 +46,7 @@ def mount_client_trust_bundle(scope: Construct, container: Container) -> Path:
     trust = Volume.from_config_map(
         scope,
         "workload-client-trust-volume",
-        ConfigMap.from_config_map_name(scope, "workload-client-trust-bundle", workload_ca.BUNDLE),
+        ConfigMap.from_config_map_name(scope, "workload-client-trust-bundle", cluster_ca.WORKLOAD_BUNDLE),
         name="workload-client-trust",
     )
     container.mount(_CLIENT_TRUST_PATH, trust, read_only=True)
@@ -67,7 +67,7 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
         renew_before="8h",
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
-        issuer_ref=workload_ca.ISSUER_REF,
+        issuer_ref=cluster_ca.WORKLOAD_ISSUER,
     )
     certificate = Volume.from_secret(
         scope,

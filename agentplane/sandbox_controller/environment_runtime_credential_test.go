@@ -52,6 +52,10 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 	if err != nil || !found || len(uris) != 1 || uris[0] != "spiffe://agentplane/environment-runtime/sandboxes/sandbox-uid/"+runnerCredentialTestID {
 		t.Fatalf("certificate URI = %v (found=%v, err=%v), want the canonical Environment Runtime identity", uris, found, err)
 	}
+	secretLabels, _, err := unstructured.NestedStringMap(expected, "secretTemplate", "labels")
+	if err != nil || secretLabels[sandboxapi.SandboxUIDLabel] != "sandbox-uid" {
+		t.Fatalf("secretTemplate labels = %v (err=%v), want the owning Sandbox's UID", secretLabels, err)
+	}
 	issuer, _, err := unstructured.NestedStringMap(expected, "issuerRef")
 	if want := map[string]string{"name": "test-runner-issuer", "kind": "ClusterIssuer", "group": "cert-manager.io"}; err != nil || !equality.Semantic.DeepEqual(issuer, want) {
 		t.Fatalf("certificate issuerRef = %v (err=%v), want the configured issuer %v", issuer, err, want)
@@ -115,6 +119,7 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 			Name:      RunnerCertificateSecretName(runnerCredentialTestID),
 			Labels: map[string]string{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: runnerCredentialTestID,
 			},
 			Annotations: map[string]string{runnerCertificateNameAnnotation: RunnerCertificateSecretName(runnerCredentialTestID)},
@@ -128,13 +133,30 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 		t.Fatalf("matching Ready Certificate and Secret: pending=%v err=%v", pending, err)
 	}
 
-	secret.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = "fedcba9876543210fedcba9876543210"
-	if err := c.Update(context.Background(), secret); err != nil {
-		t.Fatal(err)
-	}
-	pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID)
-	if err != nil || pending == nil || pending.reason != "CertificateSecretConflict" {
-		t.Fatalf("mismatched credential label must block mount: pending=%v err=%v", pending, err)
+	for label, value := range map[string]string{
+		sandboxapi.EnvironmentRuntimeCredentialLabel: "fedcba9876543210fedcba9876543210",
+		// A Secret of an earlier Sandbox of the same name.
+		sandboxapi.SandboxUIDLabel: "former-sandbox-uid",
+	} {
+		t.Run(label, func(t *testing.T) {
+			mismatched := secret.DeepCopy()
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(secret), mismatched); err != nil {
+				t.Fatal(err)
+			}
+			original := mismatched.Labels[label]
+			mismatched.Labels[label] = value
+			if err := c.Update(context.Background(), mismatched); err != nil {
+				t.Fatal(err)
+			}
+			pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID)
+			if err != nil || pending == nil || pending.reason != "CertificateSecretConflict" {
+				t.Fatalf("mismatched %s label must block mount: pending=%v err=%v", label, pending, err)
+			}
+			mismatched.Labels[label] = original
+			if err := c.Update(context.Background(), mismatched); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -597,6 +619,7 @@ func runnerCredentialTestSecret(sandbox *sandboxapi.Sandbox, credentialID string
 			Name:      name,
 			Labels: map[string]string{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			},
 			Annotations: map[string]string{runnerCertificateNameAnnotation: name},

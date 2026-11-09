@@ -117,14 +117,16 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == workload_issuer["spec"]["ca"]["secretName"]
     )
     assert workload_ca["metadata"]["namespace"] == "cert-manager"
-    assert workload_ca["spec"]["issuerRef"] == {"name": "cluster-internal-ca", "kind": "ClusterIssuer"}
-    workload_trust = _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
-    assert workload_trust["spec"]["sources"] == [
-        {"secret": {"name": workload_ca["spec"]["secretName"], "key": "tls.crt"}}
-    ]
+    workload_signer = _resource(docs, "ClusterIssuer", workload_ca["spec"]["issuerRef"]["name"])
+    assert workload_signer["spec"] == {"selfSigned": {}}
+    workload_source = {"secret": {"name": workload_ca["spec"]["secretName"], "key": "ca.crt"}}
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")["spec"]["sources"] == [workload_source]
     trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
     root = _resource(docs, "Certificate", "test-runner-root")
-    assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
+    assert trust_bundle["spec"]["sources"] == [
+        {"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}},
+        workload_source,
+    ]
     assert trust_bundle["spec"]["target"]["namespaceSelector"]["matchLabels"] == {
         "kubernetes.io/metadata.name": fixture.namespace
     }

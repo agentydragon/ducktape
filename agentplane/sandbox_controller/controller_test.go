@@ -115,9 +115,10 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 				if err := c.Create(ctx, obj, opts...); err != nil {
 					return err
 				}
-				labels := map[string]string{
-					sandboxapi.SandboxLabel:                      certificate.GetLabels()[sandboxapi.SandboxLabel],
-					sandboxapi.EnvironmentRuntimeCredentialLabel: certificate.GetLabels()[sandboxapi.EnvironmentRuntimeCredentialLabel],
+				// cert-manager copies the Secret's labels from the Certificate's secretTemplate.
+				labels, _, err := unstructured.NestedStringMap(certificate.Object, "spec", "secretTemplate", "labels")
+				if err != nil {
+					return err
 				}
 				return c.Create(ctx, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
