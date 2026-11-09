@@ -64,8 +64,10 @@ from cluster.cdk8s.agentplane import (
     policy_controller,
     policy_controller_rbac,
     runner_gateway_workload,
+    sandbox_controller,
     staging_config,
     staging_grants,
+    workload_certificate_admission,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
@@ -672,6 +674,13 @@ def chart(app: App) -> Chart:
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
+    )
+    # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
+    workload_certificate_admission.add_workload_certificate_admission(
+        chart,
+        sandbox_controllers={ServiceAccountRef(namespace=ENV.namespace, name=sandbox_controller.NAME)},
+        service_requester="system:serviceaccount:flux-system:kustomize-controller",
+        cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
     NetworkPolicy(
         chart,

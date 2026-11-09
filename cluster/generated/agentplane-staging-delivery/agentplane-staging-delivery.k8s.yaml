@@ -143,6 +143,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/workload-client-trust
+              name: workload-client-trust
+              readOnly: true
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
               readOnly: true
@@ -178,6 +181,9 @@ spec:
         - configMap:
             name: cluster-internal-ca-bundle
           name: workload-trust
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-client-trust
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
@@ -228,8 +234,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -286,7 +292,7 @@ data:
             - agentplane-runner-gateway
             - session-dispatcher
         - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
     central_sampler:
       target: central-sampler.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler

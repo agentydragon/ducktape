@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -38,10 +39,34 @@ const (
 	runnerCertificateGroup          = "cert-manager.io"
 	runnerCertificateVersion        = "v1"
 	runnerCertificateKind           = "Certificate"
-	runnerIssuerKind                = "Issuer"
 	runnerCertificateNameAnnotation = "cert-manager.io/certificate-name"
 	runnerCredentialRetry           = 5 * time.Second
 )
+
+// IssuerKind is the kind of cert-manager issuer a Certificate's issuerRef names.
+type IssuerKind string
+
+const (
+	IssuerKindIssuer        IssuerKind = "Issuer"
+	IssuerKindClusterIssuer IssuerKind = "ClusterIssuer"
+)
+
+// CertificateIssuer is the cert-manager issuer that signs runner credentials.
+type CertificateIssuer struct {
+	Name string     `yaml:"name"`
+	Kind IssuerKind `yaml:"kind"`
+}
+
+// Validate rejects an issuer without a name or of a kind cert-manager does not define.
+func (i CertificateIssuer) Validate() error {
+	if strings.TrimSpace(i.Name) == "" {
+		return errors.New("name is required")
+	}
+	if i.Kind != IssuerKindIssuer && i.Kind != IssuerKindClusterIssuer {
+		return fmt.Errorf("kind must be %s or %s, not %q", IssuerKindIssuer, IssuerKindClusterIssuer, i.Kind)
+	}
+	return nil
+}
 
 var runnerCertificateGVK = schema.GroupVersionKind{
 	Group: runnerCertificateGroup, Version: runnerCertificateVersion, Kind: runnerCertificateKind,
@@ -332,7 +357,7 @@ func (r *Reconciler) setSandboxLastVMIUID(ctx context.Context, sandbox *sandboxa
 }
 
 func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandboxapi.Sandbox, credentialID string) (*unready, error) {
-	if r.RunnerCertificateIssuer == "" {
+	if r.RunnerCertificateIssuer.Name == "" {
 		return &unready{reason: "RunnerCertificateIssuerMissing", message: "runner_certificate_issuer is required"}, nil
 	}
 	secretName := RunnerCertificateSecretName(credentialID)
@@ -390,7 +415,7 @@ func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandb
 		return nil, err
 	}
 	if secret.Annotations[runnerCertificateNameAnnotation] != secretName ||
-		secret.Labels[sandboxapi.SandboxLabel] != sandbox.Name ||
+		secret.Labels[sandboxapi.SandboxLabel] != sandbox.Name || secret.Labels[sandboxapi.SandboxUIDLabel] != string(sandbox.UID) ||
 		secret.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] != credentialID || secret.Type != corev1.SecretTypeTLS {
 		return &unready{reason: "CertificateSecretConflict", message: fmt.Sprintf("Secret %s is not the cert-manager Secret for this runner identity", secretName)}, nil
 	}
@@ -402,7 +427,7 @@ func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandb
 	return nil, nil
 }
 
-func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID string) *unstructured.Unstructured {
+func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer CertificateIssuer, credentialID string) *unstructured.Unstructured {
 	owner := metav1.NewControllerRef(sandbox, sandboxapi.GroupVersion.WithKind("Sandbox"))
 	return &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": runnerCertificateGroup + "/" + runnerCertificateVersion,
@@ -412,6 +437,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 			"namespace": sandbox.Namespace,
 			"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			},
 			"ownerReferences": []interface{}{map[string]interface{}{
@@ -427,8 +453,8 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 			"duration":    "24h",
 			"renewBefore": "8h",
 			"issuerRef": map[string]interface{}{
-				"name":  issuer,
-				"kind":  runnerIssuerKind,
+				"name":  issuer.Name,
+				"kind":  string(issuer.Kind),
 				"group": runnerCertificateGroup,
 			},
 			"uris":       []interface{}{runnerCertificateURI(sandbox, credentialID)},
@@ -436,6 +462,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 			"privateKey": map[string]interface{}{"algorithm": "ECDSA", "size": int64(256), "rotationPolicy": "Always"},
 			"secretTemplate": map[string]interface{}{"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
+				sandboxapi.SandboxUIDLabel:                   string(sandbox.UID),
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			}},
 		},

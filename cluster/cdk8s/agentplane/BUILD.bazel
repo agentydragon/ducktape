@@ -125,6 +125,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/home_assistant:app",
@@ -776,6 +777,7 @@ py_library(
     name = "chart",
     srcs = ["chart.py"],
     deps = [
+        ":workload_certificate_admission",
         ":actions",
         ":app",
         ":central_sampler_workload",
@@ -846,10 +848,13 @@ py_library(
         ":policy_controller",
         ":policy_controller_rbac",
         ":runner_gateway_workload",
+        ":sandbox_controller",
         ":sandbox_pod",
         ":staging_config",
         ":staging_grants",
+        ":workload_certificate_admission",
         ":workload_tls",
+        "//agentplane:subjects",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",
@@ -942,6 +947,61 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_workload_trust",
+    size = "medium",
+    srcs = ["test_workload_trust.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":egress",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_workload_certificate_admission",
+    # Starts an API server twice and synthesizes staging.
+    size = "medium",
+    srcs = ["test_workload_certificate_admission.py"],
+    data = [
+        "@cert_manager_certificate_crd//file",
+        "@cert_manager_certificaterequest_crd//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "CERT_MANAGER_CERTIFICATEREQUEST_CRD": "$(rlocationpath @cert_manager_certificaterequest_crd//file)",
+        "CERT_MANAGER_CERTIFICATE_CRD": "$(rlocationpath @cert_manager_certificate_crd//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":conftest",
+        ":sandbox_controller",
+        ":staging",
+        ":workload_certificate_admission",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1284,6 +1344,7 @@ py_test(
         "//agentplane/runner_gateway:settings",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -1544,14 +1605,26 @@ py_library(
 )
 
 py_library(
+    name = "workload_certificate_admission",
+    srcs = ["workload_certificate_admission.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/sandbox_controller:settings",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "workload_tls",
     srcs = ["workload_tls.py"],
     deps = [
         ":environment",
-        ":runner_gateway",
         ":service_workload",
         "//agentplane/environment_runtime_transport:config",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cilium:network_policy",

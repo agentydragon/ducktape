@@ -5,6 +5,9 @@ import "fmt"
 const (
 	SandboxKind  = "Sandbox"
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
+	// SandboxUIDLabel names the incarnation of the Sandbox a runner credential's Certificate and
+	// Secret belong to, so they can be found by label after the Sandbox and its name are gone.
+	SandboxUIDLabel = "agentplane.allegedly.works/sandbox-uid"
 	// CreateIntentAnnotation is the receipt a Sandbox's creator writes with it, so that its retry of the same create
 	// adopts the Sandbox where another create of the name is refused. Each creator compares it only with its own
 	// receipts.

@@ -512,6 +512,13 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_issuers.yaml"],
 )
 
+http_file(
+    name = "cert_manager_certificaterequest_crd",
+    downloaded_file_path = "cert-manager.io_certificaterequests.yaml",
+    sha256 = "74cf3801ab146a1745498de5f3b619cde6f2dc89ae03755084be08129ce726c3",
+    urls = ["https://raw.githubusercontent.com/cert-manager/cert-manager/v1.21.2/deploy/crds/cert-manager.io_certificaterequests.yaml"],
+)
+
 # Match the deployed version in cluster/cdk8s/cert_manager/trust.py.
 http_file(
     name = "trust_manager_bundle_crd",

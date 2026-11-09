@@ -22,7 +22,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 ## Identity
 
 - The single forward listener requires TLS. Its authentication allowlist explicitly admits SPIFFE
-  with trust roots and Pod-bound Kubernetes bearers for existing non-Sandbox callers. It presents `spiffe://agentplane/egress-proxy`, issued by the environment's Runner issuer
+  trusting the Agentplane workload CA alone, and Pod-bound Kubernetes bearers for existing
+  non-Sandbox callers; a leaf of the cluster's internal CA naming a Runtime URI does not
+  authenticate. It presents `spiffe://agentplane/egress-proxy`, issued by the workload CA
   with serverAuth. Clients require clientAuth and the canonical URI
   `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
   Plaintext is refused. Presenting both a certificate and bearer is refused; an invalid credential

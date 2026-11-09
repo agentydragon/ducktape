@@ -1,6 +1,6 @@
 """Per-action runner certificate readiness and PKI diagnostics."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from agentplane.system_tests.driver.tracing import tracer
@@ -25,9 +25,15 @@ def report(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
 
 
 @tracer.start_as_current_span("system_test.pki.issuance")
-def wait_for_issuance(kubectl: Kubectl, namespace: str, bundle: str) -> None:
+def wait_for_issuance(kubectl: Kubectl, namespace: str, bundles: Sequence[str]) -> None:
+    kubectl(
+        "-n", NAMESPACE, "wait", "--for=condition=Ready", "certificate/agentplane-workload-ca",
+        f"--timeout={READY_SECONDS}s",
+    )  # fmt: skip
     kubectl(
         "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-ca",
         "certificate/agentplane-runner-gateway", f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
-    kubectl("wait", "--for=condition=Synced", f"bundle/{bundle}", f"--timeout={READY_SECONDS}s")
+    kubectl(
+        "wait", "--for=condition=Synced", *(f"bundle/{bundle}" for bundle in bundles), f"--timeout={READY_SECONDS}s"
+    )

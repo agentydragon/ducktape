@@ -14,19 +14,37 @@ destination by exact origin, opens a CONNECT through the egress proxy, then pres
 on the destination TLS connection. It strips caller `Authorization`, `Proxy-Authorization`, and
 projected-token headers before sending the request.
 
-The proxy verifies client TLS against the configured CA and checks the leaf's validity, client-auth
-usage, and exact URI identity. It resolves the URI's namespace, Sandbox UID, and credential ID
+The proxy verifies client TLS against the [workload CA](#the-workload-ca) and checks the leaf's
+validity, client-auth usage, and exact URI identity. It resolves the URI's namespace, Sandbox UID, and credential ID
 against the live Sandbox and current runner binding before evaluating egress policy for the
 Sandbox's own ServiceAccount. Pod runners must match the Sandbox's current incarnation name and
 Pod UID; VM runners must match its accepted VMI UID. No caller header supplies or overrides the
 subject. The proxy does not read Pod or ServiceAccount objects.
 
-The destination service independently verifies the client certificate and resolves the same live
-Sandbox binding before it authorizes a request or stamps attribution metadata. Each service keeps
+The destination service independently verifies the client certificate against the workload CA and
+resolves the same live Sandbox binding before it authorizes a request or stamps attribution metadata. Each service keeps
 its own resource authorization. The SVID route does not depend on bearer substitution or a
 per-service projected token audience. Finalization does not revoke a still-accepted credential:
 Runtime may finish its History seal until the credential is cleared or the Sandbox is removed. See the [egress contract](../egress/SPEC.md) and
 [LLM ingress](../llm_ingress/README.md) for their route-specific behavior.
+
+## The workload CA
+
+Every Agentplane SVID, the Runtime certificates and the services' own, comes from the
+`agentplane-workload` ClusterIssuer (`cluster/cdk8s/cert_manager/cluster_ca.py`). Its CA is a
+self-signed root whose key lives in cert-manager's namespace. Every listener that verifies client
+SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that CA alone: a
+`cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate, so the live Sandbox
+lookup is no longer the only check. `cluster-internal-ca-bundle` also carries the workload CA, so
+clients verifying an Agentplane server certificate keep that bundle. Runtime certificates and their
+Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbox-uid` label.
+
+A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the
+issuer keeps it from being a cluster-wide minting service. The Sandbox Controller may request only
+`spiffe://agentplane/environment-runtime/<its namespace>/<Sandbox UID>/<credential ID>` URIs in its
+own namespace, and Flux's applier only one-segment service URIs such as `spiffe://agentplane/actions`.
+No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
+other Certificate against the issuer is refused. Certificates against other issuers are unaffected.
 
 ## TokenReview and projected credentials
 
@@ -50,8 +68,8 @@ and an application credential presented together. Admission stays method-specifi
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
 
-Backend clients verify the service's SPIFFE URI and server-auth usage against the trust-manager
-roots, then present their existing TokenReview or delegation credentials. They hold no SVID.
+Backend clients verify the service's SPIFFE URI and server-auth usage against the cluster's
+trust-manager roots, then present their existing TokenReview or delegation credentials. They hold no SVID.
 Gateway backend and cross-replica methods keep their separate audiences and authorization;
 History bearer writers remain limited to the sampler accounts. LLM inference and native ModelConfig
 share one TLS HTTP/2 listener, retaining the sampler's bearer path and the service-held LiteLLM key.

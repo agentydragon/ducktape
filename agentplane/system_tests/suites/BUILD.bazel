@@ -244,6 +244,7 @@ py_library(
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:thread_stream",
+        "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//httpx",
         "@pypi//pytest",
     ],

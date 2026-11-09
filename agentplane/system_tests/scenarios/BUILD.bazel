@@ -395,3 +395,15 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "workload_trust",
+    srcs = ["workload_trust.py"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:port_forward",
+        "//agentplane/system_tests/driver:tls",
+        "@pypi//protobuf",
+    ],
+)
