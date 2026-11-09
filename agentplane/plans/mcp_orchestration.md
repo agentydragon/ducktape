@@ -5,13 +5,12 @@ a stopgap that acts for the operator ([ADR](../docs/adr_orchestration_v1.md)).**
 implemented in that group's contract. What remains: moving each operation to a grant its backend checks (P3),
 and bounding what a launcher may let its workers do.
 
-**Priority update, 2026-10-30 PDT:** the next agent workflow is caller-privilege Agentplane Session
-spawning and cooperation for a standing daily CI-maintenance agent. Follow the
-[approved delegation contract](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone)
-and [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt). Different-privilege
-launch bounds below remain later work. Reuse the canonical operation authorities and make the
-interface naturally discoverable to agents; a new authorization bypass is not an acceptable
-shortcut. The historical P0/P1/P3 phase labels below are not the current dispatch priority order.
+**Caller-privilege delegation shipped separately:** the standing-agent workflow the operator
+prioritized on 2026-10-30 PDT uses the [`session_delegation` group](../action_service/session_delegation/README.md)
+under the caller's own authority, not `orchestration_v1`; its remaining usability capstone is in the
+[delegation plan](session_delegation_workflows.md). Different-privilege launch bounds below remain
+later work. Reuse the canonical operation authorities; a new authorization bypass is not an
+acceptable shortcut.
 
 **Session–Environment separation, 2026-11-04:** the Sandbox-only authorization target and
 SA-only subject in the historical sketch below are not settled for independent Sessions. Reconcile
