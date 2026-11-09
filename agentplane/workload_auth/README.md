@@ -26,10 +26,9 @@ its canonical UID and the status-bound Pod name/UID. There is no identity refere
 header. A finalizing Sandbox keeps using its accepted credential for History sealing; clearing
 acceptance or removing the object revokes it. Services need Sandbox get/list and ServiceAccount get
 in their allowed namespaces. `Resolver.WithListenerAuthentication` selects this path only when the
-listener allows SPIFFE. When a resolver has listener configuration, direct and delegated bearer
-reviews require the configured bearer mode; delegated calls still need their explicit per-method
-grant. A TLS peer cannot be combined with a bearer or delegation envelope. Stream revalidation
-repeats the live lookup and leaf validity checks.
+listener allows SPIFFE. Listener credential selection does not grant method authorization, and
+delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
+bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
