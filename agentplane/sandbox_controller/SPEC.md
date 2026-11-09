@@ -156,7 +156,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   credential data fails admission; KubeVirt retries after status is bound, without an admitted Pod
   waiting forever on a placeholder Secret. Each trust-manager bundle is its own virtiofs filesystem
   of public trust data: `agentplane-environment-runtime-trust` and
-  `agentplane-environment-runtime-workload-trust`.
+  `runner-workload-trust` (the QEMU tag; its guest mount path remains descriptive).
 - The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
   `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
   disks at `/run/agentplane/config` and `/run/agentplane/sandbox`. Their filenames, device serials

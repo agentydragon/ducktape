@@ -17,6 +17,8 @@ The one-guest full-stack smoke for the opt-in passive virtiofsd timeline is docu
 [guest_only_reproduction.md](guest_only_reproduction.md), with [retained snapshots and checksums](passive_virtiofsd_timeline/README.md).
 Its direct-TTY shutdown proof markers and bounded proof-helper sampling are documented in
 [standalone_kubevirt/proof_progress.md](standalone_kubevirt/proof_progress.md).
+A deterministic pre-kernel QEMU startup failure from an overlength virtiofs tag is documented in
+[virtiofs_tag_limit.md](virtiofs_tag_limit.md); it is separate from the guest boot and shutdown stalls below.
 
 ## Observed failure
 
