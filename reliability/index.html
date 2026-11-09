@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,730 +44,833 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <main class="container">
-        <header>
-          <p class="muted">
-            Presentation updated 9 November 2026. Measurements retain the
-            original 30 October–1 November window; recurrence was not remeasured
-            in this styling update.
-          </p>
-          <div>Ducktape · CI reliability · 1 November 2026</div>
-          <h1>VM failures split across test work and executor retries.</h1>
-          <p>
-            Four fresh VM-suite failures have three different test outcomes. Two
-            also paid for an earlier Firecracker pause failure before Bazel
-            retried the test action. A browser test repeated the same missing
-            projection cursor assertion on two different revisions. A selected
-            PR retry independently shows one same-tree VM failure followed by a
-            fresh pass. The single visibly red merge was a stale fixture
-            assertion already repaired.
-          </p>
-          <p class="muted">
-            Observation window:
-            <strong>30 October 22:10 → 1 November 21:45 UTC</strong> · devel
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/de5f671002f516e952c3dfafcbf06659a4bc731b"
-              ><code>de5f671002f5</code></a
-            >
-            · canonical repository
-            <code>agentydragon/ducktape</code> ·
-            <a href="evidence.json">reviewed evidence</a> ·
-            <a href="manifest.json">publication manifest</a>.
-          </p>
-          <div class="grid">
-            <div>
-              <article>
-                <div>
-                  <strong>5 / 45</strong
-                  ><span
-                    >Failed / tracked VM target outcomes; four failed test
-                    results were sampled</span
-                  >
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <strong>2</strong
-                  ><span
-                    >VM target failures preceded by separate Firecracker pause
-                    failures</span
-                  >
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <strong>1 / 360</strong
-                  ><span
-                    >Merged PRs with a latest-visible red named gate before
-                    merge</span
-                  >
-                </div>
-              </article>
-            </div>
-          </div>
-        </header>
-        <nav aria-label="Report sections" class="link-row">
-          <a href="#actions">Next actions</a
-          ><a href="#population">Populations</a><a href="#vm">VM suite</a
-          ><a href="#app">App tests</a><a href="#merges">Merge checks</a
-          ><a href="#continuity">Prior work</a><a href="#method">Methods</a>
-        </nav>
-        <section id="actions">
-          <h2>What should happen next</h2>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Concrete action</th>
-                  <th>Evidence needed before claiming repair</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="Rank">1 · VM OOM baseline</td>
-                  <td data-label="Concrete action">
-                    Investigate the Codex first-response gap for session
-                    <code>01502443</code>. Its durable native journal recorded
-                    command admission at 10:54:26 UTC, then no model activity or
-                    native tool execution before the 300-second bound. Other
-                    scenarios completed.
-                  </td>
-                  <td data-label="Evidence needed">
-                    Capture harness launch/first provider request and response,
-                    Runner connection, and session events for that ID. Retain
-                    the real OOM and same-session assertions; a larger outer
-                    timeout cannot fix this pre-tool stall.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Rank">2 · Firecracker pause</td>
-                  <td data-label="Concrete action">
-                    Inspect the two executor pause failures as an executor-side
-                    cluster: Firecracker
-                    <code>fc.sock</code> refused a pause request before each
-                    test retry. Preserve the first attempt's execution ID and
-                    worker timing in any provider investigation.
-                  </td>
-                  <td data-label="Evidence needed">
-                    Correlate worker/VM lifecycle logs and a comparable
-                    successful pause before changing retries or snapshot policy.
-                    Two failures cost 371 seconds of physical attempt time in
-                    this selected sample; that is not a fleet saving estimate.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Rank">3 · Thread projection</td>
-                  <td data-label="Concrete action">
-                    Instrument the handoff from
-                    <code>ReplicationSource.ingesting.copy</code>
-                    to <code>History.record</code>, then the Electric entity
-                    shape and browser projection revision after cursor 334 is
-                    appended.
-                  </td>
-                  <td data-label="Evidence needed">
-                    Failed traces hold DOM revision 264 for 30 s; a physical
-                    passing attempt on another SHA reaches 334. The retained
-                    traces do not expose the History write or live shape
-                    payload, so add those two timestamps and keep the scrolling
-                    assertions.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Rank">4 · VM first response and shutdown</td>
-                  <td data-label="Concrete action">
-                    Continue the sampler first-response timestamp and guest
-                    shutdown evidence proposed in the previous report. The new
-                    sampler interruption and the missing shutdown marker are
-                    separate cases.
-                  </td>
-                  <td data-label="Evidence needed">
-                    Same-stage source/trace comparison after the suite
-                    reorganization. Do not replay a Session whose remote effect
-                    is unknown or weaken teardown checks.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            The test suite now moves central-sampler coverage out of
-            <code>test_vm</code> on the inspected devel SHA. Compare the same
-            scenario and configuration across revisions before estimating any
-            intervention effect. The prior bounded action retry remains in
-            place; its effect was not measured by these target outcomes.
-          </p>
-        </section>
-        <section id="population">
-          <h2>What the counts measure</h2>
-          <p>
-            <code>GetTargetStats</code> used explicit UTC bounds and the
-            canonical repository. Its tracker records selected CI target
-            outcomes, primarily mainline, and excludes many PR invocations.
-            <code>likely_flaky_runs</code> is BuildBuddy's pass–fail–pass
-            heuristic across potentially different commits and configurations.
-            All four sample lists, containing nine events, were paginated to a
-            terminal page. They are leads, not verified same-source recoveries.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tracked target</th>
-                  <th>Failed / total</th>
-                  <th>Likely-flaky samples</th>
-                  <th>Interpretation</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="Tracked target">
-                    <code>//agentplane/system_tests/suites:test_vm</code>
-                  </td>
-                  <td data-label="Failed / total">
-                    5 / 45
-                    <div class="progress">
-                      <span style="width: 11.1%" class="progress-bar"></span>
-                    </div>
-                  </td>
-                  <td data-label="Likely-flaky samples">4</td>
-                  <td data-label="Interpretation">
-                    Four test failures plus one failure to build; suite content
-                    changed during the window.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Tracked target">
-                    <code>//agentplane/app:test_bridge</code>
-                  </td>
-                  <td data-label="Failed / total">
-                    2 / 25
-                    <div class="progress">
-                      <span style="width: 8%" class="progress-bar"></span>
-                    </div>
-                  </td>
-                  <td data-label="Likely-flaky samples">2</td>
-                  <td data-label="Interpretation">
-                    Two different cases, each one failed shard of two.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Tracked target">
-                    <code>//agentplane/app:test_thread_window_browser</code>
-                  </td>
-                  <td data-label="Failed / total">
-                    2 / 25
-                    <div class="progress">
-                      <span style="width: 8%" class="progress-bar"></span>
-                    </div>
-                  </td>
-                  <td data-label="Likely-flaky samples">2</td>
-                  <td data-label="Interpretation">
-                    Same test and cursor assertion twice, different tested SHAs.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Tracked target">
-                    <code>//agentplane/app:test_thread_browser</code>
-                  </td>
-                  <td data-label="Failed / total">
-                    1 / 26
-                    <div class="progress">
-                      <span style="width: 3.8%" class="progress-bar"></span>
-                    </div>
-                  </td>
-                  <td data-label="Likely-flaky samples">1</td>
-                  <td data-label="Interpretation">
-                    One phone geometry case failed among 16 shards in its
-                    invocation.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Paginated all-branch target history returned 284 rows in the UTC
-            window for each label: VM 279 passed, four failed and one failed to
-            build; bridge 282 passed/two failed; thread-window 282 passed/two
-            failed; thread-browser 283 passed/one failed. These rows include
-            cache reuse and many PRs. The 284 rows are <em>not</em> a physical
-            test denominator. No failed full tested SHA had a later passed
-            verdict for the same label in that tracker/history query. A
-            separately inspected exact PR-head retry below does prove one
-            same-tested-tree fresh fail-to-pass recovery; the tracker query
-            misses that selected PR pair.
-          </p>
-          <p>
-            A separate GitHub Actions subset covers
-            <strong>1 November 02:30 → 21:45 UTC</strong>, the portion with a
-            complete paginated job-attempt collection. For the exact
-            <code>bazel-ci / Test &amp; Build</code> job, devel pushes had
-            <strong>2 failures / 82 conclusive attempts</strong>
-            (80 succeeded; 20 more were cancelled). Pull requests had
-            <strong>64 failures / 223 conclusive attempts</strong> (159
-            succeeded; 94 more were cancelled). Seven other-event attempts are
-            excluded. These are workflow job outcomes, not failed target or
-            flake rates; source regressions, runner errors and test failures
-            coexist. The subset is shorter than the report's 47-hour target and
-            merge window.
-          </p>
-        </section>
-        <section id="vm">
-          <h2>VM suite: four distinct failure paths</h2>
-          <p>
-            The four failing target verdicts each have one noncached failed
-            <code>TestResult</code> with remote strategy. Exact
-            <code>TestRunner</code> execution rows establish six physical
-            attempts: two failed tests were preceded by an executor pause error
-            and retried, while the other two have one TestRunner execution each.
-            Target verdicts, test-result attempts and physical executions
-            therefore have different denominators.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Invocation / tested SHA</th>
-                  <th>First causal boundary</th>
-                  <th>Measured cost and next discriminator</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="Invocation / tested SHA">
-                    <a
-                      href="https://app.buildbuddy.io/invocation/30ec0a28-e567-55a3-8799-a2ce309fc1f3"
-                      >30ec0a28</a
-                    ><br /><code>97f630fd23a5</code>
-                  </td>
-                  <td data-label="First causal boundary">
-                    First TestRunner attempt ended after 196.5 s: Firecracker
-                    pause <code>fc.sock</code> connection refused. Retry
-                    executed the test for 635.9 s. The 600 s pytest deadline
-                    struck during active sandbox cleanup, after k3s stack setup
-                    took 238.1 s and concurrent scenarios occupied 361.7 s.
-                  </td>
-                  <td data-label="Measured cost and next discriminator">
-                    The phase trace shows progress, not an idle wait at the
-                    outer deadline. Inspect the slow stack setup and cleanup's
-                    cancellation/ownership; compare a fresh passing VM trace at
-                    equivalent scenario content. Do not classify the whole
-                    result as a single test flake.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Invocation / tested SHA">
-                    <a
-                      href="https://app.buildbuddy.io/invocation/dfdf2518-43c2-5cb0-850b-8edbd3bd084f"
-                      >dfdf2518</a
-                    ><br /><code>cd40824f42b4</code>
-                  </td>
-                  <td data-label="First causal boundary">
-                    First TestRunner attempt spent 174.8 s before the same
-                    Firecracker pause error. In the retry, the OOM scenario's
-                    <code>memory-before</code> command waited exactly 300.0 s;
-                    all other VM scenarios ended within 170.1 s. The outer 600 s
-                    deadline followed during cleanup.
-                  </td>
-                  <td data-label="Measured cost and next discriminator">
-                    Native journal for session
-                    <code>01502443</code> contains only the initial submit-input
-                    admission (cursor 1, 10:54:26 UTC); session metadata reports
-                    no model activity and pending launch. No tool command was
-                    admitted. First missing stage is the harness/model first
-                    response, upstream of the memory probe. Fixture loop
-                    <code>/dev/loop2</code> remained attached at teardown;
-                    distinguish consequence from independent cleanup.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Invocation / tested SHA">
-                    <a
-                      href="https://app.buildbuddy.io/invocation/04ba8a12-f684-5c39-8b15-5a643f4e8a98"
-                      >04ba8a12</a
-                    ><br /><code>aca2575f96ec</code>
-                  </td>
-                  <td data-label="First causal boundary">
-                    Central-sampler setup was interrupted before its first
-                    executor response completed, matching the earlier report's
-                    unknown-effect boundary. The unsettled model exchange
-                    appeared during teardown.
-                  </td>
-                  <td data-label="Measured cost and next discriminator">
-                    341.4 s failed test action. Compare request, first response,
-                    Runner contact and transport timestamps. Do not replay the
-                    uncertain operation.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Invocation / tested SHA">
-                    <a
-                      href="https://app.buildbuddy.io/invocation/ca76018e-1c98-5b86-9b03-ecba43ed672b"
-                      >ca76018e</a
-                    ><br /><code>b13094a1ded7</code>
-                  </td>
-                  <td data-label="First causal boundary">
-                    No scenario assertion failed. Teardown could not find the
-                    guest shutdown-complete marker for one virt-launcher
-                    incarnation.
-                  </td>
-                  <td data-label="Measured cost and next discriminator">
-                    277.4 s failed action. Compare guest console, launcher
-                    termination and the capture boundary in
-                    <a
-                      href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/system_tests/k3s/guest_logs.py#L102"
-                      ><code>guest_logs.py:102</code></a
-                    >; absence of marker alone does not identify why shutdown
-                    failed.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            The 371.3 s spent in the two first Firecracker attempts is observed
-            physical execution time, not measured critical-path savings. A retry
-            keeps tested source fixed, though executor and cache state can
-            change; cross-invocation passing neighbors may use different source.
-            None of these four tracker-visible failures has a same-SHA passed
-            target verdict in the observed history. The selected PR retry below
-            is a separate verified same-tree case. Current source's smaller VM
-            suite means its later passes do not expose the same six scenarios.
-          </p>
-          <h3>Selected same-tree PR retry</h3>
-          <p>
-            On intermediate head <code>98befe057c97</code> of
-            <a href="https://github.com/agentydragon/ducktape/pull/13504"
-              >PR #13504</a
-            >, both Bazel attempts tested synthetic merge tree
-            <code>4ef0fbccedc4</code> with the same 526 configured targets, RBE
-            image and VM test action digest. The first
-            <a
-              href="https://app.buildbuddy.io/invocation/947804bf-f4df-5382-8197-91d93314cd4c"
-              >VM target</a
-            >
-            failed after one noncached physical TestRunner execution of 631.6 s.
-            Its case assertions passed, but 235.6 s of shared k3s setup plus
-            361.7 s of case work left teardown diagnostics at the 600-second
-            pytest deadline. The second
-            <a
-              href="https://app.buildbuddy.io/invocation/dadb26c4-952c-5f8d-af1d-5f5337b2612e"
-              >VM target</a
-            >
-            passed on one fresh physical TestRunner execution of 354.1 s on a
-            different worker. This is one verified same-tested-tree recovery
-            from one selected retry pair, not a population flake rate or proof
-            that the test logic itself is inconsistent.
-          </p>
-          <p>
-            The first Bazel job ended failed at 20:42:47 UTC; the retry job was
-            created 569 s later at 20:52:16 and succeeded at 20:59:35. The first
-            invocation recorded 372 remote execution rows and cache stats of 210
-            hits / 308 misses; the second recorded two execution rows and cache
-            stats of one hit / two misses, including a fresh VM test. These are
-            different counters. Overall cache and worker conditions changed, so
-            the 277.5-second VM execution difference is observed, not a causal
-            saving estimate. The outer run metadata does not identify whether a
-            person or automation initiated the rerun. Capture setup and case
-            phase spans on the same tree before changing the aggregate deadline.
-          </p>
-        </section>
-        <section id="app">
-          <h2>App tests: recurring symptoms, separate mechanisms</h2>
-          <h3>Thread window projection</h3>
-          <p>
-            <a
-              href="https://app.buildbuddy.io/invocation/af15a737-6679-564c-8031-fbf8aabe4b43"
-              >af15a737</a
-            >
-            and
-            <a
-              href="https://app.buildbuddy.io/invocation/418a1037-87c3-5e58-9cd9-25034322c814"
-              >418a1037</a
-            >
-            both failed
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/test_thread_window_browser.py#L171"
-              ><code>test_thread_window_browser.py:171</code></a
-            >: after a held older page landed while the reader was scrolled
-            back, appending 35 more items yielded cursor 334 but the rendered
-            projection never reported it within 30 s. The cases ran on SHAs
-            <code>a9190914ed7c</code> and <code>85d673e5a698</code>. Each failed
-            action was noncached, with one TestRunner execution. The source
-            appends through the
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/testing/replication_source.py#L45"
-              >fake event source</a
-            >
-            and asserts the view's revision cursor. Both retained browser traces
-            show the view reach cursor 264 after the older-page load and remain
-            there through the 30-second wait; no tail item appears. The open
-            live entity-shape GET has no captured event body, and retained
-            service logs do not record the History write or per-cursor
-            projection. A comparable noncached physical pass (<a
-              href="https://app.buildbuddy.io/invocation/0e35611e-ea00-5397-845c-3ca20ee4a2d2"
-              >0e35611e</a
-            >, different SHA <code>01bc3bb7288d</code>) shows 264 → 334 in its
-            DOM trace. The first missing stage is therefore bounded between
-            <code>ReplicationSource.append</code> and rendered view revision,
-            with the copy/History write, Electric row/shape and
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/frontend/threads/electric_sync.tsx#L772"
-              >client apply</a
-            >
-            unresolved. If the durable view-state row reaches 334 but the live
-            shape does not, repair shape delivery or subscription recovery; if
-            the row stays at 264, repair the copy/History projection handoff.
-            Record those stage cursors on failure to choose between them, and
-            preserve the retained-reader assertion. The two failures are
-            recurrence across commits, not same-source recovery.
-          </p>
-          <h3>Bridge and thread geometry</h3>
-          <p>
-            <a
-              href="https://app.buildbuddy.io/invocation/2367c65d-49d9-57e3-889e-4d20245fd8b0"
-              >2367c65d</a
-            >
-            failed the Codex shutdown recovery case after the Go Runner exited
-            1; the gateway then returned
-            <code
-              >UNAVAILABLE: another replica holds this Sandbox's runner
-              connection</code
-            >, including during diagnostic teardown.
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/runner_gateway/gateway/connections.go#L84"
-              ><code>connections.go:84</code></a
-            >
-            returns that error when local holder is absent or its Lease epoch is
-            older. Capture the Runner exit cause and gateway/Lease transition
-            before attributing it to a replica race. The second bridge failure,
-            <a
-              href="https://app.buildbuddy.io/invocation/d9dd1586-bf30-56ec-a897-b8ca18888ee3"
-              >d9dd1586</a
-            >, observed Runner cursor 52 after recording control cursor 51 when
-            a History fence was released; the exact-equality assertion at
-            <code>test_bridge.py:781</code> timed out. Identify event 52 before
-            relaxing the contract. Both targets have two noncached shards, one
-            failed each. In the same 30ec invocation as the VM failure,
-            <code>test_thread_browser</code> had one failed phone geometry shard
-            of 16; its committed-measurement assertion is a separate visual
-            lead.
-          </p>
-        </section>
-        <section id="merges">
-          <h2>Merged PR checks: one confirmed red lead</h2>
-          <p>
-            Three UTC day partitions cross-checked GitHub search counts against
-            merged-PR listing (210, 208 and 127 rows; all below the 1,000 cap).
-            Exact filtering gives <strong>360 merged PRs</strong>. For three
-            named gates on each exact head, the current latest-visible rollup
-            classifies 334 as green before merge, one visible red, ten with an
-            attempt straddling merge, three with an attempt starting after merge
-            and twelve missing a gate. Later reruns may hide prior check
-            attempts, so the unknown classes are not bypass counts.
-          </p>
-          <blockquote>
-            <strong
-              ><a href="https://github.com/agentydragon/ducktape/pull/13181"
-                >#13181</a
-              >
-              was visibly red at merge.</strong
-            >
-            Its Bazel check completed failed at 31 October 01:21:01 UTC; merge
-            was at 01:23:51 UTC. The PR head was
-            <code>de5aeeee76af</code>; the job's runner reported tested
-            synthetic merge <code>159668cb</code>. The exact
-            <a
-              href="https://github.com/agentydragon/ducktape/actions/runs/41153863966/job/124396239058"
-              >job</a
-            >
-            failed
-            <code>//agentplane/system_tests/k3s:test_render</code>
-            because the test still asserted
-            <code>actions_config["integrated_connection_service"]</code>
-            after the setting was removed. This was a deterministic stale
-            test/source integration error, not a proven flake.
-            <a href="https://github.com/agentydragon/ducktape/pull/13186"
-              >#13186</a
-            >
-            removed the assertion; do not reopen it as a recommendation. No
-            explicit bypass or force-merge audit event was established.
-          </blockquote>
-          <p>
-            The ten straddling attempts include later failures on
-            <a href="https://github.com/agentydragon/ducktape/pull/13125"
-              >#13125</a
-            >,
-            <a href="https://github.com/agentydragon/ducktape/pull/13127"
-              >#13127</a
-            >,
-            <a href="https://github.com/agentydragon/ducktape/pull/13454"
-              >#13454</a
-            >
-            and
-            <a href="https://github.com/agentydragon/ducktape/pull/13462"
-              >#13462</a
-            >. Their current latest attempts were pending or began after merge;
-            historical prior attempts were not reconstructed. They remain
-            investigation leads, not verified bypasses or flakes.
-          </p>
-        </section>
-        <section id="continuity">
-          <h2>Earlier findings and intervention effects</h2>
-          <p>
-            The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/a7aba03c0c745de172872fda1393303cbd55dd70/reliability/index.html"
-              >30 October report</a
-            >
-            measured 23 October 22:10 → 30 October 22:10 UTC at source
-            <code>49475cae74ab</code>. Its 7/144 mainline and 64/280 PR/fork
-            conclusive invocation failures came from a different 25-hour
-            GitHub-arrival sweep; do not compare them to the current
-            target-tracker fractions.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Prior item</th>
-                  <th>Current disposition</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="Prior item">VM sampler first response</td>
-                  <td data-label="Current disposition">
-                    One new failure has the same interrupted-setup symptom;
-                    exact transport cause remains unknown. The current suite
-                    split changes exposure, so there is no measured intervention
-                    effect.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Prior item">VM OOM health restart</td>
-                  <td data-label="Current disposition">
-                    The earlier guest exec-server replacement after OOM is
-                    distinct from this window's
-                    <code>memory-before</code> command stall. Preserve both as
-                    separate leads.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Prior item">
-                    Dispatcher SQLite journal repair
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12702"
-                      >#12702</a
-                    >
-                  </td>
-                  <td data-label="Current disposition">
-                    The prior controlled positive/negative SQLite lock test
-                    supports the repair. The legacy target was removed; no
-                    post-fix physical recurrence denominator was collected.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Prior item">
-                    Bounded Bazel action retry
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12896"
-                      >#12896</a
-                    >
-                  </td>
-                  <td data-label="Current disposition">
-                    Landed. Two current Firecracker pause failures were retried
-                    and then encountered different test failures. This
-                    demonstrates retry exposure, not the counterfactual effect
-                    of the setting.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Prior item">Remote-log observer</td>
-                  <td data-label="Current disposition">
-                    Prior three selected
-                    <code>INTERNAL</code> stream errors resubmitted whole outer
-                    runs. A current recurrence count was not collected;
-                    reconnecting the same run remains a candidate repair, with
-                    execution-state checks.
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Prior item">
-                    Streaming channel race
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12629"
-                      >#12629</a
-                    >
-                  </td>
-                  <td data-label="Current disposition">
-                    Matching dependency patch landed; no post-fix recurrence
-                    measurement. Do not reapply it.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section id="method">
-          <h2>Reproduction and limits</h2>
-          <ul>
-            <li>
-              BuildBuddy Flakes API bounds are exact UTC through CLI duration
-              conversion at request time. The four labels returned nine
-              paginated heuristic samples. Target history was independently
-              paginated; all-branch rows include cache results and are not
-              physical exposures.
-            </li>
-            <li>
-              For selected failed targets, exact target summaries, remote
-              <code>TestResult</code> strategies and matching
-              <code>TestRunner</code> execution IDs establish noncached runs and
-              physical attempts. Two VM target failures have two physical
-              attempts each. No complete fresh-run denominator or same-full-SHA
-              passing recovery was found in the tracker/history query; one
-              selected PR retry has a verified same-tree fresh fail-to-pass
-              pair.
-            </li>
-            <li>
-              VM timelines use the failed attempt's retained
-              <code>test-spans.jsonl</code> or <code>vm-phases.jsonl</code>,
-              plus native/test logs. Nested and concurrent spans are wall
-              intervals; they are not summed as CPU time. The two slow VM
-              attempts have different first unresolved operations.
-            </li>
-            <li>
-              GitHub census uses complete day partitions, current exact-head
-              check rollups and merge timestamps. It cannot reconstruct
-              superseded check attempts. A non-green merge is operator friction,
-              not proof of flakiness or intentional bypass.
-            </li>
-            <li>
-              Raw API responses, logs and traces remain in local scratch. This
-              report changes no workflow, retry policy or production test.
-              Desktop/mobile visual validation and publication are separate
-              review steps after this authored report.
-            </li>
-          </ul>
-        </section>
-        <footer class="muted">
-          <a href="evidence.json">Evidence</a> ·
-          <a href="manifest.json">Manifest</a> ·
-          <a href="../latency/">CI latency</a> ·
-          <a href="../visual-reliability/">Visual reliability</a> ·
-          <a href="../">All reports</a>
-          <p>
-            Latest-only snapshot. GitHub Pages updates after the report PR
-            merges.
-          </p>
-        </footer>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Paper,
+        Progress,
+        SimpleGrid,
+        Stack,
+        Table,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      import {
+        TargetFailureChart,
+        JobOutcomeChart,
+        HistoricalRemoteErrorChart,
+      } from "./charts.js";
+      function Report() {
+        return html`<${Container} component=${"main"} size="74rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
+  <header>
+    <${Text} c="dimmed" component="p" my="sm">
+      ${" Presentation updated 9 November 2026. Measurements retain the original 30 October–1 November window; recurrence was not remeasured in this styling update. "}
+    <//>
+    <${Box}>
+      ${"Ducktape · CI reliability · 1 November 2026"}
+    <//>
+    <${Title} order=${1} mt="md" mb="sm">
+      ${"VM failures split across test work and executor retries."}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" Four fresh VM-suite failures have three different test outcomes. Two also paid for an earlier Firecracker pause failure before Bazel retried the test action. A browser test repeated the same missing projection cursor assertion on two different revisions. A selected PR retry independently shows one same-tree VM failure followed by a fresh pass. The single visibly red merge was a stale fixture assertion already repaired. "}
+    <//>
+    <${Text} c="dimmed" component="p" my="sm">
+      ${" Observation window: "}
+      <strong>
+        ${"30 October 22:10 → 1 November 21:45 UTC"}
+      </strong>
+      ${" · devel "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/commit/de5f671002f516e952c3dfafcbf06659a4bc731b"}>
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"de5f671002f5"}
+        <//>
+      <//>
+      ${" · canonical repository "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"agentydragon/ducktape"}
+      <//>
+      ${" · "}
+      <${Anchor} href=${"evidence.json"}>
+        ${"reviewed evidence"}
+      <//>
+      ${" · "}
+      <${Anchor} href=${"manifest.json"}>
+        ${"publication manifest"}
+      <//>
+      ${". "}
+    <//>
+    <${SimpleGrid} component=${"div"} cols=${{ base: 1, sm: 2, lg: 3 }} spacing="md">
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Text} size="xl" fw=${700}>
+              ${"5 / 45"}
+            <//>
+            <${Text} component="p" mt="xs">
+              ${"Failed / tracked VM target outcomes; four failed test results were sampled"}
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Text} size="xl" fw=${700}>
+              ${"2"}
+            <//>
+            <${Text} component="p" mt="xs">
+              ${"VM target failures preceded by separate Firecracker pause failures"}
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Box}>
+        <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+          <${Box}>
+            <${Text} size="xl" fw=${700}>
+              ${"1 / 360"}
+            <//>
+            <${Text} component="p" mt="xs">
+              ${"Merged PRs with a latest-visible red named gate before merge"}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+  </header>
+  <${Group} aria-label=${"Report sections"} component=${"nav"} gap="sm" my="md">
+    <${Anchor} href=${"#actions"}>
+      ${"Next actions"}
+    <//>
+    <${Anchor} href=${"#population"}>
+      ${"Populations"}
+    <//>
+    <${Anchor} href=${"#vm"}>
+      ${"VM suite"}
+    <//>
+    <${Anchor} href=${"#app"}>
+      ${"App tests"}
+    <//>
+    <${Anchor} href=${"#merges"}>
+      ${"Merge checks"}
+    <//>
+    <${Anchor} href=${"#continuity"}>
+      ${"Prior work"}
+    <//>
+    <${Anchor} href=${"#method"}>
+      ${"Methods"}
+    <//>
+  <//>
+  <${Stack} id=${"actions"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"What should happen next"}
+    <//>
+    <${Table.ScrollContainer} minWidth=${640} type="native" my="md" maw="100%">
+      <${Table} striped highlightOnHover verticalSpacing="sm">
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>
+              ${"Rank"}
+            <//>
+            <${Table.Th}>
+              ${"Concrete action"}
+            <//>
+            <${Table.Th}>
+              ${"Evidence needed before claiming repair"}
+            <//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Rank"}>
+              ${"1 · VM OOM baseline"}
+            <//>
+            <${Table.Td} data-label=${"Concrete action"}>
+              ${" Investigate the Codex first-response gap for session "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"01502443"}
+              <//>
+              ${". Its durable native journal recorded command admission at 10:54:26 UTC, then no model activity or native tool execution before the 300-second bound. Other scenarios completed. "}
+            <//>
+            <${Table.Td} data-label=${"Evidence needed"}>
+              ${" Capture harness launch/first provider request and response, Runner connection, and session events for that ID. Retain the real OOM and same-session assertions; a larger outer timeout cannot fix this pre-tool stall. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Rank"}>
+              ${"2 · Firecracker pause"}
+            <//>
+            <${Table.Td} data-label=${"Concrete action"}>
+              ${" Inspect the two executor pause failures as an executor-side cluster: Firecracker "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"fc.sock"}
+              <//>
+              ${" refused a pause request before each test retry. Preserve the first attempt's execution ID and worker timing in any provider investigation. "}
+            <//>
+            <${Table.Td} data-label=${"Evidence needed"}>
+              ${" Correlate worker/VM lifecycle logs and a comparable successful pause before changing retries or snapshot policy. Two failures cost 371 seconds of physical attempt time in this selected sample; that is not a fleet saving estimate. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Rank"}>
+              ${"3 · Thread projection"}
+            <//>
+            <${Table.Td} data-label=${"Concrete action"}>
+              ${" Instrument the handoff from "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"ReplicationSource.ingesting.copy"}
+              <//>
+              ${" to "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"History.record"}
+              <//>
+              ${", then the Electric entity shape and browser projection revision after cursor 334 is appended. "}
+            <//>
+            <${Table.Td} data-label=${"Evidence needed"}>
+              ${" Failed traces hold DOM revision 264 for 30 s; a physical passing attempt on another SHA reaches 334. The retained traces do not expose the History write or live shape payload, so add those two timestamps and keep the scrolling assertions. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Rank"}>
+              ${"4 · VM first response and shutdown"}
+            <//>
+            <${Table.Td} data-label=${"Concrete action"}>
+              ${" Continue the sampler first-response timestamp and guest shutdown evidence proposed in the previous report. The new sampler interruption and the missing shutdown marker are separate cases. "}
+            <//>
+            <${Table.Td} data-label=${"Evidence needed"}>
+              ${" Same-stage source/trace comparison after the suite reorganization. Do not replay a Session whose remote effect is unknown or weaken teardown checks. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The test suite now moves central-sampler coverage out of "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"test_vm"}
+      <//>
+      ${" on the inspected devel SHA. Compare the same scenario and configuration across revisions before estimating any intervention effect. The prior bounded action retry remains in place; its effect was not measured by these target outcomes. "}
+    <//>
+  <//>
+  <${Stack} id=${"population"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"What the counts measure"}
+    <//>
+    <${Text} component="p" my="sm">
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"GetTargetStats"}
+      <//>
+      ${" used explicit UTC bounds and the canonical repository. Its tracker records selected CI target outcomes, primarily mainline, and excludes many PR invocations. "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"likely_flaky_runs"}
+      <//>
+      ${" is BuildBuddy's pass–fail–pass heuristic across potentially different commits and configurations. All four sample lists, containing nine events, were paginated to a terminal page. They are leads, not verified same-source recoveries. "}
+    <//>
+    <${Table.ScrollContainer} minWidth=${640} type="native" my="md" maw="100%">
+      <${Table} striped highlightOnHover verticalSpacing="sm">
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>
+              ${"Tracked target"}
+            <//>
+            <${Table.Th}>
+              ${"Failed / total"}
+            <//>
+            <${Table.Th}>
+              ${"Likely-flaky samples"}
+            <//>
+            <${Table.Th}>
+              ${"Interpretation"}
+            <//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Tracked target"}>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"//agentplane/system_tests/suites:test_vm"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Failed / total"}>
+              ${" 5 / 45 "}
+              <${Progress} value=${11.1} size="sm" color="red" my="xs" aria-label=${"11.1% failed tracked target outcomes"} />
+            <//>
+            <${Table.Td} data-label=${"Likely-flaky samples"}>
+              ${"4"}
+            <//>
+            <${Table.Td} data-label=${"Interpretation"}>
+              ${" Four test failures plus one failure to build; suite content changed during the window. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Tracked target"}>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"//agentplane/app:test_bridge"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Failed / total"}>
+              ${" 2 / 25 "}
+              <${Progress} value=${8.0} size="sm" color="red" my="xs" aria-label=${"8.0% failed tracked target outcomes"} />
+            <//>
+            <${Table.Td} data-label=${"Likely-flaky samples"}>
+              ${"2"}
+            <//>
+            <${Table.Td} data-label=${"Interpretation"}>
+              ${" Two different cases, each one failed shard of two. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Tracked target"}>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"//agentplane/app:test_thread_window_browser"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Failed / total"}>
+              ${" 2 / 25 "}
+              <${Progress} value=${8.0} size="sm" color="red" my="xs" aria-label=${"8.0% failed tracked target outcomes"} />
+            <//>
+            <${Table.Td} data-label=${"Likely-flaky samples"}>
+              ${"2"}
+            <//>
+            <${Table.Td} data-label=${"Interpretation"}>
+              ${" Same test and cursor assertion twice, different tested SHAs. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Tracked target"}>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"//agentplane/app:test_thread_browser"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Failed / total"}>
+              ${" 1 / 26 "}
+              <${Progress} value=${3.8} size="sm" color="red" my="xs" aria-label=${"3.8% failed tracked target outcomes"} />
+            <//>
+            <${Table.Td} data-label=${"Likely-flaky samples"}>
+              ${"1"}
+            <//>
+            <${Table.Td} data-label=${"Interpretation"}>
+              ${" One phone geometry case failed among 16 shards in its invocation. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Text} component="p" my="sm">
+      ${" Paginated all-branch target history returned 284 rows in the UTC window for each label: VM 279 passed, four failed and one failed to build; bridge 282 passed/two failed; thread-window 282 passed/two failed; thread-browser 283 passed/one failed. These rows include cache reuse and many PRs. The 284 rows are "}
+      <em>
+        ${"not"}
+      </em>
+      ${" a physical test denominator. No failed full tested SHA had a later passed verdict for the same label in that tracker/history query. A separately inspected exact PR-head retry below does prove one same-tested-tree fresh fail-to-pass recovery; the tracker query misses that selected PR pair. "}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" A separate GitHub Actions subset covers "}
+      <strong>
+        ${"1 November 02:30 → 21:45 UTC"}
+      </strong>
+      ${", the portion with a complete paginated job-attempt collection. For the exact "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"bazel-ci / Test & Build"}
+      <//>
+      ${" job, devel pushes had "}
+      <strong>
+        ${"2 failures / 82 conclusive attempts"}
+      </strong>
+      ${" (80 succeeded; 20 more were cancelled). Pull requests had "}
+      <strong>
+        ${"64 failures / 223 conclusive attempts"}
+      </strong>
+      ${" (159 succeeded; 94 more were cancelled). Seven other-event attempts are excluded. These are workflow job outcomes, not failed target or flake rates; source regressions, runner errors and test failures coexist. The subset is shorter than the report's 47-hour target and merge window. "}
+    <//>
+    ${html`<${TargetFailureChart} /><${JobOutcomeChart} />`}
+  <//>
+  <${Stack} id=${"vm"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"VM suite: four distinct failure paths"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The four failing target verdicts each have one noncached failed "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"TestResult"}
+      <//>
+      ${" with remote strategy. Exact "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"TestRunner"}
+      <//>
+      ${" execution rows establish six physical attempts: two failed tests were preceded by an executor pause error and retried, while the other two have one TestRunner execution each. Target verdicts, test-result attempts and physical executions therefore have different denominators. "}
+    <//>
+    <${Table.ScrollContainer} minWidth=${640} type="native" my="md" maw="100%">
+      <${Table} striped highlightOnHover verticalSpacing="sm">
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>
+              ${"Invocation / tested SHA"}
+            <//>
+            <${Table.Th}>
+              ${"First causal boundary"}
+            <//>
+            <${Table.Th}>
+              ${"Measured cost and next discriminator"}
+            <//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Invocation / tested SHA"}>
+              <${Anchor} href=${"https://app.buildbuddy.io/invocation/30ec0a28-e567-55a3-8799-a2ce309fc1f3"}>
+                ${"30ec0a28"}
+              <//>
+              <br>
+
+              </br>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"97f630fd23a5"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"First causal boundary"}>
+              ${" First TestRunner attempt ended after 196.5 s: Firecracker pause "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"fc.sock"}
+              <//>
+              ${" connection refused. Retry executed the test for 635.9 s. The 600 s pytest deadline struck during active sandbox cleanup, after k3s stack setup took 238.1 s and concurrent scenarios occupied 361.7 s. "}
+            <//>
+            <${Table.Td} data-label=${"Measured cost and next discriminator"}>
+              ${" The phase trace shows progress, not an idle wait at the outer deadline. Inspect the slow stack setup and cleanup's cancellation/ownership; compare a fresh passing VM trace at equivalent scenario content. Do not classify the whole result as a single test flake. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Invocation / tested SHA"}>
+              <${Anchor} href=${"https://app.buildbuddy.io/invocation/dfdf2518-43c2-5cb0-850b-8edbd3bd084f"}>
+                ${"dfdf2518"}
+              <//>
+              <br>
+
+              </br>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"cd40824f42b4"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"First causal boundary"}>
+              ${" First TestRunner attempt spent 174.8 s before the same Firecracker pause error. In the retry, the OOM scenario's "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"memory-before"}
+              <//>
+              ${" command waited exactly 300.0 s; all other VM scenarios ended within 170.1 s. The outer 600 s deadline followed during cleanup. "}
+            <//>
+            <${Table.Td} data-label=${"Measured cost and next discriminator"}>
+              ${" Native journal for session "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"01502443"}
+              <//>
+              ${" contains only the initial submit-input admission (cursor 1, 10:54:26 UTC); session metadata reports no model activity and pending launch. No tool command was admitted. First missing stage is the harness/model first response, upstream of the memory probe. Fixture loop "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"/dev/loop2"}
+              <//>
+              ${" remained attached at teardown; distinguish consequence from independent cleanup. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Invocation / tested SHA"}>
+              <${Anchor} href=${"https://app.buildbuddy.io/invocation/04ba8a12-f684-5c39-8b15-5a643f4e8a98"}>
+                ${"04ba8a12"}
+              <//>
+              <br>
+
+              </br>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"aca2575f96ec"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"First causal boundary"}>
+              ${" Central-sampler setup was interrupted before its first executor response completed, matching the earlier report's unknown-effect boundary. The unsettled model exchange appeared during teardown. "}
+            <//>
+            <${Table.Td} data-label=${"Measured cost and next discriminator"}>
+              ${" 341.4 s failed test action. Compare request, first response, Runner contact and transport timestamps. Do not replay the uncertain operation. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Invocation / tested SHA"}>
+              <${Anchor} href=${"https://app.buildbuddy.io/invocation/ca76018e-1c98-5b86-9b03-ecba43ed672b"}>
+                ${"ca76018e"}
+              <//>
+              <br>
+
+              </br>
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"b13094a1ded7"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"First causal boundary"}>
+              ${" No scenario assertion failed. Teardown could not find the guest shutdown-complete marker for one virt-launcher incarnation. "}
+            <//>
+            <${Table.Td} data-label=${"Measured cost and next discriminator"}>
+              ${" 277.4 s failed action. Compare guest console, launcher termination and the capture boundary in "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/system_tests/k3s/guest_logs.py#L102"}>
+                <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                  ${"guest_logs.py:102"}
+                <//>
+              <//>
+              ${"; absence of marker alone does not identify why shutdown failed. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The 371.3 s spent in the two first Firecracker attempts is observed physical execution time, not measured critical-path savings. A retry keeps tested source fixed, though executor and cache state can change; cross-invocation passing neighbors may use different source. None of these four tracker-visible failures has a same-SHA passed target verdict in the observed history. The selected PR retry below is a separate verified same-tree case. Current source's smaller VM suite means its later passes do not expose the same six scenarios. "}
+    <//>
+    <${Title} order=${3} mt="md" mb="sm">
+      ${"Selected same-tree PR retry"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" On intermediate head "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"98befe057c97"}
+      <//>
+      ${" of "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13504"}>
+        ${"PR #13504"}
+      <//>
+      ${", both Bazel attempts tested synthetic merge tree "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"4ef0fbccedc4"}
+      <//>
+      ${" with the same 526 configured targets, RBE image and VM test action digest. The first "}
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/947804bf-f4df-5382-8197-91d93314cd4c"}>
+        ${"VM target"}
+      <//>
+      ${" failed after one noncached physical TestRunner execution of 631.6 s. Its case assertions passed, but 235.6 s of shared k3s setup plus 361.7 s of case work left teardown diagnostics at the 600-second pytest deadline. The second "}
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/dadb26c4-952c-5f8d-af1d-5f5337b2612e"}>
+        ${"VM target"}
+      <//>
+      ${" passed on one fresh physical TestRunner execution of 354.1 s on a different worker. This is one verified same-tested-tree recovery from one selected retry pair, not a population flake rate or proof that the test logic itself is inconsistent. "}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The first Bazel job ended failed at 20:42:47 UTC; the retry job was created 569 s later at 20:52:16 and succeeded at 20:59:35. The first invocation recorded 372 remote execution rows and cache stats of 210 hits / 308 misses; the second recorded two execution rows and cache stats of one hit / two misses, including a fresh VM test. These are different counters. Overall cache and worker conditions changed, so the 277.5-second VM execution difference is observed, not a causal saving estimate. The outer run metadata does not identify whether a person or automation initiated the rerun. Capture setup and case phase spans on the same tree before changing the aggregate deadline. "}
+    <//>
+  <//>
+  <${Stack} id=${"app"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"App tests: recurring symptoms, separate mechanisms"}
+    <//>
+    <${Title} order=${3} mt="md" mb="sm">
+      ${"Thread window projection"}
+    <//>
+    <${Text} component="p" my="sm">
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/af15a737-6679-564c-8031-fbf8aabe4b43"}>
+        ${"af15a737"}
+      <//>
+      ${" and "}
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/418a1037-87c3-5e58-9cd9-25034322c814"}>
+        ${"418a1037"}
+      <//>
+      ${" both failed "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/test_thread_window_browser.py#L171"}>
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"test_thread_window_browser.py:171"}
+        <//>
+      <//>
+      ${": after a held older page landed while the reader was scrolled back, appending 35 more items yielded cursor 334 but the rendered projection never reported it within 30 s. The cases ran on SHAs "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"a9190914ed7c"}
+      <//>
+      ${" and "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"85d673e5a698"}
+      <//>
+      ${". Each failed action was noncached, with one TestRunner execution. The source appends through the "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/testing/replication_source.py#L45"}>
+        ${"fake event source"}
+      <//>
+      ${" and asserts the view's revision cursor. Both retained browser traces show the view reach cursor 264 after the older-page load and remain there through the 30-second wait; no tail item appears. The open live entity-shape GET has no captured event body, and retained service logs do not record the History write or per-cursor projection. A comparable noncached physical pass ("}
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/0e35611e-ea00-5397-845c-3ca20ee4a2d2"}>
+        ${"0e35611e"}
+      <//>
+      ${", different SHA "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"01bc3bb7288d"}
+      <//>
+      ${") shows 264 → 334 in its DOM trace. The first missing stage is therefore bounded between "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"ReplicationSource.append"}
+      <//>
+      ${" and rendered view revision, with the copy/History write, Electric row/shape and "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/app/frontend/threads/electric_sync.tsx#L772"}>
+        ${"client apply"}
+      <//>
+      ${" unresolved. If the durable view-state row reaches 334 but the live shape does not, repair shape delivery or subscription recovery; if the row stays at 264, repair the copy/History projection handoff. Record those stage cursors on failure to choose between them, and preserve the retained-reader assertion. The two failures are recurrence across commits, not same-source recovery. "}
+    <//>
+    <${Title} order=${3} mt="md" mb="sm">
+      ${"Bridge and thread geometry"}
+    <//>
+    <${Text} component="p" my="sm">
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/2367c65d-49d9-57e3-889e-4d20245fd8b0"}>
+        ${"2367c65d"}
+      <//>
+      ${" failed the Codex shutdown recovery case after the Go Runner exited 1; the gateway then returned "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"UNAVAILABLE: another replica holds this Sandbox's runner connection"}
+      <//>
+      ${", including during diagnostic teardown. "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/runner_gateway/gateway/connections.go#L84"}>
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"connections.go:84"}
+        <//>
+      <//>
+      ${" returns that error when local holder is absent or its Lease epoch is older. Capture the Runner exit cause and gateway/Lease transition before attributing it to a replica race. The second bridge failure, "}
+      <${Anchor} href=${"https://app.buildbuddy.io/invocation/d9dd1586-bf30-56ec-a897-b8ca18888ee3"}>
+        ${"d9dd1586"}
+      <//>
+      ${", observed Runner cursor 52 after recording control cursor 51 when a History fence was released; the exact-equality assertion at "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"test_bridge.py:781"}
+      <//>
+      ${" timed out. Identify event 52 before relaxing the contract. Both targets have two noncached shards, one failed each. In the same 30ec invocation as the VM failure, "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"test_thread_browser"}
+      <//>
+      ${" had one failed phone geometry shard of 16; its committed-measurement assertion is a separate visual lead. "}
+    <//>
+  <//>
+  <${Stack} id=${"merges"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"Merged PR checks: one confirmed red lead"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" Three UTC day partitions cross-checked GitHub search counts against merged-PR listing (210, 208 and 127 rows; all below the 1,000 cap). Exact filtering gives "}
+      <strong>
+        ${"360 merged PRs"}
+      </strong>
+      ${". For three named gates on each exact head, the current latest-visible rollup classifies 334 as green before merge, one visible red, ten with an attempt straddling merge, three with an attempt starting after merge and twelve missing a gate. Later reruns may hide prior check attempts, so the unknown classes are not bypass counts. "}
+    <//>
+    <${Blockquote} my="md">
+      <strong>
+        <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13181"}>
+          ${"#13181"}
+        <//>
+        ${" was visibly red at merge."}
+      </strong>
+      ${" Its Bazel check completed failed at 31 October 01:21:01 UTC; merge was at 01:23:51 UTC. The PR head was "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"de5aeeee76af"}
+      <//>
+      ${"; the job's runner reported tested synthetic merge "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"159668cb"}
+      <//>
+      ${". The exact "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/actions/runs/41153863966/job/124396239058"}>
+        ${"job"}
+      <//>
+      ${" failed "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"//agentplane/system_tests/k3s:test_render"}
+      <//>
+      ${" because the test still asserted "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${'actions_config["integrated_connection_service"]'}
+      <//>
+      ${" after the setting was removed. This was a deterministic stale test/source integration error, not a proven flake. "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13186"}>
+        ${"#13186"}
+      <//>
+      ${" removed the assertion; do not reopen it as a recommendation. No explicit bypass or force-merge audit event was established. "}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The ten straddling attempts include later failures on "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13125"}>
+        ${"#13125"}
+      <//>
+      ${", "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13127"}>
+        ${"#13127"}
+      <//>
+      ${", "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13454"}>
+        ${"#13454"}
+      <//>
+      ${" and "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/13462"}>
+        ${"#13462"}
+      <//>
+      ${". Their current latest attempts were pending or began after merge; historical prior attempts were not reconstructed. They remain investigation leads, not verified bypasses or flakes. "}
+    <//>
+  <//>
+  <${Stack} id=${"continuity"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"Earlier findings and intervention effects"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" The "}
+      <${Anchor} href=${"https://github.com/agentydragon/ducktape/blob/a7aba03c0c745de172872fda1393303cbd55dd70/reliability/index.html"}>
+        ${"30 October report"}
+      <//>
+      ${" measured 23 October 22:10 → 30 October 22:10 UTC at source "}
+      <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+        ${"49475cae74ab"}
+      <//>
+      ${". Its 7/144 mainline and 64/280 PR/fork conclusive invocation failures came from a different 25-hour GitHub-arrival sweep; do not compare them to the current target-tracker fractions. "}
+    <//>
+    <${Table.ScrollContainer} minWidth=${640} type="native" my="md" maw="100%">
+      <${Table} striped highlightOnHover verticalSpacing="sm">
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>
+              ${"Prior item"}
+            <//>
+            <${Table.Th}>
+              ${"Current disposition"}
+            <//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${"VM sampler first response"}
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" One new failure has the same interrupted-setup symptom; exact transport cause remains unknown. The current suite split changes exposure, so there is no measured intervention effect. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${"VM OOM health restart"}
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" The earlier guest exec-server replacement after OOM is distinct from this window's "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"memory-before"}
+              <//>
+              ${" command stall. Preserve both as separate leads. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${" Dispatcher SQLite journal repair "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/12702"}>
+                ${"#12702"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" The prior controlled positive/negative SQLite lock test supports the repair. The legacy target was removed; no post-fix physical recurrence denominator was collected. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${" Bounded Bazel action retry "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/12896"}>
+                ${"#12896"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" Landed. Two current Firecracker pause failures were retried and then encountered different test failures. This demonstrates retry exposure, not the counterfactual effect of the setting. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${"Remote-log observer"}
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" Prior three selected "}
+              <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                ${"INTERNAL"}
+              <//>
+              ${" stream errors resubmitted whole outer runs. A current recurrence count was not collected; reconnecting the same run remains a candidate repair, with execution-state checks. "}
+            <//>
+          <//>
+          <${Table.Tr}>
+            <${Table.Td} data-label=${"Prior item"}>
+              ${" Streaming channel race "}
+              <${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/12629"}>
+                ${"#12629"}
+              <//>
+            <//>
+            <${Table.Td} data-label=${"Current disposition"}>
+              ${" Matching dependency patch landed; no post-fix recurrence measurement. Do not reapply it. "}
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+    ${html`<${HistoricalRemoteErrorChart} />`}
+  <//>
+  <${Stack} id=${"method"} component="section" gap="md" my="xl">
+    <${Title} order=${2} mt="md" mb="sm">
+      ${"Reproduction and limits"}
+    <//>
+    <ul>
+      <li>
+        ${" BuildBuddy Flakes API bounds are exact UTC through CLI duration conversion at request time. The four labels returned nine paginated heuristic samples. Target history was independently paginated; all-branch rows include cache results and are not physical exposures. "}
+      </li>
+      <li>
+        ${" For selected failed targets, exact target summaries, remote "}
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"TestResult"}
+        <//>
+        ${" strategies and matching "}
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"TestRunner"}
+        <//>
+        ${" execution IDs establish noncached runs and physical attempts. Two VM target failures have two physical attempts each. No complete fresh-run denominator or same-full-SHA passing recovery was found in the tracker/history query; one selected PR retry has a verified same-tree fresh fail-to-pass pair. "}
+      </li>
+      <li>
+        ${" VM timelines use the failed attempt's retained "}
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"test-spans.jsonl"}
+        <//>
+        ${" or "}
+        <${Code} style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+          ${"vm-phases.jsonl"}
+        <//>
+        ${", plus native/test logs. Nested and concurrent spans are wall intervals; they are not summed as CPU time. The two slow VM attempts have different first unresolved operations. "}
+      </li>
+      <li>
+        ${" GitHub census uses complete day partitions, current exact-head check rollups and merge timestamps. It cannot reconstruct superseded check attempts. A non-green merge is operator friction, not proof of flakiness or intentional bypass. "}
+      </li>
+      <li>
+        ${" Raw API responses, logs and traces remain in local scratch. This report changes no workflow, retry policy or production test. Desktop/mobile visual validation and publication are separate review steps after this authored report. "}
+      </li>
+    </ul>
+  <//>
+  <${Box} c="dimmed" component="footer" mt="xl">
+    <${Anchor} href=${"evidence.json"}>
+      ${"Evidence"}
+    <//>
+    ${" · "}
+    <${Anchor} href=${"manifest.json"}>
+      ${"Manifest"}
+    <//>
+    ${" · "}
+    <${Anchor} href=${"../latency/"}>
+      ${"CI latency"}
+    <//>
+    ${" · "}
+    <${Anchor} href=${"../visual-reliability/"}>
+      ${"Visual reliability"}
+    <//>
+    ${" · "}
+    <${Anchor} href=${"../"}>
+      ${"All reports"}
+    <//>
+    <${Text} component="p" my="sm">
+      ${" Latest-only snapshot. GitHub Pages updates after the report PR merges. "}
+    <//>
+  <//>
+<//>
+`;
+      }
+      mount(Report);
+    </script>
   </body>
 </html>

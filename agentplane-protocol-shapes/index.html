@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,395 +44,488 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <main class="container">
-        <header>
-          <mark>SOURCE AUDIT · REFRESHED</mark>
-          <h1>Agentplane’s repeated protocol shapes</h1>
-          <p>
-            A current-source review of protocol contracts that still merit
-            review, with explicit owner boundaries and acceptance criteria.
-          </p>
-          <p class="muted">
-            4 November 2026 PST (5 November UTC) · source head
-            <code>79a2524e7f</code> · findings rely on static inspection and
-            exact-head BuildBuddy evidence is linked in scope and verification;
-            HTML render review covers presentation only, with no live
-            deployment/runtime revalidation
-          </p>
-        </header>
-        <nav>
-          <a href="#takeaways">Current summary</a
-          ><a href="#retained">Open acceptance criteria</a
-          ><a href="#rules">Ownership rules</a
-          ><a href="#scope">Scope and verification</a>
-        </nav>
-        <section id="takeaways">
-          <h2>What remains open</h2>
-          <blockquote>
-            <p>
-              The remaining review is limited to protocol and adapter work with
-              distinct owners or incomplete parity evidence; each open item
-              below has a bounded acceptance condition.
-            </p>
-            <p>
-              Open protocol work includes a presence-preserving typed contract
-              for Session overrides; Python test adapters that still hand-map
-              generated ProtoJSON; service configuration authored separately in
-              Python and Go; Action and policy mappings that need edge-case
-              coverage; and test telemetry that mirrors a browser event union in
-              Python. The model-catalog, ThreadView and sidecar criteria are
-              detailed in the
-              <a
-                href="https://agentydragon.github.io/ducktape/fixture-model-audit/#test-client"
-                >fixture/model audit</a
-              >.
-            </p>
-          </blockquote>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Open area</th>
-                  <th>Original shape</th>
-                  <th>Evidence boundary</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Open design</td>
-                  <td>Session override request contract</td>
-                  <td>
-                    <code>Struct</code> and <code>Value</code> intentionally
-                    retain absent/empty/zero/null distinctions; typed
-                    replacement is in the open facade plan.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Open maintenance gaps</td>
-                  <td>
-                    Config mirrors, adapter mapping tests and test telemetry
-                  </td>
-                  <td>
-                    Independent Python/Go config declarations, handwritten
-                    enum/value projections and TS/Python event shapes still need
-                    explicit parity evidence.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="retained">
-          <h2>Open acceptance criteria</h2>
-          <article id="typed-overrides">
-            <div class="muted">Open contract design</div>
-            <h3>
-              Typed Session overrides must preserve the current three-state
-              behavior
-            </h3>
-            <p>
-              <strong>Today.</strong> <code>CreateSessionRequest.spec</code> is
-              a <code>Struct</code> validated against the generated
-              <code>SessionSpec</code> descriptor; setup script is a
-              <code>Value</code>. This intentionally distinguishes omission
-              (inherit), explicit empty/zero (replace with empty/zero), and null
-              (clear). A plain message or ordinary optional scalar does not
-              express all of those states.
-            </p>
-            <p>
-              <strong>Accept when.</strong> A typed replacement can represent
-              every field’s inherit/set/clear state, rejects unknown fields,
-              preserves the setup-script tri-state, has generated HTTP/client
-              codecs, and documents cached-client/rollback compatibility. Keep
-              caller-minted Session ID and uncertain-outcome reconciliation
-              intact. Do not remove the current Struct path until that migration
-              is tested across supported replicas.
-            </p>
-            <p>
-              Evidence:
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/app_service.proto#L163"
-                >request</a
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Mark,
+        Paper,
+        Stack,
+        Table,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      function Report() {
+        return html`<${Container}
+          component=${"main"}
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <header>
+            <${Mark}> ${"SOURCE AUDIT · REFRESHED"} <//>
+            <${Title} order=${1} mt="md" mb="sm">
+              ${"Agentplane’s repeated protocol shapes"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" A current-source review of protocol contracts that still merit review, with explicit owner boundaries and acceptance criteria. "}
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" 4 November 2026 PST (5 November UTC) · source head "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
               >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/README.md#L164"
-                >behavior</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/plans/grpc_http_facade.md#L28"
-                >open plan</a
-              >
-            </p>
-          </article>
-          <article id="action-mapping">
-            <div class="muted">
-              Low priority · explicit presentation boundary
-            </div>
-            <h3>
-              Action protobuf-to-UI mapping should have direct edge-case tests
-            </h3>
-            <p>
-              The client intentionally translates generated timestamps,
-              <code>Value</code>/<code>Struct</code>, nullable fields, enums and
-              int64 values into a stable view model. That conversion is useful,
-              but a broad adapter is another place protocol additions can be
-              missed. Keep the UI view; add focused tests covering every enum
-              and oneof mapping, optional defaults, unknown enum rejection and
-              unsafe int64 handling. Avoid removing the safe-int or
-              required-field checks as part of any consolidation.
-            </p>
-            <p>
-              Evidence:
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/types.ts#L1"
-                >view model</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/client.ts#L83"
-                >int64 guard</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/client.ts#L322"
-                >message conversion</a
-              >.
-            </p>
-          </article>
-          <article id="policy-mapping">
-            <div class="muted">Low priority · enum coverage</div>
-            <h3>
-              Policy kind mapping needs a current-vocabulary coverage check
-            </h3>
-            <p>
-              Keep Kubernetes-authored rules, stored policy evidence and API
-              policy kinds as separate contracts. The Go map rejects unknown
-              values, but a new storage or protobuf enum can still be omitted
-              from the manually maintained map and fail only when that path is
-              exercised. Add a focused test that enumerates supported internal
-              and protobuf kinds, verifies every intentional mapping in both
-              directions, and rejects unspecified/unknown values. Do not
-              collapse the three schemas into one merely because several enum
-              strings match.
-            </p>
-            <p>
-              Evidence:
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/store/protobuf.go#L16"
-                >mapping</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/store/golden_test.go#L139"
-                >existing golden vectors</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/action_service.proto#L496"
-                >protobuf vocabulary</a
-              >.
-            </p>
-          </article>
-          <article id="config">
-            <div class="muted">Cross-language config</div>
-            <h3>
-              Configuration parity needs a bounded producer-to-loader contract
-            </h3>
-            <p>
-              Keep each serving component’s schema as authority, including
-              secrets, environment overlays and runtime defaults. The App still
-              declares Python and Go <code>ThreadPreset</code> shapes separately
-              while App owns preset behavior. Add shared default, omitted and
-              invalid vectors for their configured defaults (including
-              <code>cwd</code>, reasoning effort, instructions and setup script)
-              so default behavior is checked across both paths without
-              collapsing owners. For one chosen serving service, run the same
-              valid, omitted, null, invalid nested, unknown-field and
-              required-field vectors through the Python authoring model and real
-              Go loader; verify cdk8s output reaches that loader. A generated
-              schema is one option, not the acceptance condition. Sidecar
-              already has selected real-process positive coverage, as documented
-              in the
-              <a
-                href="https://agentydragon.github.io/ducktape/fixture-model-audit/#sidecar"
-                >fixture audit</a
-              >.
-            </p>
-            <p>
-              Evidence:
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/presets.py#L15"
-                >Python ThreadPreset</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/go/config.go#L63"
-                >Go ThreadPreset</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/README.md#L164"
-                >override presence semantics</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/plans/grpc_http_facade.md#L28"
-                >typed migration plan</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/notification_service/README.md#L127"
-                >Notification config boundary</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/history_service/README.md#L236"
-                >History config boundary</a
-              >.
-            </p>
-          </article>
-          <article id="telemetry">
-            <div class="muted">Low priority · test-only</div>
-            <h3>
-              Browser and Python history diagnostic events still need a shared
-              drift check
-            </h3>
-            <p>
-              The browser producer has a TypeScript discriminated union;
-              Playwright collection has strict Pydantic models. Keep the privacy
-              boundary (geometry and identifiers only). Accept either generated
-              bindings from one neutral schema or shared positive/negative
-              round-trip vectors that fail if either side adds, omits or renames
-              a field or event kind. The History Service’s durable protobuf is a
-              separate protocol and should not be conflated with these test
-              marks.
-            </p>
-            <p>
-              Evidence:
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/testing/thread_view_marks.py#L23"
-                >Python variants</a
-              >
-              ·
-              <a
-                href="https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/util/frontend/transcript/history_diagnostics.ts#L12"
-                >TypeScript variants</a
-              >.
-            </p>
-          </article>
-        </section>
-        <section id="rules">
-          <h2>Ownership rules for future changes</h2>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Boundary</th>
-                  <th>Authority</th>
-                  <th>Derived material</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Service RPC and HTTP facade</td>
-                  <td>
-                    Owning service proto; neutral proto for values with truly
-                    shared semantics
-                  </td>
-                  <td>
-                    Generated Go/Python/TS and protobuf JSON decoders; thin
-                    auth/transport adapters.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Kubernetes resource</td>
-                  <td>Owning CRD API and served schema</td>
-                  <td>
-                    Generated clients plus explicit translation into service
-                    views.
-                  </td>
-                </tr>
-                <tr>
-                  <td>App composition</td>
-                  <td>App-owned response contract and backend source protos</td>
-                  <td>
-                    Generated message joins or deliberately normalized
-                    presentation types.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Durable database rows</td>
-                  <td>
-                    Owning migration for storage; service-owned published row
-                    contract
-                  </td>
-                  <td>
-                    Queries, ORM helpers and typed wire adapters with parity
-                    tests.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Deployment config</td>
-                  <td>
-                    Serving component’s schema and explicit
-                    secret/default/overlay semantics
-                  </td>
-                  <td>
-                    Authoring bindings and runtime decoder; independent code is
-                    acceptable only with executable parity evidence.
-                  </td>
-                </tr>
-                <tr>
-                  <td>External MCP input</td>
-                  <td>Upstream catalog/version</td>
-                  <td>
-                    Local validated adapters; do not imply Agentplane schemas
-                    own third-party payloads.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Generated types are representations, not permission to collapse
-            lifecycle, identity, authorization or presence boundaries. Keep
-            explicit conversion where semantics change and test that conversion.
-          </p>
-        </section>
-        <section id="scope">
-          <h2>Scope and verification</h2>
-          <p>
-            The original audit dates to 2 November; this review checked the open
-            protocol work against source commit
-            <code>79a2524e7fc9878299c9589312c0ba25df2b50ac</code>. Current
-            service and frontend contracts were inspected directly; PR titles
-            alone were not treated as proof. This is a selected-example static
-            audit, not an exhaustive declaration inventory. Exact-head
-            BuildBuddy evidence:
-            <a
-              href="https://app.buildbuddy.io/invocation/0cfb1f69-e6d7-55d0-97bd-1261bd608b55"
-              >build invocation</a
+                ${"79a2524e7f"}
+              <//>
+              ${" · findings rely on static inspection and exact-head BuildBuddy evidence is linked in scope and verification; HTML render review covers presentation only, with no live deployment/runtime revalidation "}
+            <//>
+          </header>
+          <${Group} component=${"nav"} gap="sm" my="md">
+            <${Anchor} href=${"#takeaways"}> ${"Current summary"} <//>
+            <${Anchor} href=${"#retained"}> ${"Open acceptance criteria"} <//>
+            <${Anchor} href=${"#rules"}> ${"Ownership rules"} <//>
+            <${Anchor} href=${"#scope"}> ${"Scope and verification"} <//>
+          <//>
+          <${Stack} id=${"takeaways"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm"> ${"What remains open"} <//>
+            <${Blockquote} my="md">
+              <${Text} component="p" my="sm">
+                ${" The remaining review is limited to protocol and adapter work with distinct owners or incomplete parity evidence; each open item below has a bounded acceptance condition. "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Open protocol work includes a presence-preserving typed contract for Session overrides; Python test adapters that still hand-map generated ProtoJSON; service configuration authored separately in Python and Go; Action and policy mappings that need edge-case coverage; and test telemetry that mirrors a browser event union in Python. The model-catalog, ThreadView and sidecar criteria are detailed in the "}
+                <${Anchor}
+                  href=${"https://agentydragon.github.io/ducktape/fixture-model-audit/#test-client"}
+                >
+                  ${"fixture/model audit"}
+                <//>
+                ${". "}
+              <//>
+            <//>
+            <${Table.ScrollContainer}
+              minWidth=${640}
+              type="native"
+              my="md"
+              maw="100%"
             >
-            and
-            <a
-              href="https://app.buildbuddy.io/invocation/3fc03e2f-5259-5921-b4e3-f2d34586303f"
-              >test invocation</a
-            >. HTML render review covers presentation only and does not validate
-            runtime behavior. No live deployment/runtime revalidation is
-            claimed. Source links are pinned to the reviewed commit.
-          </p>
-          <p>
-            Each open item has source evidence and an acceptance condition. The
-            relevant exact-head BuildBuddy results are linked in the scope text
-            above.
-          </p>
-        </section>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+              <${Table} striped highlightOnHover verticalSpacing="sm">
+                <${Table.Thead}>
+                  <${Table.Tr}>
+                    <${Table.Th}> ${"Open area"} <//>
+                    <${Table.Th}> ${"Original shape"} <//>
+                    <${Table.Th}> ${"Evidence boundary"} <//>
+                  <//>
+                <//>
+                <${Table.Tbody}>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Open design"} <//>
+                    <${Table.Td}> ${"Session override request contract"} <//>
+                    <${Table.Td}>
+                      <${Code}
+                        style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                      >
+                        ${"Struct"}
+                      <//>
+                      ${" and "}
+                      <${Code}
+                        style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                      >
+                        ${"Value"}
+                      <//>
+                      ${" intentionally retain absent/empty/zero/null distinctions; typed replacement is in the open facade plan. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Open maintenance gaps"} <//>
+                    <${Table.Td}>
+                      ${" Config mirrors, adapter mapping tests and test telemetry "}
+                    <//>
+                    <${Table.Td}>
+                      ${" Independent Python/Go config declarations, handwritten enum/value projections and TS/Python event shapes still need explicit parity evidence. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+          <//>
+          <${Stack} id=${"retained"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Open acceptance criteria"}
+            <//>
+            <${Paper}
+              id=${"typed-overrides"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed"> ${"Open contract design"} <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Typed Session overrides must preserve the current three-state behavior "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Today."} </strong>
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"CreateSessionRequest.spec"}
+                <//>
+                ${" is a "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"Struct"}
+                <//>
+                ${" validated against the generated "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"SessionSpec"}
+                <//>
+                ${" descriptor; setup script is a "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"Value"}
+                <//>
+                ${". This intentionally distinguishes omission (inherit), explicit empty/zero (replace with empty/zero), and null (clear). A plain message or ordinary optional scalar does not express all of those states. "}
+              <//>
+              <${Text} component="p" my="sm">
+                <strong> ${"Accept when."} </strong>
+                ${" A typed replacement can represent every field’s inherit/set/clear state, rejects unknown fields, preserves the setup-script tri-state, has generated HTTP/client codecs, and documents cached-client/rollback compatibility. Keep caller-minted Session ID and uncertain-outcome reconciliation intact. Do not remove the current Struct path until that migration is tested across supported replicas. "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Evidence: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/app_service.proto#L163"}
+                >
+                  ${"request"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/README.md#L164"}
+                >
+                  ${"behavior"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/plans/grpc_http_facade.md#L28"}
+                >
+                  ${"open plan"}
+                <//>
+              <//>
+            <//>
+            <${Paper}
+              id=${"action-mapping"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed">
+                ${" Low priority · explicit presentation boundary "}
+              <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Action protobuf-to-UI mapping should have direct edge-case tests "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" The client intentionally translates generated timestamps, "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"Value"}
+                <//>
+                ${"/"}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"Struct"}
+                <//>
+                ${", nullable fields, enums and int64 values into a stable view model. That conversion is useful, but a broad adapter is another place protocol additions can be missed. Keep the UI view; add focused tests covering every enum and oneof mapping, optional defaults, unknown enum rejection and unsafe int64 handling. Avoid removing the safe-int or required-field checks as part of any consolidation. "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Evidence: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/types.ts#L1"}
+                >
+                  ${"view model"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/client.ts#L83"}
+                >
+                  ${"int64 guard"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/frontend/actions/client.ts#L322"}
+                >
+                  ${"message conversion"}
+                <//>
+                ${". "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"policy-mapping"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed"> ${"Low priority · enum coverage"} <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Policy kind mapping needs a current-vocabulary coverage check "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Keep Kubernetes-authored rules, stored policy evidence and API policy kinds as separate contracts. The Go map rejects unknown values, but a new storage or protobuf enum can still be omitted from the manually maintained map and fail only when that path is exercised. Add a focused test that enumerates supported internal and protobuf kinds, verifies every intentional mapping in both directions, and rejects unspecified/unknown values. Do not collapse the three schemas into one merely because several enum strings match. "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Evidence: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/store/protobuf.go#L16"}
+                >
+                  ${"mapping"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/store/golden_test.go#L139"}
+                >
+                  ${"existing golden vectors"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/action_service/action_service.proto#L496"}
+                >
+                  ${"protobuf vocabulary"}
+                <//>
+                ${". "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"config"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed"> ${"Cross-language config"} <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Configuration parity needs a bounded producer-to-loader contract "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Keep each serving component’s schema as authority, including secrets, environment overlays and runtime defaults. The App still declares Python and Go "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"ThreadPreset"}
+                <//>
+                ${" shapes separately while App owns preset behavior. Add shared default, omitted and invalid vectors for their configured defaults (including "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"cwd"}
+                <//>
+                ${", reasoning effort, instructions and setup script) so default behavior is checked across both paths without collapsing owners. For one chosen serving service, run the same valid, omitted, null, invalid nested, unknown-field and required-field vectors through the Python authoring model and real Go loader; verify cdk8s output reaches that loader. A generated schema is one option, not the acceptance condition. Sidecar already has selected real-process positive coverage, as documented in the "}
+                <${Anchor}
+                  href=${"https://agentydragon.github.io/ducktape/fixture-model-audit/#sidecar"}
+                >
+                  ${"fixture audit"}
+                <//>
+                ${". "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Evidence: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/presets.py#L15"}
+                >
+                  ${"Python ThreadPreset"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/go/config.go#L63"}
+                >
+                  ${"Go ThreadPreset"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/README.md#L164"}
+                >
+                  ${"override presence semantics"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/plans/grpc_http_facade.md#L28"}
+                >
+                  ${"typed migration plan"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/notification_service/README.md#L127"}
+                >
+                  ${"Notification config boundary"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/history_service/README.md#L236"}
+                >
+                  ${"History config boundary"}
+                <//>
+                ${". "}
+              <//>
+            <//>
+            <${Paper}
+              id=${"telemetry"}
+              component="article"
+              withBorder
+              p="lg"
+              radius="md"
+              my="md"
+            >
+              <${Box} c="dimmed"> ${"Low priority · test-only"} <//>
+              <${Title} order=${3} mt="md" mb="sm">
+                ${" Browser and Python history diagnostic events still need a shared drift check "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" The browser producer has a TypeScript discriminated union; Playwright collection has strict Pydantic models. Keep the privacy boundary (geometry and identifiers only). Accept either generated bindings from one neutral schema or shared positive/negative round-trip vectors that fail if either side adds, omits or renames a field or event kind. The History Service’s durable protobuf is a separate protocol and should not be conflated with these test marks. "}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" Evidence: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/agentplane/app/testing/thread_view_marks.py#L23"}
+                >
+                  ${"Python variants"}
+                <//>
+                ${" · "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/util/frontend/transcript/history_diagnostics.ts#L12"}
+                >
+                  ${"TypeScript variants"}
+                <//>
+                ${". "}
+              <//>
+            <//>
+          <//>
+          <${Stack} id=${"rules"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Ownership rules for future changes"}
+            <//>
+            <${Table.ScrollContainer}
+              minWidth=${640}
+              type="native"
+              my="md"
+              maw="100%"
+            >
+              <${Table} striped highlightOnHover verticalSpacing="sm">
+                <${Table.Thead}>
+                  <${Table.Tr}>
+                    <${Table.Th}> ${"Boundary"} <//>
+                    <${Table.Th}> ${"Authority"} <//>
+                    <${Table.Th}> ${"Derived material"} <//>
+                  <//>
+                <//>
+                <${Table.Tbody}>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Service RPC and HTTP facade"} <//>
+                    <${Table.Td}>
+                      ${" Owning service proto; neutral proto for values with truly shared semantics "}
+                    <//>
+                    <${Table.Td}>
+                      ${" Generated Go/Python/TS and protobuf JSON decoders; thin auth/transport adapters. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Kubernetes resource"} <//>
+                    <${Table.Td}> ${"Owning CRD API and served schema"} <//>
+                    <${Table.Td}>
+                      ${" Generated clients plus explicit translation into service views. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"App composition"} <//>
+                    <${Table.Td}>
+                      ${"App-owned response contract and backend source protos"}
+                    <//>
+                    <${Table.Td}>
+                      ${" Generated message joins or deliberately normalized presentation types. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Durable database rows"} <//>
+                    <${Table.Td}>
+                      ${" Owning migration for storage; service-owned published row contract "}
+                    <//>
+                    <${Table.Td}>
+                      ${" Queries, ORM helpers and typed wire adapters with parity tests. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Deployment config"} <//>
+                    <${Table.Td}>
+                      ${" Serving component’s schema and explicit secret/default/overlay semantics "}
+                    <//>
+                    <${Table.Td}>
+                      ${" Authoring bindings and runtime decoder; independent code is acceptable only with executable parity evidence. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"External MCP input"} <//>
+                    <${Table.Td}> ${"Upstream catalog/version"} <//>
+                    <${Table.Td}>
+                      ${" Local validated adapters; do not imply Agentplane schemas own third-party payloads. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Generated types are representations, not permission to collapse lifecycle, identity, authorization or presence boundaries. Keep explicit conversion where semantics change and test that conversion. "}
+            <//>
+          <//>
+          <${Stack} id=${"scope"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Scope and verification"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" The original audit dates to 2 November; this review checked the open protocol work against source commit "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"79a2524e7fc9878299c9589312c0ba25df2b50ac"}
+              <//>
+              ${". Current service and frontend contracts were inspected directly; PR titles alone were not treated as proof. This is a selected-example static audit, not an exhaustive declaration inventory. Exact-head BuildBuddy evidence: "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/0cfb1f69-e6d7-55d0-97bd-1261bd608b55"}
+              >
+                ${"build invocation"}
+              <//>
+              ${" and "}
+              <${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/3fc03e2f-5259-5921-b4e3-f2d34586303f"}
+              >
+                ${"test invocation"}
+              <//>
+              ${". HTML render review covers presentation only and does not validate runtime behavior. No live deployment/runtime revalidation is claimed. Source links are pinned to the reviewed commit. "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Each open item has source evidence and an acceptance condition. The relevant exact-head BuildBuddy results are linked in the scope text above. "}
+            <//>
+          <//>
+        <//> `;
+      }
+      mount(Report);
+    </script>
   </body>
 </html>

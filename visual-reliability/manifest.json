@@ -10,8 +10,10 @@
     "Target history is mixed/cache and physical execution exposure is unknown.",
     "Prior measurements are preserved with their original source and time window."
   ],
-  "report_html_sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+  "report_html_sha256": "5eb25a51272b2cb94a10a84bb141593e29fc9daf2db58202c579623624df66fb",
   "evidence_sha256": "1acc9cdd4a3bd4426cc86e97df55cf3648166fdaa79045f87bd42735202cf680",
   "presentation_validation": "../presentation-validation.json",
-  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks."
+  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
+  "presentation_updated_at_utc": "2026-11-09",
+  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
 }

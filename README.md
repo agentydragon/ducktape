@@ -40,17 +40,26 @@ framework or copy a report-specific design system. Update the entire site togeth
 when changing the common framework. The former root used Pico; Mantine is now the
 site-wide convention.
 
-`report.js` mounts `MantineProvider` with `defaultColorScheme="auto"` and Mantine's
-`Typography` around the authored report HTML. Keep report-specific module scripts
-outside `#report-content` and import the shared shell before attaching listeners.
-This preserves filters and charts when React mounts. Only reviewed, committed HTML
-belongs in the shell; never insert raw API responses or user input as HTML.
-Report content remains present in the document if JavaScript/CDN loading fails.
+Author explicit React/Mantine components using the pinned `htm` tagged-template
+library, imported through the shared `report.js`. Call `mount(Report)` with the
+report component; the shared provider uses `defaultColorScheme="auto"`. Use normal
+Mantine components for layout, cards, typography, controls, tables and disclosures.
+Keep interactive state in React. Do not add a runtime HTML-to-component adapter,
+duplicate report markup or reimplement component styling in shared CSS.
+
+Use **Mantine Charts 9.6.1** for ordinary statistical charts, with its pinned
+stylesheet after core styles and the existing pinned Recharts import-map entry.
+Keep counts and units visible, provide accessible text or tables for the values,
+and retain observation windows and denominators. Preserve useful visualizations
+when refreshing a report. Custom SVG is appropriate for nested wall-time span
+timelines; their intervals overlap and are not ordinary additive data series.
 
 The head sets the initial system color scheme; the provider follows subsequent
-browser/OS changes. Keep custom CSS to layout, visualization and small native
-control adjustments, using Mantine theme variables. Do not force light or dark.
+browser/OS changes. Shared CSS contains only the span timeline's SVG styles;
+use component props for layout and appearance. Do not force light or dark.
 Before publishing, render every affected page at desktop and mobile widths in both
 themes, verify real CDN loading and live preference changes, and exercise its
-controls. A presentation refresh must retain the original measurement/source
+controls. Inspect the screenshots for meaningful bars, readable labels and retained
+visual distinctions; successful browser assertions alone are insufficient.
+A presentation refresh must retain the original measurement/source
 window and must not imply that old findings were remeasured.

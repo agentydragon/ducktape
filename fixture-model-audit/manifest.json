@@ -10,9 +10,11 @@
     "No focused tests or live runtime checks were run on audited source.",
     "Hosted checks are attached to their listed PR heads."
   ],
-  "report_html_sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+  "report_html_sha256": "c894af96fb7c5b460ca85bb7fab4fd885d9f7f14e7d7c1a5716ea72fc5e5bd83",
   "evidence_sha256": "12e704952cae596eba5a3ba44176bbcd48e384ae6b8053d3c86fb5c3fe080deb",
   "presentation_validation": "../presentation-validation.json",
   "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
-  "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10"
+  "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10",
+  "presentation_updated_at_utc": "2026-11-09",
+  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
 }

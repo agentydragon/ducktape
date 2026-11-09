@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,183 +44,323 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <header>
-        <div class="container">
-          <div class="link-row">
-            <div>
-              <p class="muted">
-                Ducktape · visual reliability · refreshed 9 November 2026
-              </p>
-              <h1>Current visual-test findings</h1>
-              <p class="muted">
-                Source review pinned to
-                <a
-                  href="https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"
-                  ><code>devel 69f35d736dc3</code></a
-                >. The prior report’s completed items are removed from the open
-                list; one stale PR remains a revalidation decision.
-              </p>
-            </div>
-            <nav aria-label="Report evidence" class="link-row">
-              <a href="evidence.json">Evidence JSON</a>
-              <a href="manifest.json">Manifest</a>
-              <a
-                href="https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"
-                >Previous report · 30 Oct</a
-              >
-            </nav>
-          </div>
-        </div>
-      </header>
-      <main class="container">
-        <blockquote>
-          <strong>No current visual failure was reproduced.</strong> #10753 is
-          still open, but its head is from 16 October, GitHub reports merge
-          state UNKNOWN, and no fresh candidate-source reproduction was made.
-          Treat it as rebase-and-revalidate work, not a confirmed present
-          regression.
-        </blockquote>
-        <div class="grid">
-          <div>
-            <article>
-              <div>
-                <div class="muted">Current decision</div>
-                <div>1 stale open PR</div>
-                <p>
-                  Chart.js layout-dependence candidate #10753 needs
-                  current-source review.
-                </p>
-              </div>
-            </article>
-          </div>
-          <div>
-            <article>
-              <div>
-                <div class="muted">Resolved from this list</div>
-                <div>Scroll and capture identity</div>
-                <p>
-                  #13169 stabilized history framing; #13730 established
-                  structured capture identities.
-                </p>
-              </div>
-            </article>
-          </div>
-          <div>
-            <article>
-              <div>
-                <div class="muted">Recurrence boundary</div>
-                <div>No absence claim</div>
-                <p>
-                  Target history has 959 mixed status rows, all PASSED; cache
-                  and physical runner exposure were not checked.
-                </p>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <section aria-labelledby="open-title">
-          <h2 id="open-title">Open decision</h2>
-          <article>
-            <div>
-              <div class="link-row">
-                <h3>
-                  #10753 · Fix Chart.js layout dependence on previous updates
-                </h3>
-                <mark>OPEN · stale head</mark>
-              </div>
-              <p>
-                The audited source still uses Chart.js in the Spend history
-                chart; package metadata requests <code>^4.4.8</code> and the
-                lockfile resolves <code>4.5.1</code>. The PR head is
-                <code>519cd94a3ed4</code>, last updated 16 October. GitHub
-                currently reports merge state <code>UNKNOWN</code>. Its checks
-                passed on that old head, which is not current-source evidence.
-              </p>
-              <p>
-                <strong>Disposition.</strong> Rebase and revalidate against
-                current source before treating this PR as an active repair. The
-                old candidate is not a current failure report, and this refresh
-                did not reproduce layout instability.
-              </p>
-              <p>
-                <a href="https://github.com/agentydragon/ducktape/pull/10753"
-                  >Open PR #10753</a
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Mark,
+        Paper,
+        SimpleGrid,
+        Stack,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      function Report() {
+        return html`<header>
+            <${Container}
+              component=${"div"}
+              size="74rem"
+              py="xl"
+              style=${{ overflowWrap: "anywhere" }}
+            >
+              <${Group} component=${"div"} gap="sm" my="md">
+                <${Box}>
+                  <${Text} c="dimmed" component="p" my="sm">
+                    ${" Ducktape · visual reliability · refreshed 9 November 2026 "}
+                  <//>
+                  <${Title} order=${1} mt="md" mb="sm">
+                    ${"Current visual-test findings"}
+                  <//>
+                  <${Text} c="dimmed" component="p" my="sm">
+                    ${" Source review pinned to "}
+                    <${Anchor}
+                      href=${"https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"}
+                    >
+                      <${Code}
+                        style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                      >
+                        ${"devel 69f35d736dc3"}
+                      <//>
+                    <//>
+                    ${". The prior report’s completed items are removed from the open list; one stale PR remains a revalidation decision. "}
+                  <//>
+                <//>
+                <${Group}
+                  aria-label=${"Report evidence"}
+                  component=${"nav"}
+                  gap="sm"
+                  my="md"
                 >
-                <a
-                  href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/SpendingHistoryChart.tsx"
-                  >Current chart source</a
-                >
-                <a
-                  href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/package.json"
-                  >Dependency declaration</a
-                >
-              </p>
-            </div>
-          </article>
-        </section>
-
-        <p>
-          Closed since the prior report:
-          <a href="https://github.com/agentydragon/ducktape/pull/13169"
-            >#13169, scroll framing</a
+                  <${Anchor} href=${"evidence.json"}> ${"Evidence JSON"} <//>
+                  <${Anchor} href=${"manifest.json"}> ${"Manifest"} <//>
+                  <${Anchor}
+                    href=${"https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"}
+                  >
+                    ${"Previous report · 30 Oct"}
+                  <//>
+                <//>
+              <//>
+            <//>
+          </header>
+          <${Container}
+            component=${"main"}
+            size="74rem"
+            py="xl"
+            style=${{ overflowWrap: "anywhere" }}
           >
-          and
-          <a href="https://github.com/agentydragon/ducktape/pull/13730"
-            >#13730, capture identity</a
-          >. Focused repeat/check receipts and older completed work remain in
-          <a href="evidence.json">the evidence</a>.
-        </p>
-
-        <section aria-labelledby="history-title">
-          <h2 id="history-title">Recent exposure and its limits</h2>
-          <article>
-            <div>
-              <p>
-                A BuildBuddy query for
-                <code>//agentplane/app/frontend:visual_history</code> with
-                <code>--since 2026-11-02</code> returned 959 status rows, all
-                <code>PASSED</code>. The response-reported target timing range
-                begins on 1 November and ends on 8 November. The history mixes
-                commits and PRs; this query did not inspect result-cache hits or
-                physical TestRunner executions. It is not 959 independent fresh
-                runs and cannot establish that a finding did not recur.
-              </p>
-              <p>
-                The previous report’s 100-PR gallery sample, five-repeat
-                experiment, image comparisons, and detailed per-item inventory
-                are preserved unchanged under <code>prior_snapshot</code> in
-                <a href="evidence.json">evidence.json</a>. They remain
-                historical measurements at their original source and window.
-              </p>
-            </div>
-          </article>
-        </section>
-
-        <section aria-labelledby="method-title">
-          <h2 id="method-title">Scope and evidence limits</h2>
-          <p>
-            This refresh checked current source at
-            <code>69f35d736dc33f90f66f8345ff35806f04ed9399</code>, GitHub state
-            for the open candidate and landed repairs, and the narrow
-            target-history query above. The prior sample and repeat evidence are
-            not silently rebased to this source. No fresh fleet run,
-            current-source repeat experiment, or post-merge recurrence absence
-            is claimed.
-          </p>
-          <p class="muted">
-            Previous full report:
-            <a
-              href="https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"
-              >gh-pages commit <code>8fa7340</code></a
-            >. Current checks, dispositions, and raw prior evidence are in
-            <a href="evidence.json">evidence.json</a>; source/time limits are in
-            <a href="manifest.json">manifest.json</a>.
-          </p>
-        </section>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+            <${Blockquote} my="md">
+              <strong> ${"No current visual failure was reproduced."} </strong>
+              ${" #10753 is still open, but its head is from 16 October, GitHub reports merge state UNKNOWN, and no fresh candidate-source reproduction was made. Treat it as rebase-and-revalidate work, not a confirmed present regression. "}
+            <//>
+            <${SimpleGrid}
+              component=${"div"}
+              cols=${{ base: 1, sm: 2, lg: 3 }}
+              spacing="md"
+            >
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <${Box} c="dimmed"> ${"Current decision"} <//>
+                    <${Box}> ${"1 stale open PR"} <//>
+                    <${Text} component="p" my="sm">
+                      ${" Chart.js layout-dependence candidate #10753 needs current-source review. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <${Box} c="dimmed"> ${"Resolved from this list"} <//>
+                    <${Box}> ${"Scroll and capture identity"} <//>
+                    <${Text} component="p" my="sm">
+                      ${" #13169 stabilized history framing; #13730 established structured capture identities. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <${Box} c="dimmed"> ${"Recurrence boundary"} <//>
+                    <${Box}> ${"No absence claim"} <//>
+                    <${Text} component="p" my="sm">
+                      ${" Target history has 959 mixed status rows, all PASSED; cache and physical runner exposure were not checked. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Stack}
+              aria-labelledby=${"open-title"}
+              component="section"
+              gap="md"
+              my="xl"
+            >
+              <${Title} id=${"open-title"} order=${2} mt="md" mb="sm">
+                ${"Open decision"}
+              <//>
+              <${Paper}
+                component="article"
+                withBorder
+                p="lg"
+                radius="md"
+                my="md"
+              >
+                <${Box}>
+                  <${Group} component=${"div"} gap="sm" my="md">
+                    <${Title} order=${3} mt="md" mb="sm">
+                      ${" #10753 · Fix Chart.js layout dependence on previous updates "}
+                    <//>
+                    <${Mark}> ${"OPEN · stale head"} <//>
+                  <//>
+                  <${Text} component="p" my="sm">
+                    ${" The audited source still uses Chart.js in the Spend history chart; package metadata requests "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"^4.4.8"}
+                    <//>
+                    ${" and the lockfile resolves "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"4.5.1"}
+                    <//>
+                    ${". The PR head is "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"519cd94a3ed4"}
+                    <//>
+                    ${", last updated 16 October. GitHub currently reports merge state "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"UNKNOWN"}
+                    <//>
+                    ${". Its checks passed on that old head, which is not current-source evidence. "}
+                  <//>
+                  <${Text} component="p" my="sm">
+                    <strong> ${"Disposition."} </strong>
+                    ${" Rebase and revalidate against current source before treating this PR as an active repair. The old candidate is not a current failure report, and this refresh did not reproduce layout instability. "}
+                  <//>
+                  <${Text} component="p" my="sm">
+                    <${Anchor}
+                      href=${"https://github.com/agentydragon/ducktape/pull/10753"}
+                    >
+                      ${"Open PR #10753"}
+                    <//>
+                    <${Anchor}
+                      href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/SpendingHistoryChart.tsx"}
+                    >
+                      ${"Current chart source"}
+                    <//>
+                    <${Anchor}
+                      href=${"https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/package.json"}
+                    >
+                      ${"Dependency declaration"}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Closed since the prior report: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/pull/13169"}
+              >
+                ${"#13169, scroll framing"}
+              <//>
+              ${" and "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/pull/13730"}
+              >
+                ${"#13730, capture identity"}
+              <//>
+              ${". Focused repeat/check receipts and older completed work remain in "}
+              <${Anchor} href=${"evidence.json"}> ${"the evidence"} <//>
+              ${". "}
+            <//>
+            <${Stack}
+              aria-labelledby=${"history-title"}
+              component="section"
+              gap="md"
+              my="xl"
+            >
+              <${Title} id=${"history-title"} order=${2} mt="md" mb="sm">
+                ${"Recent exposure and its limits"}
+              <//>
+              <${Paper}
+                component="article"
+                withBorder
+                p="lg"
+                radius="md"
+                my="md"
+              >
+                <${Box}>
+                  <${Text} component="p" my="sm">
+                    ${" A BuildBuddy query for "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"//agentplane/app/frontend:visual_history"}
+                    <//>
+                    ${" with "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"--since 2026-11-02"}
+                    <//>
+                    ${" returned 959 status rows, all "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"PASSED"}
+                    <//>
+                    ${". The response-reported target timing range begins on 1 November and ends on 8 November. The history mixes commits and PRs; this query did not inspect result-cache hits or physical TestRunner executions. It is not 959 independent fresh runs and cannot establish that a finding did not recur. "}
+                  <//>
+                  <${Text} component="p" my="sm">
+                    ${" The previous report’s 100-PR gallery sample, five-repeat experiment, image comparisons, and detailed per-item inventory are preserved unchanged under "}
+                    <${Code}
+                      style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                    >
+                      ${"prior_snapshot"}
+                    <//>
+                    ${" in "}
+                    <${Anchor} href=${"evidence.json"}> ${"evidence.json"} <//>
+                    ${". They remain historical measurements at their original source and window. "}
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Stack}
+              aria-labelledby=${"method-title"}
+              component="section"
+              gap="md"
+              my="xl"
+            >
+              <${Title} id=${"method-title"} order=${2} mt="md" mb="sm">
+                ${"Scope and evidence limits"}
+              <//>
+              <${Text} component="p" my="sm">
+                ${" This refresh checked current source at "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"69f35d736dc33f90f66f8345ff35806f04ed9399"}
+                <//>
+                ${", GitHub state for the open candidate and landed repairs, and the narrow target-history query above. The prior sample and repeat evidence are not silently rebased to this source. No fresh fleet run, current-source repeat experiment, or post-merge recurrence absence is claimed. "}
+              <//>
+              <${Text} c="dimmed" component="p" my="sm">
+                ${" Previous full report: "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"}
+                >
+                  ${"gh-pages commit "}
+                  <${Code}
+                    style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                  >
+                    ${"8fa7340"}
+                  <//>
+                <//>
+                ${". Current checks, dispositions, and raw prior evidence are in "}
+                <${Anchor} href=${"evidence.json"}> ${"evidence.json"} <//>
+                ${"; source/time limits are in "}
+                <${Anchor} href=${"manifest.json"}> ${"manifest.json"} <//>
+                ${". "}
+              <//>
+            <//>
+          <//> `;
+      }
+      mount(Report);
+    </script>
   </body>
 </html>

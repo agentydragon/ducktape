@@ -18,7 +18,7 @@
     "prettier"
   ],
   "publication_scope": "latency followup and site-wide shared Mantine presentation; other report refreshes have independent manifests.",
-  "report_html_sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+  "report_html_sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
   "evidence_sha256": "5191c5c847a2bce1786b49ce047d50848851951ebd1375bb1fb5d3f2d84e0e1e",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
@@ -30,5 +30,7 @@
   "source_recheck_paths": [
     "agentplane/system_tests/k3s/baseline.py",
     "devinfra/buildbuddy/kvm/worker/executor.yaml"
-  ]
+  ],
+  "presentation_updated_at_utc": "2026-11-09",
+  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
 }

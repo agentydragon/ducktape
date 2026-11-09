@@ -13,6 +13,12 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
     <script type="importmap">
       {
         "imports": {
@@ -20,7 +26,12 @@
           "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
           "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
           "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
         }
       }
     </script>
@@ -33,1392 +44,1898 @@
     </script>
   </head>
   <body>
-    <div id="report-content">
-      <main class="container">
-        <header>
-          <p>Ducktape · Storage · 9 November 2026 UTC</p>
-          <h1>
-            Two backup retirements landed. Object storage still has a job.
-          </h1>
-          <p>
-            The rebuildable session projection and Nix cache database no longer
-            have backup Bucket CRs. The current inventory is smaller, while
-            Langfuse and observability remain its largest consumers. Keep
-            durable application data and the remaining PostgreSQL recovery
-            chains; lower bucket totals are not a physical-reclaim measurement.
-          </p>
-          <p class="muted">
-            Bucket response written 07:52 UTC; six thin-pool reads completed
-            07:54 UTC. This is a non-atomic read-only snapshot, with each
-            bucket's last usage clock retained. No deletion, trim, compaction or
-            migration was performed.
-          </p>
-          <div class="grid">
-            <div>
-              <article>
-                <div>
-                  <strong>38 buckets</strong>
-                  <p>
-                    All current Ready conditions observed. 36 report bytes; two
-                    remain unreported.
-                  </p>
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <strong>1,077 GiB</strong>
-                  <p>
-                    Last-reported logical bytes, excluding replication. Previous
-                    inventory: 1,486 GiB.
-                  </p>
-                </div>
-              </article>
-            </div>
-            <div>
-              <article>
-                <div>
-                  <strong>20 backup paths</strong>
-                  <p>
-                    Barman WAL archivers among 23 CNPG clusters; 121.5 GiB
-                    reported in their backup buckets.
-                  </p>
-                </div>
-              </article>
-            </div>
-          </div>
-        </header>
-        <nav class="link-row">
-          <a href="#decisions">Current decisions</a
-          ><a href="#inventory">Bucket inventory</a
-          ><a href="#physical">Physical capacity</a
-          ><a href="#backups">Recovery and alternatives</a
-          ><a href="#evidence">Evidence</a>
-        </nav>
-        <section id="decisions">
-          <h2>What changes the decision</h2>
-          <ol>
-            <li>
-              <strong>Retired backup work leaves the action list.</strong>
-              <a href="https://github.com/agentydragon/ducktape/pull/14953"
-                >Session projection backup retirement</a
-              >
-              and
-              <a href="https://github.com/agentydragon/ducktape/pull/14955"
-                >Nix cache backup retirement</a
-              >
-              landed. <code>session-backup-db-backups</code> and
-              <code>nix-cache-db-backups</code> are absent from today's CR
-              inventory; CDviz adds one new backup bucket. The session database
-              is explicitly Restic-derived; this does not authorize deleting its
-              durable Restic history.
-            </li>
-            <li>
-              <strong
-                >Keep Langfuse data while its consumers and migration are
-                unresolved.</strong
-              >
-              Its 489.11 GiB is application events, media and exports. The
-              expected <code>events_core</code> projection is not proof of
-              waste. No safe deletion estimate is established by this inventory.
-            </li>
-            <li>
-              <strong
-                >Finish measured refill and application migration gates.</strong
-              >
-              <a href="https://github.com/agentydragon/ducktape/issues/13704"
-                >GitHub Attic refill #13704</a
-              >
-              remains open.
-              <a href="https://github.com/agentydragon/ducktape/pull/14223"
-                >Forgejo-to-GitLab planning #14223</a
-              >
-              landed, but Forgejo still has two ready application replicas;
-              preserve its object data and backup path until consumer/data
-              cutover is proved.
-            </li>
-            <li>
-              <strong
-                >Keep current storage ownership before adding another
-                service.</strong
-              >
-              Zot and Attic each have one ready replica and a Bound 100-GiB
-              <code>piraeus-hdd-2</code> cache claim. Those are advertised
-              capacities, not used bytes. Their completed S3 cache cutovers
-              remain closed. A cache near the self-hosted KVM executor is a
-              separate BuildBuddy question in the
-              <a href="../latency/">latency report</a>.
-            </li>
-          </ol>
-          <div class="grid">
-            <div><code>langfuse</code></div>
-            <div>
-              <div role="img" aria-label="langfuse 489.11 GiB" class="progress">
-                <div style="width: 100%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>489.11 GiB</div>
-          </div>
-          <div class="grid">
-            <div><code>mimir-blocks</code></div>
-            <div>
-              <div
-                role="img"
-                aria-label="mimir-blocks 244.29 GiB"
-                class="progress"
-              >
-                <div style="width: 49.95%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>244.29 GiB</div>
-          </div>
-          <div class="grid">
-            <div><code>loki</code></div>
-            <div>
-              <div role="img" aria-label="loki 109.76 GiB" class="progress">
-                <div style="width: 22.44%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>109.76 GiB</div>
-          </div>
-          <div class="grid">
-            <div><code>forgejo</code></div>
-            <div>
-              <div role="img" aria-label="forgejo 90.84 GiB" class="progress">
-                <div style="width: 18.57%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>90.84 GiB</div>
-          </div>
-          <div class="grid">
-            <div>
-              <code>agentplane-staging-db-backups</code>
-            </div>
-            <div>
-              <div
-                role="img"
-                aria-label="agentplane-staging-db-backups 44.89 GiB"
-                class="progress"
-              >
-                <div style="width: 9.18%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>44.89 GiB</div>
-          </div>
-          <div class="grid">
-            <div><code>litellm-db-backups</code></div>
-            <div>
-              <div
-                role="img"
-                aria-label="litellm-db-backups 22.87 GiB"
-                class="progress"
-              >
-                <div style="width: 4.68%" class="progress-bar"></div>
-              </div>
-            </div>
-            <div>22.87 GiB</div>
-          </div>
-          <p class="muted">
-            Bars compare the six largest last-reported logical buckets, scaled
-            to the largest. They exclude SeaweedFS replication and Piraeus
-            allocation. Forgejo now reports 90.84 GiB versus 246.10 GiB in the
-            previous inventory; this is a dated logical comparison, not
-            attribution of all physical reclaim to package retention.
-          </p>
-        </section>
-        <section id="inventory">
-          <h2>Current buckets, with their own clocks</h2>
-          <p>
-            Search applies to both groups and opens matching backup rows. Tables
-            scroll horizontally on narrow screens. An older usage receipt stays
-            visible; Ready does not make an old byte count current.
-          </p>
-          <div class="grid">
-            <div>
-              <label for="search">Search buckets or owners</label
-              ><input id="search" type="search" />
-            </div>
-            <div>
-              <label for="backend">Backend boundary</label
-              ><select id="backend">
-                <option value="">All</option>
-                <option>Object API</option>
-                <option>Filesystem option</option>
-                <option>Code change</option>
-                <option>Unknown</option>
-              </select>
-            </div>
-            <div>
-              <label for="sort">Sort</label
-              ><select id="sort">
-                <option value="size">Largest first</option>
-                <option value="name">Bucket name</option>
-              </select>
-            </div>
-          </div>
-          <p id="count" aria-live="polite" class="muted">38 buckets</p>
-          <h3>Application data, artifacts and observability</h3>
-          <div tabindex="0" aria-label="Bucket inventory" class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Bucket and owner</th>
-                  <th>Last-reported logical usage</th>
-                  <th>Current API / alternative boundary</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  data-name="langfuse"
-                  data-kind="Object API"
-                  data-bytes="525172541376"
-                >
-                  <td>
-                    <code>langfuse</code>
-                    <div class="muted">langfuse · Flux langfuse</div>
-                  </td>
-                  <td>
-                    <strong>489.11 GiB</strong>
-                    <div class="muted">2026-11-09T07:47:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      Raw event storage requires an object service.
-                      S3-compatible storage is our known self-hosted path.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="mimir-blocks"
-                  data-kind="Object API"
-                  data-bytes="262302581304"
-                >
-                  <td>
-                    <code>mimir-blocks</code>
-                    <div class="muted">monitoring · Flux mimir</div>
-                  </td>
-                  <td>
-                    <strong>244.29 GiB</strong>
-                    <div class="muted">2026-11-09T07:37:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      S3-compatible or self-hosted Swift object storage;
-                      filesystem is configurable, but distributed components
-                      need the same view.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="loki"
-                  data-kind="Filesystem option"
-                  data-bytes="117858315872"
-                >
-                  <td>
-                    <code>loki</code>
-                    <div class="muted">loki · Flux loki</div>
-                  </td>
-                  <td>
-                    <strong>109.76 GiB</strong>
-                    <div class="muted">2026-11-09T07:47:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      Object stores or filesystem. The current deployment has
-                      multiple replicas; upstream does not support filesystem
-                      storage for production.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="forgejo"
-                  data-kind="Filesystem option"
-                  data-bytes="97538089496"
-                >
-                  <td>
-                    <code>forgejo</code>
-                    <div class="muted">forgejo · Flux forgejo</div>
-                  </td>
-                  <td>
-                    <strong>90.84 GiB</strong>
-                    <div class="muted">2026-11-09T07:42:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      Local filesystem or S3-compatible. Two application
-                      replicas need shared access; keep the current backend
-                      through the planned Forgejo-to-GitLab migration.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="public-coder-agent-backups"
-                  data-kind="Filesystem option"
-                  data-bytes="15771669168"
-                >
-                  <td>
-                    <code>public-coder-agent-backups</code>
-                    <div class="muted">
-                      public-coder-agent · Flux public-coder-agent-backup
-                    </div>
-                  </td>
-                  <td>
-                    <strong>14.69 GiB</strong>
-                    <div class="muted">2026-11-04T04:17:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      Restic supports local filesystem, REST, SFTP and S3.
-                      Current VolSync source is paused; retain the repository
-                      and password.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="pr-visuals"
-                  data-kind="Code change"
-                  data-bytes="5608480312"
-                >
-                  <td>
-                    <code>pr-visuals</code>
-                    <div class="muted">
-                      flux-system · Flux seaweedfs-pr-visuals-bucket
-                    </div>
-                  </td>
-                  <td>
-                    <strong>5.22 GiB</strong>
-                    <div class="muted">2026-11-09T07:42:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Code change</mark>
-                    <p>
-                      The publisher, baseline reader and retention tools use S3
-                      APIs; filesystem publication would require code and URL
-                      changes.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="loom-gym"
-                  data-kind="Code change"
-                  data-bytes="1238992568"
-                >
-                  <td>
-                    <code>loom-gym</code>
-                    <div class="muted">
-                      seaweedfs · Flux seaweedfs-loom-gym-bucket
-                    </div>
-                  </td>
-                  <td>
-                    <strong>1.15 GiB</strong>
-                    <div class="muted">2026-11-04T04:17:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Code change</mark>
-                    <p>
-                      Custom clients currently access S3. A filesystem or
-                      alternate artifact service requires client changes.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="tempo"
-                  data-kind="Filesystem option"
-                  data-bytes="107700412"
-                >
-                  <td>
-                    <code>tempo</code>
-                    <div class="muted">monitoring · Flux tempo</div>
-                  </td>
-                  <td>
-                    <strong>0.10 GiB</strong>
-                    <div class="muted">2026-11-09T07:47:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      S3-compatible storage or local filesystem. Upstream
-                      recommends object storage for production.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="drivefs-artifacts"
-                  data-kind="Unknown"
-                  data-bytes="90008696"
-                >
-                  <td>
-                    <code>drivefs-artifacts</code>
-                    <div class="muted">
-                      seaweedfs · Flux seaweedfs-drivefs-artifacts-bucket
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.08 GiB</strong>
-                    <div class="muted">2026-11-04T04:17:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Unknown</mark>
-                    <p>
-                      External credentials and consumers exist. The full
-                      producer set and supported non-S3 options remain
-                      unverified.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-backups"
-                  data-kind="Object API"
-                  data-bytes="7096496"
-                >
-                  <td>
-                    <code>gitlab-spike-backups</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.01 GiB</strong>
-                    <div class="muted">2026-11-04T06:07:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-registry"
-                  data-kind="Object API"
-                  data-bytes="5552968"
-                >
-                  <td>
-                    <code>gitlab-spike-registry</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.01 GiB</strong>
-                    <div class="muted">2026-11-04T04:17:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="home-assistant-backups"
-                  data-kind="Filesystem option"
-                  data-bytes="3460100"
-                >
-                  <td>
-                    <code>home-assistant-backups</code>
-                    <div class="muted">
-                      home-assistant · Flux home-assistant
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.00 GiB</strong>
-                    <div class="muted">2026-11-09T06:22:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      Restic can use a filesystem, REST, SFTP or S3. Installed
-                      VolSync exposes moverVolumes for an additional repository
-                      PVC.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="mimir-ruler"
-                  data-kind="Filesystem option"
-                  data-bytes="208640"
-                >
-                  <td>
-                    <code>mimir-ruler</code>
-                    <div class="muted">monitoring · Flux mimir</div>
-                  </td>
-                  <td>
-                    <strong>0.00 GiB</strong>
-                    <div class="muted">2026-11-09T01:47:14Z</div>
-                  </td>
-                  <td>
-                    <mark>Filesystem option</mark>
-                    <p>
-                      Object-store or filesystem backends; the separate local
-                      ruler backend is read-only.
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-uploads"
-                  data-kind="Object API"
-                  data-bytes="16224"
-                >
-                  <td>
-                    <code>gitlab-spike-uploads</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.00 GiB</strong>
-                    <div class="muted">2026-11-04T04:17:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-artifacts"
-                  data-kind="Object API"
-                  data-bytes="12544"
-                >
-                  <td>
-                    <code>gitlab-spike-artifacts</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.00 GiB</strong>
-                    <div class="muted">2026-11-04T06:32:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-lfs"
-                  data-kind="Object API"
-                  data-bytes="232"
-                >
-                  <td>
-                    <code>gitlab-spike-lfs</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>0.00 GiB</strong>
-                    <div class="muted">2026-11-04T05:47:14Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-backup-tmp"
-                  data-kind="Object API"
-                  data-bytes="-1"
-                >
-                  <td>
-                    <code>gitlab-spike-backup-tmp</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>Unreported</strong>
-                    <div class="muted">2026-10-25T06:40:38Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-                <tr
-                  data-name="gitlab-spike-packages"
-                  data-kind="Object API"
-                  data-bytes="-1"
-                >
-                  <td>
-                    <code>gitlab-spike-packages</code>
-                    <div class="muted">
-                      gitlab-spike · Flux gitlab-spike-dependencies
-                    </div>
-                  </td>
-                  <td>
-                    <strong>Unreported</strong>
-                    <div class="muted">2026-10-25T06:40:38Z</div>
-                    <mark>Older than 24h / unknown</mark>
-                  </td>
-                  <td>
-                    <mark>Object API</mark>
-                    <p>
-                      GitLab Helm deployment uses object storage; keep with the
-                      planned Forgejo-to-GitLab migration (#14223).
-                    </p>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <details id="backup-inventory">
-            <summary>
-              PostgreSQL backup buckets · 20 · 121.48 GiB reported
-            </summary>
-            <div
-              tabindex="0"
-              aria-label="Bucket inventory"
-              class="table-scroll"
-            >
-              <table>
-                <thead>
-                  <tr>
-                    <th>Bucket and owner</th>
-                    <th>Last-reported logical usage</th>
-                    <th>Current API / alternative boundary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    data-name="agentplane-staging-db-backups"
-                    data-kind="Object API"
-                    data-bytes="48201293488"
-                  >
-                    <td>
-                      <code>agentplane-staging-db-backups</code>
-                      <div class="muted">
-                        agentplane-staging · Flux agentplane-staging-db-backups
-                      </div>
-                    </td>
-                    <td>
-                      <strong>44.89 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="litellm-db-backups"
-                    data-kind="Object API"
-                    data-bytes="24556021584"
-                  >
-                    <td>
-                      <code>litellm-db-backups</code>
-                      <div class="muted">litellm · Flux litellm</div>
-                    </td>
-                    <td>
-                      <strong>22.87 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="claude-session-sync-db-backups"
-                    data-kind="Object API"
-                    data-bytes="20718134488"
-                  >
-                    <td>
-                      <code>claude-session-sync-db-backups</code>
-                      <div class="muted">
-                        claude-session-sync · Flux claude-session-sync
-                      </div>
-                    </td>
-                    <td>
-                      <strong>19.30 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="authentik-db-backups"
-                    data-kind="Object API"
-                    data-bytes="10394865784"
-                  >
-                    <td>
-                      <code>authentik-db-backups</code>
-                      <div class="muted">
-                        authentik · Flux authentik-db-backups
-                      </div>
-                    </td>
-                    <td>
-                      <strong>9.68 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="haku-console-db-backups"
-                    data-kind="Object API"
-                    data-bytes="6878318664"
-                  >
-                    <td>
-                      <code>haku-console-db-backups</code>
-                      <div class="muted">haku-console · Flux haku-console</div>
-                    </td>
-                    <td>
-                      <strong>6.41 GiB</strong>
-                      <div class="muted">2026-11-09T04:32:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="plaid-mcp-db-backups"
-                    data-kind="Object API"
-                    data-bytes="4157288680"
-                  >
-                    <td>
-                      <code>plaid-mcp-db-backups</code>
-                      <div class="muted">plaid-mcp · Flux plaid-mcp</div>
-                    </td>
-                    <td>
-                      <strong>3.87 GiB</strong>
-                      <div class="muted">2026-11-09T01:37:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="monitoring-db-backups"
-                    data-kind="Object API"
-                    data-bytes="3693166668"
-                  >
-                    <td>
-                      <code>monitoring-db-backups</code>
-                      <div class="muted">
-                        monitoring · Flux grafana-instance
-                      </div>
-                    </td>
-                    <td>
-                      <strong>3.44 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="forgejo-db-backups"
-                    data-kind="Object API"
-                    data-bytes="3345063724"
-                  >
-                    <td>
-                      <code>forgejo-db-backups</code>
-                      <div class="muted">forgejo · Flux forgejo</div>
-                    </td>
-                    <td>
-                      <strong>3.12 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="cdviz-db-backups"
-                    data-kind="Object API"
-                    data-bytes="1758630712"
-                  >
-                    <td>
-                      <code>cdviz-db-backups</code>
-                      <div class="muted">cdviz · Flux cdviz-database</div>
-                    </td>
-                    <td>
-                      <strong>1.64 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud PostgreSQL base backups and archived WAL;
-                        preserve the recovery chain.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="haku-mailbox-db-backups"
-                    data-kind="Object API"
-                    data-bytes="1728846992"
-                  >
-                    <td>
-                      <code>haku-mailbox-db-backups</code>
-                      <div class="muted">haku-mailbox · Flux haku-mailbox</div>
-                    </td>
-                    <td>
-                      <strong>1.61 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="gatus-db-backups"
-                    data-kind="Object API"
-                    data-bytes="1497974696"
-                  >
-                    <td>
-                      <code>gatus-db-backups</code>
-                      <div class="muted">gatus · Flux gatus</div>
-                    </td>
-                    <td>
-                      <strong>1.40 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="gitlab-spike-db-backups"
-                    data-kind="Object API"
-                    data-bytes="958341248"
-                  >
-                    <td>
-                      <code>gitlab-spike-db-backups</code>
-                      <div class="muted">
-                        gitlab-spike · Flux gitlab-spike-dependencies
-                      </div>
-                    </td>
-                    <td>
-                      <strong>0.89 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="atuin-db-backups"
-                    data-kind="Object API"
-                    data-bytes="614871520"
-                  >
-                    <td>
-                      <code>atuin-db-backups</code>
-                      <div class="muted">atuin · Flux atuin</div>
-                    </td>
-                    <td>
-                      <strong>0.57 GiB</strong>
-                      <div class="muted">2026-11-09T04:37:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="matrix-db-backups"
-                    data-kind="Object API"
-                    data-bytes="442932968"
-                  >
-                    <td>
-                      <code>matrix-db-backups</code>
-                      <div class="muted">matrix · Flux matrix</div>
-                    </td>
-                    <td>
-                      <strong>0.41 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="home-assistant-db-backups"
-                    data-kind="Object API"
-                    data-bytes="422161120"
-                  >
-                    <td>
-                      <code>home-assistant-db-backups</code>
-                      <div class="muted">
-                        home-assistant · Flux home-assistant
-                      </div>
-                    </td>
-                    <td>
-                      <strong>0.39 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="ntfy-db-backups"
-                    data-kind="Object API"
-                    data-bytes="341246424"
-                  >
-                    <td>
-                      <code>ntfy-db-backups</code>
-                      <div class="muted">ntfy · Flux ntfy</div>
-                    </td>
-                    <td>
-                      <strong>0.32 GiB</strong>
-                      <div class="muted">2026-11-09T07:47:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="mcp-oauth-state-db-backups"
-                    data-kind="Object API"
-                    data-bytes="214076888"
-                  >
-                    <td>
-                      <code>mcp-oauth-state-db-backups</code>
-                      <div class="muted">
-                        mcp-oauth-state · Flux mcp-oauth-state-db
-                      </div>
-                    </td>
-                    <td>
-                      <strong>0.20 GiB</strong>
-                      <div class="muted">2026-11-09T04:37:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="tofu-state-db-backups"
-                    data-kind="Object API"
-                    data-bytes="190369480"
-                  >
-                    <td>
-                      <code>tofu-state-db-backups</code>
-                      <div class="muted">tofu-state · Flux tofu-state-db</div>
-                    </td>
-                    <td>
-                      <strong>0.18 GiB</strong>
-                      <div class="muted">2026-11-09T04:12:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="study-casino-db-backups"
-                    data-kind="Object API"
-                    data-bytes="167818616"
-                  >
-                    <td>
-                      <code>study-casino-db-backups</code>
-                      <div class="muted">study-casino · Flux study-casino</div>
-                    </td>
-                    <td>
-                      <strong>0.16 GiB</strong>
-                      <div class="muted">2026-11-09T06:02:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                  <tr
-                    data-name="langfuse-db-backups"
-                    data-kind="Object API"
-                    data-bytes="155491312"
-                  >
-                    <td>
-                      <code>langfuse-db-backups</code>
-                      <div class="muted">langfuse · Flux langfuse</div>
-                    </td>
-                    <td>
-                      <strong>0.14 GiB</strong>
-                      <div class="muted">2026-11-09T07:37:14Z</div>
-                    </td>
-                    <td>
-                      <mark>Object API</mark>
-                      <p>
-                        Barman Cloud base backups and WAL use S3-compatible
-                        object storage here. CNPG snapshots are a separate
-                        backup design.
-                      </p>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </details>
-          <blockquote id="empty" hidden>No buckets match.</blockquote>
-          <p class="muted">
-            “Filesystem option” describes supported software backends, not a
-            drop-in deployment change. Distributed components need shared access
-            or a new topology. Client/backend classifications retain the
-            reviewed prior assessment; physical buckets without CRs and external
-            readers are outside this census.
-          </p>
-        </section>
-        <section id="physical">
-          <h2>Physical pools have headroom; reclamation has several clocks</h2>
-          <p>
-            These are current shared thin-pool allocations from
-            <code>lvs</code>, not a sum of bucket sizes. HDD data use is 42–59%;
-            SSD data use is 14–29%. Metadata use is separate. SeaweedFS reports
-            its master 3/3, filer 2/2, S3 2/2 and volume servers 6/6 ready.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Node</th>
-                  <th>Pool</th>
-                  <th>Capacity</th>
-                  <th>Data allocated</th>
-                  <th>Metadata allocated</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>ovh-ns1001419</td>
-                  <td>piraeus_ssd</td>
-                  <td>468.94 GiB</td>
-                  <td>22.85%</td>
-                  <td>1.33%</td>
-                </tr>
-                <tr>
-                  <td>ovh-ns102453</td>
-                  <td>piraeus_hdd</td>
-                  <td>3,718.02 GiB</td>
-                  <td>42.31%</td>
-                  <td>15.19%</td>
-                </tr>
-                <tr>
-                  <td>ovh-ns103656</td>
-                  <td>piraeus_hdd</td>
-                  <td>1,851.02 GiB</td>
-                  <td>57.03%</td>
-                  <td>10.02%</td>
-                </tr>
-                <tr>
-                  <td>ovh-ns103711</td>
-                  <td>piraeus_hdd</td>
-                  <td>1,855.02 GiB</td>
-                  <td>59.01%</td>
-                  <td>10.40%</td>
-                </tr>
-                <tr>
-                  <td>ovh-ns104952</td>
-                  <td>piraeus_ssd</td>
-                  <td>411.18 GiB</td>
-                  <td>29.01%</td>
-                  <td>1.39%</td>
-                </tr>
-                <tr>
-                  <td>ovh-ns104963</td>
-                  <td>piraeus_ssd</td>
-                  <td>411.18 GiB</td>
-                  <td>13.76%</td>
-                  <td>0.90%</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Object deletion, SeaweedFS chunk cleanup/compaction, filesystem free
-            space, discard and thin-pool allocation are different stages.
-            Earlier production cleanup and trim happened after the old page's
-            disposable tests; today's allocation is fresh evidence of the
-            resulting state, not a new before/after trial. No trim-named
-            Kubernetes CronJob was found; host schedules and arbitrary
-            in-process maintenance were not exhaustively checked.
-          </p>
-          <p class="muted">
-            The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/7d68d5d4dae9ca84be973ac8686125371446597d/storage/index.html"
-              >pinned earlier report</a
-            >
-            retains the 512-MiB replicated-file and 256-MiB SeaweedFS object
-            experiments, including their no-snapshot limitation. Their submitted
-            trim range was never the authoritative physical-reclaim amount.
-            Avoid multiplying replication at both object and volume layers.
-          </p>
-        </section>
-        <section id="backups">
-          <h2>Recovery first; alternatives remain trials</h2>
-          <p>
-            All 20 enabled Barman WAL archivers currently report
-            <code>ContinuousArchiving=True</code>, and the latest retained
-            Backup object for each is marked completed. This checks
-            controller-reported outcomes;
-            <strong>no restore was performed</strong>. The other three CNPG
-            clusters have no Barman plugin: the explicitly rebuildable
-            Attic/session databases and the SeaweedFS filer database, whose
-            independent recovery design is outside this check. There is still no
-            VolumeSnapshotClass.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Option</th>
-                  <th>What it could buy</th>
-                  <th>Current decision / missing proof</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Keep Barman Cloud + current S3</td>
-                  <td>Existing physical backups and WAL recovery path.</td>
-                  <td>
-                    Least integration change. Verify a restore before calling
-                    any backup chain healthy end to end.
-                  </td>
-                </tr>
-                <tr>
-                  <td>CNPG snapshots on Piraeus</td>
-                  <td>Volume-based recovery points.</td>
-                  <td>
-                    No snapshot class installed. WAL is still needed for PITR
-                    between snapshots; same-pool snapshots are not independent
-                    disaster recovery.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Klio / traditional Barman</td>
-                  <td>Possible physical-backup/WAL repositories on PVCs.</td>
-                  <td>
-                    <a
-                      href="https://cloudnative-pg.io/klio/docs/developer/running-e2e-tests/"
-                      >Klio still labels itself experimental</a
-                    >. No plugin, failover, retention or restore pilot was run
-                    here. Traditional Barman needs explicit CNPG integration.
-                    Keep existing backups during any pilot.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Garage</td>
-                  <td>
-                    Distributed S3 with multiple capacity-limited data
-                    directories.
-                  </td>
-                  <td>
-                    <a
-                      href="https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/"
-                      >Upstream supports multiple directories</a
-                    >; Garage owns block placement/replication. This is not
-                    automatic PVC-per-shard ownership by Piraeus.
-                  </td>
-                </tr>
-                <tr>
-                  <td>VersityGW POSIX + Piraeus</td>
-                  <td>S3 over files; one storage replication owner.</td>
-                  <td>
-                    <a
-                      href="https://github.com/versity/versitygw/wiki/POSIX-Backend"
-                      >The POSIX backend maps objects to filesystem paths</a
-                    >. Validate client operations, metadata, versioning,
-                    multipart reclaim and failover. Bucket-level filesystem
-                    placement remains coarser than independently movable shards.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="muted">
-            The old Swift, Ceph, MinIO/AIStor, RustFS, pgBackRest and
-            logical-dump comparisons remain in pinned history. They add
-            ownership/integration cost or change recovery guarantees; this
-            refresh does not establish a better fit or repeat their product
-            survey. Detailed Klio manifests are historical examples, not
-            deployment-ready instructions.
-          </p>
-        </section>
-        <section id="evidence">
-          <h2>Scope and reproducibility</h2>
-          <p>
-            Source inspected:
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/69f35d736dc33f90f66f8345ff35806f04ed9399"
-              ><code>69f35d736dc3</code></a
-            >. Live read-only Kubernetes resources, per-node
-            <code>lvs</code> measurements and current GitHub issue/PR states
-            supply this update.
-            <a href="evidence.json">Reviewed inventory and limits</a> ·
-            <a href="manifest.json">Source, clocks and render receipt</a>.
-          </p>
-          <p>
-            Raw payloads and private volume identities remain local. Logical
-            usage, filesystem capacity and thin-pool allocation are never added
-            together. Missing sizes remain unknown. Ready CRs do not prove live
-            consumers, backup restoration or migration acceptance.
-          </p>
-        </section>
-        <footer class="muted">
-          Latest snapshot only; previous versions remain in Git history. Pages
-          updates after the gh-pages PR merges.
-        </footer>
-      </main>
-    </div>
-    <script type="module" src="../report.js"></script>
+    <div id="report-content"></div>
+    <noscript
+      >This report uses JavaScript for Mantine components and charts.</noscript
+    >
     <script type="module">
-      import "../report.js";
-
-      const rows = [...document.querySelectorAll("tr[data-name]")];
-      const search = document.getElementById("search"),
-        backend = document.getElementById("backend"),
-        sort = document.getElementById("sort");
-      function filterInventory() {
-        const query = search.value.toLowerCase();
-        let visible = 0;
-        for (const row of rows) {
-          row.hidden = !(
-            row.textContent.toLowerCase().includes(query) &&
-            (!backend.value || row.dataset.kind === backend.value)
+      import {
+        Accordion,
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        Mark,
+        NativeSelect,
+        Paper,
+        SimpleGrid,
+        Stack,
+        Table,
+        Text,
+        TextInput,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      import { useState } from "react";
+      import { BarChart } from "@mantine/charts";
+      const buckets = [
+        {
+          name: "langfuse",
+          kind: "Object API",
+          bytes: 525172541376.0,
+          backup: false,
+          search:
+            " langfuse langfuse · flux langfuse 489.11 gib 2026-11-09t07:47:14z object api raw event storage requires an object service. s3-compatible storage is our known self-hosted path. ",
+          row: html`<${Table.Tr}
+            data-name=${"langfuse"}
+            data-kind=${"Object API"}
+            data-bytes=${"525172541376"}
+            key=${"langfuse"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"langfuse"}
+              <//>
+              <${Box} c="dimmed"> ${"langfuse · Flux langfuse"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"489.11 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Raw event storage requires an object service. S3-compatible storage is our known self-hosted path. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "mimir-blocks",
+          kind: "Object API",
+          bytes: 262302581304.0,
+          backup: false,
+          search:
+            " mimir-blocks monitoring · flux mimir 244.29 gib 2026-11-09t07:37:14z object api s3-compatible or self-hosted swift object storage; filesystem is configurable, but distributed components need the same view. ",
+          row: html`<${Table.Tr}
+            data-name=${"mimir-blocks"}
+            data-kind=${"Object API"}
+            data-bytes=${"262302581304"}
+            key=${"mimir-blocks"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"mimir-blocks"}
+              <//>
+              <${Box} c="dimmed"> ${"monitoring · Flux mimir"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"244.29 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:37:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" S3-compatible or self-hosted Swift object storage; filesystem is configurable, but distributed components need the same view. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "loki",
+          kind: "Filesystem option",
+          bytes: 117858315872.0,
+          backup: false,
+          search:
+            " loki loki · flux loki 109.76 gib 2026-11-09t07:47:14z filesystem option object stores or filesystem. the current deployment has multiple replicas; upstream does not support filesystem storage for production. ",
+          row: html`<${Table.Tr}
+            data-name=${"loki"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"117858315872"}
+            key=${"loki"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"loki"}
+              <//>
+              <${Box} c="dimmed"> ${"loki · Flux loki"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"109.76 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" Object stores or filesystem. The current deployment has multiple replicas; upstream does not support filesystem storage for production. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "forgejo",
+          kind: "Filesystem option",
+          bytes: 97538089496.0,
+          backup: false,
+          search:
+            " forgejo forgejo · flux forgejo 90.84 gib 2026-11-09t07:42:14z filesystem option local filesystem or s3-compatible. two application replicas need shared access; keep the current backend through the planned forgejo-to-gitlab migration. ",
+          row: html`<${Table.Tr}
+            data-name=${"forgejo"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"97538089496"}
+            key=${"forgejo"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"forgejo"}
+              <//>
+              <${Box} c="dimmed"> ${"forgejo · Flux forgejo"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"90.84 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:42:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" Local filesystem or S3-compatible. Two application replicas need shared access; keep the current backend through the planned Forgejo-to-GitLab migration. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "public-coder-agent-backups",
+          kind: "Filesystem option",
+          bytes: 15771669168.0,
+          backup: false,
+          search:
+            " public-coder-agent-backups public-coder-agent · flux public-coder-agent-backup 14.69 gib 2026-11-04t04:17:14z older than 24h / unknown filesystem option restic supports local filesystem, rest, sftp and s3. current volsync source is paused; retain the repository and password. ",
+          row: html`<${Table.Tr}
+            data-name=${"public-coder-agent-backups"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"15771669168"}
+            key=${"public-coder-agent-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"public-coder-agent-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" public-coder-agent · Flux public-coder-agent-backup "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"14.69 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T04:17:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" Restic supports local filesystem, REST, SFTP and S3. Current VolSync source is paused; retain the repository and password. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "pr-visuals",
+          kind: "Code change",
+          bytes: 5608480312.0,
+          backup: false,
+          search:
+            " pr-visuals flux-system · flux seaweedfs-pr-visuals-bucket 5.22 gib 2026-11-09t07:42:14z code change the publisher, baseline reader and retention tools use s3 apis; filesystem publication would require code and url changes. ",
+          row: html`<${Table.Tr}
+            data-name=${"pr-visuals"}
+            data-kind=${"Code change"}
+            data-bytes=${"5608480312"}
+            key=${"pr-visuals"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"pr-visuals"}
+              <//>
+              <${Box} c="dimmed">
+                ${" flux-system · Flux seaweedfs-pr-visuals-bucket "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"5.22 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:42:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Code change"} <//>
+              <${Text} component="p" my="sm">
+                ${" The publisher, baseline reader and retention tools use S3 APIs; filesystem publication would require code and URL changes. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "loom-gym",
+          kind: "Code change",
+          bytes: 1238992568.0,
+          backup: false,
+          search:
+            " loom-gym seaweedfs · flux seaweedfs-loom-gym-bucket 1.15 gib 2026-11-04t04:17:14z older than 24h / unknown code change custom clients currently access s3. a filesystem or alternate artifact service requires client changes. ",
+          row: html`<${Table.Tr}
+            data-name=${"loom-gym"}
+            data-kind=${"Code change"}
+            data-bytes=${"1238992568"}
+            key=${"loom-gym"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"loom-gym"}
+              <//>
+              <${Box} c="dimmed">
+                ${" seaweedfs · Flux seaweedfs-loom-gym-bucket "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"1.15 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T04:17:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Code change"} <//>
+              <${Text} component="p" my="sm">
+                ${" Custom clients currently access S3. A filesystem or alternate artifact service requires client changes. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "tempo",
+          kind: "Filesystem option",
+          bytes: 107700412.0,
+          backup: false,
+          search:
+            " tempo monitoring · flux tempo 0.10 gib 2026-11-09t07:47:14z filesystem option s3-compatible storage or local filesystem. upstream recommends object storage for production. ",
+          row: html`<${Table.Tr}
+            data-name=${"tempo"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"107700412"}
+            key=${"tempo"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"tempo"}
+              <//>
+              <${Box} c="dimmed"> ${"monitoring · Flux tempo"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.10 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" S3-compatible storage or local filesystem. Upstream recommends object storage for production. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "drivefs-artifacts",
+          kind: "Unknown",
+          bytes: 90008696.0,
+          backup: false,
+          search:
+            " drivefs-artifacts seaweedfs · flux seaweedfs-drivefs-artifacts-bucket 0.08 gib 2026-11-04t04:17:14z older than 24h / unknown unknown external credentials and consumers exist. the full producer set and supported non-s3 options remain unverified. ",
+          row: html`<${Table.Tr}
+            data-name=${"drivefs-artifacts"}
+            data-kind=${"Unknown"}
+            data-bytes=${"90008696"}
+            key=${"drivefs-artifacts"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"drivefs-artifacts"}
+              <//>
+              <${Box} c="dimmed">
+                ${" seaweedfs · Flux seaweedfs-drivefs-artifacts-bucket "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.08 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T04:17:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Unknown"} <//>
+              <${Text} component="p" my="sm">
+                ${" External credentials and consumers exist. The full producer set and supported non-S3 options remain unverified. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-backups",
+          kind: "Object API",
+          bytes: 7096496.0,
+          backup: false,
+          search:
+            " gitlab-spike-backups gitlab-spike · flux gitlab-spike-dependencies 0.01 gib 2026-11-04t06:07:14z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"7096496"}
+            key=${"gitlab-spike-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.01 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T06:07:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-registry",
+          kind: "Object API",
+          bytes: 5552968.0,
+          backup: false,
+          search:
+            " gitlab-spike-registry gitlab-spike · flux gitlab-spike-dependencies 0.01 gib 2026-11-04t04:17:14z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-registry"}
+            data-kind=${"Object API"}
+            data-bytes=${"5552968"}
+            key=${"gitlab-spike-registry"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-registry"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.01 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T04:17:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "home-assistant-backups",
+          kind: "Filesystem option",
+          bytes: 3460100.0,
+          backup: false,
+          search:
+            " home-assistant-backups home-assistant · flux home-assistant 0.00 gib 2026-11-09t06:22:14z filesystem option restic can use a filesystem, rest, sftp or s3. installed volsync exposes movervolumes for an additional repository pvc. ",
+          row: html`<${Table.Tr}
+            data-name=${"home-assistant-backups"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"3460100"}
+            key=${"home-assistant-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"home-assistant-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" home-assistant · Flux home-assistant "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.00 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T06:22:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" Restic can use a filesystem, REST, SFTP or S3. Installed VolSync exposes moverVolumes for an additional repository PVC. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "mimir-ruler",
+          kind: "Filesystem option",
+          bytes: 208640.0,
+          backup: false,
+          search:
+            " mimir-ruler monitoring · flux mimir 0.00 gib 2026-11-09t01:47:14z filesystem option object-store or filesystem backends; the separate local ruler backend is read-only. ",
+          row: html`<${Table.Tr}
+            data-name=${"mimir-ruler"}
+            data-kind=${"Filesystem option"}
+            data-bytes=${"208640"}
+            key=${"mimir-ruler"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"mimir-ruler"}
+              <//>
+              <${Box} c="dimmed"> ${"monitoring · Flux mimir"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.00 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T01:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Filesystem option"} <//>
+              <${Text} component="p" my="sm">
+                ${" Object-store or filesystem backends; the separate local ruler backend is read-only. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-uploads",
+          kind: "Object API",
+          bytes: 16224.0,
+          backup: false,
+          search:
+            " gitlab-spike-uploads gitlab-spike · flux gitlab-spike-dependencies 0.00 gib 2026-11-04t04:17:14z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-uploads"}
+            data-kind=${"Object API"}
+            data-bytes=${"16224"}
+            key=${"gitlab-spike-uploads"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-uploads"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.00 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T04:17:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-artifacts",
+          kind: "Object API",
+          bytes: 12544.0,
+          backup: false,
+          search:
+            " gitlab-spike-artifacts gitlab-spike · flux gitlab-spike-dependencies 0.00 gib 2026-11-04t06:32:14z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-artifacts"}
+            data-kind=${"Object API"}
+            data-bytes=${"12544"}
+            key=${"gitlab-spike-artifacts"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-artifacts"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.00 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T06:32:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-lfs",
+          kind: "Object API",
+          bytes: 232.0,
+          backup: false,
+          search:
+            " gitlab-spike-lfs gitlab-spike · flux gitlab-spike-dependencies 0.00 gib 2026-11-04t05:47:14z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-lfs"}
+            data-kind=${"Object API"}
+            data-bytes=${"232"}
+            key=${"gitlab-spike-lfs"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-lfs"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.00 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-04T05:47:14Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-backup-tmp",
+          kind: "Object API",
+          bytes: -1.0,
+          backup: false,
+          search:
+            " gitlab-spike-backup-tmp gitlab-spike · flux gitlab-spike-dependencies unreported 2026-10-25t06:40:38z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-backup-tmp"}
+            data-kind=${"Object API"}
+            data-bytes=${"-1"}
+            key=${"gitlab-spike-backup-tmp"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-backup-tmp"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"Unreported"} </strong>
+              <${Box} c="dimmed"> ${"2026-10-25T06:40:38Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-packages",
+          kind: "Object API",
+          bytes: -1.0,
+          backup: false,
+          search:
+            " gitlab-spike-packages gitlab-spike · flux gitlab-spike-dependencies unreported 2026-10-25t06:40:38z older than 24h / unknown object api gitlab helm deployment uses object storage; keep with the planned forgejo-to-gitlab migration (#14223). ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-packages"}
+            data-kind=${"Object API"}
+            data-bytes=${"-1"}
+            key=${"gitlab-spike-packages"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-packages"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"Unreported"} </strong>
+              <${Box} c="dimmed"> ${"2026-10-25T06:40:38Z"} <//>
+              <${Mark}> ${"Older than 24h / unknown"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223). "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "agentplane-staging-db-backups",
+          kind: "Object API",
+          bytes: 48201293488.0,
+          backup: true,
+          search:
+            " agentplane-staging-db-backups agentplane-staging · flux agentplane-staging-db-backups 44.89 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"agentplane-staging-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"48201293488"}
+            key=${"agentplane-staging-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"agentplane-staging-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" agentplane-staging · Flux agentplane-staging-db-backups "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"44.89 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "litellm-db-backups",
+          kind: "Object API",
+          bytes: 24556021584.0,
+          backup: true,
+          search:
+            " litellm-db-backups litellm · flux litellm 22.87 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"litellm-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"24556021584"}
+            key=${"litellm-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"litellm-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"litellm · Flux litellm"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"22.87 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "claude-session-sync-db-backups",
+          kind: "Object API",
+          bytes: 20718134488.0,
+          backup: true,
+          search:
+            " claude-session-sync-db-backups claude-session-sync · flux claude-session-sync 19.30 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"claude-session-sync-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"20718134488"}
+            key=${"claude-session-sync-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"claude-session-sync-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" claude-session-sync · Flux claude-session-sync "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"19.30 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "authentik-db-backups",
+          kind: "Object API",
+          bytes: 10394865784.0,
+          backup: true,
+          search:
+            " authentik-db-backups authentik · flux authentik-db-backups 9.68 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"authentik-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"10394865784"}
+            key=${"authentik-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"authentik-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" authentik · Flux authentik-db-backups "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"9.68 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "haku-console-db-backups",
+          kind: "Object API",
+          bytes: 6878318664.0,
+          backup: true,
+          search:
+            " haku-console-db-backups haku-console · flux haku-console 6.41 gib 2026-11-09t04:32:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"haku-console-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"6878318664"}
+            key=${"haku-console-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"haku-console-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"haku-console · Flux haku-console"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"6.41 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T04:32:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "plaid-mcp-db-backups",
+          kind: "Object API",
+          bytes: 4157288680.0,
+          backup: true,
+          search:
+            " plaid-mcp-db-backups plaid-mcp · flux plaid-mcp 3.87 gib 2026-11-09t01:37:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"plaid-mcp-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"4157288680"}
+            key=${"plaid-mcp-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"plaid-mcp-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"plaid-mcp · Flux plaid-mcp"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"3.87 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T01:37:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "monitoring-db-backups",
+          kind: "Object API",
+          bytes: 3693166668.0,
+          backup: true,
+          search:
+            " monitoring-db-backups monitoring · flux grafana-instance 3.44 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"monitoring-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"3693166668"}
+            key=${"monitoring-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"monitoring-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${" monitoring · Flux grafana-instance "} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"3.44 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "forgejo-db-backups",
+          kind: "Object API",
+          bytes: 3345063724.0,
+          backup: true,
+          search:
+            " forgejo-db-backups forgejo · flux forgejo 3.12 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"forgejo-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"3345063724"}
+            key=${"forgejo-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"forgejo-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"forgejo · Flux forgejo"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"3.12 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "cdviz-db-backups",
+          kind: "Object API",
+          bytes: 1758630712.0,
+          backup: true,
+          search:
+            " cdviz-db-backups cdviz · flux cdviz-database 1.64 gib 2026-11-09t07:47:14z object api barman cloud postgresql base backups and archived wal; preserve the recovery chain. ",
+          row: html`<${Table.Tr}
+            data-name=${"cdviz-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"1758630712"}
+            key=${"cdviz-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"cdviz-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"cdviz · Flux cdviz-database"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"1.64 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud PostgreSQL base backups and archived WAL; preserve the recovery chain. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "haku-mailbox-db-backups",
+          kind: "Object API",
+          bytes: 1728846992.0,
+          backup: true,
+          search:
+            " haku-mailbox-db-backups haku-mailbox · flux haku-mailbox 1.61 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"haku-mailbox-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"1728846992"}
+            key=${"haku-mailbox-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"haku-mailbox-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"haku-mailbox · Flux haku-mailbox"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"1.61 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gatus-db-backups",
+          kind: "Object API",
+          bytes: 1497974696.0,
+          backup: true,
+          search:
+            " gatus-db-backups gatus · flux gatus 1.40 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"gatus-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"1497974696"}
+            key=${"gatus-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gatus-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"gatus · Flux gatus"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"1.40 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "gitlab-spike-db-backups",
+          kind: "Object API",
+          bytes: 958341248.0,
+          backup: true,
+          search:
+            " gitlab-spike-db-backups gitlab-spike · flux gitlab-spike-dependencies 0.89 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"gitlab-spike-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"958341248"}
+            key=${"gitlab-spike-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"gitlab-spike-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" gitlab-spike · Flux gitlab-spike-dependencies "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.89 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "atuin-db-backups",
+          kind: "Object API",
+          bytes: 614871520.0,
+          backup: true,
+          search:
+            " atuin-db-backups atuin · flux atuin 0.57 gib 2026-11-09t04:37:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"atuin-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"614871520"}
+            key=${"atuin-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"atuin-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"atuin · Flux atuin"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.57 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T04:37:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "matrix-db-backups",
+          kind: "Object API",
+          bytes: 442932968.0,
+          backup: true,
+          search:
+            " matrix-db-backups matrix · flux matrix 0.41 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"matrix-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"442932968"}
+            key=${"matrix-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"matrix-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"matrix · Flux matrix"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.41 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "home-assistant-db-backups",
+          kind: "Object API",
+          bytes: 422161120.0,
+          backup: true,
+          search:
+            " home-assistant-db-backups home-assistant · flux home-assistant 0.39 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"home-assistant-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"422161120"}
+            key=${"home-assistant-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"home-assistant-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" home-assistant · Flux home-assistant "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.39 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "ntfy-db-backups",
+          kind: "Object API",
+          bytes: 341246424.0,
+          backup: true,
+          search:
+            " ntfy-db-backups ntfy · flux ntfy 0.32 gib 2026-11-09t07:47:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"ntfy-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"341246424"}
+            key=${"ntfy-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"ntfy-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"ntfy · Flux ntfy"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.32 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:47:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "mcp-oauth-state-db-backups",
+          kind: "Object API",
+          bytes: 214076888.0,
+          backup: true,
+          search:
+            " mcp-oauth-state-db-backups mcp-oauth-state · flux mcp-oauth-state-db 0.20 gib 2026-11-09t04:37:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"mcp-oauth-state-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"214076888"}
+            key=${"mcp-oauth-state-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"mcp-oauth-state-db-backups"}
+              <//>
+              <${Box} c="dimmed">
+                ${" mcp-oauth-state · Flux mcp-oauth-state-db "}
+              <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.20 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T04:37:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "tofu-state-db-backups",
+          kind: "Object API",
+          bytes: 190369480.0,
+          backup: true,
+          search:
+            " tofu-state-db-backups tofu-state · flux tofu-state-db 0.18 gib 2026-11-09t04:12:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"tofu-state-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"190369480"}
+            key=${"tofu-state-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"tofu-state-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"tofu-state · Flux tofu-state-db"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.18 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T04:12:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "study-casino-db-backups",
+          kind: "Object API",
+          bytes: 167818616.0,
+          backup: true,
+          search:
+            " study-casino-db-backups study-casino · flux study-casino 0.16 gib 2026-11-09t06:02:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"study-casino-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"167818616"}
+            key=${"study-casino-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"study-casino-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"study-casino · Flux study-casino"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.16 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T06:02:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+        {
+          name: "langfuse-db-backups",
+          kind: "Object API",
+          bytes: 155491312.0,
+          backup: true,
+          search:
+            " langfuse-db-backups langfuse · flux langfuse 0.14 gib 2026-11-09t07:37:14z object api barman cloud base backups and wal use s3-compatible object storage here. cnpg snapshots are a separate backup design. ",
+          row: html`<${Table.Tr}
+            data-name=${"langfuse-db-backups"}
+            data-kind=${"Object API"}
+            data-bytes=${"155491312"}
+            key=${"langfuse-db-backups"}
+          >
+            <${Table.Td}>
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"langfuse-db-backups"}
+              <//>
+              <${Box} c="dimmed"> ${"langfuse · Flux langfuse"} <//>
+            <//>
+            <${Table.Td}>
+              <strong> ${"0.14 GiB"} </strong>
+              <${Box} c="dimmed"> ${"2026-11-09T07:37:14Z"} <//>
+            <//>
+            <${Table.Td}>
+              <${Mark}> ${"Object API"} <//>
+              <${Text} component="p" my="sm">
+                ${" Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design. "}
+              <//>
+            <//>
+          <//> `,
+        },
+      ];
+      const bucketChartData = buckets
+        .filter((bucket) => !bucket.backup)
+        .sort((a, b) => b.bytes - a.bytes)
+        .slice(0, 6)
+        .map((bucket) => ({
+          bucket: bucket.name,
+          GiB: bucket.bytes / 2 ** 30,
+        }));
+      function Report() {
+        const [search, setSearch] = useState("");
+        const [backend, setBackend] = useState("");
+        const [sort, setSort] = useState("size");
+        const [backupExpanded, setBackupExpanded] = useState(false);
+        const visibleBuckets = buckets
+          .filter(
+            (bucket) =>
+              bucket.search.includes(search.toLowerCase()) &&
+              (!backend || bucket.kind === backend),
+          )
+          .sort((a, b) =>
+            sort === "name" ? a.name.localeCompare(b.name) : b.bytes - a.bytes,
           );
-          if (!row.hidden) visible++;
-        }
-        for (const body of document.querySelectorAll("#inventory tbody")) {
-          [...body.children]
-            .sort((a, b) =>
-              sort.value === "name"
-                ? a.dataset.name.localeCompare(b.dataset.name)
-                : Number(b.dataset.bytes) - Number(a.dataset.bytes),
-            )
-            .forEach((row) => body.appendChild(row));
-        }
-        document.getElementById("count").textContent =
-          visible + " / " + rows.length + " buckets";
-        document.getElementById("empty").hidden = visible !== 0;
-        if (
-          query &&
-          [
-            ...document.querySelectorAll("#backup-inventory tr[data-name]"),
-          ].some((row) => !row.hidden)
-        )
-          document.getElementById("backup-inventory").open = true;
+        const backupOpen =
+          backupExpanded ||
+          (Boolean(search) && visibleBuckets.some((bucket) => bucket.backup));
+        const setBackupOpen = setBackupExpanded;
+        return html`<${Container}
+          component=${"main"}
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <header>
+            <${Text} component="p" my="sm">
+              ${"Ducktape · Storage · 9 November 2026 UTC"}
+            <//>
+            <${Title} order=${1} mt="md" mb="sm">
+              ${" Two backup retirements landed. Object storage still has a job. "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" The rebuildable session projection and Nix cache database no longer have backup Bucket CRs. The current inventory is smaller, while Langfuse and observability remain its largest consumers. Keep durable application data and the remaining PostgreSQL recovery chains; lower bucket totals are not a physical-reclaim measurement. "}
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" Bucket response written 07:52 UTC; six thin-pool reads completed 07:54 UTC. This is a non-atomic read-only snapshot, with each bucket's last usage clock retained. No deletion, trim, compaction or migration was performed. "}
+            <//>
+            <${SimpleGrid}
+              component=${"div"}
+              cols=${{ base: 1, sm: 2, lg: 3 }}
+              spacing="md"
+            >
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <strong> ${"38 buckets"} </strong>
+                    <${Text} component="p" my="sm">
+                      ${" All current Ready conditions observed. 36 report bytes; two remain unreported. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <strong> ${"1,077 GiB"} </strong>
+                    <${Text} component="p" my="sm">
+                      ${" Last-reported logical bytes, excluding replication. Previous inventory: 1,486 GiB. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+              <${Box}>
+                <${Paper}
+                  component="article"
+                  withBorder
+                  p="lg"
+                  radius="md"
+                  my="md"
+                >
+                  <${Box}>
+                    <strong> ${"20 backup paths"} </strong>
+                    <${Text} component="p" my="sm">
+                      ${" Barman WAL archivers among 23 CNPG clusters; 121.5 GiB reported in their backup buckets. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+          </header>
+          <${Group} component=${"nav"} gap="sm" my="md">
+            <${Anchor} href=${"#decisions"}> ${"Current decisions"} <//>
+            <${Anchor} href=${"#inventory"}> ${"Bucket inventory"} <//>
+            <${Anchor} href=${"#physical"}> ${"Physical capacity"} <//>
+            <${Anchor} href=${"#backups"}> ${"Recovery and alternatives"} <//>
+            <${Anchor} href=${"#evidence"}> ${"Evidence"} <//>
+          <//>
+          <${Stack} id=${"decisions"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"What changes the decision"}
+            <//>
+            <ol>
+              <li>
+                <strong>
+                  ${"Retired backup work leaves the action list."}
+                </strong>
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/pull/14953"}
+                >
+                  ${"Session projection backup retirement"}
+                <//>
+                ${" and "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/pull/14955"}
+                >
+                  ${"Nix cache backup retirement"}
+                <//>
+                ${" landed. "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"session-backup-db-backups"}
+                <//>
+                ${" and "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"nix-cache-db-backups"}
+                <//>
+                ${" are absent from today's CR inventory; CDviz adds one new backup bucket. The session database is explicitly Restic-derived; this does not authorize deleting its durable Restic history. "}
+              </li>
+              <li>
+                <strong>
+                  ${"Keep Langfuse data while its consumers and migration are unresolved."}
+                </strong>
+                ${" Its 489.11 GiB is application events, media and exports. The expected "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"events_core"}
+                <//>
+                ${" projection is not proof of waste. No safe deletion estimate is established by this inventory. "}
+              </li>
+              <li>
+                <strong>
+                  ${"Finish measured refill and application migration gates."}
+                </strong>
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/issues/13704"}
+                >
+                  ${"GitHub Attic refill #13704"}
+                <//>
+                ${" remains open. "}
+                <${Anchor}
+                  href=${"https://github.com/agentydragon/ducktape/pull/14223"}
+                >
+                  ${"Forgejo-to-GitLab planning #14223"}
+                <//>
+                ${" landed, but Forgejo still has two ready application replicas; preserve its object data and backup path until consumer/data cutover is proved. "}
+              </li>
+              <li>
+                <strong>
+                  ${"Keep current storage ownership before adding another service."}
+                </strong>
+                ${" Zot and Attic each have one ready replica and a Bound 100-GiB "}
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"piraeus-hdd-2"}
+                <//>
+                ${" cache claim. Those are advertised capacities, not used bytes. Their completed S3 cache cutovers remain closed. A cache near the self-hosted KVM executor is a separate BuildBuddy question in the "}
+                <${Anchor} href=${"../latency/"}> ${"latency report"} <//>
+                ${". "}
+              </li>
+            </ol>
+            <${Paper}
+              component="figure"
+              withBorder
+              p="md"
+              m=${0}
+              data-chart="storage-logical-bucket-gib"
+            >
+              <${Title} order=${3} mb="md">
+                ${"Largest reported object buckets"}
+              <//>
+              <${BarChart}
+                h=${330}
+                data=${bucketChartData}
+                dataKey="bucket"
+                orientation="vertical"
+                yAxisProps=${{ width: 140, tickFormatter: (value) => value.replaceAll("-", " ") }}
+                series=${[{ name: "GiB", color: "blue.6" }]}
+                valueFormatter=${(value) => `${value.toFixed(2)} GiB`}
+                withBarValueLabel
+                barProps=${{ isAnimationActive: false }}
+                barChartProps=${{ margin: { right: 65, bottom: 30 } }}
+                xAxisProps=${{ tickFormatter: (value) => value.toFixed(0) }}
+                xAxisLabel="Last-reported logical GiB"
+              />
+              <${Text} component="figcaption" c="dimmed" size="sm" mt="md">
+                ${"Last-reported logical bytes / 1,073,741,824, excluding replication. Per-bucket usage clocks remain in the inventory; these are not physical-reclamation measurements."}
+              <//>
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" Bars compare the six largest last-reported logical buckets, scaled to the largest. They exclude SeaweedFS replication and Piraeus allocation. Forgejo now reports 90.84 GiB versus 246.10 GiB in the previous inventory; this is a dated logical comparison, not attribution of all physical reclaim to package retention. "}
+            <//>
+          <//>
+          <${Stack} id=${"inventory"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Current buckets, with their own clocks"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Search applies to both groups and opens matching backup rows. Tables scroll horizontally on narrow screens. An older usage receipt stays visible; Ready does not make an old byte count current. "}
+            <//>
+            <${SimpleGrid}
+              component=${"div"}
+              cols=${{ base: 1, sm: 2, lg: 3 }}
+              spacing="md"
+            >
+              <${Box}>
+                <${TextInput}
+                  id=${"search"}
+                  type="search"
+                  label=${"Search buckets or owners"}
+                  value=${search}
+                  onChange=${(event) => setSearch(event.currentTarget.value)}
+                />
+              <//>
+              <${Box}>
+                <${NativeSelect}
+                  id=${"backend"}
+                  label=${"Backend boundary"}
+                  value=${backend}
+                  onChange=${(event) => setBackend(event.currentTarget.value)}
+                >
+                  <option value=${""}>${"All"}</option>
+                  <option>${"Object API"}</option>
+                  <option>${"Filesystem option"}</option>
+                  <option>${"Code change"}</option>
+                  <option>${"Unknown"}</option>
+                <//>
+              <//>
+              <${Box}>
+                <${NativeSelect}
+                  id=${"sort"}
+                  label=${"Sort"}
+                  value=${sort}
+                  onChange=${(event) => setSort(event.currentTarget.value)}
+                >
+                  <option value=${"size"}>${"Largest first"}</option>
+                  <option value=${"name"}>${"Bucket name"}</option>
+                <//>
+              <//>
+            <//>
+            <${Text} id=${"count"} aria-live=${"polite"} c="dimmed">
+              ${visibleBuckets.length + " / " + buckets.length + " buckets"}
+            <//>
+            <${Title} order=${3} mt="md" mb="sm">
+              ${"Application data, artifacts and observability"}
+            <//>
+            <${Table.ScrollContainer}
+              tabIndex=${"0"}
+              aria-label=${"Bucket inventory"}
+              minWidth=${640}
+              type="native"
+              my="md"
+              maw="100%"
+            >
+              <${Table} striped highlightOnHover verticalSpacing="sm">
+                <${Table.Thead}>
+                  <${Table.Tr}>
+                    <${Table.Th}> ${"Bucket and owner"} <//>
+                    <${Table.Th}> ${"Last-reported logical usage"} <//>
+                    <${Table.Th}> ${"Current API / alternative boundary"} <//>
+                  <//>
+                <//>
+                <${Table.Tbody}>
+                  ${visibleBuckets.filter((bucket) => bucket.backup === false).map((bucket) => bucket.row)}
+                <//>
+              <//>
+            <//>
+            <${Accordion}
+              variant="contained"
+              my="md"
+              id="backup-inventory"
+              value=${backupOpen ? "backups" : null}
+              onChange=${(value) => setBackupOpen(value === "backups")}
+            >
+              <${Accordion.Item} value=${"backups"}>
+                <${Accordion.Control}>
+                  ${" PostgreSQL backup buckets · 20 · 121.48 GiB reported "}
+                <//>
+                <${Accordion.Panel} keepMounted>
+                  <${Table.ScrollContainer}
+                    tabIndex=${"0"}
+                    aria-label=${"Bucket inventory"}
+                    minWidth=${640}
+                    type="native"
+                    my="md"
+                    maw="100%"
+                  >
+                    <${Table} striped highlightOnHover verticalSpacing="sm">
+                      <${Table.Thead}>
+                        <${Table.Tr}>
+                          <${Table.Th}> ${"Bucket and owner"} <//>
+                          <${Table.Th}> ${"Last-reported logical usage"} <//>
+                          <${Table.Th}>
+                            ${"Current API / alternative boundary"}
+                          <//>
+                        <//>
+                      <//>
+                      <${Table.Tbody}>
+                        ${visibleBuckets.filter((bucket) => bucket.backup === true).map((bucket) => bucket.row)}
+                      <//>
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Blockquote}
+              id=${"empty"}
+              hidden=${visibleBuckets.length !== 0}
+              my="md"
+            >
+              ${"No buckets match."}
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" “Filesystem option” describes supported software backends, not a drop-in deployment change. Distributed components need shared access or a new topology. Client/backend classifications retain the reviewed prior assessment; physical buckets without CRs and external readers are outside this census. "}
+            <//>
+          <//>
+          <${Stack} id=${"physical"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Physical pools have headroom; reclamation has several clocks"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" These are current shared thin-pool allocations from "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"lvs"}
+              <//>
+              ${", not a sum of bucket sizes. HDD data use is 42–59%; SSD data use is 14–29%. Metadata use is separate. SeaweedFS reports its master 3/3, filer 2/2, S3 2/2 and volume servers 6/6 ready. "}
+            <//>
+            <${Table.ScrollContainer}
+              minWidth=${640}
+              type="native"
+              my="md"
+              maw="100%"
+            >
+              <${Table} striped highlightOnHover verticalSpacing="sm">
+                <${Table.Thead}>
+                  <${Table.Tr}>
+                    <${Table.Th}> ${"Node"} <//>
+                    <${Table.Th}> ${"Pool"} <//>
+                    <${Table.Th}> ${"Capacity"} <//>
+                    <${Table.Th}> ${"Data allocated"} <//>
+                    <${Table.Th}> ${"Metadata allocated"} <//>
+                  <//>
+                <//>
+                <${Table.Tbody}>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns1001419"} <//>
+                    <${Table.Td}> ${"piraeus_ssd"} <//>
+                    <${Table.Td}> ${"468.94 GiB"} <//>
+                    <${Table.Td}> ${"22.85%"} <//>
+                    <${Table.Td}> ${"1.33%"} <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns102453"} <//>
+                    <${Table.Td}> ${"piraeus_hdd"} <//>
+                    <${Table.Td}> ${"3,718.02 GiB"} <//>
+                    <${Table.Td}> ${"42.31%"} <//>
+                    <${Table.Td}> ${"15.19%"} <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns103656"} <//>
+                    <${Table.Td}> ${"piraeus_hdd"} <//>
+                    <${Table.Td}> ${"1,851.02 GiB"} <//>
+                    <${Table.Td}> ${"57.03%"} <//>
+                    <${Table.Td}> ${"10.02%"} <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns103711"} <//>
+                    <${Table.Td}> ${"piraeus_hdd"} <//>
+                    <${Table.Td}> ${"1,855.02 GiB"} <//>
+                    <${Table.Td}> ${"59.01%"} <//>
+                    <${Table.Td}> ${"10.40%"} <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns104952"} <//>
+                    <${Table.Td}> ${"piraeus_ssd"} <//>
+                    <${Table.Td}> ${"411.18 GiB"} <//>
+                    <${Table.Td}> ${"29.01%"} <//>
+                    <${Table.Td}> ${"1.39%"} <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"ovh-ns104963"} <//>
+                    <${Table.Td}> ${"piraeus_ssd"} <//>
+                    <${Table.Td}> ${"411.18 GiB"} <//>
+                    <${Table.Td}> ${"13.76%"} <//>
+                    <${Table.Td}> ${"0.90%"} <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Object deletion, SeaweedFS chunk cleanup/compaction, filesystem free space, discard and thin-pool allocation are different stages. Earlier production cleanup and trim happened after the old page's disposable tests; today's allocation is fresh evidence of the resulting state, not a new before/after trial. No trim-named Kubernetes CronJob was found; host schedules and arbitrary in-process maintenance were not exhaustively checked. "}
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" The "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/7d68d5d4dae9ca84be973ac8686125371446597d/storage/index.html"}
+              >
+                ${"pinned earlier report"}
+              <//>
+              ${" retains the 512-MiB replicated-file and 256-MiB SeaweedFS object experiments, including their no-snapshot limitation. Their submitted trim range was never the authoritative physical-reclaim amount. Avoid multiplying replication at both object and volume layers. "}
+            <//>
+          <//>
+          <${Stack} id=${"backups"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Recovery first; alternatives remain trials"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" All 20 enabled Barman WAL archivers currently report "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"ContinuousArchiving=True"}
+              <//>
+              ${", and the latest retained Backup object for each is marked completed. This checks controller-reported outcomes; "}
+              <strong> ${"no restore was performed"} </strong>
+              ${". The other three CNPG clusters have no Barman plugin: the explicitly rebuildable Attic/session databases and the SeaweedFS filer database, whose independent recovery design is outside this check. There is still no VolumeSnapshotClass. "}
+            <//>
+            <${Table.ScrollContainer}
+              minWidth=${640}
+              type="native"
+              my="md"
+              maw="100%"
+            >
+              <${Table} striped highlightOnHover verticalSpacing="sm">
+                <${Table.Thead}>
+                  <${Table.Tr}>
+                    <${Table.Th}> ${"Option"} <//>
+                    <${Table.Th}> ${"What it could buy"} <//>
+                    <${Table.Th}> ${"Current decision / missing proof"} <//>
+                  <//>
+                <//>
+                <${Table.Tbody}>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Keep Barman Cloud + current S3"} <//>
+                    <${Table.Td}>
+                      ${"Existing physical backups and WAL recovery path."}
+                    <//>
+                    <${Table.Td}>
+                      ${" Least integration change. Verify a restore before calling any backup chain healthy end to end. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"CNPG snapshots on Piraeus"} <//>
+                    <${Table.Td}> ${"Volume-based recovery points."} <//>
+                    <${Table.Td}>
+                      ${" No snapshot class installed. WAL is still needed for PITR between snapshots; same-pool snapshots are not independent disaster recovery. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Klio / traditional Barman"} <//>
+                    <${Table.Td}>
+                      ${"Possible physical-backup/WAL repositories on PVCs."}
+                    <//>
+                    <${Table.Td}>
+                      <${Anchor}
+                        href=${"https://cloudnative-pg.io/klio/docs/developer/running-e2e-tests/"}
+                      >
+                        ${"Klio still labels itself experimental"}
+                      <//>
+                      ${". No plugin, failover, retention or restore pilot was run here. Traditional Barman needs explicit CNPG integration. Keep existing backups during any pilot. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"Garage"} <//>
+                    <${Table.Td}>
+                      ${" Distributed S3 with multiple capacity-limited data directories. "}
+                    <//>
+                    <${Table.Td}>
+                      <${Anchor}
+                        href=${"https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/"}
+                      >
+                        ${"Upstream supports multiple directories"}
+                      <//>
+                      ${"; Garage owns block placement/replication. This is not automatic PVC-per-shard ownership by Piraeus. "}
+                    <//>
+                  <//>
+                  <${Table.Tr}>
+                    <${Table.Td}> ${"VersityGW POSIX + Piraeus"} <//>
+                    <${Table.Td}>
+                      ${"S3 over files; one storage replication owner."}
+                    <//>
+                    <${Table.Td}>
+                      <${Anchor}
+                        href=${"https://github.com/versity/versitygw/wiki/POSIX-Backend"}
+                      >
+                        ${"The POSIX backend maps objects to filesystem paths"}
+                      <//>
+                      ${". Validate client operations, metadata, versioning, multipart reclaim and failover. Bucket-level filesystem placement remains coarser than independently movable shards. "}
+                    <//>
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Text} c="dimmed" component="p" my="sm">
+              ${" The old Swift, Ceph, MinIO/AIStor, RustFS, pgBackRest and logical-dump comparisons remain in pinned history. They add ownership/integration cost or change recovery guarantees; this refresh does not establish a better fit or repeat their product survey. Detailed Klio manifests are historical examples, not deployment-ready instructions. "}
+            <//>
+          <//>
+          <${Stack} id=${"evidence"} component="section" gap="md" my="xl">
+            <${Title} order=${2} mt="md" mb="sm">
+              ${"Scope and reproducibility"}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Source inspected: "}
+              <${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/commit/69f35d736dc33f90f66f8345ff35806f04ed9399"}
+              >
+                <${Code}
+                  style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                >
+                  ${"69f35d736dc3"}
+                <//>
+              <//>
+              ${". Live read-only Kubernetes resources, per-node "}
+              <${Code}
+                style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
+                ${"lvs"}
+              <//>
+              ${" measurements and current GitHub issue/PR states supply this update. "}
+              <${Anchor} href=${"evidence.json"}>
+                ${"Reviewed inventory and limits"}
+              <//>
+              ${" · "}
+              <${Anchor} href=${"manifest.json"}>
+                ${"Source, clocks and render receipt"}
+              <//>
+              ${". "}
+            <//>
+            <${Text} component="p" my="sm">
+              ${" Raw payloads and private volume identities remain local. Logical usage, filesystem capacity and thin-pool allocation are never added together. Missing sizes remain unknown. Ready CRs do not prove live consumers, backup restoration or migration acceptance. "}
+            <//>
+          <//>
+          <${Box} c="dimmed" component="footer" mt="xl">
+            ${" Latest snapshot only; previous versions remain in Git history. Pages updates after the gh-pages PR merges. "}
+          <//>
+        <//> `;
       }
-      [search, backend, sort].forEach((control) =>
-        control.addEventListener("input", filterInventory),
-      );
-      filterInventory();
+      mount(Report);
     </script>
   </body>
 </html>
