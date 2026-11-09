@@ -26,6 +26,9 @@ from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNT
 _ENVIRONMENT_RUNTIME_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
 _ENVIRONMENT_RUNTIME_TRUST_PATH = "/run/agentplane/environment-runtime-trust"
+# agentplane/env/images/vm_guest_contract.json `environment_runtime_workload_trust`: the workload CA
+# alone, which the Sandbox Controller attaches and which verifies the Gateway's client SVID.
+_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH = "/run/agentplane/environment-runtime-workload-trust"
 _ENVIRONMENT_RUNTIME_ENV_FILE = "environment-runtime.env"
 
 
@@ -72,6 +75,7 @@ def guest_config_data(
                     cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                     key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
                     ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
+                    client_ca_file=f"{_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
                 )
             ),
         ),

@@ -429,6 +429,9 @@ class EnvironmentSandboxTemplate(Construct):
                         cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                         key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
                         ca_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/ca.crt",
+                        # The Sandbox Controller projects the workload CA alone here
+                        # (`RunnerWorkloadTrustFile`); it verifies the Gateway's client SVID.
+                        client_ca_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/workload-ca.crt",
                     )
                 ),
             ),

@@ -34,6 +34,18 @@ Backend tokens for LLM ingress and Action Service retain the `agentplane-egress`
 longer verifies this audience. Revisit the name for the remaining backend consumers; any rename
 must coordinate those verifiers and their projected tokens.
 
+## Workload identity
+
+### `FIRECRACKER_CLIENT_TRUST` — Firecracker runners trust the workload CA for the Gateway
+
+**Revisit before enabling `firecracker_sandboxes` in a deployed Environment.** Pod and KubeVirt
+runners verify the Gateway's client SVID against `agentplane-workload-ca-bundle` alone through
+`client_ca_file` ([runner control](../docs/runner_control.md#authentication-and-incarnation-binding)).
+A Firecracker guest reads its credentials from the host-initiated Workload API, which carries one
+bundle per trust domain, the cluster bundle, so its control listener still accepts a
+`cluster-internal-ca` leaf naming `spiffe://agentplane/runner-gateway`. Deliver the workload CA to
+the guest separately from that bundle and extend the k3s refusal case to the Firecracker template.
+
 ## Central sampler
 
 Deferred by the operator on 2026-11-09. Revisit when a central Session needs Actions, notifications

@@ -249,6 +249,7 @@ def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
                 "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
                 "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
                 "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
+                "client_ca_file": "/run/agentplane/environment-runtime-tls/workload-ca.crt",
             },
         },
     }
