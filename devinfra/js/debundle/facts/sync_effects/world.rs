@@ -28,7 +28,7 @@ use swc_ecma_ast::Id;
 /// Who owns this world. The scope decides heap policy as a bundle: whether
 /// literal writability is followed and whether a body's heap cells reach a
 /// caller's effects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum WorldScope {
     /// The chunk's own prefix: literal writability is tracked and heap cells
     /// become the owner's effects.
@@ -56,6 +56,10 @@ pub(super) struct World {
     pub(super) classes: ClassState,
     pub(super) publication: Publication,
     pub(super) reachability: ReachabilityState,
+    /// Conservative conditions under which the settled prefix's values hold,
+    /// retained across owner/child boundaries. Prerequisites are not coverage.
+    /// An isolated provider query has none.
+    pub(super) prerequisites: ProofDependencies,
     pub(super) revision: Revision,
 }
 
@@ -168,6 +172,7 @@ impl World {
             classes: ClassState::default(),
             publication: Publication::default(),
             reachability: ReachabilityState::default(),
+            prerequisites: ProofDependencies::default(),
             revision: Revision::default(),
         }
     }
@@ -213,6 +218,7 @@ impl World {
             classes,
             publication,
             reachability: _,
+            prerequisites: _,
             revision: _,
         } = self;
         for values in module

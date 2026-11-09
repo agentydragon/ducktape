@@ -25,7 +25,8 @@ traits below; nothing else reaches the kernel.
 ```rust
 pub trait BindingContext {
     fn cell_policy(&self) -> CellPolicy;                 // which bindings get World cells
-    fn cell_effect(&self, binding: &Id) -> Option<EffectCell>;
+    fn cell_effect(&self) -> EffectCoverageFragment;    // a declared binding with no cell
+    fn capture_policy(&self) -> CapturePolicy;           // Application | Exact snapshots
     fn module_binding_read(&mut self, binding: &Id, frame: &LocalFrame) -> Option<ModuleRead>;
     fn module_binding_store(&mut self, binding: &Id, selected: &SelectedValue) -> StoreOutcome;
     fn receiver_value(&mut self, frame: &LocalFrame) -> Option<Values>;
@@ -43,6 +44,9 @@ pub trait CallContext {
 pub trait HeapContext {
     fn world(&self) -> &World;
     fn world_mut(&mut self) -> &mut World;
+    fn current_prerequisites(&self) -> Box<ProofDependencies>; // World.prerequisites ∪ unfolded queries
+    fn admit_closure(&mut self, frame: &LocalFrame, creation: DeferredCallableCreation, captures: &LexicalCaptures) -> Result<ClosureAdmission, RemainderDisposition>;
+    fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext;
     fn heap_resolver(&self) -> SourceHeapResolver;
     fn native_iterable(&mut self, use_: NativeIterableUse, operand: &Values) -> Option<NativeIterableReceipt>;
     fn constructor_prefix_is_unexposed(&self, class: ClassDefinitionId) -> bool;
@@ -124,10 +128,6 @@ deleted; `allocation_transfer`, `array_transfer`, `descriptor_transfer` and
 
 ### Kernel rules that replace adapter choices
 
-- **Closure value**: one `AbstractValue::Closure(HeapAddress,
-LexicalCaptures)`. Provider identity is the `HeapModuleScope` inside the
-  address. `ProviderClosure`, `InstantiatedProviderClosure` and SP's
-  `closure_captures` side map are deleted.
 - **Array spread**: the kernel requires the canonical `IterateSpread` source
   operation site and a `native_iterable` receipt. `PrimitiveOnly` yields are
   accepted as an array of unknown primitive contents with no user-code
@@ -175,7 +175,7 @@ trait; **Delete**.
 | `read_binding`                    | 5303    | 811     | 718     | Kernel (cells, TDZ); adapter `module_binding_read` |
 | `read_call_callee`                | 5550    | default | default | Adapter: Call                                      |
 | `module_prefix_receiver`          | 4979    | default | default | Adapter: Binding                                   |
-| `selection_prerequisites`         | 4982    | 715     | default | World (`settled_dependencies`)                     |
+| `selection_prerequisites`         | 4982    | 715     | default | World (`prerequisites`) + `current_prerequisites`  |
 | `closure`                         | 4985    | 872     | 587     | Kernel                                             |
 | `assign_capture`                  | 5071    | 847     | 672     | Kernel (cells); adapter `module_binding_store`     |
 | `call`                            | 5585    | 934     | 765     | Adapter: Call                                      |
@@ -227,6 +227,7 @@ pub struct World {
     pub classes: ClassState,           // class_superclasses, tainted_classes, escaped_class_capabilities, first_class_members_publications, checked_constructor_inputs, private_constructor_result_owners, active_construction
     pub publication: Publication,      // global_escaped_callbacks, exported_runtime_values, first_callback_publication_owners, returned_callback_owners, accepted_deferred_global_writes, frozen_namespace_calls, parameter_initialized_objects
     pub reachability: ReachabilityState,
+    pub prerequisites: ProofDependencies, // settled-prefix conditions; empty for a provider query
     pub fallback: FallbackRetention,   // fallback_retained_values, fallback_retained_cells
     pub revision: Revision,            // prefix, reachability
 }
@@ -375,14 +376,18 @@ private surface, arrays and revision are a `World { scope: IsolatedProvider }`),
 no `Deref`; the `RefCell` ledgers become the threaded `Observations` struct
 per § Observations are returned; `record_property_{read,write}`/`publish_throw`
 deleted. `World::join` in `world/join.rs` (strict fast path, one `Join` per
-owner, `Joined`/`JoinRefusal`, no panic, unit tests per refusal variant) is a
-stacked PR that lands with its first caller; `alternatives/` and
-`ExecutionState::join` wait for the same first fork producer (the
-conditional/logical IR slice): devel has no `Family`. Omitted
+owner, `Joined`/`JoinRefusal`, no panic, unit tests per refusal variant)
+landed staged; `alternatives/` and `ExecutionState::join` wait for its first
+caller, the conditional/logical IR slice: devel has no `Family`. Omitted
 owners with no devel reader: `fallback`, `native.prefix_native_retained_*`,
 `classes.active_construction`, `descriptors.{copy_results,private}`. PR 2
-(stacked) closes L2a's L2b-gated tombstones. Tests: `optional_call_timing`
-and the suite unchanged.
+moved cell creation, initialization and stores into `kernel/cells.rs` and the
+prefix prerequisites into `World.prerequisites`, and made closure creation one
+kernel rule (`kernel/closure.rs`): `AbstractValue::Closure(HeapAddress,
+CapturedContext)` with `HeapAddress { scope: WorldScope, callable }`, the
+strict provider's `closure_captures`/`closure_*_reads`/`final_environment`
+side maps deleted in favor of cells and the value's own captures. Tests:
+`optional_call_timing` and the suite unchanged.
 
 **L2c — application adapter and `complete`** (needs L2b).
 `LocalExecutionContext` and helpers → `adapters/application.rs`;

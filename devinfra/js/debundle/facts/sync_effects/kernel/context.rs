@@ -1,9 +1,5 @@
 //! The five narrow adapter traits. An adapter supplies policy; the kernel owns
 //! operation order and semantics.
-//!
-//! Methods marked `CLEANUP` are kernel semantics in the target design whose
-//! two adapter implementations still differ; L2b's second PR moves them into
-//! the kernel over the shared `World`.
 
 use super::super::allocation_transfer::AllocationValue;
 use super::super::array_transfer::ArrayPushSelection;
@@ -12,11 +8,13 @@ use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
-use super::super::value_model::{CallSite, ValueExpr, Values};
+use super::super::value_model::{CallSite, CapturedContext, LexicalCaptures, ValueExpr, Values};
 use super::super::world::World;
+use super::closure::{CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::OrderedFieldReadRefusal;
+use rustc_hash::FxHashSet;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -32,29 +30,26 @@ pub(in crate::facts::sync_effects) trait BindingContext {
     fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
     }
-    // CLEANUP(added 2026-11-09): the five methods below become kernel cell
-    // semantics over `World.cells` with a `cell_policy`/`cell_effect` adapter
-    // policy in L2b's second PR; today the application adapter allocates the
-    // cells itself and the strict provider refuses captured stores.
-    /// A store to a binding this body does not declare.
-    fn assign_capture(
-        &mut self,
-        frame: &mut LocalFrame,
-        binding: &Id,
-        values: &Values,
-        span: Span,
-    ) -> Result<AllocationValue, RemainderDisposition>;
-    fn instantiate_parameter_bindings(&mut self, _frame: &mut LocalFrame) {}
-    fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
-    fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
-    /// Effects of declarative-cell creation, initialization, or a checked
-    /// store to an initialized local. Captured cells remain separate.
-    fn declarative_binding_operation(
-        &self,
-        _binding: &Id,
-        _frame: &LocalFrame,
-    ) -> EffectCoverageFragment {
-        EffectCoverageFragment::default()
+    /// Which of this body's bindings the kernel gives `World` cells.
+    fn cell_policy(&self) -> CellPolicy<'_>;
+    /// How a closure created here retains free bindings without a cell.
+    fn capture_policy(&self) -> CapturePolicy<'_>;
+    /// The effects of creating, initializing or storing to a declared binding
+    /// that has no cell: no closure can observe it.
+    fn cell_effect(&self) -> EffectCoverageFragment;
+}
+
+/// Which declared bindings get `World` cells. A binding without one lives only
+/// in the frame, so no closure can observe its stores.
+#[derive(Clone, Copy)]
+pub(in crate::facts::sync_effects) struct CellPolicy<'a> {
+    /// The bindings some closure captures.
+    pub(in crate::facts::sync_effects) captured: &'a FxHashSet<Id>,
+}
+
+impl CellPolicy<'_> {
+    pub(in crate::facts::sync_effects) fn owns(self, binding: &Id) -> bool {
+        self.captured.contains(binding)
     }
 }
 
@@ -88,22 +83,20 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     /// the kernel returns them in its ledger.
     fn world(&self) -> &World;
     fn world_mut(&mut self) -> &mut World;
-    // CLEANUP(added 2026-11-09): derive from the `World` in L2b's second PR;
-    // the application snapshots its prefix prerequisites here and the strict
-    // provider has none.
-    /// Conditions under which the current settled prefix is valid.
-    fn settled_dependencies(&self) -> Box<ProofDependencies> {
-        Box::default()
-    }
-    // CLEANUP(added 2026-11-09): closure creation becomes one kernel rule
-    // (`AbstractValue::Closure(HeapAddress, LexicalCaptures)`) in L2b's second
-    // PR, once addresses are qualified by `WorldScope`; today the two adapters
-    // build different closure values.
-    fn closure(
+    /// Conditions under which the current settled prefix is valid at this
+    /// moment: `World.prerequisites` plus whatever the adapter's queries have
+    /// consumed since it was last folded in.
+    fn current_prerequisites(&self) -> Box<ProofDependencies>;
+    /// Whether this creation may proceed, and what creating it contributes.
+    /// The kernel has already computed the captures; the body does not run.
+    fn admit_closure(
         &mut self,
-        frame: &mut LocalFrame,
+        frame: &LocalFrame,
         creation: DeferredCallableCreation,
-    ) -> Result<LocalValueResult, RemainderDisposition>;
+        captures: &LexicalCaptures,
+    ) -> Result<ClosureAdmission, RemainderDisposition>;
+    /// The adapter's run-scoped identity for these captures.
+    fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext;
 }
 
 pub(in crate::facts::sync_effects) trait NativeContext {
@@ -176,6 +169,9 @@ pub(in crate::facts::sync_effects) enum Unproved<'a> {
     /// The spread operand completed, but no native iterator receipt covers
     /// it: the protocol may run user code.
     IterateSpread { operand: &'a Values, span: Span },
+    /// A store to a binding this body does not declare and no active cell
+    /// holds: it reaches state outside the kernel's world.
+    CaptureStore { values: &'a Values, span: Span },
 }
 
 pub(in crate::facts::sync_effects) enum Disposition {

@@ -196,13 +196,16 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   (`requires_keyed_collection_new` needs an application keyed-collection lane).
   Devel's IR had no fork producer, so `Fork`/`ForkPolicy` wait for the first
   conditional-IR slice (§ IR growth).
-- L2b. **PR 1 in review**: `world/` (one `World` for both adapters, no
-  `Deref`, copy-on-write), the `RefCell` ledgers as the threaded
-  `Observations` struct, the L2a sink methods deleted. `World::join` (strict
-  fast path, conservative fallback, typed refusal, no panic; unit tests per
-  refusal variant) is a stacked PR that lands with its first caller, the
-  conditional/logical IR slice (§ IR growth), as does `alternatives/`. PR 2
-  (stacked) closes L2a's L2b-gated tombstones. needs L2a.
+- L2b. **PR 1 landed as #15090**: `world/` (one `World` for both adapters,
+  no `Deref`, copy-on-write), the `RefCell` ledgers as the threaded
+  `Observations` struct, the L2a sink methods deleted. `World::join` landed
+  staged as #15091; it and `alternatives/` get their first caller in the
+  conditional/logical IR slice (§ IR growth). PR 2 closes L2a's L2b-gated
+  tombstones: lexical cells and closure creation are kernel rules
+  (`kernel/{cells,closure}.rs`; adapters supply `cell_policy`/`cell_effect`,
+  `capture_policy` and `admit_closure`), closures are
+  `AbstractValue::Closure(HeapAddress, CapturedContext)` in both adapters, and
+  the prefix prerequisites live in `World.prerequisites`. needs L2a.
 - L2c. Application adapter: `execute_owner` → `roots/` phases;
   `execute_call_transfer_inner` split by mode; delete `complete: bool`. needs
   L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
