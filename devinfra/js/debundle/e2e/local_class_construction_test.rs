@@ -5,10 +5,9 @@ use analysis::Purity;
 use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
 use analysis::analysis_provenance::InferenceRule;
 use analysis::reports::schema::{
-    DependencyGraphReport, InferenceUseReport, NativeIntegrityGuard, NativeIntegrityUse,
-    SourceUnitReport,
+    InferenceUseReport, NativeIntegrityGuard, NativeIntegrityUse, SourceUnitReport,
 };
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
@@ -629,18 +628,6 @@ fn composition_options<'a>(source: &'a str, anonymous: &'a [&'a str]) -> Fixture
     .with_value_inputs("static/peer", vec![captured_input()])
 }
 
-fn source_unit<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a SourceUnitReport {
-    graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|candidate| candidate.binding == binding)
-        })
-        .unwrap_or_else(|| panic!("source unit for {binding} missing"))
-}
-
 fn inference_use(node: &SourceUnitReport, conclusion: InferenceRule) -> &InferenceUseReport {
     node.synchronous_execution
         .as_ref()
@@ -687,7 +674,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
     assert_preserved_entry_output(&fixture, COMPOSITION_OUTPUT);
 
     let graph = fixture.dependency_graph();
-    let unique = source_unit(&graph, "unique");
+    let unique = node_declaring(&graph, "unique");
     assert_eq!(unique.purity, expected_purity(captured_input_refs()));
     let primitive_set = inference_use(unique, InferenceRule::PrimitiveSetIteration);
     assert_eq!(
@@ -724,7 +711,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
         }]
     );
 
-    let registry = source_unit(&graph, "registry");
+    let registry = node_declaring(&graph, "registry");
     assert_eq!(registry.purity, expected_purity(captured_input_refs()));
     let local_class = inference_use(registry, InferenceRule::LocalClassConstruction);
     assert_eq!(
@@ -755,7 +742,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
         }]
     );
 
-    let plain = source_unit(&graph, "plain");
+    let plain = node_declaring(&graph, "plain");
     assert_eq!(plain.purity, expected_purity(BTreeSet::new()));
     let plain_class = inference_use(plain, InferenceRule::LocalClassConstruction);
     assert_eq!(
@@ -795,14 +782,14 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     let graph =
         run_rejection_fixture(composition_options(&mutated, &[SET_MUTATION])).dependency_graph();
     assert!(
-        !source_unit(&graph, "unique")
+        !node_declaring(&graph, "unique")
             .synchronous_execution
             .as_ref()
             .expect("Set construction execution report")
             .complete
     );
     inference_use(
-        source_unit(&graph, "registry"),
+        node_declaring(&graph, "registry"),
         InferenceRule::LocalClassConstruction,
     );
 
@@ -840,7 +827,7 @@ fn composed_proof_rejects_rebound_class_bindings() {
 
     let rejected = run_rejection_fixture(composition_options(&source, &[REBOUND_REGISTRY]));
     let graph = rejected.dependency_graph();
-    let construction = source_unit(&graph, "registry");
+    let construction = node_declaring(&graph, "registry");
     let Purity::NotPure { reasons } = &construction.purity else {
         panic!("a rebound class must not retain the implicit-construction proof: {construction:?}");
     };

@@ -2,6 +2,7 @@
 //! calls, callbacks and their retained prefix dependencies.
 
 use debundle_e2e_graph_support::effect_validation::*;
+use debundle_e2e_graph_support::reflective_provider::{REFLECT_CHUNKS, REFLECT_FILES};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -629,7 +630,6 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
     // A static import links before evaluation even at this later source
     // position; keeping its ordinal later isolates result crossing marker.
     const SOURCE: &str = "const native = new Map();\nconst gate = Promise.resolve();\nconst seed = 41;\nfunction readSeed() { return seed; }\nconst marker = 1;\nvar result = (readSeed(), readSeed());\nimport { reflect } from './reflect.js';\nconsole.log(result, marker, Boolean(gate), native.size);\n";
-    const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
     let map_input = native_constructor_input(
         SOURCE,
         "const native = new Map();",
@@ -657,8 +657,8 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_extra_chunks(&[("static/reflect", REFLECT_SOURCE)])
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
         .with_native_operation_inputs("static/app", vec![map_input, promise_input])
         .with_host_behavior(HostBehavior {
             reentry_free_operations: [ReentryFreeOperation::PromiseResolve].into_iter().collect(),

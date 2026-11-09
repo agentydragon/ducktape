@@ -403,6 +403,7 @@ rust_library(
         "support/effect_validation.rs",
         "support/graph_fixture.rs",
         "support/graph_support.rs",
+        "support/reflective_provider.rs",
     ],
     crate_name = "debundle_e2e_graph_support",
     crate_root = "support/graph_support.rs",
