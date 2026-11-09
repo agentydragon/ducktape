@@ -158,6 +158,10 @@ func newWorkloadIngressTestServer(
 	if err != nil {
 		t.Fatal(err)
 	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
 	serverTLS.NextProtos = []string{"http/1.1"}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -166,7 +170,7 @@ func newWorkloadIngressTestServer(
 	server := &http.Server{
 		Handler:   handler,
 		TLSConfig: serverTLS,
-		ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(),
+		ConnState: connState,
 	}
 	tlsListener := tls.NewListener(listener, serverTLS)
 	go func() {
