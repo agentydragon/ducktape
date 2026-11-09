@@ -997,6 +997,8 @@ github.com/spiffe/go-spiffe/v2 v2.5.0 h1:N2I01KCUkv1FAjZXJMwh95KK1ZIQLYbPfhaxw8W
 github.com/spiffe/go-spiffe/v2 v2.5.0/go.mod h1:P+NxobPc6wXhVtINNtFjNWGBTreew1GBUCwT2wPmb7g=
 github.com/spiffe/go-spiffe/v2 v2.7.0 h1:uXe1MflJoHw58wAUvxVlcM7WpKtijWG7I1UidcGh6g4=
 github.com/spiffe/go-spiffe/v2 v2.7.0/go.mod h1:47Q0Q9/AqGha8QLHp+kxpH4Wca7X7EnOtlIJy3mxZ3U=
+github.com/spiffe/go-spiffe/v2 v2.8.2 h1:jUEsvCMD6fH25J8K/w3q/XnIx8W1lb8+YLaEEHIjHmc=
+github.com/spiffe/go-spiffe/v2 v2.8.2/go.mod h1:w2CLWKLMTX/PPYUEUPv3ltH0RXsw5S8suwNF46w9/Aw=
 github.com/stoewer/go-strcase v1.2.0/go.mod h1:IBiWB2sKIp3wVVQ3Y035++gc+knqhUQag1KpM8ahLw8=
 github.com/stretchr/objx v0.1.0 h1:4G4v2dO3VZwixGIRoQ5Lfboy6nUhCyYzaqnIAPPhYs4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
