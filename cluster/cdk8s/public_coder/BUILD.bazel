@@ -48,8 +48,8 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
+        "//agentplane:subjects",
         "//agentplane/crds:egresscredential",
-        "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
@@ -62,6 +62,7 @@ py_library(
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:egress_policies",
         "//cluster/cdk8s/agentplane:platform_routes",
+        "//cluster/cdk8s/agentplane:standing_caller",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/agentplane:egress_credential",

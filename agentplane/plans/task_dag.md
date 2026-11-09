@@ -3041,7 +3041,7 @@ flowchart LR
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
-    IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
+    IDENTITY_KINDS --> IDENTITY_CATALOG[In review: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
@@ -3191,15 +3191,27 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 
 ### `IDENTITY_CATALOG` — the catalog and RBAC rendered in the new shapes
 
-**Blocked on `IDENTITY_KINDS`.** cdk8s renders `Identity` objects for the static agents
-(`claude-ai`, `haku-agent`) and the standing workload caller `haku-ui` in place of their ServiceAccounts, the `shared-diagnostics` SA with its
-grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
-an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
-proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. The controller's
-RBAC carries `bind` on every role a Flux-authored `KubernetesRoleSet` names, since the apiserver
-refuses a binding to a role the controller cannot bind. Rendering is
-behind the same staging switch as the rest, so `devel` keeps rendering today's objects until the
-cutover. **Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
+**In review (PR from `claude/identity-catalog`, 2026-11-09).** `Environment.identity_catalog`
+(off on staging; flipping it is `IDENTITY_CUTOVER`'s) renders `Identity` objects for the standing
+callers `claude-ai`, `haku-agent`, `haku-ui` and `public-coder-openclaw`, every Flux `PolicyBinding`
+on an identity, every assignable set's Kubernetes rules as a same-named `KubernetesRoleSet` (a
+`PolicySet` remains only where the set has other rules: `coinbase`, `plaid-diagnostics`), the
+`shared-diagnostics` account in the accounts namespace with its grant of the `shared-diagnostics` role
+set, credential and one-rule set, `basic` acting as that account in place of the projected-token
+credential, the controller's and proxy's Roles for the new kinds, and launch presets binding only
+rendered `PolicySet`s. Controller `bind` still derives from the same grants, so a role set's roles
+are bindable by construction; relation tests check it with the binding and grant references, and
+the egress manifest tests run on both renderings. With the switch off the manifests are unchanged.
+
+Left for the cutover to decide or do: no grant names the role sets beyond `shared-diagnostics`, so
+the presets' and standing callers' wider Kubernetes reach (`cluster-diagnostics`,
+`haku-sandbox-write`, `public-inventory`, `coinbase`, `spend-policy-config`, `plaid-diagnostics`)
+has no account; the caller ServiceAccounts and the static Flux RoleBindings naming the `claude-ai`
+ServiceAccount stay, since the MCP edge and the Action Service still authenticate them;
+`cluster/cdk8s/test_agent_rbac.py` reads only the ServiceAccount rendering. The MCP edge's
+Connection binding waits: its settings name only `mintable_accounts` ServiceAccounts, whose tokens
+it mints, and have no identity field.
+**Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
 renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.
 
 ### `APP_IDENTITIES_UI` — identities in the app

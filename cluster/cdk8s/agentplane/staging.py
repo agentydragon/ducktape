@@ -5,6 +5,8 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
@@ -27,6 +29,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.app.settings import Settings
 from agentplane.central_sampler.settings import (
     AnthropicBlockBindingConfig,
     AnthropicCompactionConfig,
@@ -70,7 +73,12 @@ from cluster.cdk8s.agentplane import (
     workload_certificate_admission,
     workload_tls,
 )
-from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
+from cluster.cdk8s.agentplane.actions_staging_policies import (
+    CLAUDE_AI,
+    HAKU_AGENT,
+    HAKU_UI,
+    add_staging_action_policies,
+)
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.database import DbProps
@@ -81,7 +89,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EgressCredentials,
     credential_external_secret,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import PLAID_PGWEB_CREDENTIAL, add_staging_egress_credentials
+from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -99,7 +107,8 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
-from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
+from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
+from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
@@ -113,6 +122,8 @@ from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.haku import ui_egress as haku_ui_egress
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.agentplane.identity import Identity
+from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRoleSet
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -414,6 +425,24 @@ LAYOUT = ManifestLayout(
     delivery_output_dir=f"{GENERATED_ROOT}/{STAGING_NAMESPACE}-delivery",
     extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
 )
+
+
+def _app_config(*, identity_catalog: bool) -> Settings:
+    return staging_config.config(
+        namespace=STAGING_NAMESPACE,
+        sandbox_template=POD_TEMPLATE,
+        models=STAGING_APP_MODELS,
+        runtime=_RUNTIME_CATALOG,
+        central_sampler_enabled=True,
+        action_federation=_ACTION_FEDERATION,
+        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
+        app_origin=f"https://{_HOSTNAME}",
+        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
+        electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
+        identity_catalog=identity_catalog,
+    )
+
+
 ENV = Environment(
     namespace=STAGING_NAMESPACE,
     description=(
@@ -427,20 +456,12 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config=staging_config.config(
-        namespace=STAGING_NAMESPACE,
-        sandbox_template=POD_TEMPLATE,
-        models=STAGING_APP_MODELS,
-        runtime=_RUNTIME_CATALOG,
-        central_sampler_enabled=True,
-        action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
-        app_origin=f"https://{_HOSTNAME}",
-        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
-        electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
-    ),
+    app_config=_app_config(identity_catalog=False),
     runtime_catalog=_RUNTIME_CATALOG,
     default_policy_sets=frozenset(DEFAULT_POLICIES),
+    # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
+    #   removes the ServiceAccount-subject rendering and this switch.
+    identity_catalog=False,
     central_sampler=CentralSamplerProps(
         models={
             route.id: (
@@ -652,8 +673,14 @@ ENV = Environment(
 )
 
 
+def environment(*, identity_catalog: bool) -> Environment:
+    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes."""
+    return replace(ENV, identity_catalog=identity_catalog, app_config=_app_config(identity_catalog=identity_catalog))
+
+
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
-    """The complete PolicySet grant inventory materialized by staging."""
+    """The assignable sets' Kubernetes grants, by set: PolicySet rules, or in the identity catalog
+    the KubernetesRoleSets of the same names."""
     catalog = staging_grants.catalog(ENV.namespace)
     sets = agent_access_profiles.policy_set_grants(catalog)
     sets[TOOL_CONFIG_GRANT] = (catalog[TOOL_CONFIG_GRANT],)
@@ -664,10 +691,10 @@ def assignable_grants() -> tuple[KubernetesGrant, ...]:
     return tuple(grant for grants in assignable_policy_sets().values() for grant in grants)
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, env: Environment = ENV) -> Chart:
     chart = environment_chart(
         app,
-        ENV,
+        env,
         db=DbProps(
             instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
         ),
@@ -678,15 +705,15 @@ def chart(app: App) -> Chart:
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(
         chart,
-        sandbox_controllers={ServiceAccountRef(namespace=ENV.namespace, name=sandbox_controller.NAME)},
+        sandbox_controllers={ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME)},
         service_requester="system:serviceaccount:flux-system:kustomize-controller",
         cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
     NetworkPolicy(
         chart,
         "networkpolicy-app-to-mcp-edge",
-        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=ENV.namespace),
-        endpoint_selector=app_component.service(ENV.namespace).pods.selector,
+        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=env.namespace),
+        endpoint_selector=app_component.service(env.namespace).pods.selector,
         egress=[_CONNECTION_SERVICE.egress()],
     )
     haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
@@ -718,36 +745,49 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(
-        chart, "command-sandbox", ENV, image_pull_secret_name=SANDBOX_SECRET_NAME
+        chart, "command-sandbox", env, image_pull_secret_name=SANDBOX_SECRET_NAME
     ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
     assignable_sets = assignable_policy_sets()
-    deployment_rules = {
-        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
-            credential=PLAID_PGWEB_CREDENTIAL
-        ),
-    }
+    egress_rules = staging_config.assignable_set_egress_rules()
+    role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
-        PolicySet(
+        if not env.identity_catalog:
+            PolicySet(
+                chart,
+                f"policy-set-{name}",
+                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+                rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())],
+            )
+            continue
+        role_sets[name] = KubernetesRoleSet(
             chart,
-            f"policy-set-{name}",
-            metadata=ApiObjectMetadata(name=name, namespace=ENV.namespace),
-            rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
+            f"kubernetes-role-set-{name}",
+            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+            rules=agent_access_profiles.role_set_rules_for_grants(grants),
         )
+        if name in egress_rules:
+            PolicySet(
+                chart,
+                f"policy-set-{name}",
+                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+                rules=egress_rules[name],
+            )
+    if env.identity_catalog:
+        _add_identity_catalog(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
         PolicySet(
             chart,
             f"policy-set-{staging_config.send_to(group)}",
-            metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=ENV.namespace),
+            metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=env.namespace),
             rules=[Rule.send_message(inbox_tags=[group])],
         )
     controller = policy_controller.PolicyController(
         chart,
         "policy-controller",
-        ENV,
-        accounts_namespace=kubernetes_accounts_namespace(ENV.namespace),
+        env,
+        accounts_namespace=kubernetes_accounts_namespace(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     )
@@ -755,10 +795,10 @@ def chart(app: App) -> Chart:
     policy_controller_rbac.PolicyControllerRbac(
         chart,
         "policy-controller-rbac",
-        ENV,
+        env,
         account=controller.account,
         assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
-        accounts_namespace=kubernetes_accounts_namespace(ENV.namespace),
+        accounts_namespace=kubernetes_accounts_namespace(env.namespace),
     )
     reader = ServiceAccount(
         chart,
@@ -868,20 +908,47 @@ def chart(app: App) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(chart)
+    add_staging_action_policies(chart, identity_catalog=env.identity_catalog)
     EgressCredentials(
-        chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
+        chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
     KubernetesAccounts(
         chart,
         "kubernetes-accounts",
-        namespace=kubernetes_accounts_namespace(ENV.namespace),
-        proxy_namespace=ENV.namespace,
+        namespace=kubernetes_accounts_namespace(env.namespace),
+        proxy_namespace=env.namespace,
     )
     add_staging_egress_credentials(
-        chart, namespace=ENV.namespace, credentials_namespace=ENV.egress.credentials_namespace
+        chart,
+        namespace=env.namespace,
+        credentials_namespace=env.egress.credentials_namespace,
+        identity_catalog=env.identity_catalog,
     )
     return chart
+
+
+def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
+    """The standing callers' identities and the shared account `basic` acts as."""
+    for caller, description in (
+        (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
+        (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
+        (HAKU_UI, "Haku's operator UI and haku-anki, in haku-sandbox."),
+        (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
+    ):
+        Identity(
+            chart,
+            f"identity-{caller.identity}",
+            metadata=ApiObjectMetadata(name=caller.identity, namespace=env.namespace),
+            description=description,
+        )
+    KubernetesAccount(
+        chart,
+        "kubernetes-account-shared-diagnostics",
+        account=shared_diagnostics(env.namespace),
+        policy_namespace=env.namespace,
+        description="Read-only namespace diagnostics every agent may use.",
+        role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
+    )
 
 
 def delivery_chart(app: App) -> Chart:

@@ -10,7 +10,10 @@ from cluster.cdk8s.clickhouse import client as clickhouse
 
 def _staging_credentials_resources(chart: Chart) -> list[dict]:
     add_staging_egress_credentials(
-        chart, namespace="agentplane-staging", credentials_namespace=STAGING_CREDENTIALS_NAMESPACE
+        chart,
+        namespace="agentplane-staging",
+        credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
+        identity_catalog=False,
     )
     return Cdk8sTesting.synth(chart)
 

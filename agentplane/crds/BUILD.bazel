@@ -140,6 +140,30 @@ cdk8s_import(
     visibility = ["//visibility:public"],
 )
 
+cdk8s_import(
+    name = "identity",
+    crd = "manifests/crd-identities.yaml",
+    module_name = "agentplane_identity_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "kubernetesroleset",
+    crd = "manifests/crd-kubernetesrolesets.yaml",
+    module_name = "agentplane_kubernetesroleset_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "serviceaccountgrant",
+    crd = "manifests/crd-serviceaccountgrants.yaml",
+    module_name = "agentplane_serviceaccountgrant_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
 py_test(
     name = "test_identity_admission",
     srcs = ["test_identity_admission.py"],
