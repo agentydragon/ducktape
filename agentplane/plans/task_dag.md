@@ -3042,6 +3042,7 @@ flowchart LR
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3070,10 +3071,10 @@ workloads only write `WorkloadCredential` requests. The component mints the cred
 requests the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and publishes
 the resolver every verifier links. It is the `agentplane/workload_identity` package hosted in the
 Policy Controller. The alternatives are each owner issuing for itself, an RPC issuing service,
-SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. Selecting the recommendation moves
-issuance out of the Sandbox Controller as the first step. It also adds an edge from the Action-box
-part of `WORKLOAD_AUTH_CUTOVER` to `IDENTITY_CUTOVER`, because boxes run as their caller's Sandbox
-ServiceAccount. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
+SPIRE, `csi-driver-spiffe`, or a permanent bearer mode. Every alternative shares a first
+step that can be dispatched before the decision: a dedicated workload CA that only the issuer may
+request from, and that verifiers trust alone. Selecting the recommendation then moves issuance out
+of the Sandbox Controller. The Action-box step's edge to `SANDBOX_IDENTITY_SPEC` is recorded. The operator's direction of 2026-11-08 stands: one model for Sandboxes, Action
 boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
 dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
 picks an alternative and the open questions' recommendations.
@@ -3133,7 +3134,11 @@ with no environment.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` may be absent or changed only while nothing is
+**Blocked on `IDENTITY_KINDS` and on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
+command/build boxes must authenticate by SVID first. Box creation reads the caller's own
+ServiceAccount, runs the box as it, and sets the box's owner reference to it
+(`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account.
+`Sandbox.spec.identity` may be absent or changed only while nothing is
 running, a start without one is refused with `IdentityMissing`, a change discards any RAM
 snapshot and rotates the credential ID, and `EnvironmentService` refuses a change while a Session
 of another identity is placed on or attached to the environment; the Sandbox Controller creates no ServiceAccount and no
@@ -3147,7 +3152,7 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 ### `IDENTITY_CATALOG` — the catalog and RBAC rendered in the new shapes
 
 **Blocked on `IDENTITY_KINDS`.** cdk8s renders `Identity` objects for the static agents
-(`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics` SA with its
+(`claude-ai`, `haku-agent`) and the standing workload caller `haku-ui` in place of their ServiceAccounts, the `shared-diagnostics` SA with its
 grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
 an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
 proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. Rendering is

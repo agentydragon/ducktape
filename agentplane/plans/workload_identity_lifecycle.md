@@ -15,9 +15,9 @@ incarnations, the Action Service for boxes, and cdk8s for standing workloads. An
 writing a `WorkloadCredential` object. The component mints the credential ID and the URI, requests
 the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and writes the status
 verifiers trust. Every verifier links its resolver, which reads only `WorkloadCredential`s and never
-a Sandbox. The component is a package hosted in the Policy Controller binary. Also asked: accept
-one replacement of running Sandboxes (question 1), and an edge that puts Action boxes on SVIDs
-before `IDENTITY_CUTOVER`.
+a Sandbox. The component is a package hosted in the Policy Controller binary. Every alternative
+shares one first step, [a dedicated workload CA](#the-step-every-alternative-shares-a-dedicated-workload-ca),
+which can be dispatched before the rest is accepted.
 
 ## Callers
 
@@ -30,7 +30,7 @@ before `IDENTITY_CUTOVER`.
 | Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux          | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | cdk8s, kind `standing`                                           |
 | Anki                       | as Haku UI                                                                     | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                       |
 | Central sampler            | Flux Deployment                                                                | Its own bearer; acts by [delegation](../docs/delegated_authorization.md), no SVID | the effective caller          | out of scope; delegation names the identity                      |
-| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | Relay config selects plaintext plus bearer, which the TLS-only listener refuses   | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that |
+| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | None: its Deployment is at 0/0, and its dead relay config selects plaintext       | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that |
 
 ## Alternatives
 
@@ -67,10 +67,37 @@ does each owner issue for itself, or does one component issue on the owners' beh
 - **D** breaks at `SANDBOX_IDENTITY_SPEC`. A command box runs as its caller's Sandbox ServiceAccount
   (`action_service/sandbox/inventory.go`, `stamp`), and that node removes the account. Bearers would
   then need a ServiceAccount per identity and an SA-to-identity map: a second subject model. D stays
-  viable for Haku UI and Anki alone, as the fallback if question 1 is refused.
+  viable for Haku UI and Anki alone.
 - **E** makes the ServiceAccount the workload identity again. After `SANDBOX_IDENTITY_SPEC` every
   agent Pod runs on the default account and would share one SVID. E also needs cert-manager's
   default approver disabled for the whole cluster.
+
+## The step every alternative shares: a dedicated workload CA
+
+Every SPIFFE verifier trusts `cluster-internal-ca-bundle` today. That bundle is the cluster root,
+which the cluster-wide `cluster-internal-ca` ClusterIssuer also signs from. So a leaf with an
+Agentplane URI and client auth, requested in any namespace, passes TLS, and the live lookup is the
+only check left. Every alternative needs verifiers to stop trusting the cluster root, so this step
+does not wait for the decision.
+
+- **Issuer.** A dedicated Agentplane workload CA behind an `agentplane-workload` ClusterIssuer, with
+  its key in cert-manager's namespace. It replaces the namespaced `agentplane-runner-ca` Issuer. A
+  namespaced Issuer would do for Sandboxes alone, but standing workloads in `haku-sandbox` need a
+  cross-namespace issuer. Putting a CA key in `haku-sandbox` would let any Pod Haku authors mount
+  it. Choosing the ClusterIssuer now avoids a second `issuerRef` move. The Sandbox Controller's
+  `runner_certificate_issuer` setting gains the issuer kind, which is a constant `Issuer` today.
+- **Trust.** A trust-manager Bundle carries that CA alone. It becomes the client-trust file of every
+  SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
+  (`cluster/cdk8s/agentplane/egress.py`), and the services' listeners, which take their CA file from
+  `workload_tls.TRUST_BUNDLE_FILE` today. Clients verifying service SVIDs may keep the cluster bundle.
+- **Who may request.** A Kyverno policy pairs requester and URI kind for Certificates that reference
+  the workload issuer. The Sandbox Controller may request only `environment-runtime` URIs in its
+  own namespace, and Flux only the service URIs. Only cert-manager may create `CertificateRequest`s
+  for the issuer. Once a component owns issuance, its entry replaces the Sandbox Controller's.
+
+**Decided 2026-11-09 (operator):** no Sandboxes run during this cutover, and staging holds zero
+Sandboxes now. The `issuerRef` move therefore needs no replacement procedure. A leftover runner
+Certificate that reports `CertificateIdentityConflict` is resolved by restarting its Sandbox.
 
 ## Recommendation: A1, hosted in the Policy Controller
 
@@ -170,24 +197,16 @@ change bumps `rotation`, which rotates the ID. Clearing `binding` revokes. Becau
 subject written at start equals the live field. This replaces the identity plan's assumption that
 verifiers read `spec.identity` from the live Sandbox.
 
-### Trust and admission
+### Admission
 
-Today every SPIFFE verifier trusts `cluster-internal-ca-bundle` (`cluster/cdk8s/agentplane/egress.py`
-`svid-ca`, `workload_tls.TRUST_BUNDLE_FILE`). That bundle is the cluster root, which the cluster-wide
-`cluster-internal-ca` ClusterIssuer also signs from. So a leaf with an Agentplane URI, requested in
-any namespace, passes TLS. The recommendation therefore also does the following:
+On top of the shared CA step:
 
-- **Narrows trust to one workload CA.** The runner CA moves to cert-manager's namespace behind an
-  `agentplane-workload` ClusterIssuer, because Haku's workloads live in `haku-sandbox`. A namespaced
-  Issuer there would put the CA key where Haku authors Pods. A trust-manager Bundle carries that CA
-  alone, and every SPIFFE listener's trust file points at it.
 - **Gates requests.** A `ValidatingAdmissionPolicy` shipped with the CRD pairs requester and kind.
   The Sandbox Controller may write only `environment-runtime`, owned by a Sandbox whose UID is the
   name. The Action Service may write only `action-box`, owned by a Pod of that name. Flux may write
   only `standing`. The status subresource belongs to the Policy Controller alone.
-- **Gates Certificates.** Admission refuses a Certificate that references the workload issuer
-  unless it comes from the Policy Controller, or from Flux for the service URIs. The Sandbox
-  Controller loses Certificate create.
+- **Gates Certificates.** The shared step's Kyverno pairing swaps its Sandbox Controller entry
+  for the Policy Controller, for all three kinds. The Sandbox Controller loses Certificate create.
 
 ### Standing workloads
 
@@ -201,7 +220,7 @@ no Pod is proven. Revocation is a Flux prune. Rotation is a `rotation` bump in c
 
 ### What moves out of the Sandbox Controller
 
-This is the first migration step and the size of the reshuffle:
+This is migration step 2 and the size of the reshuffle:
 
 | Today in the Sandbox Controller                                                                                                            | Moves to                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
@@ -220,19 +239,20 @@ admission reads the request's accepted binding instead of Sandbox status.
 
 ## Migration and rollback
 
-| Step                                                                                                                     | Mixed mode                | Proven in k3s before staging                                                                                                                                                              | Rollback                                             |
-| ------------------------------------------------------------------------------------------------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 1. CRD, `issuer` in the Policy Controller, `resolver`; Sandbox Controller becomes a requester; workload CA and admission | Bearer still on           | Sandbox SVID route on all three runtimes through the request; VMI replacement rotates; deleting a Sandbox after its seal revokes; a `cluster-internal-ca` leaf with a live URI is refused | Revert pins; replace running Sandboxes again         |
-| 2. Action boxes request `action-box`; box sidecar selects SPIFFE                                                         | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B                                                                                   | Revert the Action Service image and templates        |
-| 3. `standing` requests; `haku-state` switches its sidecars                                                               | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                                                                                      | Revert the `haku-state` commit; the request is inert |
-| 4. Remove the bearer hop                                                                                                 | none                      | Nothing projects the `agentplane-egress` hop audience                                                                                                                                     | Revert; no caller depends on it                      |
+| Step                                                                                              | Mixed mode                | Proven in k3s before staging                                                                                                     | Rollback                                             |
+| ------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 1. The shared workload CA: ClusterIssuer, trust Bundle, Kyverno pairing                           | Bearer still on           | Sandbox SVID route on the narrowed trust; a `cluster-internal-ca` leaf with a live Sandbox's URI is refused                      | Revert the pins                                      |
+| 2. CRD, `issuer` in the Policy Controller, `resolver`; the Sandbox Controller becomes a requester | as above                  | Sandbox SVID route on all three runtimes through the request; VMI replacement rotates; deleting a Sandbox after its seal revokes | Revert the pins                                      |
+| 3. Action boxes request `action-box`; the box sidecar selects SPIFFE                              | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B                          | Revert the Action Service image and templates        |
+| 4. `standing` requests; `haku-state` switches its sidecars                                        | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                                             | Revert the `haku-state` commit; the request is inert |
+| 5. Remove the bearer hop                                                                          | none                      | Nothing projects the `agentplane-egress` hop audience                                                                            | Revert; no caller depends on it                      |
 
-Step 1 replaces running Sandboxes: their credentials have no request and their Certificates have
-the old issuer. Its admission policy is a `ValidatingAdmissionPolicy`, which envtest evaluates. The
-Certificate gate and the CA move have no system test, so they reach staging first. That PR says so
-and checks one Sandbox start and one refused foreign Certificate there.
+Steps 1 and 2 have one precondition: zero running Sandboxes. Step 2's request policy is a
+`ValidatingAdmissionPolicy`, which envtest evaluates. Step 1's Kyverno policy and CA move have no
+system test, so they reach staging first. That PR says so and checks one Sandbox start and one
+refused foreign Certificate there.
 
-Step 4 removes the `CLEANUP(added 2026-11-09)` set from #15065:
+Step 5 removes the `CLEANUP(added 2026-11-09)` set from #15065:
 
 - the proxy's `forward.auth` bearer entry (`cluster/cdk8s/agentplane/egress.py`);
 - the command-box hop projection (`command_sandbox.py`);
@@ -240,22 +260,22 @@ Step 4 removes the `CLEANUP(added 2026-11-09)` set from #15065:
   `egress/sidecar/config.go`);
 - the forward listener's bearer mode and hop verifier (`egress/identity/authentication.go`).
 
-It also deletes or converts `cluster/cdk8s/public_coder/egress.py`, which renders both removed
-models. `kubernetes_bearer` stays on service listeners for backend callers.
+It also deletes or converts `cluster/cdk8s/public_coder/egress.py:63`, which renders both removed
+models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0. `kubernetes_bearer` stays on service listeners for backend callers.
 
-**With `IDENTITY_CUTOVER`.** Step 2 must reach staging before `SANDBOX_IDENTITY_SPEC`, because boxes
-run as their caller's Sandbox ServiceAccount, which that node removes. That makes a technical edge
-from the box part of `WORKLOAD_AUTH_CUTOVER` to `IDENTITY_CUTOVER`. Until the cutover, requests name
-ServiceAccounts and services see unchanged subjects. The cutover PR switches every requester's
-`subject` to an identity. At the same point the box is owned by the caller's `Identity` instead of
-its ServiceAccount, and cdk8s renders `haku-ui` as an `Identity`. Steps 3 and 4 may land on either
-side.
+**With `IDENTITY_CUTOVER`.** Box creation needs the caller's own ServiceAccount. `stamp` in
+`action_service/sandbox/inventory.go` reads it, runs the box as it, and sets the box's owner
+reference to it. `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical
+prerequisite of that node, recorded in the DAG. In the same change, the box's owner becomes the
+caller's `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
+cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
+every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. Steps 4
+and 5 may land on either side.
 
 ## Open questions
 
-1. **Replacing running Sandboxes in step 1.** Recommendation: accept it, under the disposable-state
-   rule. The alternative is folding step 1 into `IDENTITY_CUTOVER`'s replacement, which holds the
-   trust fix and the reshuffle until then.
+1. **Running Sandboxes during steps 1 and 2: decided 2026-11-09.** None will run, so there is no
+   replacement procedure (see the shared step).
 2. **Secrets of deleted Certificates.** cert-manager does not own its Secrets here
    (`--enable-certificate-owner-ref` is off). Recommendation: the issuer deletes them by label, as
    the Sandbox Controller does today. A leftover is inert, because its request is gone.
