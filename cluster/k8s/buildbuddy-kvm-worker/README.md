@@ -1,7 +1,9 @@
 # Static KVM worker
 
-One always-running KubeVirt VM contains the BuildBuddy executor for the manual
-`kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
+Two always-running KubeVirt VMs each contain a BuildBuddy executor for the manual
+`kvm-vm` pool; the pool schedules across them, one action per VM. Required pod anti-affinity keeps the
+two on different nodes without naming a node, so one node failure or its disk contention
+reaches only one worker. Each VM runs the configuration below. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
 vCPUs, 16 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest

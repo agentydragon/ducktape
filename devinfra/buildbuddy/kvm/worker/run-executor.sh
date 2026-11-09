@@ -31,7 +31,7 @@ exec /usr/bin/docker run \
   --name "$executor_name" \
   --pull=missing \
   --network host \
-  --env MY_HOSTNAME=buildbuddy-kvm-worker \
+  --env "MY_HOSTNAME=$(hostname)" \
   --env MY_POOL=kvm-vm \
   --env-file "$environment_file" \
   --volume /etc/buildbuddy/executor.yaml:/config.yaml:ro \
