@@ -6,14 +6,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 )
 
 // Executor runs Executions on one backend.
 type Executor interface {
 	// Execute makes the one attempt at request and returns how it ended: succeeded with a result, or failed with an
-	// error document. An error wrapping ErrOutcomeUnknown says the attempt cannot tell whether the effect happened;
-	// any other error fails the Execution with the error's type, never its message, as its kind.
+	// error. An error wrapping ErrOutcomeUnknown says the attempt cannot tell whether the effect happened; any other
+	// error fails the Execution as INTERNAL, and only the log has the error.
 	//
 	// Execute holds lease while it works, with Hold or Lease.Renew, and bounds its own work: renewal proves the
 	// executor alive, not that the backend progresses. It returns promptly once ctx ends, which a drain does at its
@@ -50,44 +51,20 @@ type InvalidOutcomeError struct {
 
 func (e *InvalidOutcomeError) Error() string { return "invalid execution outcome: " + e.Err.Error() }
 
-// The outcomes the worker records itself carry the error documents the Python service writes.
+// The messages of the outcomes the worker records itself.
 const (
 	stoppedMessage = "dispatch outcome unknown; not replayed"
 	unknownMessage = "execution outcome is unknown; not replayed"
 	failedMessage  = "executor failed; see the Action Service log"
 )
 
-func unknownOutcome(reason store.UnknownOutcomeReason, message string) store.ExecutionOutcome {
-	return ErrorDocument{Kind: string(reason), Message: message}.Outcome(store.ExecutionUnknown)
-}
-
-// failedOutcome names err by its type, as the Python service names an exception by its class: the message can
-// carry request or backend material, so only the log has it.
-func failedOutcome(err error) store.ExecutionOutcome {
-	return Failed(fmt.Sprintf("%T", err), failedMessage)
-}
-
-// ErrorDocument is the error of an Execution that failed or whose outcome is unknown, as the Python service writes it.
-type ErrorDocument struct {
-	// Kind names why, for a program; Message says it to the caller.
-	Kind    string `json:"kind"`
-	Message string `json:"message"`
-	// Diagnostics are what an MCP group's failed request showed, when it showed any.
-	Diagnostics map[string]any `json:"diagnostics,omitempty"`
-}
-
-// Outcome is an Execution that ended in state with d as its error.
-func (d ErrorDocument) Outcome(state store.ExecutionState) store.ExecutionOutcome {
-	encoded, err := json.Marshal(d)
-	if err != nil {
-		panic(err)
-	}
-	return store.ExecutionOutcome{State: state, Error: encoded}
+func unknownOutcome(kind action_servicepb.ExecutionErrorKind, message string) store.ExecutionOutcome {
+	return store.ExecutionOutcome{State: store.ExecutionUnknown, Error: &action_servicepb.ExecutionError{Kind: kind, Message: message}}
 }
 
 // Failed is an Execution that failed with the error kind and message.
-func Failed(kind, message string) store.ExecutionOutcome {
-	return ErrorDocument{Kind: kind, Message: message}.Outcome(store.ExecutionFailed)
+func Failed(kind action_servicepb.ExecutionErrorKind, message string) store.ExecutionOutcome {
+	return store.ExecutionOutcome{State: store.ExecutionFailed, Error: &action_servicepb.ExecutionError{Kind: kind, Message: message}}
 }
 
 // Succeeded is an Execution that succeeded with result as its JSON, or err when the attempt producing it failed.

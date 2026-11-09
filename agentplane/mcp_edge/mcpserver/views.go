@@ -9,6 +9,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -16,7 +18,7 @@ import (
 )
 
 // The views below are what the tools answer: the core's records under the tool schemas' snake_case names and
-// lower-case enum values. Free-form values (arguments, schemas, errors) stay structpb values, which marshal
+// lower-case enum values. Free-form values (arguments, schemas) stay structpb values, which marshal
 // themselves.
 
 var defaultReceiptFields = []string{"id", "state", "version", "created_at", "updated_at"}
@@ -120,13 +122,40 @@ type matchedRepository struct {
 
 // execution is an Execution as a receipt reports it: never its result, which only the tool answer carries.
 type execution struct {
-	ID           uuid.UUID        `json:"id"`
-	State        string           `json:"state"`
-	Error        *structpb.Struct `json:"error"`
-	CreatedAt    time.Time        `json:"created_at"`
-	StartedAt    *time.Time       `json:"started_at"`
-	CompletedAt  *time.Time       `json:"completed_at"`
-	ReconciledAt *time.Time       `json:"reconciled_at"`
+	ID           uuid.UUID       `json:"id"`
+	State        string          `json:"state"`
+	Error        *executionError `json:"error"`
+	CreatedAt    time.Time       `json:"created_at"`
+	StartedAt    *time.Time      `json:"started_at"`
+	CompletedAt  *time.Time      `json:"completed_at"`
+	ReconciledAt *time.Time      `json:"reconciled_at"`
+}
+
+// executionError is why an Execution failed or has an unknown outcome, with the detail of its kind.
+type executionError struct {
+	Kind           string          `json:"kind"`
+	Message        string          `json:"message"`
+	Resume         *resumeFailure  `json:"resume,omitempty"`
+	McpUnavailable *mcpUnavailable `json:"mcp_unavailable,omitempty"`
+}
+
+// resumeFailure is the Environment Service's answer to a resume; its lifecycle details read as environments__get
+// spells them.
+type resumeFailure struct {
+	GRPCCode          string          `json:"grpc_code"`
+	ResumeEligibility json.RawMessage `json:"resume_eligibility,omitempty"`
+	WakeAssessment    json.RawMessage `json:"wake_assessment,omitempty"`
+}
+
+type mcpUnavailable struct {
+	// Diagnostics is nil when no request showed the group unavailable.
+	Diagnostics *mcpDiagnostics `json:"diagnostics"`
+}
+
+type mcpDiagnostics struct {
+	ExceptionType          string  `json:"exception_type"`
+	ConnectionAgeSeconds   float64 `json:"connection_age_seconds"`
+	RequestDurationSeconds float64 `json:"request_duration_seconds"`
 }
 
 type event struct {
@@ -368,12 +397,52 @@ func (d *viewDecoder) executionView(from *pb.Execution) *execution {
 	return &execution{
 		ID:           d.uuid(from.GetId()),
 		State:        enum(d, from.GetState(), "EXECUTION_STATE_"),
-		Error:        from.GetError(),
+		Error:        d.executionErrorView(from.GetError()),
 		CreatedAt:    d.time(from.GetCreatedAt()),
 		StartedAt:    d.optionalTime(from.GetStartedAt()),
 		CompletedAt:  d.optionalTime(from.GetCompletedAt()),
 		ReconciledAt: d.optionalTime(from.GetReconciledAt()),
 	}
+}
+
+func (d *viewDecoder) executionErrorView(from *pb.ExecutionError) *executionError {
+	if from == nil {
+		return nil
+	}
+	view := &executionError{Kind: enum(d, from.GetKind(), "EXECUTION_ERROR_KIND_"), Message: from.GetMessage()}
+	switch detail := from.GetDetail().(type) {
+	case nil:
+	case *pb.ExecutionError_Resume:
+		view.Resume = &resumeFailure{
+			GRPCCode:          enum(d, detail.Resume.GetGrpcCode(), ""),
+			ResumeEligibility: d.lifecycleDetail(detail.Resume.GetResumeEligibility()),
+			WakeAssessment:    d.lifecycleDetail(detail.Resume.GetWakeAssessment()),
+		}
+	case *pb.ExecutionError_McpUnavailable:
+		view.McpUnavailable = &mcpUnavailable{}
+		if diagnostics := detail.McpUnavailable.GetDiagnostics(); diagnostics != nil {
+			view.McpUnavailable.Diagnostics = &mcpDiagnostics{
+				ExceptionType:          diagnostics.GetExceptionType(),
+				ConnectionAgeSeconds:   diagnostics.GetConnectionAgeSeconds(),
+				RequestDurationSeconds: diagnostics.GetRequestDurationSeconds(),
+			}
+		}
+	default:
+		d.fail("core answered execution error detail %T, outside the contract", detail)
+	}
+	return view
+}
+
+// lifecycleDetail is an Environment lifecycle message as environments__get answers it; nil for none.
+func (d *viewDecoder) lifecycleDetail(message proto.Message) json.RawMessage {
+	if !message.ProtoReflect().IsValid() {
+		return nil
+	}
+	encoded, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(message)
+	if err != nil {
+		d.fail("core answered an execution error detail that does not marshal: %w", err)
+	}
+	return encoded
 }
 
 func (d *viewDecoder) eventView(from *pb.ActionEvent) event {

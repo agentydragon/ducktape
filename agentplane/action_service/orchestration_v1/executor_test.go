@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -167,25 +168,28 @@ func TestTheSameLaunchAdoptsItsSandboxAndAnotherIsRefused(t *testing.T) {
 		t.Errorf("the same launch did not restore its launcher grant: %v", err)
 	}
 	other := store.ServiceAccount{Namespace: f.namespace, Name: "test-other-caller"}
-	if kind := f.attempt(t, other, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another caller's launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, other, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another caller's launch of the name failed %v, want sandbox_exists", kind)
 	}
-	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another launch of the name failed %v, want sandbox_exists", kind)
 	}
 }
 
 func TestALaunchNamingAPolicySetItCannotBindIsRefused(t *testing.T) {
 	f := newFixture(t)
 	f.launch(t, "test-worker", contract.GrantSendMessage)
-	for _, test := range []struct{ policySet, kind string }{
-		{"test-absent-policy", "unknown_policy_set"},
+	for _, test := range []struct {
+		policySet string
+		kind      action_servicepb.ExecutionErrorKind
+	}{
+		{"test-absent-policy", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET},
 		// Bound to the new Sandbox's account, it would give that account the first launcher's grant.
-		{"test-worker.launcher", "launcher_policy_set"},
+		{"test-worker.launcher", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET},
 	} {
 		arguments := fmt.Sprintf(`{"name": "test-second", "template": "test-template", "policy_sets": [%q]}`, test.policySet)
 		if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, arguments).failure(); kind != test.kind {
-			t.Errorf("a launch naming %s failed %q, want %s", test.policySet, kind, test.kind)
+			t.Errorf("a launch naming %s failed %v, want %v", test.policySet, kind, test.kind)
 		}
 	}
 	err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-second"}, &sandboxapi.Sandbox{})
@@ -229,10 +233,10 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 
 	replaced := fmt.Sprintf(`{"name": %q, "uid": "00000000-0000-0000-0000-000000000000"}`, launched.Name)
 	absent := fmt.Sprintf(`{"name": "test-absent", "uid": %q}`, launched.UID)
-	for target, kind := range map[string]string{replaced: "sandbox_replaced", absent: "sandbox_not_found"} {
+	for target, kind := range map[string]action_servicepb.ExecutionErrorKind{replaced: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_REPLACED, absent: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND} {
 		arguments := fmt.Sprintf(`{"sandbox": %s, "session_id": %q, "command_id": %q, "turn_id": "test-turn"}`, target, session, command)
 		if failed := f.attempt(t, f.caller, contract.ActionInterruptTurn, arguments).failure(); failed != kind {
-			t.Errorf("interrupt_turn of %s failed %q, want %s", target, failed, kind)
+			t.Errorf("interrupt_turn of %s failed %v, want %v", target, failed, kind)
 		}
 	}
 	if received := f.dispatcher.received(); len(received) != len(want) {
@@ -265,7 +269,7 @@ func TestADispatcherRefusalFailsAndAnyOtherErrorLeavesTheOutcomeUnknown(t *testi
 	arguments := fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q, "command_id": %q, "text": "hello"}`,
 		launched.Name, launched.UID, uuid.NewString(), uuid.NewString())
 	f.dispatcher.refuse(status.Error(codes.AlreadyExists, "command_id was used for other work"))
-	if kind := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments).failure(); kind != "id_reused" {
+	if kind := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ID_REUSED {
 		t.Errorf("a refused submit_input failed %q, want id_reused", kind)
 	}
 	f.dispatcher.refuse(status.Error(codes.Unavailable, "dispatcher storage unavailable"))

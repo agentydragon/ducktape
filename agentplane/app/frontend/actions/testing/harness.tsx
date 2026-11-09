@@ -13,6 +13,7 @@ import {
   ActionState,
   ActionIdentitySchema,
   DecisionSchema,
+  ExecutionErrorKind,
   ExecutionSchema,
   ExecutionState,
   Verdict,
@@ -103,7 +104,7 @@ export function request(state: ActionState, index: number): ActionRequest {
             state: executionState,
             result: state === ActionState.SUCCEEDED ? fromJson(ValueSchema, { ok: true }) : undefined,
             error: [ActionState.FAILED, ActionState.CANCELLED, ActionState.EXECUTION_UNKNOWN].includes(state)
-              ? { kind: name }
+              ? { kind: ExecutionErrorKind.INVALID_ARGUMENTS, message: name }
               : undefined,
             createdAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
             startedAt: fromJson(TimestampSchema, "2026-09-05T12:00:01Z"),

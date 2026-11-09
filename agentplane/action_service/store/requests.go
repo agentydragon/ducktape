@@ -221,7 +221,10 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 		if !execution.State.valid() {
 			return nil, fmt.Errorf("execution %s has unknown state %q", execution.ID, state)
 		}
-		execution.Result, execution.Error = jsonValue(result), jsonValue(failure)
+		execution.Result = jsonValue(result)
+		if execution.Error, err = decodeExecutionError(jsonValue(failure)); err != nil {
+			return nil, fmt.Errorf("execution %s: %w", execution.ID, err)
+		}
 		execution.CreatedAt = execution.CreatedAt.UTC()
 		execution.StartedAt, execution.CompletedAt, execution.ReconciledAt =
 			utc(execution.StartedAt), utc(execution.CompletedAt), utc(execution.ReconciledAt)

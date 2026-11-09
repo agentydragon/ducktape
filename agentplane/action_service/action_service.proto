@@ -7,8 +7,10 @@ package agentplane.action_service;
 
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "google/rpc/code.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 
 // Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
@@ -525,13 +527,95 @@ message Execution {
   ExecutionState state = 2;
   // What the Action returned, whatever JSON that is; absent until it finishes.
   google.protobuf.Value result = 3;
-  // Why it failed, or why its outcome is unknown, as a `kind` and a `message`; absent otherwise.
-  google.protobuf.Struct error = 4;
+  // Why it failed, or why its outcome is unknown; absent otherwise.
+  ExecutionError error = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp started_at = 6;
   google.protobuf.Timestamp completed_at = 7;
   // When a late authenticated completion settled an execution first reported unknown.
   google.protobuf.Timestamp reconciled_at = 8;
+}
+
+// Why an Execution failed or has an unknown outcome.
+message ExecutionError {
+  ExecutionErrorKind kind = 1;
+  // Says the kind to the caller; never backend or request material.
+  string message = 2;
+  oneof detail {
+    ResumeFailure resume = 3;
+    McpUnavailable mcp_unavailable = 4;
+  }
+}
+
+// Why an Execution failed or has an unknown outcome, for a program.
+enum ExecutionErrorKind {
+  EXECUTION_ERROR_KIND_UNSPECIFIED = 0;
+  // A stored kind this release does not name.
+  EXECUTION_ERROR_KIND_UNKNOWN = 1;
+  // The executor failed unexpectedly; the Action Service log names the cause.
+  EXECUTION_ERROR_KIND_INTERNAL = 2;
+
+  // The outcome is unknown: the executor could not tell whether the effect happened.
+  EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN = 3;
+  // The outcome is unknown: the worker stopped the attempt while draining.
+  EXECUTION_ERROR_KIND_COORDINATOR_STOPPED = 4;
+  // The outcome is unknown: the lease lapsed while the owning executor stayed healthy.
+  EXECUTION_ERROR_KIND_LEASE_EXPIRED = 5;
+  // The outcome is unknown: the lease lapsed and the owning executor's heartbeat stopped too.
+  EXECUTION_ERROR_KIND_EXECUTOR_LOST = 6;
+
+  EXECUTION_ERROR_KIND_INVALID_ARGUMENTS = 7;
+  EXECUTION_ERROR_KIND_UNKNOWN_ACTION = 8;
+  EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA = 9;
+  EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA = 10;
+  EXECUTION_ERROR_KIND_MCP_UNAVAILABLE = 11;
+  EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL = 12;
+  EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE = 13;
+  EXECUTION_ERROR_KIND_SANDBOX_NOT_YOURS = 14;
+  EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE = 15;
+  EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND = 16;
+  EXECUTION_ERROR_KIND_SANDBOX_EXISTS = 17;
+  EXECUTION_ERROR_KIND_SANDBOX_REPLACED = 18;
+  EXECUTION_ERROR_KIND_EXEC_FAILED = 19;
+  EXECUTION_ERROR_KIND_BACKEND_REFUSED = 20;
+  EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED = 21;
+  EXECUTION_ERROR_KIND_DISPATCHER_REFUSED = 22;
+  EXECUTION_ERROR_KIND_DISPATCHER_UNREACHABLE = 23;
+  EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED = 24;
+  EXECUTION_ERROR_KIND_ID_REUSED = 25;
+  EXECUTION_ERROR_KIND_INPUT_NOT_FOUND = 26;
+  EXECUTION_ERROR_KIND_KUBERNETES_REFUSED = 27;
+  EXECUTION_ERROR_KIND_LAUNCHER_GRANT_EXISTS = 28;
+  EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET = 29;
+  EXECUTION_ERROR_KIND_NOT_INPUT = 30;
+  EXECUTION_ERROR_KIND_READ_FAILED = 31;
+  EXECUTION_ERROR_KIND_REJECTED = 32;
+  EXECUTION_ERROR_KIND_SESSION_NOT_FOUND = 33;
+  EXECUTION_ERROR_KIND_SOURCE_UNAVAILABLE = 34;
+  EXECUTION_ERROR_KIND_TARGET_NOT_FOUND = 35;
+  EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET = 36;
+  EXECUTION_ERROR_KIND_WAIT_UNAVAILABLE = 37;
+}
+
+// The Environment Service's answer to a resume that did not take effect.
+message ResumeFailure {
+  google.rpc.Code grpc_code = 1;
+  // The status details that explain a denial or a bounded retry, when the answer carried them.
+  agentplane.proto.ResumeEligibility resume_eligibility = 2;
+  agentplane.proto.WakeAssessment wake_assessment = 3;
+}
+
+// What the request that showed an MCP group unavailable showed; absent when no request did.
+message McpUnavailable {
+  McpRequestDiagnostics diagnostics = 1;
+}
+
+message McpRequestDiagnostics {
+  // The Go type of the request's failure; never its text, which can carry an address or a credential.
+  string exception_type = 1;
+  // Since the client initialized the connection.
+  double connection_age_seconds = 2;
+  double request_duration_seconds = 3;
 }
 
 enum ExecutionState {

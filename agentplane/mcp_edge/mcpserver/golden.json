@@ -1674,9 +1674,8 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_FAILED",
         "error": {
-         "kind": "sandbox_unavailable",
-         "message": "test box é 🚀 \"not\" ready\n",
-         "retry": 1.5
+         "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+         "message": "test box é 🚀 \"not\" ready\n"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1690,7 +1689,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1732,8 +1731,7 @@
       "state": "failed",
       "error": {
        "kind": "sandbox_unavailable",
-       "message": "test box é 🚀 \"not\" ready\n",
-       "retry": 1.5
+       "message": "test box é 🚀 \"not\" ready\n"
       },
       "created_at": "2026-01-02T03:04:06.12Z",
       "started_at": "2026-01-02T03:04:07.000005Z",
@@ -1793,9 +1791,8 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_FAILED",
         "error": {
-         "kind": "sandbox_unavailable",
-         "message": "test box é 🚀 \"not\" ready\n",
-         "retry": 1.5
+         "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+         "message": "test box é 🚀 \"not\" ready\n"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -1809,7 +1806,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
@@ -1817,8 +1814,7 @@
      "state": "failed",
      "error": {
       "kind": "sandbox_unavailable",
-      "message": "test box é 🚀 \"not\" ready\n",
-      "retry": 1.5
+      "message": "test box é 🚀 \"not\" ready\n"
      }
     },
     "isError": true
@@ -1884,7 +1880,7 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_EXECUTION_UNKNOWN",
         "error": {
-         "kind": "execution_outcome_unknown",
+         "kind": "EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN",
          "message": "test lost"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
@@ -2002,7 +1998,7 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_EXECUTION_UNKNOWN",
         "error": {
-         "kind": "execution_outcome_unknown",
+         "kind": "EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN",
          "message": "test lost"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
@@ -3352,9 +3348,8 @@
          "id": "00000000-0000-0000-0000-0000000000e1",
          "state": "EXECUTION_STATE_FAILED",
          "error": {
-          "kind": "sandbox_unavailable",
-          "message": "test box é 🚀 \"not\" ready\n",
-          "retry": 1.5
+          "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+          "message": "test box é 🚀 \"not\" ready\n"
          },
          "createdAt": "2026-01-02T03:04:06.120000Z",
          "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -3404,9 +3399,8 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_FAILED",
         "error": {
-         "kind": "sandbox_unavailable",
-         "message": "test box é 🚀 \"not\" ready\n",
-         "retry": 1.5
+         "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+         "message": "test box é 🚀 \"not\" ready\n"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -3420,7 +3414,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
@@ -3428,8 +3422,7 @@
      "state": "failed",
      "error": {
       "kind": "sandbox_unavailable",
-      "message": "test box é 🚀 \"not\" ready\n",
-      "retry": 1.5
+      "message": "test box é 🚀 \"not\" ready\n"
      }
     },
     "isError": true
@@ -6502,9 +6495,8 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_FAILED",
         "error": {
-         "kind": "sandbox_unavailable",
-         "message": "test box é 🚀 \"not\" ready\n",
-         "retry": 1.5
+         "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+         "message": "test box é 🚀 \"not\" ready\n"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -6553,9 +6545,8 @@
         "id": "00000000-0000-0000-0000-0000000000e1",
         "state": "EXECUTION_STATE_FAILED",
         "error": {
-         "kind": "sandbox_unavailable",
-         "message": "test box é 🚀 \"not\" ready\n",
-         "retry": 1.5
+         "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
+         "message": "test box é 🚀 \"not\" ready\n"
         },
         "createdAt": "2026-01-02T03:04:06.120000Z",
         "startedAt": "2026-01-02T03:04:07.000005Z",
@@ -6569,7 +6560,7 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\",\"retry\":1.5}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
@@ -6577,8 +6568,7 @@
      "state": "failed",
      "error": {
       "kind": "sandbox_unavailable",
-      "message": "test box é 🚀 \"not\" ready\n",
-      "retry": 1.5
+      "message": "test box é 🚀 \"not\" ready\n"
      }
     },
     "isError": true

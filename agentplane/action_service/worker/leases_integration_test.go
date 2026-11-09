@@ -18,11 +18,11 @@ func TestTheWorkerProvesItsExecutorAlive(t *testing.T) {
 }
 
 func TestTheSweepEndsALapsedLeaseOfAnyExecutor(t *testing.T) {
-	for _, reason := range []store.UnknownOutcomeReason{store.UnknownExecutorLost, store.UnknownLeaseExpired} {
+	for _, reason := range []action_servicepb.ExecutionErrorKind{action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED} {
 		t.Run(string(reason), func(t *testing.T) {
 			f := newFixture(t)
 			id := f.allowed(t, "lapsed")
-			if reason == store.UnknownLeaseExpired {
+			if reason == action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED {
 				if err := f.store.RecordExecutorHeartbeat(t.Context(), "test-other-executor"); err != nil {
 					t.Fatal(err)
 				}
@@ -30,8 +30,8 @@ func TestTheSweepEndsALapsedLeaseOfAnyExecutor(t *testing.T) {
 			f.claimElsewhere(t, id, "test-other-executor", -time.Second)
 			e := &executor{step: succeed}
 			run(t, f.store, e, testTiming(), nil)
-			if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(reason) {
-				t.Errorf("kind %q", kind)
+			if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != reason {
+				t.Errorf("kind %v", kind)
 			}
 			if ran, pending := e.ran(), f.pending(t); len(ran) != 0 || len(pending) != 0 {
 				t.Errorf("replayed: ran %v, pending %v", ran, pending)
@@ -50,8 +50,8 @@ func TestAnExecutionThatOutlivesItsLeaseEndsUnknownAndItsOutcomeReconcilesIt(t *
 	run(t, f.store, &executor{step: g.step}, timing, nil)
 	g.awaitStarted(t)
 	// The worker's own heartbeat says its executor lives: only the lease lapsed.
-	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownLeaseExpired) {
-		t.Errorf("kind %q", kind)
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED {
+		t.Errorf("kind %v", kind)
 	}
 
 	close(g.release)
@@ -118,7 +118,7 @@ func TestHoldEndsTheWorkWhenItCannotRenewTheLease(t *testing.T) {
 		t.Fatal("the work outlived a renewal that could not happen")
 	}
 	release()
-	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownAdapterOutcome) {
-		t.Errorf("kind %q", kind)
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN {
+		t.Errorf("kind %v", kind)
 	}
 }
