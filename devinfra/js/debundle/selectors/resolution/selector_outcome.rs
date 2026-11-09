@@ -562,7 +562,7 @@ fn render_refs(refs: &[EntityRef]) -> String {
 
 impl SelectorKind {
     /// The spec field the selector is authored in.
-    fn origin(self, target_binding: Option<&str>) -> String {
+    pub fn origin(self, target_binding: Option<&str>) -> String {
         match (self, target_binding) {
             (Self::SourceMatches, Some(target)) => format!("source_matches[].bindings[`{target}`]"),
             (Self::SourceMatches, None) => "source_matches[]".to_string(),

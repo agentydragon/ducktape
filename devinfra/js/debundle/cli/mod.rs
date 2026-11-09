@@ -19,6 +19,7 @@ mod propose_commutations;
 mod selector_explanation;
 mod selector_input;
 mod snapshot;
+mod source_unit_refine;
 mod spec_commands;
 mod static_imports;
 

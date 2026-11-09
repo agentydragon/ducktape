@@ -1418,6 +1418,7 @@ rust_library(
         "cli/selector_explanation.rs",
         "cli/selector_input.rs",
         "cli/snapshot.rs",
+        "cli/source_unit_refine.rs",
         "cli/spec_commands.rs",
         "cli/static_imports.rs",
         "cli/validate.rs",
