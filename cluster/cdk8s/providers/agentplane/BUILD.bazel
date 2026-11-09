@@ -89,3 +89,15 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "workload_credential",
+    srcs = ["workload_credential.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:workloadcredential",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)

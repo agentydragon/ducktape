@@ -3043,7 +3043,8 @@ also passes against the Firecracker template.
 
 **In progress (team lead, 2026-11-09): steps 1 and 2 of the
 [workload identity lifecycle](workload_identity_lifecycle.md) landed; step 3, Action boxes, and
-step 4, standing workloads, are in flight as separate changes; step 5, bearer removal, follows.**
+step 4, standing workloads, are in flight as separate changes (step 4's order is in the plan);
+step 5, bearer removal, follows.**
 The lifecycle plan holds each step's records, k3s proof and rollback; the issuer and resolver
 contract is in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
 Until step 5, keep the proxy's explicit `kubernetes_bearer` mode and the non-Sandbox sidecars'

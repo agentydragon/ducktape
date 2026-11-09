@@ -741,6 +741,7 @@ def build_chart(
         "policy-controller",
         env,
         accounts_namespace=kubernetes_accounts_namespace(NAMESPACE),
+        workload_namespaces={NAMESPACE},
         placement=None,
         registry_secret_name=None,
         memory_limit=None,

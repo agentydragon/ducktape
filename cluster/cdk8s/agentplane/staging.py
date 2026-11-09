@@ -564,6 +564,7 @@ ENV = Environment(
         traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
         external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE),
+        standing_workload_namespaces=(haku_ui_egress.NAMESPACE,),
     ),
     app=AppProps(
         origin=f"https://{_HOSTNAME}",
@@ -729,6 +730,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         egress=[_CONNECTION_SERVICE.egress()],
     )
     haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
+    haku_ui_egress.add_workload_credentials(chart)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
     # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
@@ -795,11 +797,14 @@ def chart(app: App, env: Environment = ENV) -> Chart:
             metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=env.namespace),
             rules=[Rule.send_message(inbox_tags=[group])],
         )
+    # The issuer serves Sandboxes' own namespace and every namespace holding standing records.
+    workload_namespaces = {env.namespace, *env.egress.standing_workload_namespaces}
     controller = policy_controller.PolicyController(
         chart,
         "policy-controller",
         env,
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
+        workload_namespaces=workload_namespaces,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     )
@@ -811,7 +816,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         account=controller.account,
         assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
-        workload_namespaces={env.namespace},
+        workload_namespaces=workload_namespaces,
     )
     reader = ServiceAccount(
         chart,

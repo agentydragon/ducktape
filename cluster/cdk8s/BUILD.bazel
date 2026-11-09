@@ -11,6 +11,7 @@
 # gazelle:resolve py agentplane_identity_crds //agentplane/crds:identity
 # gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
 # gazelle:resolve py agentplane_serviceaccountgrant_crds //agentplane/crds:serviceaccountgrant
+# gazelle:resolve py agentplane_workloadcredential_crds //agentplane/crds:workloadcredential
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
 # gazelle:resolve py crossplane_deploymentruntimeconfig_crds //cluster/cdk8s/providers/crossplane:deploymentruntimeconfig

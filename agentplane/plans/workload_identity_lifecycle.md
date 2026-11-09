@@ -15,8 +15,8 @@ the workload bearer projections can be removed.
 | Caller                     | Created by                                                                | Proves its incarnation today                                                | Policy subject today          | Its request                                                                                                          |
 | -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, named after and owned by the box Pod, subject the caller             |
-| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux     | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the Deployment, with no owner and no binding                   |
-| Anki                       | as Haku UI                                                                | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own request, same subject ([below](#standing-workloads))                                                         |
+| Haku UI                    | Haku: a StatefulSet in `haku-state`, applied to `haku-sandbox` by Flux    | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the StatefulSet, with no owner and no binding                  |
+| Anki                       | as Haku UI, a Deployment `haku-anki`                                      | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own record `haku-anki`, same subject ([below](#standing-workloads))                                              |
 | Central sampler            | Flux Deployment                                                           | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer) |
 | OpenClaw, external callers | `public_coder` cdk8s; none yet                                            | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                     |
 
@@ -77,13 +77,26 @@ rules:
 
 ## Standing workloads
 
-Haku UI and Anki are Haku-authored Deployments with replicas, not controller-owned incarnations.
-cdk8s renders one record per Deployment into `haku-sandbox`, with no owner and no binding. Haku's
-deployer Role cannot write it. The issuer gives it a stable Secret name, and Haku's Deployment
-mounts that Secret into its sidecar, as it mounts the token projection today. Any Pod Haku creates
-there could mount it, which is the reach the `haku-ui` ServiceAccount already gives. For a
-Deployment, the incarnation is the record itself. Every replica presents the same SVID, and no Pod
-is proven. Revocation is deleting the record, which Flux recreates with a fresh ID, or a Flux prune.
+Haku UI (a StatefulSet) and Anki (a Deployment) are Haku-authored workloads with replicas, not
+controller-owned incarnations. cdk8s renders one record per workload into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), with no owner and no binding. Haku's deployer Role cannot write
+it. The issuer gives it a stable Secret name, `svid-<name>`, and Haku's manifest mounts that Secret
+into its egress sidecar alone, in place of the token projection. Any Pod Haku creates there could
+mount it, which is the reach the `haku-ui` ServiceAccount already gives. The incarnation is the
+record itself. Every replica presents the same SVID, and no Pod is proven, so the proxy drops any
+Pod token such a caller forwards ([egress SPEC](../egress/SPEC.md)). Neither sidecar forwards one:
+the hop projection is their only token. Revocation is deleting the record, which Flux recreates with
+a fresh ID, or a Flux prune. A running sidecar refuses a reloaded SVID with a different URI
+(`environment_runtime_transport` pins the first), so after a recreate the workload regains egress
+only on a rollout restart.
+
+Neither workload may lose egress, so step 4 lands in this order:
+
+1. The proxy accepts standing SVIDs (#15201).
+2. cdk8s renders the records and adds `haku-sandbox` to the issuer's namespaces and the proxy's
+   record grant; it may land in parallel with 1, since the sidecars still use the bearer.
+3. Once both have rolled out and both records are `Ready`, a `haku-state` commit switches each
+   sidecar to `auth.mode: spiffe` with `svid-<name>` mounted, and drops the hop projection.
 
 Decided for now (2026-11-09): no Pod provenance for standing replicas, since decision history and
 LLM ingress metadata name the record and its credential ID; and Anki has its own record with subject

@@ -5,6 +5,8 @@ policy_controller_rbac.py and binding_delegation.py.
 
 from __future__ import annotations
 
+from collections.abc import Set
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources
 from constructs import Construct
@@ -58,6 +60,7 @@ class PolicyController(Construct):
         env: Environment,
         *,
         accounts_namespace: str,
+        workload_namespaces: Set[str],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
@@ -79,8 +82,8 @@ class PolicyController(Construct):
             }.items()
         }
         subject_namespaces = checked_value(Settings, "subject_namespaces", frozenset({namespace}))
-        # It issues the WorkloadCredentials of its own namespace; policy_controller_rbac.py grants the same.
-        workload_namespaces = checked_value(Settings, "workload_namespaces", frozenset({namespace}))
+        # policy_controller_rbac.py grants the issuer the same namespaces.
+        workload_namespaces = checked_value(Settings, "workload_namespaces", frozenset(workload_namespaces))
         text = {
             **scalars,
             "subject_namespaces": ",".join(sorted(subject_namespaces)),
