@@ -1,0 +1,263 @@
+# Convergence landing plan
+
+How the semantic-convergence refactor reaches `devel`. The destination is
+<target_architecture.md>; the gate migration is <translation_validation_gate.md>;
+the interpreter migration is <abstract_interpreter.md>. This file owns the landing
+order, the debt that must close before the refactor counts as done, and the exit
+gates. It burns down as slices land and is deleted with the last one.
+
+## Where the work is
+
+Draft [#14552](https://github.com/agentydragon/ducktape/pull/14552) is a
+**reference implementation, not a merge candidate**. It carries the whole flipped
+design as one squashed commit above `devel`: +113k/-21k lines across 231 files,
+with the effect-based relocation verdict authoritative from its first commit.
+Its hosted history: the best full-suite result was 201 passing / 51 failing test
+targets (run `42382520793`, 2026-11-07); the last run that reached tests was
+63 / 193 with a shared resolver assertion in 192 of the 193 failures (run
+`42510569601`); every later head, including `ee4eb4ab`, fails to build. No head
+of the branch has ever been green.
+
+`devel` is the integration branch. It is green, keeps the legacy realizability
+gate authoritative, computes the effect assessment as a report, and already holds
+roughly 160 slices peeled from this work during 2026-11-04 to 2026-11-08.
+
+Rules that follow from this:
+
+- Nothing else is squashed into #14552. New work branches from `devel`, takes
+  code from #14552 by reference, and lands as its own PR.
+- The flip (effect verdict decides, legacy gate becomes a diagnostic) is one
+  small PR near the end (<translation_validation_gate.md> § Migration step 3),
+  not the base of a stack.
+- Local `bbr`/`bazelisk` runs are the normal iteration loop. Hosted CI is the
+  landing check, not the only compiler.
+
+## Slice contract
+
+Every PR in this plan:
+
+1. Adds one capability or removes one duplicate, and **deletes the decision path
+   it supersedes** in the same PR (legacy evaluator arm, recognizer, row
+   interpretation, join). A slice that only adds is incomplete.
+2. Is validated through the CLI: the fixture runs original and emitted programs
+   under Node, the candidate has `swapped_pairs > 0` where the slice claims a
+   relocation, and the `DEBUNDLE_TV_ORACLE` legacy/effect comparison is on.
+3. Asserts behavior and typed status, not report vocabulary. Exact
+   `emitted_order` arrays, example-row ranking and receipt span pins are change
+   detectors (<../../../STYLE.md> § Testing) and do not land.
+4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
+   (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
+5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
+   gate would not have made is a regression unless the PR proves the acceptance
+   was unsafe with a Node divergence.
+6. Keeps every `devel` test or replaces it with a stronger one. A refusal that
+   becomes an acceptance needs a relocation with Node parity; an acceptance that
+   becomes a refusal needs a Node divergence. The tests #14552 dropped are listed
+   in § Test debt and are restored by the slice that owns them.
+7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
+   cannot meet that and say so in their description.
+
+## Debt inventory
+
+Everything below exists at `ee4eb4ab`. "Keep" means port as a slice; "redo"
+means the idea lands but not this code; "drop" means do not port.
+
+| Area                       | Finding at `ee4eb4ab`                                                                                                                                                                                                                                                                                              | Disposition                                                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Evaluator count            | The shared kernel is added beside every path it should replace: `evaluate_legacy_compat` (devel's `evaluate_transfer` tail, grown), the flat callable lane `invoke_with_cells`, row-driven `execute_native_call_transfer`, string-matched `private_frozen_namespace`.                                              | Each Wave 2/3 slice deletes the path it covers; `legacy/` tombstones name the last caller.                                                                                |
+| Adapter boundary           | `LocalContext` grew from 24 to 59 methods; three adapters (`LocalExecutionContext` ~2.7k lines, `ProviderExecutionContext`, strict `ProviderContext`) re-implement `read_binding`, `closure`, `assign_capture`, `array_spread` with divergent policy.                                                              | Redo: narrow traits (`BindingContext`, `CallContext`, `HeapContext`, `NativeContext`, `ControlContext`); spread/closure/capture semantics move into the kernel.           |
+| Giant dual-mode functions  | `execute_call_transfer_inner` (1,458 lines, operands-supplied and self-evaluating modes), `execute_owner` (1,206 lines), `LocalContinuation::step` (1,520 lines).                                                                                                                                                  | Redo: split by mode and by phase; functions under ~300 lines.                                                                                                             |
+| Joins                      | Seven join implementations (`transfer_alternatives`, `conservative_world_join`, `EffectCoverageFragment::join_alternatives`, `execution_index`, own-property receipts, attributes, callback fallback), copy-pasted helpers; strict join refusal **panics**.                                                        | Redo: one `World::join` with strict fast path and conservative fallback; refusal yields a `Havoc` outcome, never a panic.                                                 |
+| Coverage notions           | `Outcome` carries an optimistic `complete: true` beside the pessimistic coverage ledger; forgetting `lose_precision` certifies.                                                                                                                                                                                    | Redo: delete `complete`; the ledger is the only coverage authority (AR1).                                                                                                 |
+| Heap models                | New may-state `ObjectSurfaceStore` plus the old literal heap (`mark_unknown_enumerability`); `DefineProperties` commit invalidates different attributes in application and strict provider.                                                                                                                        | Keep `object_surface` + `descriptor_transfer` + `native_operation`; delete the literal-heap flags; one commit.                                                            |
+| World identity             | Two copy-on-write layers (`Rc<ExecutionState>`, `Arc<SemanticWorldData>`), `RefCell` fields inside cloned state, `Deref` from world to store, pointer-equality arenas.                                                                                                                                             | Redo in `world/`: one owner per field, no `Deref` across layers.                                                                                                          |
+| Provider execution         | Three provider mechanisms (`provider_activation`, strict `private_heap`, summary replay in `provider_transfer`/`provider_graph`) plus the flat lane.                                                                                                                                                               | Keep summary replay as substitution; one provider executor (kernel + provider adapter).                                                                                   |
+| Native rows                | Row `Mutation` interpretation, plan/commit path and syntactic recognizer all decide `defineProperty`.                                                                                                                                                                                                              | Keep plan/commit; delete the other two.                                                                                                                                   |
+| Gate authority             | Legacy verdict reduced to a " Legacy SCC comparison" diagnostic string; `preparation_readiness` decides on effects + placement only. Plans and TODO still say the legacy gate is authoritative.                                                                                                                    | Flip lands last as its own PR; until then devel's authority stands.                                                                                                       |
+| Over-restriction           | `module_initialization::preserve_initialization` returns `UnsupportedCandidateGraph` for any multi-chunk or vendor-transformed candidate with required cells.                                                                                                                                                      | Must be removed before the flip; otherwise multi-chunk specs regress.                                                                                                     |
+| Second ESM loader          | `lowering/module_initialization.rs` has its own `evaluation_order`/`resolve_requests`.                                                                                                                                                                                                                             | Redo on `EsmImportOrder`/`esm_simulator` (one loader model).                                                                                                              |
+| Final-file checkers        | `final_global_resolution.rs` is a genuinely new obligation (emitted output must not capture a source global). `final_source_correspondence.rs` (4.2k lines) re-derives what typed lowering, pruning and export validators establish, with three independent output AST walkers.                                    | Keep global resolution (report-only first). Redo correspondence from the declarative vendor plan plus one indexed walk of the output, after showing which bug it catches. |
+| Report seal                | `FinalCandidateOutputSeal` plus runtime self-hash of the report's serde JSON and of `logical_modules`, beside the type-state `ValidatedPlan`.                                                                                                                                                                      | Redo: type-state only; the serializable report is a projection of a non-serializable verdict.                                                                             |
+| Receipt plumbing           | Vendor rewrites and pruning emit `CandidateRewriteReceipt`s (~2.7k lines) consumed only by the correspondence checker.                                                                                                                                                                                             | Drop unless the slimmed checker needs them; derive routes from the plan.                                                                                                  |
+| Debug-formatted identities | `context_identity`, `candidate_assignment_identity` hash `{:?}` output; `GateRejected` diagnostics are `{:?}` dumps that tests match.                                                                                                                                                                              | Redo as typed identities and typed rejection payloads.                                                                                                                    |
+| Saved analysis             | Typed anchors and `SavedChunk`/`SavedModuleCell` identities are sound. The provider-proof sidecars (~2.6k lines) are restored, validated, then **replaced by a full recomputation** on load; `conditional_bodies` serialize twice; `#[serde(default)]` legacy `Option`s are unreachable past the engine-hash gate. | Keep codec identities and anchors. Hold sidecars until a load path consumes them. Delete dead defaults. Move `CallableSummary` off `derive(Serialize)` to a DTO.          |
+| Rebind folding             | `lowering/rebind_fold.rs` deleted; unclaimed writers are no longer silently moved into the claimed binding's module.                                                                                                                                                                                               | Keep; lands independently.                                                                                                                                                |
+| Preflight refactor         | `CandidatePreflight`, `prepare_candidate_emission_plan` + `emit()`, gate types moved to `gate.rs`.                                                                                                                                                                                                                 | Keep, without the authority change.                                                                                                                                       |
+| CLI contract               | `claims_checked`, `needs_full_assessment`, verified writes require `--analysis`, edit gate deleted.                                                                                                                                                                                                                | Keep the vocabulary. Graph-only writes stay allowed with a warning until the flip.                                                                                        |
+| Tests                      | Two single-target files of 10,960 and 8,395 lines; receipt helpers duplicated in four files; 26 staged tests execute nothing; ~30 stderr substring checks; `assert_potential_suppression_rejection` pins internal cell taxonomy.                                                                                   | Split by capability into `*_test.rs` targets; helpers in `e2e/support`; see § Test debt.                                                                                  |
+| Process                    | 67 rounds published as a single squashed commit with hosted CI as the only compiler; commit history survives only in a local clone and bundles.                                                                                                                                                                    | Small PRs with history; local builds; no squash-only publication.                                                                                                         |
+
+## Target code shape
+
+`facts/sync_effects/` becomes, in this order of extraction:
+
+| Module                                | Owns                                                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/{continuation,completion}.rs` | `LocalContinuation`, `Step`, `Completion`, `TransferLedger`; the five narrow context traits.                                |
+| `world/`                              | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.           |
+| `alternatives/`                       | `TransferAlternatives`, `RuntimeTransferFamily`, lineage; refusal is a conservative outcome.                                |
+| `adapters/{application,provider}.rs`  | The two execution modes, implementing only the narrow traits; strict-provider private heap is the provider adapter's world. |
+| `native/`                             | Builtin table rows → one `plan`/`commit` path.                                                                              |
+| `roots/`                              | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
+| `legacy/`                             | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
+
+`execution_index.rs` stops nesting the interpreter module (AR4). Whether
+`kernel`/`world` become separate Bazel crates is decided after the moves, when the
+dependency direction is visible.
+
+## Dependency graph and waves
+
+Slices are independent within a wave unless a `needs` is stated. `src` names
+the #14552 code to port by reference.
+
+**Wave 0: stop the bleeding.**
+
+- L0a. Make `ee4eb4ab` compile and get one full-suite run on the PR, for
+  evidence only. The failure inventory tells Wave 3 which positives the
+  integrated design actually recovers. Not a landing step.
+- L0b. Split devel's `e2e/staged_analysis_test.rs` and
+  `e2e/effect_translation_validation_test.rs` into per-capability targets and
+  move receipt helpers to `e2e/support`. Makes every later slice's tests small.
+
+**Wave 1: independent, legacy gate authoritative.**
+
+- L1a. `completion.rs` + `TransferLedger`. src: `facts/sync_effects/completion.rs`.
+- L1b. World store: `object_surface.rs`, `descriptor_transfer.rs`,
+  `native_operation.rs`; one `DefineProperties` commit; delete the row
+  `Mutation` interpretation and the string-matched recognizer. needs L1a.
+  Tests: `own_descriptor_inspection`, `own_property_names`,
+  `own_data_object_spread`, `native_operation_input`.
+- L1c. Rebind-fold removal. src: `lowering/rebind_fold.rs` deletion,
+  `plan_builder.rs`, three `cross_module_emission_test` cases.
+- L1d. Preflight/emission-plan refactor without authority change. src:
+  `assignment_analysis.rs` `CandidatePreflight`, `lowering/candidate_emission.rs`,
+  gate types in `gate.rs`.
+- L1e. Saved codec identities: `SavedChunk`, `SavedModuleCell`, `ContextOrdinals`
+  borrowing the chunk table; module-cell saved entries. src: `analysis_codec.rs`.
+- L1f. Final global-resolution check, report-only. src:
+  `final_global_resolution.rs`, `ParsedGlobalUses`, `vendor/strip.rs` recorder.
+  Tests: `final_global_resolution_*`, `bundle_owned_globals_test`.
+- L1g. CLI vocabulary (`claims_checked`, `needs_full_assessment`) with graph-only
+  writes still allowed plus a warning; `docs/cli.md`.
+
+**Wave 2: the kernel.** Large by nature; one reviewer owns the traits.
+
+- L2a. Narrow context traits and `kernel/continuation.rs` +
+  `local_transfer::execute` + the strict-provider driver as the one provider
+  executor. Deletes: the flat lane for bodies with an ordered plan, the legacy
+  `ValueExpr::Member` arm for covered reads. needs L1a, L1b. Tests:
+  `foreign_call_summary`, `local_class_construction`, continuation unit tests.
+- L2b. `alternatives/` + `World::join` (strict fast path, conservative fallback,
+  no panic). needs L2a. Tests: `source_continuation`, `optional_call_timing`.
+- L2c. Application adapter: `execute_owner` → `roots/` phases;
+  `execute_call_transfer_inner` split by mode; delete `complete: bool`. needs
+  L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
+  parity.
+- L2d. `execution_index.rs` stops nesting the interpreter; provider program
+  registry (`execution_index/provider_program.rs`). needs L2a.
+
+**Wave 3: coverage producers.** Each one capability, each deleting its
+recognizer, each with a positive relocation, its opposing controls and the
+legacy/effect oracle. Order by measured payoff from L0a's inventory, not by
+convenience. Candidates, with src files: array iteration family
+(`execute_selected_array_iteration_family`, `intrinsic_array_iteration_test`);
+provider activation and imported constructor effects (`provider_activation.rs`,
+`imported_constructor_effects_test`); callbacks and retained factories; qualified
+module cells and provider initialization (`module_initialization` facts side);
+descriptor and native rows; class construction; saved anchors and source
+inventory (`analysis_inputs/saved.rs` anchors only; sidecars held). needs L2.
+
+**Wave 4: gate.**
+
+- L4a. `module_initialization.rs` on `EsmImportOrder`; remove
+  `UnsupportedCandidateGraph` for multi-chunk and vendor candidates. needs Wave 3
+  module cells.
+- L4b. Slimmed correspondence checker from the declarative vendor plan and one
+  indexed output walk, report-only, with the bug it catches named in the PR.
+  needs L1f.
+- L4c. Discrepancy audit: every e2e target and the canonical inputs under
+  `DEBUNDLE_TV_ORACLE`, each legacy/effect disagreement classified as sharper
+  effects, missing coverage, unsafe legacy acceptance, or defect
+  (<translation_validation_gate.md> § Migration step 1). Canonical replay needs
+  separately authorized execution. Iterates with Wave 3.
+- L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
+  `ensure_candidate_emittable_for_write`, plus the README/design/SPEC text that
+  #14552 already drafted. Small. needs L4a–L4c green.
+- L4e. Delete the legacy gate, `legacy/`, dead `#[serde(default)]` options; move
+  `CallableSummary` to a DTO; graduate contracts into `SPEC.md` and
+  `docs/design.md`; delete this plan and the burned-down parts of the others.
+
+**Wave 5.** Crate split if the dependency direction warrants it; real-profiler
+performance pass on representative inputs (<analysis_performance.md>).
+
+## Test debt
+
+Tests present on `devel` and absent from `ee4eb4ab`, grouped by the slice that
+restores or justifies them:
+
+- Conservative-stance tests rewritten as acceptances without any relocation
+  (restore, or add the relocation plus Node parity):
+  `imported_primitive_return_does_not_inherit_local_operation_authority`,
+  `local_declaration_receipts_refuse_captured_cells_and_rebinding`,
+  `numeric_local_updates_refuse_bigint_coercion_and_captured_cells` (Wave 3).
+- Acceptance rewritten as an expected `blocked_by_effect`:
+  `inferred_and_selected_set_spread_bindings_survive_saved_analysis` (Wave 3,
+  array/Set family; the original acceptance stands until a Node divergence is
+  shown).
+- Refusal-to-acceptance by capability add, needs its positive kept:
+  `modules_refine_assessment_refuses_scoped_tree_before_writes`,
+  `modules_apply_assessment_refuses_stale_partial_scoped_and_non_dry_inputs_before_writes`
+  (L1g / Wave 4).
+- Deleted structural controls to restore as-is: `direct_callee_heap_contents_win_over_assumed_path_in_both_orders`,
+  `borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier`,
+  `borrowed_and_static_member_sets_keep_their_existing_frontier`,
+  `compound_call_root_keeps_its_unexecuted_remainder_fallback`,
+  `unproved_initializers_keep_conservative_callback_dependencies`,
+  `namespace_import_stays_conservative`, `ownership_subset_still_rejects_catchall_file`,
+  `strict_signatures_leave_asymmetric_lazy_eager_shape_for_final_gate`,
+  `empty_chunk_options_keep_their_analysis_projection_key`,
+  `early_destructuring_split_refusal_matches_with_saved_facts`,
+  `early_nested_var_split_refusal_matches_with_saved_facts`,
+  `atom_split_reports_both_destinations_and_writes_the_same_artifact`,
+  `an_initializer_export_gets_no_call_or_record_summary`.
+- Renamed with tightened internal pins (keep the behavior, drop the pins):
+  `hoisted_functions_have_no_evaluation_write_but_function_expressions_do`,
+  `local_declaration_operations_cover_private_cells_and_compose_receipts`,
+  `bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows`.
+
+Missing positive class: no test shows `legacy_gate_accepts == false` together
+with an accepted effect verdict and Node parity. Each Wave 3 slice that claims
+recovered acceptance adds one.
+
+## Exit gates
+
+The refactor is done when all of these hold on `devel`:
+
+- One kernel: no `evaluate_legacy_compat`, no flat callable lane, one native
+  plan/commit path, one `World::join`, one ESM loader model, one coverage ledger.
+- One verdict: `run`, previews and every ownership write consume the same
+  candidate assessment; the legacy gate code is deleted.
+- Full hosted suite green with the oracle on; every classified discrepancy from
+  L4c resolved or recorded as a sound refusal with its Node evidence.
+- Canonical inputs: acceptance not below the pre-flip baseline except where a
+  Node divergence shows the old acceptance was unsafe.
+- No production module over ~3k lines, no function over ~300 lines in
+  `facts/sync_effects/`; no `#[cfg(test)]` hooks in production.
+- A real-profiler measurement on representative inputs within the
+  <analysis_performance.md> budget.
+
+## Delegation
+
+- The orchestrator owns interfaces: it writes the narrow trait definitions and
+  the `World` type (L2a) before dispatching adapters, reviews every diff for the
+  deleted path and the restored tests, and runs the oracle on the result.
+- Wave 1 and Wave 3 slices are bounded and verifiable: default worker tier
+  (Luna `xhigh` in Codex terms; <../../../docs/agent_delegation/README.md>).
+  Each dispatch names the immutable `devel` base, the #14552 source files, the
+  path to delete, the test targets, the oracle check and the stop condition
+  ("stop if the deletion needs a second evaluator; report instead").
+- L2a–L2c and L4c carry subtle invariants (join soundness, completion
+  partitions, discrepancy classification): a stronger tier, and the orchestrator
+  reviews the join and completion code line by line.
+- One worker per slice in an isolated worktree; no shared branch; no squashing
+  across slices.

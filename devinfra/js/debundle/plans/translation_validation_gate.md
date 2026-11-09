@@ -20,7 +20,10 @@ the remaining migration. The report-only candidate assessment pairs effect
 conflicts with typed placement evidence for the same finalized assignment; the
 shared projection also supplies emission's checked placement maps. Plan-building
 refusals before a final assignment remain outside that assessment. The legacy
-gate remains authoritative.
+gate remains authoritative on `devel`. Draft #14552 is a reference
+implementation with the flip already applied; the landing order that keeps the
+flip as the late, small PR this plan's § Migration requires is in
+<convergence_landing.md>.
 
 ## Problem
 

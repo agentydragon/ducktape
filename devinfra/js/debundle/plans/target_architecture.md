@@ -127,8 +127,23 @@ with structural placement obligations.
 | Separate relocation and strip checks                                 | Shared effect facts, with placement and strip obligations retained     |
 | Premises carry `audited_source_sha256` and evidence in reports       | Premises carry an engine audit list and a runtime probe                |
 
+## Code shape
+
+The implementation converges on these owners inside `facts/sync_effects/`
+(details and extraction order: <convergence_landing.md> § Target code shape):
+`kernel/` (continuation, completion, narrow context traits), `world/` (semantic
+world, object surface, descriptor heap, lexical cells, one join),
+`alternatives/` (path-preserving transfer families), `adapters/` (application
+and provider execution modes), `native/` (builtin rows through one plan/commit
+path), `roots/` (owner execution phases). Each JS operation has one decision
+site; each state join has one implementation; refusal is a conservative outcome,
+never a panic. `legacy/` holds not-yet-deleted paths behind tombstones and is
+empty at the end.
+
 ## Plans as steps
 
+- <convergence_landing.md>: landing order on `devel`, debt inventory, exit
+  gates for the refactor as a whole.
 - <abstract_interpreter.md>: execution-derived purity, remaining certificates,
   complete statement effects, scoped fallback reach and effect-set premise
   checking.
