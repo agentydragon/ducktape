@@ -123,6 +123,9 @@ def _loki_values() -> dict[str, object]:
                 # configured".
                 "volume_enabled": True,
             },
+            # The default replay ceiling is 4 GiB, above the writer's cgroup
+            # limit. Bound replay so recovery can flush before it exhausts memory.
+            "ingester": {"wal": {"replay_memory_ceiling": "1GB"}},
             "compactor": {
                 "retention_enabled": True,
                 "retention_delete_delay": "2h",
@@ -136,12 +139,21 @@ def _loki_values() -> dict[str, object]:
         # All pinned to OVH kimsufi zone, where the Piraeus HDD pools are.
         "write": {
             "replicas": 2,
-            "annotations": _GOLDILOCKS_OFF,
+            # Initial-mode VPA normally scales limits with requests. Keep the
+            # cgroup limit aligned with GOMEMLIMIT and WAL replay while VPA sizes
+            # requests for scheduling, including enough memory for recovery.
+            "annotations": {
+                "goldilocks.fairwinds.com/vpa-resource-policy": (
+                    '{"containerPolicies":[{"containerName":"loki","controlledValues":"RequestsOnly",'
+                    '"minAllowed":{"memory":"1Gi"},"maxAllowed":{"memory":"2Gi"}}]}'
+                )
+            },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
-            "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+            "extraEnv": [{"name": "GOMEMLIMIT", "value": "1536MiB"}],
+            "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},
         },
         "read": {
             "replicas": 2,
