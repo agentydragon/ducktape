@@ -107,8 +107,8 @@ SESSION_DISPATCHER = "session-dispatcher"
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "environment-tools"
-# The image it runs: //agentplane/system_tests/deployment:environment_tools_harnesses_image, which stack.py
-# imports into containerd under this reference. The runner binary itself still comes from the runner
+# The image it runs: the suite's //agentplane/system_tests/deployment:environment_tools_*_image variant
+# (selected in k3s/defs.bzl), which stack.py imports into containerd under this reference. The runner binary itself still comes from the runner
 # disk image, as in staging.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
 APP_SERVICE = app_component.service(NAMESPACE)

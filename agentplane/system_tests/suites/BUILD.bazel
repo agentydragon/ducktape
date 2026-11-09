@@ -32,6 +32,7 @@ k3s_suite(
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
+    environment_tools = "egress",
     stack = "pod",
     deps = [
         ":pod_cases",
@@ -53,6 +54,7 @@ k3s_suite(
 k3s_suite(
     name = "test_dispatcher",
     srcs = ["test_dispatcher.py"],
+    environment_tools = "codex",
     stack = "pod",
     deps = [
         "//:conftest",
@@ -203,6 +205,7 @@ k3s_suite(
 k3s_suite(
     name = "test_real_model",
     srcs = ["test_real_model.py"],
+    environment_tools = "real_model",
     stack = "real_model",
     deps = [
         "//:conftest",
@@ -267,6 +270,7 @@ py_library(
 k3s_suite(
     name = "test_session_deletion",
     srcs = ["test_session_deletion.py"],
+    environment_tools = "codex",
     stack = "deletion",
     deps = [
         "//:conftest",

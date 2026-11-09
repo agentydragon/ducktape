@@ -90,32 +90,60 @@ pkg_tar(
     symlinks = {"codex": "/opt/harnesses/codex/bin/codex"},
 )
 
-# The real-model sandbox needs kubectl to exercise the EgressCredential's documented command.
+# In-Sandbox `kubectl`, for the EgressCredential's documented command (pod and real-model egress scenarios).
 pkg_tar(
     name = "runner_kubectl",
     srcs = ["@kubectl_linux_amd64//file:kubectl"],
     package_dir = "/usr/bin",
 )
 
-# The runner Pod's environment-tools image. It keeps Debian's shell utilities for bootstrap and
-# process-lifecycle fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands;
-# the Nix-built production image supplies the full toolset. As in production, the runner is not in it:
-# the Pod runs it from the volume of the production runner disk image.
-# Both harnesses, for scenarios that run a turn.
+# The runner Pod's environment-tools images, one per tool set a suite's scenarios use; k3s/defs.bzl
+# picks one per suite and imports it under the reference the fixture's Pod template names. Each keeps
+# Debian's shell utilities for bootstrap and process-lifecycle fixtures; the Nix-built production
+# image supplies the full toolset. As in production, the runner is not in them: the Pod runs it from
+# the volume of the production runner disk image. Variants layer on each other, so shared layers keep
+# one digest.
+# Codex only, for suites whose turns all run on Codex.
 oci_image(
-    name = "environment_tools_harnesses_image",
+    name = "environment_tools_codex_image",
     base = "@debian_trixie_slim_linux_amd64",
     tars = [
         "//third_party/debian_slim:cacerts",
-        "@trixie_e2e//:flat",
         ":runner_cli_link",
-        ":runner_claude_harness",
-        ":runner_claude_link",
         ":runner_codex_harness",
         ":runner_codex_link",
-        ":runner_kubectl",
     ],
     user = "1000:1000",
+)
+
+# Both harnesses, for suites that run turns on each.
+oci_image(
+    name = "environment_tools_harnesses_image",
+    base = ":environment_tools_codex_image",
+    tars = [
+        ":runner_claude_harness",
+        ":runner_claude_link",
+    ],
+)
+
+# Both harnesses plus the `curl` and `kubectl` the pod suite's egress scenarios run in the Sandbox.
+oci_image(
+    name = "environment_tools_egress_image",
+    base = ":environment_tools_harnesses_image",
+    tars = [
+        "@trixie_curl//:flat",
+        ":runner_kubectl",
+    ],
+)
+
+# Adds `git` for the real-model egress probe's `git ls-remote` (`trixie_e2e` is curl plus git).
+oci_image(
+    name = "environment_tools_real_model_image",
+    base = ":environment_tools_harnesses_image",
+    tars = [
+        "@trixie_e2e//:flat",
+        ":runner_kubectl",
+    ],
 )
 
 py_test(
