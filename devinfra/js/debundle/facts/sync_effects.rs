@@ -3,6 +3,7 @@
 mod allocation_transfer;
 mod array_transfer;
 mod callable_body_facts;
+mod completion;
 mod effect_coverage;
 pub(crate) use effect_coverage::{
     BindingEffectAuthority, BindingEffectCoverage, SavedBindingEffectCoverage,
