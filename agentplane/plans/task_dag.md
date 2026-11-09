@@ -3114,7 +3114,7 @@ and namespace through the same additive, pruned, never-adopt-on-name machinery. 
 bindings, grants and managed accounts through one helper; an expired object is absent to the shared
 reader and the controller before its deletion, and an account-owned object setting its own
 `expiresAt` reports `ConflictingExpiry`. `ManagedServiceAccount` creates the SA in the
-environment's accounts namespace (`<namespace>-k8s-accounts`, rendered here and by #15075) with a
+environment's accounts namespace (`<namespace>-k8s-accounts`, rendered by the egress `KubernetesAccounts`) with a
 UID label, reports `KubernetesReady`, and on expiry or deletion removes the SA and every native
 binding on it in one pass. The controller's RBAC gains SA create, delete and reads in the accounts
 namespace only, plus reads, expiry deletes and status patches on the new kinds. The test apiserver
