@@ -37,8 +37,8 @@
       "sha256": "vrOsi8MiTTukG2VZNXgqzAfIB4eNA3gIDe3APkRo+Cw="
     },
     "workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-9e9db3df376b/workspace_gc-0.1.0-py3-none-any.whl",
-      "sha256": "np2z3zdrHIm/hyiTrWWgVzGx6AbLrUqIY5rOP422QnY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-7c277c79b08b/workspace_gc-0.1.0-py3-none-any.whl",
+      "sha256": "fCd8ebCLa94jofmJtfTXThhi60KsaXTFTtJOENtsIaE="
     },
     "ws": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ws-1510ae409720/ducktape_ws-0.1.0-py3-none-any.whl",
