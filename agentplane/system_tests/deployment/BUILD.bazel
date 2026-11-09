@@ -9,6 +9,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "k3s_pki_image_manifest")
 
 package(
     default_testonly = True,
@@ -581,6 +582,46 @@ py_test(
         "//cluster/cdk8s/agentplane:namespaces",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_pki_image_manifest(name = "pki_lifecycle_images")
+
+py_test(
+    name = "test_pki_lifecycle",
+    size = "medium",
+    srcs = ["test_pki_lifecycle.py"],
+    data = [
+        ":pki_lifecycle_images",
+        ":rendered/local-model.json",
+        "//agentplane/crds",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        K3S_BINARY,
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model.json)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pki_lifecycle_images)",
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES,
+    requires_docker = True,
+    tags = K3S_TAGS,
+    deps = [
+        ":certificates",
+        ":rendered_fixture",
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/k3s:pki_infrastructure",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cryptography",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
