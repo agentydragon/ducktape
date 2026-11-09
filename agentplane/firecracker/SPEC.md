@@ -54,7 +54,8 @@ acknowledging the same boot ID. Transport establishment has a two-minute boot bu
 synchronization RPC has its own 30-second deadline and is never replayed automatically.
 
 The launcher serves the standard SPIFFE Workload API X.509 profile from one coherent projected
-Secret generation. It polls for changes every second and streams complete replacements. Issuance
+volume generation: the Runtime certificate and key, and the workload CA (`workload-ca.crt`) alone as
+the `agentplane` trust-domain bundle, so the guest never trusts the cluster root (`ca.crt`). It polls for changes every second and streams complete replacements. Issuance
 remains owned by cert-manager; JWT issuance is disabled. The first valid Runtime SPIFFE ID is pinned
 for the continuation, and changed identities, invalid chains and mismatched keys are rejected.
 An unavailable or invalid projection is logged and retried; the last accepted credential remains

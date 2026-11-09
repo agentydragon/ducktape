@@ -3018,7 +3018,7 @@ keep a bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOV
 flowchart LR
     WORKLOAD_AUTH_CUTOVER[In progress: lifecycle steps 3 and 4, then bearer removal]
     APP_IDENTITIES_UI[In progress: identities in the app]
-    WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
+    WORKLOAD_CA_CLIENT_TRUST[Done: Firecracker runners' control listener trusts the workload CA alone]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     SANDBOX_IDENTITY_SPEC -->|identity source| EGRESS_IDENTITY_RULES[Blocked: identity rules at the proxy]
     SANDBOX_IDENTITY_SPEC -->|identity source| SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
@@ -3031,15 +3031,9 @@ flowchart LR
 
 ### `WORKLOAD_CA_CLIENT_TRUST` — Firecracker runners' control listener trusts the workload CA alone
 
-**Ready (2026-11-09); must land before any deployed Environment enables `firecracker_sandboxes`,
-which none does today.** Pod and KubeVirt runners verify the Gateway's client SVID against
-`agentplane-workload-ca-bundle` alone through `client_ca_file` (#15129, #15131;
-[runner control](../docs/runner_control.md#authentication-and-incarnation-binding)). A Firecracker
-guest reads its credentials from the host-initiated Workload API, which carries one bundle per trust
-domain, the cluster bundle. Its control listener therefore still accepts a `cluster-internal-ca` leaf
-naming `spiffe://agentplane/runner-gateway`. Deliver the workload CA to the guest separately from
-that bundle. **Exit:** the k3s case `a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner`
-also passes against the Firecracker template.
+**Done (2026-11-09).** The Firecracker launcher serves the workload CA alone as the guest's
+Workload API bundle ([runner control](../docs/runner_control.md#authentication-and-incarnation-binding)),
+and `a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner` runs in the Firecracker suite.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 

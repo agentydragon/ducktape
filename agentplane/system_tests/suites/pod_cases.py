@@ -233,7 +233,7 @@ async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(resources: Resour
 async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(resources: Resources) -> None:
     async with resources.shared() as (_, runners):
         await workload_trust.a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
-            resources.cluster, runners.claude
+            resources.cluster, runners.claude, route=workload_trust.RunnerControlRoute.PORT_FORWARD
         )
 
 
