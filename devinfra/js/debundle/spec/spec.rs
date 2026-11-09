@@ -2194,6 +2194,7 @@ impl ModulePath {
         if trimmed.is_empty() {
             return Err(err());
         }
+        // Not `relative-path`: its components skip the empty segments rejected here.
         if trimmed.split('/').any(|s| matches!(s, "" | "." | "..")) {
             return Err(err());
         }

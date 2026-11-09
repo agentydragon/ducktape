@@ -22,6 +22,7 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(cra
 | `SourceLineIndex`                           | `SourceMap::lookup_char_pos`                                               | Local version precomputes per-file line starts and binary-searches them: a perf optimization             |
 | `member_root_id`/`member_root_sym`          | None                                                                       | No SWC utility for extracting root of member expression chains                                           |
 | Import declaration construction             | `ExprFactory` trait (partial) — individual node construction only          | Debundle-specific relative-path logic has no SWC equivalent                                              |
+| `TopLevelAwaitFinder` (`facts/analyze.rs`)  | `swc_ecma_utils::contains_top_level_await`                                 | SWC's misses `await using` and `await` in static blocks and static field initializers, which run eagerly |
 
 ## Adopted expression unwrapping
 

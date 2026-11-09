@@ -2,6 +2,7 @@ use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
 use anyhow::{Context, Result, bail};
+use artifact::paths::{path_from_module_path, relative_module_path};
 use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;
@@ -12,7 +13,7 @@ use std::sync::Mutex;
 
 pub(super) fn chunk_report_path(report_out_dir: &Path, chunk_id: &str, filename: &str) -> PathBuf {
     report_out_dir
-        .join(chunk_id.split('/').collect::<PathBuf>())
+        .join(path_from_module_path(chunk_id))
         .join(filename)
 }
 
@@ -134,11 +135,10 @@ impl<'a> ProgramGraphOutput<'a> {
             report_io::write_json_gzip(&report_out_dir.join(PROGRAM_GRAPH_REPORT), &report)?;
             *written = true;
         }
-        Ok(chunk_id
-            .split('/')
-            .map(|_| "..")
-            .collect::<PathBuf>()
-            .join(PROGRAM_GRAPH_REPORT))
+        Ok(path_from_module_path(&relative_module_path(
+            chunk_id,
+            PROGRAM_GRAPH_REPORT,
+        )))
     }
 }
 
