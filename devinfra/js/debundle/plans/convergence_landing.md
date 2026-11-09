@@ -207,14 +207,28 @@ authority) are specified in <kernel_design.md>, which the slices implement.
 
 **Wave 3: coverage producers.** Each one capability, each deleting its
 recognizer, each with a positive relocation, its opposing controls and the
-legacy/effect oracle. Order by measured payoff from L0a's inventory, not by
-convenience. Candidates, with src files: array iteration family
-(`execute_selected_array_iteration_family`, `intrinsic_array_iteration_test`);
-provider activation and imported constructor effects (`provider_activation.rs`,
-`imported_constructor_effects_test`); callbacks and retained factories; qualified
-module cells and provider initialization (`module_initialization` facts side);
-descriptor and native rows (this slice also retires the string-matched frozen-namespace recognizer, which L1b tombstones: it needs a symbol-keyed three-argument `Object.defineProperty` row, `Mutation::Integrity` admission on a non-literal operand, and a replacement coverage producer for the eight native-reentry and array-push tests that depend on it); class construction; saved anchors and source
-inventory (`analysis_inputs/saved.rs` anchors only; sidecars held). needs L2.
+legacy/effect oracle. Ordering input: the 51 failing test targets at the
+reference head `ceaa8713` (hosted run `42385432562`), 235 failing cases, of
+which 208 are acceptances the effect verdict refused (`BlockedByEffect` 191,
+`BlockedByEffectAndPlacement` 15, `BlockedByPlacement` 1), 16 are rejection
+controls it accepted, and 11 are report-shape assertions; none panicked. The
+group assignment comes from test contracts, not observed root causes, so a
+slice may recover more or fewer cases than its row says.
+
+| Order | Slice                                                                                                                                                                                                                                                                                                                          | Cases | Targets owned / touched | Needs                                         |
+| ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----: | ----------------------: | --------------------------------------------- |
+|     0 | Commuting-premise validator plus three stale expectations (`repeated_var_loop_test`, `at_init_s_chain_dataflow_test`)                                                                                                                                                                                                          |     4 |                   1 / 3 | none                                          |
+|     1 | Descriptor and native rows; also retires the string-matched frozen-namespace recognizer that L1b tombstones (needs a symbol-keyed three-argument `Object.defineProperty` row, `Mutation::Integrity` admission on a non-literal operand, and a replacement coverage producer for the eight native-reentry and array-push tests) |    38 |                 10 / 11 | L1b, L2a                                      |
+|     2 | Array iteration and spread (`intrinsic_array_iteration`, `stable_array_spread`, `set_iterable_reentry`)                                                                                                                                                                                                                        |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
+|     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                                                                                                                                                    |    77 |                 11 / 16 | L2a, L2b, L2d                                 |
+|     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                    |    26 |                   2 / 5 | L2b, L1f                                      |
+|     5 | Class construction                                                                                                                                                                                                                                                                                                             |    15 |                   2 / 5 | L2a; parallel to 4                            |
+|     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                                                                                                                                                    |     7 |                   1 / 1 | L2a, L2b; required by L4a                     |
+|     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                                                                                                                                                    |    16 |                   1 / 1 | L2c                                           |
+|     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                                                                                                                                      |    26 |                   8 / 8 | re-measure after 1–5; not a slice             |
+
+Saved-analysis parity has no red target; every slice keeps the direct/saved
+parity tests green.
 
 **Wave 4: gate.**
 
