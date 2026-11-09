@@ -127,6 +127,15 @@ configured scope; it does not wait for token staleness; (3) run
 
 ## CI Push
 
+The ducktape workflow runs separate `main` and `public` jobs. Each evaluates
+and builds its selected flake outputs in parallel with nix-fast-build 1.6.0,
+then streams successful build outputs to one `attic push --stdin --jobs 1`
+client as they finish. A failed build still lets completed outputs finish
+uploading before the job fails. `main` skips outputs already available from its
+substituters; `public` does not, because that query cannot establish whether a
+path is present in the public cache. Attic pushes each selected output's
+runtime closure; build-only dependencies outside those closures are not pushed.
+
 Both ducktape and gaffer-private CI push to their respective caches. Writer
 JWTs auto-rotated by the cluster (1-year validity; re-mint on <24h remaining
 or on pull/push scope drift vs. `ROTATOR_CONFIG` in

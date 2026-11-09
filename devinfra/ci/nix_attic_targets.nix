@@ -1,7 +1,8 @@
 # The derivations nix-attic-push builds + pushes, as two attrsets consumed by
 # flake.nix as `atticPushTargets.<system>.{main,public}`. nix-fast-build
-# evaluates these in parallel (nix-eval-jobs) and `--skip-cached` builds/pushes
-# only paths missing from the cache. See devinfra/ci/nix_attic_build_and_push.sh.
+# evaluates and builds them in parallel; the driver streams successful outputs
+# to Attic. Only main uses `--skip-cached`, since public must receive paths
+# already available in the private main cache. See nix_attic_build_and_push.py.
 #
 #   main   — every target: all cache-eligible ducktape package outputs (including
 #            the full shared Python lockfile closure any of them pulls in — see
