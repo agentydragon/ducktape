@@ -165,6 +165,7 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
 

@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ import pytest
 import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
@@ -596,17 +598,51 @@ def test_shutdown_proof_progress_rejects_out_of_order_markers(tmp_path: Path) ->
 
 
 def _wait_for_guest_boot(k3s: baseline.K3s, namespace: str, pod: str) -> str:
-    deadline = time.monotonic() + _BOOT_WAIT_SECONDS
     output = ""
-    while time.monotonic() < deadline:
-        output = k3s.kubectl("logs", pod, "-n", namespace, "-c", "guest-console-log", check=False)
-        if _BOOT_EVIDENCE in output:
-            return output
-        time.sleep(1)
-    raise TimeoutError(
-        f"guest did not reach completed boot evidence within {_BOOT_WAIT_SECONDS}s; "
-        f"last console output:\n{output[-8000:]}"
-    )
+    for attempt in Retrying(
+        stop=stop_after_delay(_BOOT_WAIT_SECONDS),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            output = k3s.kubectl("logs", pod, "-n", namespace, "-c", "guest-console-log", check=False)
+            assert _BOOT_EVIDENCE in output, (
+                f"guest did not reach completed boot evidence within {_BOOT_WAIT_SECONDS}s; "
+                f"last console output:\n{output[-8000:]}"
+            )
+    return output
+
+
+def _wait_for_console(
+    k3s: baseline.K3s,
+    namespace: str,
+    pod: str,
+    output: Path,
+    *,
+    complete: Callable[[str], bool],
+    unexercised: str | None,
+    wait_seconds: int,
+    milestone: str,
+) -> None:
+    """Copy the guest console to `output` until `complete` accepts it; a guest record starting with
+    `unexercised` fails at once, since the requested path will never be proven."""
+    for attempt in Retrying(
+        stop=stop_after_delay(wait_seconds),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            console = k3s.kubectl(
+                "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
+            )
+            output.write_text(console)
+            if unexercised is not None and any(
+                line.rstrip("\r").startswith(unexercised) for line in console.splitlines()
+            ):
+                raise RuntimeError(f"{milestone}: the guest reported {unexercised.strip()}; see {output}")
+            assert complete(console), f"{milestone} did not complete within {wait_seconds}s; see {output}"
 
 
 def _synthetic_slice_complete(console: str) -> bool:
@@ -619,22 +655,6 @@ def _synthetic_slice_complete(console: str) -> bool:
         elif next_phase == len(phases) and record == _SYNTHETIC_SLICE_SUCCESS:
             return True
     return False
-
-
-def _wait_for_synthetic_slice(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
-    deadline = time.monotonic() + _SYNTHETIC_SLICE_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        console = k3s.kubectl(
-            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
-        )
-        output.write_text(console)
-        if _synthetic_slice_complete(console):
-            return
-        time.sleep(1)
-    raise TimeoutError(
-        f"synthetic slice did not complete baseline/active/after/success milestones "
-        f"within {_SYNTHETIC_SLICE_WAIT_SECONDS}s; see {output}"
-    )
 
 
 def _cgroup_pilot_complete(console: str) -> bool:
@@ -652,23 +672,6 @@ def _cgroup_pilot_complete(console: str) -> bool:
         ):
             return True
     return False
-
-
-def _wait_for_cgroup_pilot(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
-    deadline = time.monotonic() + _CGROUP_PILOT_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        console = k3s.kubectl(
-            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
-        )
-        output.write_text(console)
-        if any(line.rstrip("\r").startswith("AGENTPLANE_CGROUP_PILOT_UNEXERCISED ") for line in console.splitlines()):
-            raise RuntimeError(f"cgroup pilot did not exercise the requested transition; see {output}")
-        if _cgroup_pilot_complete(console):
-            return
-        time.sleep(1)
-    raise TimeoutError(
-        f"cgroup pilot did not complete four ordered property changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
-    )
 
 
 def _cgroup_stress_complete(console: str) -> bool:
@@ -726,24 +729,6 @@ def _cgroup_stress_complete(console: str) -> bool:
         if step == "pair1_on" and take(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0 current_tracer=nop") is None:
             return False
     return take(f"{prefix}_SUCCESS transitions=10 ") is not None
-
-
-def _wait_for_cgroup_stress(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
-    prefix = "AGENTPLANE_CGROUP_STRESS"
-    deadline = time.monotonic() + _CGROUP_PILOT_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        console = k3s.kubectl(
-            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
-        )
-        output.write_text(console)
-        if any(line.rstrip("\r").startswith(f"{prefix}_UNEXERCISED ") for line in console.splitlines()):
-            raise RuntimeError(f"cgroup stress did not exercise ten verified controller changes; see {output}")
-        if _cgroup_stress_complete(console):
-            return
-        time.sleep(1)
-    raise TimeoutError(
-        f"cgroup stress did not complete ten verified controller changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
-    )
 
 
 def _delegated_cgroup_stress_complete(console: str) -> bool:
@@ -880,25 +865,6 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
     return (
         begin[0] < propagation[0] < ready[0] < proof[0] < trace_disabled[0] < results[0][0]
         and results[-1][0] < cleanup[0] < success[0]
-    )
-
-
-def _wait_for_delegated_cgroup_stress(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
-    prefix = "AGENTPLANE_DELEGATED_CGROUP_STRESS"
-    deadline = time.monotonic() + _DELEGATED_CGROUP_STRESS_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        console = k3s.kubectl(
-            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
-        )
-        output.write_text(console)
-        if any(line.rstrip("\r").startswith(f"{prefix}_UNEXERCISED ") for line in console.splitlines()):
-            raise RuntimeError(f"delegated cgroup stress did not prove the requested path; see {output}")
-        if _delegated_cgroup_stress_complete(console):
-            return
-        time.sleep(1)
-    raise TimeoutError(
-        f"delegated cgroup stress did not complete {_DELEGATED_CGROUP_STRESS_PAIRS} verified pairs "
-        f"within {_DELEGATED_CGROUP_STRESS_WAIT_SECONDS}s; see {output}"
     )
 
 
@@ -1101,16 +1067,16 @@ def _cleanup_namespace(
     ).strip():
         raise RuntimeError(f"action-owned namespace {name} survived deletion")
     if pvc_uid:
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            volumes = json.loads(
-                k3s.kubectl("get", "pv", "-o", "json", check=False, stdout_only=True) or '{"items":[]}'
-            )["items"]
-            if not any(volume.get("spec", {}).get("claimRef", {}).get("uid") == pvc_uid for volume in volumes):
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError(f"local-path PV for state PVC UID {pvc_uid} survived cleanup")
+        for attempt in Retrying(
+            stop=stop_after_delay(60), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
+        ):
+            with attempt:
+                volumes = json.loads(
+                    k3s.kubectl("get", "pv", "-o", "json", check=False, stdout_only=True) or '{"items":[]}'
+                )["items"]
+                assert not any(
+                    volume.get("spec", {}).get("claimRef", {}).get("uid") == pvc_uid for volume in volumes
+                ), f"local-path PV for state PVC UID {pvc_uid} survived cleanup"
 
 
 def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> None:
@@ -1325,7 +1291,16 @@ def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
     fake = FakeK3s()
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     output = tmp_path / "probe-console.txt"
-    _wait_for_synthetic_slice(cast(baseline.K3s, fake), "scope", "launcher", output)
+    _wait_for_console(
+        cast(baseline.K3s, fake),
+        "scope",
+        "launcher",
+        output,
+        complete=_synthetic_slice_complete,
+        unexercised=None,
+        wait_seconds=_SYNTHETIC_SLICE_WAIT_SECONDS,
+        milestone="synthetic slice",
+    )
     assert fake.calls == 2
     assert output.read_text() == complete
 
@@ -1379,7 +1354,16 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     fake = FakeK3s()
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     output = tmp_path / "cgroup-pilot-console.txt"
-    _wait_for_cgroup_pilot(cast(baseline.K3s, fake), "scope", "launcher", output)
+    _wait_for_console(
+        cast(baseline.K3s, fake),
+        "scope",
+        "launcher",
+        output,
+        complete=_cgroup_pilot_complete,
+        unexercised="AGENTPLANE_CGROUP_PILOT_UNEXERCISED ",
+        wait_seconds=_CGROUP_PILOT_WAIT_SECONDS,
+        milestone="cgroup pilot",
+    )
     assert fake.calls == 2
     assert output.read_text() == complete
 
@@ -1813,14 +1797,48 @@ def _run_cycle(
             )
             (output / "guest-boot-console.txt").write_text(_wait_for_guest_boot(k3s, namespace_name, pod_name))
             if synthetic_slice_probe:
-                _wait_for_synthetic_slice(k3s, namespace_name, pod_name, output / "synthetic-slice-console.txt")
+                _wait_for_console(
+                    k3s,
+                    namespace_name,
+                    pod_name,
+                    output / "synthetic-slice-console.txt",
+                    complete=_synthetic_slice_complete,
+                    unexercised=None,
+                    wait_seconds=_SYNTHETIC_SLICE_WAIT_SECONDS,
+                    milestone="synthetic slice baseline/active/after/success",
+                )
             if cgroup_pilot:
-                _wait_for_cgroup_pilot(k3s, namespace_name, pod_name, output / "cgroup-pilot-console.txt")
+                _wait_for_console(
+                    k3s,
+                    namespace_name,
+                    pod_name,
+                    output / "cgroup-pilot-console.txt",
+                    complete=_cgroup_pilot_complete,
+                    unexercised="AGENTPLANE_CGROUP_PILOT_UNEXERCISED ",
+                    wait_seconds=_CGROUP_PILOT_WAIT_SECONDS,
+                    milestone="cgroup pilot four ordered property changes",
+                )
             if cgroup_stress:
-                _wait_for_cgroup_stress(k3s, namespace_name, pod_name, output / "cgroup-stress-console.txt")
+                _wait_for_console(
+                    k3s,
+                    namespace_name,
+                    pod_name,
+                    output / "cgroup-stress-console.txt",
+                    complete=_cgroup_stress_complete,
+                    unexercised="AGENTPLANE_CGROUP_STRESS_UNEXERCISED ",
+                    wait_seconds=_CGROUP_PILOT_WAIT_SECONDS,
+                    milestone="cgroup stress ten verified controller changes",
+                )
             if delegated_cgroup_stress:
-                _wait_for_delegated_cgroup_stress(
-                    k3s, namespace_name, pod_name, output / "delegated-cgroup-stress-console.txt"
+                _wait_for_console(
+                    k3s,
+                    namespace_name,
+                    pod_name,
+                    output / "delegated-cgroup-stress-console.txt",
+                    complete=_delegated_cgroup_stress_complete,
+                    unexercised="AGENTPLANE_DELEGATED_CGROUP_STRESS_UNEXERCISED ",
+                    wait_seconds=_DELEGATED_CGROUP_STRESS_WAIT_SECONDS,
+                    milestone=f"delegated cgroup stress {_DELEGATED_CGROUP_STRESS_PAIRS} verified pairs",
                 )
             _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(

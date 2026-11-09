@@ -927,27 +927,27 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 assert admitted.admission.event.command_admitted.command.submit_input.text == (
                     f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools."
                 )
-                deadline = asyncio.get_running_loop().time() + BOUND_SECONDS
-                while True:
-                    session_status = await stub.GetSession(
-                        pb.GetSessionRequest(session_id=session), metadata=app_authentication.metadata, timeout=15
-                    )
-                    if session_status.session.status.materialization in (
-                        pb.SessionStatus.SESSION_MATERIALIZATION_FAILED,
-                        pb.SessionStatus.SESSION_MATERIALIZATION_UNKNOWN,
-                    ):
-                        raise DispatchFailedError(
-                            f"Session materialization {session_status.session.status.materialization}: "
-                            f"{session_status.session.status.reason}"
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_delay(BOUND_SECONDS),
+                    wait=wait_fixed(1),
+                    retry=retry_if_exception_type(AssertionError),
+                    reraise=True,
+                ):
+                    with attempt:
+                        session_status = await stub.GetSession(
+                            pb.GetSessionRequest(session_id=session), metadata=app_authentication.metadata, timeout=15
                         )
-                    if (
-                        session_status.session.status.materialization
-                        == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
-                    ):
-                        break
-                    if asyncio.get_running_loop().time() >= deadline:
-                        raise AssertionError("Session did not reach owner acceptance")
-                    await asyncio.sleep(1)
+                        materialization = session_status.session.status.materialization
+                        if materialization in (
+                            pb.SessionStatus.SESSION_MATERIALIZATION_FAILED,
+                            pb.SessionStatus.SESSION_MATERIALIZATION_UNKNOWN,
+                        ):
+                            raise DispatchFailedError(
+                                f"Session materialization {materialization}: {session_status.session.status.reason}"
+                            )
+                        assert materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED, (
+                            f"Session did not reach owner acceptance: {materialization}"
+                        )
 
                 capture_id = uuid4().hex
                 archive_dir = undeclared_outputs_dir() / f"dispatcher-data-proof-{sandbox}-{capture_id}"
