@@ -2200,10 +2200,12 @@ An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
 chunk, without inheritance, decorators, an explicit constructor, computed
 keys, static fields, or static blocks. Instance field initializers may be
-absent, primitive literals, boolean negation of a numeric/boolean literal,
+absent, primitive literals, empty array literals, boolean negation of a numeric/boolean literal,
 deferred function/arrow allocations, or zero-argument construction of an
 unshadowed built-in `Set`, `Map`, `WeakSet`, or `WeakMap`. Ordinary method and
-getter bodies remain deferred. Purity admits only a direct zero-argument
+getter bodies remain deferred. An empty array literal evaluates no elements,
+global `Array` binding, or iterator protocol; nonempty arrays and spreads do not
+receive this field certificate. Purity admits only a direct zero-argument
 top-level `new` initializer after that declaration when whole-chunk value flow
 resolves its binding to exactly that class. It suppresses only construction's
 side-effect ordering; method invocation, callback escape, and ordinary eager
