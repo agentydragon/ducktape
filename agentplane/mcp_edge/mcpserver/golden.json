@@ -1689,7 +1689,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"state\":\"failed\",\"version\":7,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-7\",\"action\":{\"group\":\"test-sandbox\",\"name\":\"exec\"},\"arguments\":{},\"title\":\"test title 7\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"failed\",\"error\":{\"kind\":\"EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":null}}"
      }
     ],
     "structuredContent": {
@@ -1730,7 +1730,7 @@
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "failed",
       "error": {
-       "kind": "sandbox_unavailable",
+       "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
        "message": "test box é 🚀 \"not\" ready\n"
       },
       "created_at": "2026-01-02T03:04:06.12Z",
@@ -1806,14 +1806,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed",
      "error": {
-      "kind": "sandbox_unavailable",
+      "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
       "message": "test box é 🚀 \"not\" ready\n"
      }
     },
@@ -1896,7 +1896,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"id\":\"00000000-0000-0000-0000-000000000008\",\"state\":\"execution_unknown\",\"version\":8,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-8\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 8\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"execution_unknown\",\"error\":{\"kind\":\"execution_outcome_unknown\",\"message\":\"test lost\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":\"2026-01-02T03:05:00.999999Z\"}}"
+      "text": "{\"id\":\"00000000-0000-0000-0000-000000000008\",\"state\":\"execution_unknown\",\"version\":8,\"created_at\":\"2026-01-02T03:04:05Z\",\"updated_at\":\"2026-01-02T03:05:00.999999Z\",\"input\":{\"idempotency_key\":\"test-key-8\",\"action\":{\"group\":\"test-mcp\",\"name\":\"alpha\"},\"arguments\":{},\"title\":\"test title 8\",\"description\":null},\"caller\":{\"namespace\":\"test-namespace\",\"name\":\"test-caller\"},\"decision\":{\"id\":\"00000000-0000-0000-0000-0000000000d1\",\"verdict\":\"allow\",\"operator\":{\"operator\":{\"issuer\":\"https://test-issuer.example\",\"subject\":\"test-operator\"},\"decision_note\":\"test note é\"},\"policy\":null,\"idempotency_key\":\"test-decision-key\",\"decided_at\":\"2026-01-02T03:04:06.12Z\"},\"execution\":{\"id\":\"00000000-0000-0000-0000-0000000000e1\",\"state\":\"execution_unknown\",\"error\":{\"kind\":\"EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN\",\"message\":\"test lost\"},\"created_at\":\"2026-01-02T03:04:06.12Z\",\"started_at\":\"2026-01-02T03:04:07.000005Z\",\"completed_at\":\"2026-01-02T03:05:00.999999Z\",\"reconciled_at\":\"2026-01-02T03:05:00.999999Z\"}}"
      }
     ],
     "structuredContent": {
@@ -1937,7 +1937,7 @@
       "id": "00000000-0000-0000-0000-0000000000e1",
       "state": "execution_unknown",
       "error": {
-       "kind": "execution_outcome_unknown",
+       "kind": "EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN",
        "message": "test lost"
       },
       "created_at": "2026-01-02T03:04:06.12Z",
@@ -2014,14 +2014,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000008 has an unknown outcome: it may or may not have run, and it is never retried. Check its effects before asking for it again. {\"kind\":\"execution_outcome_unknown\",\"message\":\"test lost\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000008 has an unknown outcome: it may or may not have run, and it is never retried. Check its effects before asking for it again. {\"kind\":\"EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN\",\"message\":\"test lost\"}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000008",
      "state": "execution_unknown",
      "error": {
-      "kind": "execution_outcome_unknown",
+      "kind": "EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN",
       "message": "test lost"
      }
     },
@@ -3414,14 +3414,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed",
      "error": {
-      "kind": "sandbox_unavailable",
+      "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
       "message": "test box é 🚀 \"not\" ready\n"
      }
     },
@@ -6560,14 +6560,14 @@
     "content": [
      {
       "type": "text",
-      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"sandbox_unavailable\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
+      "text": "Action request 00000000-0000-0000-0000-000000000007 failed without a result: {\"kind\":\"EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE\",\"message\":\"test box é 🚀 \\\"not\\\" ready\\n\"}"
      }
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
      "state": "failed",
      "error": {
-      "kind": "sandbox_unavailable",
+      "kind": "EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE",
       "message": "test box é 🚀 \"not\" ready\n"
      }
     },

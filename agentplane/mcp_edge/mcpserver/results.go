@@ -29,7 +29,7 @@ func structuredResult(view any) (*mcp.CallToolResult, error) {
 type requestState struct {
 	RequestID uuid.UUID       `json:"request_id"`
 	State     string          `json:"state"`
-	Error     *executionError `json:"error,omitempty"`
+	Error     json.RawMessage `json:"error,omitempty"`
 }
 
 func textResult(text string, structured requestState, isError bool) (*mcp.CallToolResult, error) {
