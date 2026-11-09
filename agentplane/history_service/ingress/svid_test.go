@@ -1,7 +1,6 @@
 package ingress
 
 import (
-	"context"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -95,15 +94,6 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	connect := func(workload workloadauthtesting.Workload) testIngress {
 		return connectAt(listener.Addr().String(), workload)
 	}
-	openSVID := func(ingress testIngress) *call {
-		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-		t.Cleanup(cancel)
-		stream, err := ingress.client.Push(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return &call{t: t, stream: stream, cancel: cancel}
-	}
 	session := uuid.New()
 	// Mixed certificate and bearer credentials are rejected before Push reaches its handler.
 	firstIngress := connect(first)
@@ -122,7 +112,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if got := pushHandlers.Load(); got != 1 {
 		t.Fatalf("SVID call reached Push handler %d times, want 1", got)
 	}
-	refused := openSVID(connect(other))
+	refused := connect(other).open(t, "")
 	refused.send(announce(session, 0, ""))
 	if code := refused.refused(); code != codes.PermissionDenied {
 		t.Fatalf("different SVID writer: %v", code)
@@ -131,15 +121,15 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 		t.Fatalf("committed %v", got)
 	}
 	entryRevocationSession := uuid.New()
-	entryRevocation := openSVID(firstIngress)
+	entryRevocation := firstIngress.open(t, "")
 	entryRevocation.send(append([]*session_ingresspb.PushFrame{announce(entryRevocationSession, 0, "")}, entries(1)...)...)
 	entryRevocation.acknowledged(1, false)
 	heartbeatRevocationSession := uuid.New()
-	heartbeatRevocation := openSVID(firstIngress)
+	heartbeatRevocation := firstIngress.open(t, "")
 	heartbeatRevocation.send(append([]*session_ingresspb.PushFrame{announce(heartbeatRevocationSession, 0, "")}, entries(1)...)...)
 	heartbeatRevocation.acknowledged(1, false)
 	sealRevocationSession := uuid.New()
-	sealRevocation := openSVID(firstIngress)
+	sealRevocation := firstIngress.open(t, "")
 	sealRevocation.send(append([]*session_ingresspb.PushFrame{announce(sealRevocationSession, 0, "")}, entries(1)...)...)
 	sealRevocation.acknowledged(1, false)
 
@@ -162,7 +152,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	admitted.acknowledged(1, true)
 
 	// Clearing acceptance revokes durable writes on an already-admitted stream.
-	idleRevocation := openSVID(connectAt(idleListener.Addr().String(), first))
+	idleRevocation := connectAt(idleListener.Addr().String(), first).open(t, "")
 	idleRevocation.send(announce(uuid.New(), 0, ""))
 	idleRevocation.acknowledged(0, false)
 	first.Sandbox.Status.RunnerCredential.AcceptedID = ""
