@@ -68,6 +68,34 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
+def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    workers = {
+        doc["metadata"]["name"]: doc
+        for doc in documents
+        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    }
+    assert len(workers) == 2
+    isolated = {
+        doc["spec"]["endpointSelector"]["matchLabels"]["kubevirt.io/domain"]
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    }
+    assert isolated == workers.keys()
+    for name, worker in workers.items():
+        template = worker["spec"]["template"]
+        assert template["metadata"]["labels"]["kubevirt.io/domain"] == name
+        assert not template["spec"].get("nodeSelector")
+        (term,) = template["spec"]["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+        assert term["topologyKey"] == "kubernetes.io/hostname"
+        (expression,) = term["labelSelector"]["matchExpressions"]
+        assert expression["key"] == "kubevirt.io/domain"
+        assert expression["operator"] == "In"
+        assert set(expression["values"]) == workers.keys() - {name}
+
+
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
