@@ -674,11 +674,6 @@ class Egress(Construct):
             ),
             RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
         ]
-        if self.env.identity_catalog:
-            # A binding names an Identity; the proxy resolves it.
-            role_rules.append(
-                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get", "list", "watch"])
-            )
         # Resolve only live Sandbox status and its own ServiceAccount name.
         # The proxy does not read runner Pods; external workload namespaces are not Sandboxes.
         role_rules.extend(
