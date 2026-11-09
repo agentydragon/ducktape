@@ -351,7 +351,7 @@ func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	root := environmentruntimetransporttesting.NewCA(t)
 	workload := root.Intermediate(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
