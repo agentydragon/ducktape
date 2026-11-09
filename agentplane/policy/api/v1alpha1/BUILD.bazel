@@ -18,7 +18,6 @@ proto_library(
     srcs = [":generated_policy_types"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/proto:identity_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -30,7 +29,6 @@ go_proto_library(
     proto = ":policy_types_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/proto:identity_go_proto",
         "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
@@ -42,7 +40,6 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":policy_types_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/proto:identity_pb"],
 )
 
 go_library(

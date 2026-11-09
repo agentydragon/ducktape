@@ -47,13 +47,6 @@ class Kinds:
 
 async def _identity(kinds: Kinds) -> dict[str, Any]:
     identity = await kinds.create("identities", "Identity", "test-agent", {"description": "Test agent"})
-    spiffe = {"spiffeID": "spiffe://test-trust-domain/environment-runtime/identity-admission/sandbox-uid/credential-id"}
-    service_account = {"serviceAccount": {"namespace": NAMESPACE, "name": "test-no-svid-workload"}}
-    identity = await kinds.replace_status("identities", identity, {"workloadCredentials": [spiffe, service_account]})
-    assert identity["status"]["workloadCredentials"] == [spiffe, service_account]
-
-    for credential in ({**spiffe, **service_account}, {}, {"spiffeID": "https://test-trust-domain/agent"}):
-        await kinds.rejects_status("identities", identity, {"workloadCredentials": [credential]})
     for spec in ({}, {"description": ""}):
         await kinds.rejects_create("identities", "Identity", spec)
     return identity
