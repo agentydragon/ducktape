@@ -63,7 +63,7 @@ from cluster.cdk8s.agentplane import actions, database, llm_ingress, notificatio
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef, shared_diagnostics
+from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -172,7 +172,7 @@ def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint:
 
 
 def kubernetes_account_rule(account: KubernetesAccountRef) -> PolicySetSpecRules:
-    """The API server, acting as `account` by impersonation: a `basic` rule, or an account's one-rule set.
+    """The API server, acting as `account` by impersonation: an account's one-rule use set.
 
     No method or path list: what an agent may read or write is the API server's answer for the
     account, and narrowing verbs here would be a second, weaker copy of RBAC that drifts from it.
@@ -184,8 +184,8 @@ def kubernetes_account_rule(account: KubernetesAccountRef) -> PolicySetSpecRules
     )
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, kubernetes_account: KubernetesAccountRef | None) -> None:
-    """`kubernetes_account` None renders the projected-token credential `basic` then uses."""
+def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernetes_token: bool) -> None:
+    """`projected_kubernetes_token` renders the credential `basic` presents to the API server."""
     EgressCredential(
         scope,
         "egresscredential-github-pat",
@@ -253,7 +253,7 @@ def _egress_credentials(scope: Construct, *, namespace: str, kubernetes_account:
             ],
         )
 
-    if kubernetes_account is None:
+    if projected_kubernetes_token:
         EgressCredential(
             scope,
             "egresscredential-kubernetes-workload",
@@ -280,7 +280,7 @@ def _egress_policies(
     namespace: str,
     litellm_host: str,
     litellm_cluster_internal: bool,
-    kubernetes_account: KubernetesAccountRef | None,
+    projected_kubernetes_token: bool,
 ) -> None:
     add_egress_policy(
         scope,
@@ -371,21 +371,26 @@ def _egress_policies(
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
             # caller happened to name a policy. Every Sandbox discovers this credential through
             # the rules endpoint. Kubernetes commands carry its placeholder directly; the proxy
-            # substitutes the Sandbox's own projected token, or acts as `kubernetes_account`. A
-            # missing rule therefore means no available Kubernetes route.
+            # substitutes the Sandbox's own projected token. A missing rule therefore means no
+            # available Kubernetes route. Without `projected_kubernetes_token`, an agent reaches the
+            # API server only as an account whose use set it holds (`kubernetes_account_rule`).
             #
             # No method or path list: what a sandbox may read or write is the API server's answer
             # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy
             # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
             # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
             # requests and watches are what this admits in practice.
-            Rule.egress(
-                hosts=[KUBERNETES_HOST],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
-            )
-            if kubernetes_account is None
-            else kubernetes_account_rule(kubernetes_account),
+            *(
+                [
+                    Rule.egress(
+                        hosts=[KUBERNETES_HOST],
+                        cluster_internal=True,
+                        credential_ref=PolicySetSpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
+                    )
+                ]
+                if projected_kubernetes_token
+                else []
+            ),
         ],
     )
     add_egress_policy(
@@ -632,15 +637,16 @@ class Egress(Construct):
             selector=workload.deployment,
             ports=[self.admin.port.service_port()],
         )
-        kubernetes_account = shared_diagnostics(env.namespace) if env.identity_catalog else None
-        _egress_credentials(self, namespace=env.namespace, kubernetes_account=kubernetes_account)
+        # The identity catalog reaches the API server only as accounts.
+        projected_kubernetes_token = not env.identity_catalog
+        _egress_credentials(self, namespace=env.namespace, projected_kubernetes_token=projected_kubernetes_token)
         (litellm_spec,) = litellm_proxy.proxy_specs()
         _egress_policies(
             self,
             namespace=env.namespace,
             litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
-            kubernetes_account=kubernetes_account,
+            projected_kubernetes_token=projected_kubernetes_token,
         )
 
     def add_platform_resources(self) -> None:

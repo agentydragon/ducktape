@@ -51,10 +51,11 @@ class Rendering:
 def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool) -> Rendering:
     """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
     app = scratch_app_factory()
+    env = staging.environment(identity_catalog=identity_catalog)
     charts = [
         agent_rbac_base.chart(app),
         agent_shared_rbac.chart(app),
-        staging.chart(app, staging.environment(identity_catalog=identity_catalog)),
+        staging.chart(app, env),
         haku_rbac.chart(app),
         ducktape_flux.chart(app),
         plaid_db.chart(app),
@@ -65,7 +66,7 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
     ]
     charts.extend(agent_namespace_rbac.chart(app, namespace) for namespace in NAMESPACE_DIAGNOSTICS)
     # Its own app: it names its chart "agentplane" too.
-    charts.append(staging.delivery_chart(scratch_app_factory()))
+    charts.append(staging.delivery_chart(scratch_app_factory(), env))
     docs = [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
 
     def config_map(name: str, key: str) -> Any:

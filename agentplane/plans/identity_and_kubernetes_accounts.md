@@ -81,8 +81,8 @@ and ownership are unchanged. "May act as a Kubernetes account" is an `egress` ru
 credential use:
 
 ```yaml
-kind: PolicyBinding # the basic set carries the shared account's use rule for every agent
-spec: { subject: { identity: agent-123 }, policySets: [basic, github-ducktape] }
+kind: PolicyBinding # every launch also holds the shared account's use set, an environment default
+spec: { subject: { identity: agent-123 }, policySets: [basic, k8s-account-shared-diagnostics, github-ducktape] }
 ---
 kind: PolicySet
 metadata: { name: k8s-account-shared-diagnostics } # cdk8s-rendered for a static account
@@ -382,7 +382,7 @@ the sampler may assert.
 | Case                                  | Identity                                         | Kubernetes account                                                        | Grants and use                                  |
 | ------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- |
 | Standing agent (Haku, daily CI agent) | Flux                                             | Flux ServiceAccount, or none                                              | Flux grant; use rule in the agent's sets        |
-| Agent started from the app            | The app at launch, free-standing                 | None, or the shared account via `basic`                                   | Identity-owned binding from the launch sets     |
+| Agent started from the app            | The app at launch, free-standing                 | None, or the shared account via the launch defaults                       | Identity-owned binding from the launch sets     |
 | Agent with no Kubernetes need         | as above                                         | None; no object anywhere                                                  | No use rule, no grant                           |
 | Temporary extra permissions           | unchanged                                        | `ManagedServiceAccount` owned by the identity, expiring                   | Grant and use binding owned by the account      |
 | Widening a shared account for an hour | unchanged                                        | unchanged                                                                 | One expiring grant on the account               |
@@ -402,8 +402,8 @@ delete the objects of the new kinds.
   and the `kubernetesServiceAccount` credential source; Flux-rendered identities for the static
   agents (`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics`
   ServiceAccount with its grant, credential and set, every binding rewritten from its SA subject,
-  every Kubernetes rule moved from its `PolicySet` to a role set, and the `basic` set carrying the
-  shared account's use rule.
+  every Kubernetes rule moved from its `PolicySet` to a role set, and the environment's launch
+  defaults carrying the shared account's use set (`basic` keeps no Kubernetes rule).
 - **Controllers:** the Sandbox Controller requires `spec.identity`, creates no ServiceAccount, and
   owns nothing identity-related; the app creates a free-standing `Identity` and its launch binding
   before the Sandbox, or names an existing one; the Policy Controller reads grants and role sets,

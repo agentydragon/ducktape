@@ -1,7 +1,7 @@
 """A Kubernetes account an environment's agents act as through the egress proxy, by name only.
 
-`kubernetes_accounts.KubernetesAccount` renders the account; the egress proxy's `basic` set names its
-credential. Both read the names from here, so neither imports the other.
+`kubernetes_accounts.KubernetesAccount` renders the account and its use set; launch defaults, presets
+and Flux bindings name the use set from here.
 """
 
 from __future__ import annotations
@@ -30,5 +30,5 @@ def account(namespace: str, name: str) -> KubernetesAccountRef:
 
 
 def shared_diagnostics(namespace: str) -> KubernetesAccountRef:
-    """The read-only account the `basic` set lets every agent of the environment in `namespace` act as."""
+    """The read-only account every launch in the environment in `namespace` may act as."""
     return account(namespace, "shared-diagnostics")

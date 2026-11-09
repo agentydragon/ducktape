@@ -82,30 +82,37 @@ def test_every_grant_names_role_sets_and_an_account_that_exist(
         assert (account["namespace"], account["name"]) in accounts, grant["metadata"]
 
 
-def test_basic_acts_as_a_rendered_account_the_proxy_may_impersonate(
-    identity_catalog_manifests: list[dict[str, Any]],
-) -> None:
-    """A default every launch holds may act only as an account the platform renders for it, in the
-    namespace whose ServiceAccounts alone the proxy may impersonate; never as a stored secret."""
+def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manifests: list[dict[str, Any]]) -> None:
+    """`basic` holds no API server rule; every rule that does acts as an account the platform renders
+    in the one namespace whose ServiceAccounts the proxy may impersonate, never as a stored secret,
+    and is its account's one-rule use set. Every launch holds the shared account's use set."""
     docs = identity_catalog_manifests
-    basic = one(doc for doc in _of(docs, "PolicySet") if doc["metadata"]["name"] == BASIC_POLICY)
-    rule = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule.get("hosts", []))
-    credential = one(
-        doc for doc in _of(docs, "EgressCredential") if doc["metadata"]["name"] == rule["credentialRef"]["name"]
-    )
-    account = credential["spec"]["source"]["kubernetesServiceAccount"]
-    assert set(credential["spec"]["source"]) == {"kubernetesServiceAccount"}
-    assert (account["namespace"], account["name"]) in _names(docs, "ServiceAccount")
+    policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "PolicySet")}
+    assert not [rule for rule in policy_sets[BASIC_POLICY] if KUBERNETES_HOST in rule.get("hosts", [])]
+    credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in _of(docs, "EgressCredential")}
     impersonation = {
         doc["metadata"]["namespace"]
         for doc in _of(docs, "Role")
         for policy_rule in doc["rules"]
         if "impersonate" in policy_rule["verbs"] and "serviceaccounts" in policy_rule["resources"]
     }
-    assert impersonation == {account["namespace"]}
-    # The account's own one-rule set grants the same use to a binding that does not hold `basic`.
-    use = one(doc for doc in _of(docs, "PolicySet") if doc["metadata"]["name"] == credential["metadata"]["name"])
-    assert use["spec"]["rules"] == [rule]
+    accounts = _names(docs, "ServiceAccount")
+    account_sets = set()
+    for name, rules in policy_sets.items():
+        for rule in rules:
+            if KUBERNETES_HOST not in rule.get("hosts", []):
+                continue
+            source = credentials[rule["credentialRef"]["name"]]
+            assert set(source) == {"kubernetesServiceAccount"}, name
+            account = source["kubernetesServiceAccount"]
+            assert account["namespace"] in impersonation, name
+            assert (account["namespace"], account["name"]) in accounts, name
+            assert (name, rules) == (rule["credentialRef"]["name"], [rule])
+            account_sets.add(name)
+    assert len(impersonation) == 1
+    gateway = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "runner-gateway-settings")
+    defaults = yaml.safe_load(gateway["data"]["settings.yaml"])["environment_default_policy_sets"]
+    assert len(account_sets & set(defaults)) == 1, defaults
 
 
 def _kubernetes_rules(rules: list[dict[str, Any]]) -> set[tuple[str, str, str | None]]:
