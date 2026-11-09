@@ -38,6 +38,7 @@ import sys
 import threading
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence, Set
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -436,12 +437,17 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     return failed == 0
 
 
-def _apply_base_deletions(output_user_root: Path, session_bases: Sequence[Path]) -> bool:
-    """Delete every prunable output base; returns whether all of them succeeded."""
-    fresh = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
-    candidates = [item for item in fresh if isinstance(item, PrunableBase)]
+@dataclass(frozen=True, slots=True)
+class _BaseDeletions:
+    ok: bool
+    deleted: frozenset[Path]
+
+
+def _apply_base_deletions(candidates: Sequence[PrunableBase], *, output_user_root: Path) -> _BaseDeletions:
+    """Delete the given prunable output bases; `delete_prunable_bases` revalidates each one under
+    its Bazel lock, so the caller's scan needs no refresh beyond what it already knows."""
     if not candidates:
-        return True
+        return _BaseDeletions(ok=True, deleted=frozenset())
     free_before = shutil.disk_usage(output_user_root).free
     results = output_base_gc.delete_prunable_bases(candidates)
     free_change = shutil.disk_usage(output_user_root).free - free_before
@@ -460,21 +466,23 @@ def _apply_base_deletions(output_user_root: Path, session_bases: Sequence[Path])
         f"Bases: {deleted} deleted, {skipped} skipped, {failed} failed; "
         f"free-space change {humanize.naturalsize(free_change, binary=True)}"
     )
-    return skipped == 0 and failed == 0
+    return _BaseDeletions(
+        ok=skipped == 0 and failed == 0,
+        deleted=frozenset(result.path for result in results if isinstance(result, DeletedBase)),
+    )
 
 
-def _apply_repo_cache_deletions(output_user_root: Path, session_bases: Sequence[Path], *, verbose: bool) -> bool:
-    """Delete every unreferenced repo-cache entry; returns whether all of them succeeded.
+def _apply_repo_cache_deletions(
+    candidates: Sequence[PrunableEntry], *, output_user_root: Path, session_bases: Sequence[Path], verbose: bool
+) -> bool:
+    """Delete the given unreferenced repo-cache entries; returns whether all of them succeeded.
 
-    Re-scans the bases first, so entries that only bases removed moments ago referenced are
-    prunable in this same run.
+    `delete_prunable_entries` revalidates each entry under Bazel's cache lock against a fresh
+    link pass, so the caller's classification needs no refresh.
     """
-    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
-    bases = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
-    entries = repo_contents_cache_gc.scan_repo_contents_cache(contents, bases)
-    candidates = [item for item in entries if isinstance(item, PrunableEntry)]
     if not candidates:
         return True
+    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
     free_before = shutil.disk_usage(contents).free
     results = repo_contents_cache_gc.delete_prunable_entries(
         candidates, contents=contents, output_user_root=output_user_root, session_bases=session_bases
@@ -601,7 +609,8 @@ def run_bases(
         if any(isinstance(item, PrunableBase) for item in bases):
             print("Dry run only; pass --delete to remove the prunable bases.")
         return
-    if not _apply_base_deletions(output_user_root, session_bases):
+    candidates = [item for item in bases if isinstance(item, PrunableBase)]
+    if not _apply_base_deletions(candidates, output_user_root=output_user_root).ok:
         raise SystemExit(1)
 
 
@@ -628,7 +637,10 @@ def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delet
         if any(isinstance(item, PrunableEntry) for item in entries):
             print("Dry run only; pass --delete to remove the unreferenced entries.")
         return
-    if not _apply_repo_cache_deletions(output_user_root, session_bases, verbose=verbose):
+    candidates = [item for item in entries if isinstance(item, PrunableEntry)]
+    if not _apply_repo_cache_deletions(
+        candidates, output_user_root=output_user_root, session_bases=session_bases, verbose=verbose
+    ):
         raise SystemExit(1)
 
 
@@ -723,8 +735,22 @@ def run_all(
     # decides the process exit status once, at the end.
     worktrees_ok = _apply_worktree_removals(repo, scan.worktrees)
     branches_ok = _apply_branch_deletions(repo, rescan_branches())
-    bases_ok = _apply_base_deletions(output_user_root, session_bases)
-    repo_cache_ok = _apply_repo_cache_deletions(output_user_root, session_bases, verbose=verbose)
+    # Bases are rescanned because removing worktrees orphans bases the first scan kept. Cache
+    # entries need no rescan: one is newly unreferenced exactly when every base linking to it
+    # was just deleted.
+    base_candidates = [
+        item
+        for item in output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
+        if isinstance(item, PrunableBase)
+    ]
+    base_deletions = _apply_base_deletions(base_candidates, output_user_root=output_user_root)
+    repo_cache_ok = _apply_repo_cache_deletions(
+        repo_contents_cache_gc.unreferenced_after_deleting(entries, base_deletions.deleted),
+        output_user_root=output_user_root,
+        session_bases=session_bases,
+        verbose=verbose,
+    )
+    bases_ok = base_deletions.ok
     foreign_ok = True
     if delete_foreign_clones:
         foreign_ok = _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)

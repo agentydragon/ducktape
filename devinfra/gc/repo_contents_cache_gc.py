@@ -29,7 +29,7 @@ import re
 import shutil
 import stat
 import uuid
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence, Set
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -283,6 +283,16 @@ def scan_repo_contents_cache(
         inspections.append(inspection)
         progress.record("repo-cache", _status(inspection))
     return inspections
+
+
+def unreferenced_after_deleting(entries: Sequence[EntryInspection], deleted_bases: Set[Path]) -> list[PrunableEntry]:
+    """Entries prunable once `deleted_bases` are gone: the already-prunable ones plus the retained
+    ones whose every referrer was deleted."""
+    return [
+        entry if isinstance(entry, PrunableEntry) else PrunableEntry(entry.entry)
+        for entry in entries
+        if isinstance(entry, PrunableEntry) or (isinstance(entry, RetainedEntry) and entry.referrers <= deleted_bases)
+    ]
 
 
 @contextmanager
