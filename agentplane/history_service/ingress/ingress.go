@@ -43,11 +43,10 @@ type Timing struct {
 	SilenceLimit time.Duration
 }
 
-// Service is the SessionJournalIngress server. Each call is authenticated by Principals, and the Session it announces
-// is bound to the ServiceAccount that first pushed it.
+// Service is the SessionJournalIngress server. Each call uses the principal admitted by the RPC method, and the
+// Session it announces is bound to the ServiceAccount that first pushed it.
 type Service struct {
 	session_ingresspb.UnimplementedSessionJournalIngressServer
-	Principals      auth.PrincipalResolver
 	SandboxUIDs     SandboxUIDResolver
 	History         *storage.Store
 	Timing          Timing
@@ -58,7 +57,7 @@ type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_
 
 func (s *Service) Push(stream pushStream) error {
 	ctx := stream.Context()
-	principal, err := s.Principals.Resolve(ctx)
+	principal, err := auth.Caller(ctx)
 	if err != nil {
 		return err
 	}

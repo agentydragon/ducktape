@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -22,14 +24,29 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	first := workloadauthtesting.NewWorkload(t, kube, namespace, "first-writer")
 	other := workloadauthtesting.NewWorkload(t, kube, namespace, "other-writer")
 	ca := transporttesting.NewCA(t)
-	resolver, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service, _ := newService(t, testTiming)
-	service.Principals = resolver
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
-	serverTLS, err := serverCredentials.WorkloadServerCredentials(transport.HistoryIngressURI)
+	rpc := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
+		Auth: []listener.Authentication{
+			&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile},
+			&listener.KubernetesBearerAuth{Audiences: []string{testAudience}},
+		},
+	}
+	resolver, err = resolver.WithListenerAuthentication(rpc, svids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS, err := rpc.ServerCredentials(transport.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +54,17 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(resolver)}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.SVIDOrAccounts(resolver, nil)}
+	var pushHandlers atomic.Int32
+	server := grpc.NewServer(
+		grpc.ChainStreamInterceptor(methods.StreamInterceptor(time.Second), func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			if info.FullMethod == session_ingresspb.SessionJournalIngress_Push_FullMethodName {
+				pushHandlers.Add(1)
+			}
+			return handler(server, stream)
+		}),
+		grpc.Creds(serverTLS),
+	)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -56,12 +82,24 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 		return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
 	}
 	session := uuid.New()
-	// A forged bearer on the real TLS call cannot replace the certificate's writer.
+	// Mixed certificate and bearer credentials are rejected before Push reaches its handler.
 	firstIngress := connect(first)
-	admitted := firstIngress.open(t, "forged")
+	mixed := firstIngress.open(t, "forged")
+	mixed.send(announce(uuid.New(), 0, ""))
+	if code := mixed.refused(); code != codes.Unauthenticated {
+		t.Fatalf("mixed SVID and bearer credentials: %v", code)
+	}
+	if got := pushHandlers.Load(); got != 0 {
+		t.Fatalf("mixed credentials reached Push handler %d times", got)
+	}
+	// The established SVID call retains its admitted writer through Sandbox deletion and final seal.
+	admitted := firstIngress.open(t, "")
 	admitted.send(append([]*session_ingresspb.PushFrame{announce(session, 0, "")}, entries(1)...)...)
 	admitted.acknowledged(1, false)
-	refused := connect(other).open(t, writerToken)
+	if got := pushHandlers.Load(); got != 1 {
+		t.Fatalf("SVID call reached Push handler %d times, want 1", got)
+	}
+	refused := connect(other).open(t, "")
 	refused.send(announce(session, 0, ""))
 	if code := refused.refused(); code != codes.PermissionDenied {
 		t.Fatalf("different SVID writer: %v", code)
@@ -92,7 +130,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if err := first.Objects.Status().Update(t.Context(), first.Sandbox); err != nil {
 		t.Fatal(err)
 	}
-	revoked := firstIngress.open(t, writerToken)
+	revoked := firstIngress.open(t, "")
 	revoked.send(announce(uuid.New(), 0, ""))
 	if code := revoked.refused(); code != codes.Unauthenticated {
 		t.Fatalf("revoked credential: %v", code)

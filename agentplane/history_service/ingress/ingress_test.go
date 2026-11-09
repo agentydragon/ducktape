@@ -77,11 +77,16 @@ func newIngressPacedBy(t *testing.T, timing Timing) testIngress {
 
 func serveIngress(t *testing.T, service *Service) testIngress {
 	t.Helper()
+	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -96,11 +101,7 @@ func serveIngress(t *testing.T, service *Service) testIngress {
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
-	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &Service{Principals: principals, History: storage.NewStore(db, true), Timing: timing}, db
+	return &Service{History: storage.NewStore(db, true), Timing: timing}, db
 }
 
 // call is a runner's Push call: frames go out as the test sends them, and acknowledgements are read back.
@@ -112,7 +113,11 @@ type call struct {
 
 func (i testIngress) open(t *testing.T, token string) *call {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token), callDeadline)
+	ctx := t.Context()
+	if token != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	}
+	ctx, cancel := context.WithTimeout(ctx, callDeadline)
 	t.Cleanup(cancel)
 	stream, err := i.client.Push(ctx)
 	if err != nil {

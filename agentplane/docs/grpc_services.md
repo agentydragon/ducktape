@@ -70,9 +70,10 @@ follows it; code that differs converges on it.
   `auth.Caller`, `auth.AdmittedReviewedCaller`, or `auth.EffectiveCaller` as appropriate. Delegation
   is added to exact served methods through `Methods.WithDelegation`; tests iterate the generated
   `ServiceDesc` with `agentplane/testing/grpcmethods`.
-- A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
-  ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never
-  carry their own copy of the bearer parsing.
+- Resource authorization stays in the handler and uses the identity admitted by the method Rule. For
+  example, History ingress binds a Session to its first writer. If a handler needs a richer proof,
+  its method Rule and typed context accessor must admit that proof; it does not resolve the request's
+  credentials a second time.
 
 Calls made on behalf of another SA follow the approved
 [delegated authorization design](delegated_authorization.md): preserve authenticated actor and
