@@ -27,16 +27,6 @@
     host = "rugged";
   };
 
-  ducktape.githubApiProxy = {
-    enable = true;
-    remote = {
-      host = "github-proxy.allegedly.works";
-      port = 8443;
-      credentialsSopsFile = ../../../cluster/k8s/github-api-proxy/app/rugged-credentials.sops.yaml;
-      caCertificate = ../modules/github-api-proxy-ca.pem;
-    };
-  };
-
   ducktape.attic = {
     enable = true;
     sopsFile = ../../../secrets/hosts/rugged-attic.yaml;
@@ -111,7 +101,7 @@
 
   home.packages = [
     ducktapePackages.bebas-neue-font
-    config.ducktape.githubApiProxy.desktopPackage
+    ducktapePackages.claude-desktop
     pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
     pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in
     pkgs.inkscape

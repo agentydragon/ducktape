@@ -1727,8 +1727,6 @@ py_library(
         "//cluster/cdk8s/gaffer_private_source:source",
         "//cluster/cdk8s/gatus:app",
         "//cluster/cdk8s/gatus:sso",
-        "//cluster/cdk8s/github_api_proxy:flux_kustomizations",
-        "//cluster/cdk8s/github_api_proxy:proxy",
         "//cluster/cdk8s/github_exporter:app",
         "//cluster/cdk8s/github_secrets_sync:secrets",
         "//cluster/cdk8s/github_secrets_sync:workspace",

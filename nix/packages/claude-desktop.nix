@@ -126,9 +126,6 @@ pkgs.stdenv.mkDerivation {
     runHook postInstall
   '';
 
-  # The .deb's desktop-entry filename; the GitHub-proxy wrapper rewrites it.
-  passthru = { inherit desktopFile; };
-
   meta = {
     description = "Claude Desktop — Anthropic's Electron desktop app (Linux beta)";
     homepage = "https://code.claude.com/docs/en/desktop-linux";

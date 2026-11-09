@@ -238,11 +238,6 @@ spec:
       name: forgejo-token-rotation
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'github-api-proxy'
-      kind: ImageRepository
-      name: github-api-proxy
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'github-graphql-rate-exporter'
       kind: ImageRepository
       name: github-graphql-rate-exporter

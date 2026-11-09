@@ -96,11 +96,6 @@
       "test": "//att_gateway/...",
       "registry": "forgejo"
     },
-    "github-api-proxy": {
-      "target": "//devinfra/github_proxy/central:image",
-      "test": "//devinfra/github_proxy/central:tests",
-      "registry": "forgejo"
-    },
     "haku-console": {
       "target": "//haku/console:server_image",
       "test": "//haku/console/...",

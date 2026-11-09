@@ -3811,35 +3811,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-api-proxy
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/github-api-proxy
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-api-proxy
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     description: GitHub API rate-limit metrics for the human and agent accounts.
   name: github-exporter

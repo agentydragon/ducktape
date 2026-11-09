@@ -157,10 +157,6 @@ from cluster.cdk8s.gaffer_private_source import (
 )
 from cluster.cdk8s.gatus import app as gatus_app, sso as gatus_sso
 from cluster.cdk8s.generation import copy_source_file, write_directory, write_generated_readme
-from cluster.cdk8s.github_api_proxy import (
-    flux_kustomizations as github_api_proxy_flux_kustomizations,
-    proxy as github_api_proxy,
-)
 from cluster.cdk8s.github_exporter import app as github_exporter_app
 from cluster.cdk8s.github_secrets_sync import (
     secrets as github_secrets_sync_secrets,
@@ -312,7 +308,6 @@ def generate_manifests(root: Path) -> None:
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
-    github_api_proxy.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
 
@@ -1631,14 +1626,6 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         forgejo_image_automation_kustomization,
     )
-    github_api_proxy_artifact = artifact("github-api-proxy", f"{HAND_WRITTEN_ROOT}/github-api-proxy")
-    github_api_proxy_flux_kustomizations.github_api_proxy(
-        flux_chart,
-        github_api_proxy_artifact,
-        external_secrets_operator_kustomization,
-        cert_manager_kustomization,
-        monitoring_crds_kustomization,
-    )
     github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR, github_exporter_app.PINS_DIR)
     github_exporter_app.github_exporter(
         flux_chart,
@@ -2134,7 +2121,6 @@ def generate_manifests(root: Path) -> None:
             budget_namespace_artifact,
             gaffer_private_source_artifact,
             gatus_artifact,
-            github_api_proxy_artifact,
             github_tf_artifact,
             github_branch_protection_artifact,
             github_secrets_sync_artifact,

@@ -28,16 +28,6 @@
     host = "wyrm2";
   };
 
-  ducktape.githubApiProxy = {
-    enable = true;
-    remote = {
-      host = "github-proxy.allegedly.works";
-      port = 8443;
-      credentialsSopsFile = ../../../cluster/k8s/github-api-proxy/app/wyrm2-credentials.sops.yaml;
-      caCertificate = ../modules/github-api-proxy-ca.pem;
-    };
-  };
-
   ducktape.attic = {
     enable = true;
     sopsFile = ../../../secrets/hosts/wyrm2-attic.yaml;
@@ -312,7 +302,7 @@
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     pkgs.android-tools # adb/fastboot for Android device debugging
     ducktapePackages.bebas-neue-font
-    config.ducktape.githubApiProxy.desktopPackage
+    ducktapePackages.claude-desktop
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
