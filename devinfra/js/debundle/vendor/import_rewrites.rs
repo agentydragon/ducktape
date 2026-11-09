@@ -11,6 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::local_namespace_iife_target;
+use binding_targets::module_export_name;
 use js_ast::{is_binding_identifier, member_property};
 use source_identity::ChunkId;
 use swc_common::DUMMY_SP;
@@ -44,6 +45,14 @@ impl VendorImportRewrites {
                 namespace,
                 upstream_export,
             } => {
+                // A single-segment member of a namespace import is the
+                // package's own named export, so a local export of the
+                // binding re-exports it live.
+                let local_export =
+                    (!upstream_export.contains('.')).then(|| LocalExportRewrite::Reexport {
+                        source: package.clone(),
+                        export: upstream_export.clone(),
+                    });
                 self.body_rewrites.insert(
                     local_id,
                     IdentRewriteTarget::Member {
@@ -51,6 +60,7 @@ impl VendorImportRewrites {
                         property_path: upstream_export.split('.').map(str::to_owned).collect(),
                         chunk_id: chunk,
                         chunk_export,
+                        local_export,
                     },
                 );
                 if self
@@ -106,6 +116,7 @@ impl VendorImportRewrites {
                             upstream_export: local,
                             chunk_id: chunk,
                             chunk_export,
+                            rename_local_exports: true,
                         },
                     );
                 } else {
@@ -122,6 +133,9 @@ impl VendorImportRewrites {
                 property_path,
             } => {
                 let source = facade_source(&facade_app_path);
+                // The facade is default-only: a property of its default
+                // object has no live export form, so the plan-time consumer
+                // gate refuses local exports of such bindings.
                 self.body_rewrites.insert(
                     local_id,
                     IdentRewriteTarget::Member {
@@ -129,6 +143,7 @@ impl VendorImportRewrites {
                         property_path,
                         chunk_id: chunk,
                         chunk_export,
+                        local_export: None,
                     },
                 );
                 if self
@@ -216,6 +231,9 @@ pub enum IdentRewriteTarget {
         property_path: Vec<String>,
         chunk_id: ChunkId,
         chunk_export: String,
+        /// How a local `export { <local> }` of the binding is rewritten;
+        /// `None` leaves such specifiers untouched.
+        local_export: Option<LocalExportRewrite>,
     },
     /// kind=named auto-rename: rewrite `<local>` references to a bare
     /// `<upstream_export>` identifier (matching the new no-alias import).
@@ -223,7 +241,17 @@ pub enum IdentRewriteTarget {
         upstream_export: String,
         chunk_id: ChunkId,
         chunk_export: String,
+        /// Also rename the `orig` of local `export { <local> }` specifiers,
+        /// keeping their exported name.
+        rename_local_exports: bool,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum LocalExportRewrite {
+    /// `export { <local> as <name> }` becomes
+    /// `export { <export> as <name> } from "<source>"`.
+    Reexport { source: String, export: String },
 }
 
 /// Rewrites references to a partial-swap import local into the
@@ -241,7 +269,93 @@ pub struct PartialSwapIdentRewriter<'a> {
     pub references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
 }
 
+impl PartialSwapIdentRewriter<'_> {
+    /// Rewrite one specifier of a local `export { ... }`. Returns whether
+    /// the specifier stays; a removed one is replaced by `reexports`.
+    fn rewrite_local_export(
+        &mut self,
+        specifier: &mut ExportSpecifier,
+        reexports: &mut Vec<ModuleItem>,
+    ) -> bool {
+        let ExportSpecifier::Named(named) = specifier else {
+            return true;
+        };
+        let ModuleExportName::Ident(orig) = &named.orig else {
+            return true;
+        };
+        let Some(target) = self.bindings.get(&orig.to_id()) else {
+            return true;
+        };
+        let exported = named
+            .exported
+            .as_ref()
+            .map(module_export_name)
+            .unwrap_or_else(|| orig.sym.to_string());
+        let (chunk_id, chunk_export) = match target {
+            IdentRewriteTarget::Rename {
+                upstream_export,
+                chunk_id,
+                chunk_export,
+                rename_local_exports: true,
+            } => {
+                named.exported = (*upstream_export != exported)
+                    .then(|| named.exported.take().unwrap_or(named.orig.clone()));
+                named.orig = ModuleExportName::Ident(Ident::new_no_ctxt(
+                    upstream_export.clone().into(),
+                    DUMMY_SP,
+                ));
+                (*chunk_id, chunk_export)
+            }
+            IdentRewriteTarget::Member {
+                local_export: Some(LocalExportRewrite::Reexport { source, export }),
+                chunk_id,
+                chunk_export,
+                ..
+            } => {
+                reexports.push(crate::make_named_reexport(source, export, &exported));
+                *self
+                    .references_by_symbol
+                    .entry((*chunk_id, chunk_export.clone()))
+                    .or_insert(0) += 1;
+                return false;
+            }
+            _ => return true,
+        };
+        *self
+            .references_by_symbol
+            .entry((chunk_id, chunk_export.clone()))
+            .or_insert(0) += 1;
+        true
+    }
+}
+
 impl VisitMut for PartialSwapIdentRewriter<'_> {
+    /// A local export specifier names its binding outside any expression,
+    /// so it is rewritten here; leaving it would export an unbound name.
+    fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
+        items.visit_mut_children_with(self);
+        let mut rewritten = Vec::with_capacity(items.len());
+        for item in std::mem::take(items) {
+            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(mut export)) = item else {
+                rewritten.push(item);
+                continue;
+            };
+            if export.src.is_some() || export.type_only || export.specifiers.is_empty() {
+                rewritten.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)));
+                continue;
+            }
+            let mut reexports = Vec::new();
+            export
+                .specifiers
+                .retain_mut(|specifier| self.rewrite_local_export(specifier, &mut reexports));
+            if !export.specifiers.is_empty() {
+                rewritten.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)));
+            }
+            rewritten.extend(reexports);
+        }
+        *items = rewritten;
+    }
+
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
         if local_namespace_iife_target(call)
             .is_some_and(|target| self.bindings.contains_key(&target))
@@ -317,6 +431,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
                 property_path,
                 chunk_id,
                 chunk_export,
+                ..
             } => {
                 *expr = property_path.iter().fold(
                     Expr::Ident(Ident::new_no_ctxt(namespace.clone().into(), DUMMY_SP)),
@@ -334,6 +449,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
                 upstream_export,
                 chunk_id,
                 chunk_export,
+                ..
             } => {
                 *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
                 (*chunk_id, chunk_export)

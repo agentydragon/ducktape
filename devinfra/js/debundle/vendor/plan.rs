@@ -25,7 +25,9 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde_json::Value;
 use swc_common::GLOBALS;
-use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
+use swc_ecma_ast::{
+    ExportSpecifier, Id, ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem,
+};
 
 use artifact::paths::{join_module_path, manifest_relative_path};
 use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path, list_chunk_file_paths};
@@ -548,6 +550,10 @@ fn validate_consumer_shapes(
             else {
                 continue;
             };
+            let consumer = format!("{caller_chunk_name}/{file_path}");
+            // Import locals whose references become property reads, which
+            // have no live local-export form.
+            let mut member_read_locals = BTreeMap::<Id, String>::new();
             for item in &ast.module.body {
                 let ModuleItem::ModuleDecl(decl) = item else {
                     continue;
@@ -565,7 +571,6 @@ fn validate_consumer_shapes(
                 ) else {
                     continue;
                 };
-                let consumer = format!("{caller_chunk_name}/{file_path}");
                 // Boundary-renamed names are applied by the pass-through
                 // rewriter (and by lowering's import construction);
                 // suppress files are skipped by both, so a suppress
@@ -598,6 +603,23 @@ fn validate_consumer_shapes(
                 let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
                     continue;
                 };
+                if let ModuleDecl::Import(import) = decl {
+                    for specifier in &import.specifiers {
+                        let ImportSpecifier::Named(named) = specifier else {
+                            continue;
+                        };
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        if swapped.symbols.get(&imported).is_some_and(|symbol| {
+                            !local_export_has_live_rewrite(symbol, swapped.bundled)
+                        }) {
+                            member_read_locals.insert(named.local.to_id(), imported);
+                        }
+                    }
+                }
                 check_consumer_shape_has_live_rewrite(
                     decl,
                     swapped.symbols,
@@ -606,6 +628,57 @@ fn validate_consumer_shapes(
                     &consumer,
                     chunk_table.name(target_chunk_id),
                 )?;
+            }
+            if !member_read_locals.is_empty() {
+                check_local_exports_have_live_rewrite(
+                    &ast.module.body,
+                    &member_read_locals,
+                    &consumer,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the body rewrite keeps a binding, or a live re-export, for a
+/// local `export { <local> }` of this swapped import: a property of the
+/// default-only facade, or a dotted member path, has neither.
+fn local_export_has_live_rewrite(symbol: &PartialSwapSymbol, bundled: bool) -> bool {
+    match symbol.kind {
+        PartialSwapKind::Namespace | PartialSwapKind::Default => true,
+        PartialSwapKind::Named => !bundled,
+        PartialSwapKind::Member => {
+            !bundled
+                && symbol
+                    .upstream_export
+                    .as_deref()
+                    .is_some_and(|name| !name.contains('.'))
+        }
+    }
+}
+
+fn check_local_exports_have_live_rewrite(
+    body: &[ModuleItem],
+    member_read_locals: &BTreeMap<Id, String>,
+    consumer: &str,
+) -> Result<()> {
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+            continue;
+        };
+        if export.src.is_some() {
+            continue;
+        }
+        for specifier in &export.specifiers {
+            if let ExportSpecifier::Named(named) = specifier
+                && let ModuleExportName::Ident(orig) = &named.orig
+                && let Some(imported) = member_read_locals.get(&orig.to_id())
+            {
+                bail!(
+                    "partial-swap consumer gate: {consumer} locally exports `{}`, its import of swapped name `{imported}`; the swap reads that symbol as a property of the replacement, which has no live export form",
+                    orig.sym,
+                );
             }
         }
     }

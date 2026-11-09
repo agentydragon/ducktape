@@ -419,9 +419,7 @@ pub(super) fn prepare_module_emission<'output>(
             bindings: &bindings,
             references_by_symbol: &mut vendor_reference_rewrites,
         };
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut rewriter);
-        }
+        body.visit_mut_with(&mut rewriter);
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose

@@ -1505,6 +1505,99 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
 }
 
 #[test]
+fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
+    // A local export specifier names its binding outside any expression.
+    // Member reads re-export the package's named export; a named-kind rename
+    // exports the renamed import under the source's public name (naturalized
+    // back to that name). Unrewritten, the module exports an unbound name and
+    // fails to link.
+    for (kind, emitted) in [
+        (
+            PartialSwapKind::Member,
+            [
+                "export { boolean as zodBoolean } from \"zod\"",
+                "export { boolean as aliased } from \"zod\"",
+            ],
+        ),
+        (
+            PartialSwapKind::Named,
+            [
+                "import { boolean as zodBoolean } from \"zod\"",
+                "export { zodBoolean, zodBoolean as aliased }",
+            ],
+        ),
+    ] {
+        let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+            kind,
+            package_name: "zod",
+            package_version: "3.23.8",
+            subpath: "lib/index.mjs",
+            chunk_source: "export const e6 = () => \"VENDOR\";\nexport const keepMe = () => 7;\n",
+            caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
+                             export { zodBoolean, zodBoolean as aliased };\n\
+                             export function go() { return `${zodBoolean()}|${kept()}`; }\n",
+            upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+            chunk_export: "e6",
+            upstream_export: Some("boolean"),
+        });
+
+        assert_success(&fixture.result);
+        assert_source_file(&fixture.caller_emitted_path, &emitted, &[]);
+
+        let app_root = emitted_app_root(&fixture);
+        install_node_module(
+            &app_root,
+            "zod",
+            "3.23.8",
+            "export const boolean = () => \"UPSTREAM\";\n",
+        );
+        let probe_path = app_root.join("__run_local_export.mjs");
+        write_text_file(
+            &probe_path,
+            "const { go, zodBoolean, aliased } = await import(\"./static/app/entry.js\");\n\
+             console.log(`${go()}|${zodBoolean()}|${aliased === zodBoolean}`);\n",
+        );
+        assert_node_output(&probe_path, "UPSTREAM|7|UPSTREAM|true\n", "");
+    }
+}
+
+#[test]
+fn partial_swap_rejects_local_export_of_a_dotted_member_read() {
+    // `z.nested.boolean` is a property read with no live export form; left
+    // in place, `export { zodBoolean }` would name an unbound local.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-dotted-local-export-",
+        "export const e6 = () => true;\n",
+        "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport { zodBoolean };\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const nested = { boolean: () => true };\n",
+    );
+    let vendor = partial_swap_vendor(
+        "dotted member local export fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("nested.boolean"), None),
+        )],
+    );
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
+    assert!(
+        !fixture.result.status.success(),
+        "{}",
+        fixture.result.stdout
+    );
+    for diagnostic in ["static/app/entry.js", "zodBoolean", "e6"] {
+        assert!(
+            fixture.result.stderr.contains(diagnostic),
+            "{}",
+            fixture.result.stderr
+        );
+    }
+}
+
+#[test]
 fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
     // When the caller-side local binding already matches the upstream
     // export name, the emitted import drops the `as` alias and no
