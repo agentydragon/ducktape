@@ -197,11 +197,16 @@ func setIdentity(t *testing.T, c client.Client, name string) {
 	}
 }
 
-// assertNoAccountOrBinding checks the Sandbox made no ServiceAccount or PolicyBinding of its own.
+// assertNoAccountOrBinding checks the Sandbox made no ServiceAccount in any namespace, the accounts
+// namespace included, and no PolicyBinding of its own.
 func assertNoAccountOrBinding(t *testing.T, c client.Client) {
 	t.Helper()
-	if err := c.Get(context.Background(), sandboxKey, &corev1.ServiceAccount{}); !apierrors.IsNotFound(err) {
-		t.Errorf("ServiceAccount of the Sandbox's name: %v, want none", err)
+	var accounts corev1.ServiceAccountList
+	if err := c.List(context.Background(), &accounts); err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts.Items) != 0 {
+		t.Errorf("ServiceAccounts = %v, want none", accounts.Items)
 	}
 	if binding := getBinding(t, c); binding != nil {
 		t.Errorf("PolicyBinding = %+v, want none", binding.Spec)
