@@ -267,8 +267,7 @@ parity tests green.
   <../debug/2026_11_09_l4c_discrepancy_audit.md>. It found no unsafe legacy
   acceptance and no gate defect. Every legacy-accepted / effect-refused case
   is uncovered havoc. Rerun with `--test_env=DEBUNDLE_TV_AUDIT=1` after
-  each Wave 3 slice. Left: the premise-covered havoc policy (owned by L4d);
-  the full canonical conflict export; owners for anonymous-statement
+  each Wave 3 slice. Left: the full canonical conflict export; owners for anonymous-statement
   coverage, the completed call-initializer seal and non-invoking literal
   coverage, which no Wave 3 slice holds.
 - L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
@@ -287,6 +286,13 @@ parity tests green.
   | child completeness passed upward (`inherit_completeness` sites)                                    | `child.ledger.closed_effect_dependencies()`; parents already compose the child ledger                                      |
   | setters (`complete: true` literals, `lose_precision`)                                              | deleted; each site composes `EffectCoverageFragment::default()` where it does not already                                  |
   | export (`roots/body.rs`, `outcome.effects.complete = outcome.complete`)                            | the one writer of `SynchronousCalls.complete`, computed as `ledger.has_closed_effects()`, behind an engine-hash codec bump |
+
+  Premise policy (decided 2026-11-09): a `commuting_statements` premise is
+  an axiom. A swapped pair it covers is discharged even when either statement
+  is havoc, so the decision's `Incomplete { premise_covered: true }` arm
+  (`realizability/effect_translation_validation.rs`) becomes an acceptance
+  that keeps the premise in the audit list. Uncovered havoc pairs stay
+  `incomplete`.
 
   Two preconditions:
   - The terminal-call stop in the application adapter clears `complete`
