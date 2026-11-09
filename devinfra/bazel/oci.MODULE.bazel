@@ -449,3 +449,5 @@ oci.pull(
     tag = "2.31.0-pg18-oss",
 )
 use_repo(oci, "cdviz_collector", "cdviz_collector_linux_amd64", "cdviz_db_migration", "cdviz_db_migration_linux_amd64", "timescaledb_pg18", "timescaledb_pg18_linux_amd64")
+
+use_repo(image_pins, "generic_device_plugin", "generic_device_plugin_linux_amd64")

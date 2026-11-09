@@ -1,8 +1,8 @@
 # Firecracker system-test runtime
 
 The pytest plugin supplies the Firecracker lifecycle adapter to the shared deployment stack.
-It waits for KVM and the shared virtualization controllers, without VM-only admission policies
-or a loop-device provisioner. The fixture starts a fresh image store, puts only the disposable
+It advertises the real KVM device through a dedicated generic-device-plugin, retaining the
+production launcher resource request without KubeVirt, Kyverno or a loop-device provisioner. The fixture starts a fresh image store, puts only the disposable
 k3s control database on a bounded tmpfs, and captures guest logs through teardown. Retained
 executor snapshots are rejected.
 

@@ -2,7 +2,7 @@
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
-load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
+load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
 load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
@@ -218,16 +218,21 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if config.vm or config.firecracker:
         # A guest runs alongside k3s services; reserve the VM lane's larger worker budget.
         properties["EstimatedComputeUnits"] = "8"
-        images["vm"] = _VM_IMAGES
         if config.vm:
+            images["vm"] = _VM_IMAGES
             guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
             images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
         else:
             images["guest"] = _FIRECRACKER_GUEST_IMAGES
-        data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
+            images["vm"] = {"@generic_device_plugin_linux_amd64": GENERIC_DEVICE_PLUGIN_REFERENCE}
+            env["KVM_DEVICE_PLUGIN_IMAGE"] = GENERIC_DEVICE_PLUGIN_REFERENCE
+        if config.vm:
+            data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
+            env |= {
+                "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
+                "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
+            }
         env |= {
-            "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
-            "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
             "AGENTPLANE_K3S_REQUIRE_KVM": "1" if require_kvm else "0",
             "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
             "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "1" if shutdown_diagnostic else "0",
