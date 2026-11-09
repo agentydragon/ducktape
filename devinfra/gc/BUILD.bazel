@@ -186,9 +186,11 @@ py_test(
         ":branch_gc",
         ":conftest",
         ":output_base_gc",
+        ":scan_progress",
         ":workspace_scan",
         ":worktree_gc",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

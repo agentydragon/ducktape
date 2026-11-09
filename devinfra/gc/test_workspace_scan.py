@@ -3,12 +3,14 @@ from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, workspace_scan
 from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
 from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
+from devinfra.gc.scan_progress import NULL_PROGRESS
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
 
@@ -47,6 +49,37 @@ class RecordingProgress:
         with self.lock:
             self.done[phase] += 1
             self.calls.append((phase, self.done[phase], self.totals[phase], category))
+
+
+def test_interrupt_abandons_queued_items_without_waiting_for_them() -> None:
+    """Regression: a Ctrl+C used to wait for every worker to finish its whole slice."""
+    release = threading.Event()
+    safety = threading.Timer(10, release.set)  # unblocks workers if the interrupt is not prompt
+    safety.start()
+
+    def classify_one(item: int) -> int:
+        if item == 0:
+            raise KeyboardInterrupt
+        release.wait()
+        return item
+
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            workspace_scan.parallel_classify(
+                list(range(50)),
+                lambda: classify_one,
+                phase="items",
+                noun="item",
+                progress=NULL_PROGRESS,
+                category_of=lambda _: "KEEP",
+                describe=str,
+                workers=2,
+            )
+        prompt = not release.is_set()
+    finally:
+        release.set()
+        safety.cancel()
+    assert prompt
 
 
 def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinfo: Path) -> None:

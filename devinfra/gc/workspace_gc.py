@@ -36,12 +36,14 @@ import enum
 import logging
 import os
 import shutil
+import signal
 import sys
 import threading
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import FrameType
 from typing import Annotated
 
 import humanize
@@ -953,8 +955,16 @@ def _with_default_command(argv: list[str]) -> list[str]:
     return ["all", *argv]
 
 
+def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
+    raise KeyboardInterrupt
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the CLI through its importable wheel entry point."""
+    # asyncio.run installs its own SIGINT handler unless the current one is the default; that
+    # handler only cancels the main task, which cannot take effect while a scan blocks the loop
+    # thread, so Ctrl+C would need a second press. This one interrupts immediately.
+    signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
     try:
         app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
     except git_repo.INSPECTION_ERRORS as error:
