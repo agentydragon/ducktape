@@ -3046,6 +3046,7 @@ flowchart LR
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
     WORKLOAD_CA_SERVER_TRUST[Ready: Agentplane server SVIDs verified against the workload CA alone]
+    WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3105,6 +3106,18 @@ chain, which the workload CA issues, so that check still passes. A runner's `ca_
 the services it dials. **Exit:** a k3s case where a `cluster-internal-ca` leaf with a runner URI,
 served at the runner's address, is refused by the Gateway while the real runner connection keeps
 working.
+
+### `WORKLOAD_CA_CLIENT_TRUST` — Firecracker runners' control listener trusts the workload CA alone
+
+**Ready (2026-11-09); must land before any deployed Environment enables `firecracker_sandboxes`,
+which none does today.** Pod and KubeVirt runners verify the Gateway's client SVID against
+`agentplane-workload-ca-bundle` alone through `client_ca_file` (#15129, #15131;
+[runner control](../docs/runner_control.md#authentication-and-incarnation-binding)). A Firecracker
+guest reads its credentials from the host-initiated Workload API, which carries one bundle per trust
+domain, the cluster bundle. Its control listener therefore still accepts a `cluster-internal-ca` leaf
+naming `spiffe://agentplane/runner-gateway`. Deliver the workload CA to the guest separately from
+that bundle. **Exit:** the k3s case `a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner`
+also passes against the Firecracker template.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
