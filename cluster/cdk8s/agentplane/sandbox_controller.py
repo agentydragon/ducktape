@@ -79,6 +79,7 @@ class SandboxController(Construct):
             health_probe_bind_address=f":{_HEALTH_PORT}",
             runner_gateway_target=gateway_control_target,
             runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
+            identities=env.identity_catalog,
         )
         settings_file = SettingsFile(
             self,
@@ -168,6 +169,12 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource(_GROUP, "policybindings")],
                     verbs=["get", "list", "watch", "create", "patch", "delete"],
+                ),
+                # The Identity each Sandbox acts as, read live before each start.
+                *(
+                    [RolePolicyRule(resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch"])]
+                    if env.identity_catalog
+                    else []
                 ),
                 # Leader election, and the Runner Gateway's connection Leases, which the controller watches.
                 RolePolicyRule(

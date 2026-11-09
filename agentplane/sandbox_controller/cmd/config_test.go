@@ -46,8 +46,11 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
 		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
-		Identities:             true,
 	}
+	if c.Identities == nil || !*c.Identities {
+		t.Fatalf("identities = %v, want true", c.Identities)
+	}
+	c.Identities = nil
 	if c != want {
 		t.Fatalf("unexpected settings: %+v", c)
 	}
@@ -81,22 +84,12 @@ func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
 	}
 }
 
-func TestAnAbsentIdentitiesSettingIsTheServiceAccountMode(t *testing.T) {
-	t.Setenv(configFileEnv, writeSettings(t, strings.Replace(validSettings, "identities: true\n", "", 1)))
-	c, err := loadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Identities {
-		t.Fatal("identity mode without the setting")
-	}
-}
-
 func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 	missing := map[string]string{
 		"namespace":                 "namespace: agentplane\n",
 		"runner_gateway_target":     "runner_gateway_target: \"{sandbox}-control.{namespace}.svc:8080\"\n",
 		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
+		"identities":                "identities: true\n",
 	}
 	cases := map[string]string{
 		"unknown key":        validSettings + "unknown_setting: value\n",

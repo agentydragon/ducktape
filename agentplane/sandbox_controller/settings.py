@@ -33,3 +33,8 @@ class Settings(BaseModel):
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."
     )
+    identities: bool = Field(
+        description="Whether a Sandbox acts as the `Identity` its `spec.identity` names, with no ServiceAccount or "
+        "PolicyBinding of its own; otherwise it acts as its own ServiceAccount. IDENTITY_CUTOVER removes the "
+        "ServiceAccount mode."
+    )

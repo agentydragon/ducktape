@@ -47,5 +47,19 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert token_source["audience"] == runner_gateway.TOKEN_AUDIENCE
 
 
+def test_the_controller_reads_identities_exactly_where_it_acts_as_them(catalog_manifests: list[dict[str, Any]]) -> None:
+    """The identity catalog's PolicyBindings name Identities, so its Sandboxes act as them; the
+    controller reads each one live before a start, which its Role must allow."""
+    config_map = _resource(catalog_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")
+    settings = Settings.model_validate(yaml.safe_load(one(config_map["data"].values())))
+    bindings = [doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"]
+    assert settings.identities == all("identity" in doc["spec"]["subject"] for doc in bindings)
+    role = _resource(catalog_manifests, "Role", sandbox_controller.NAME)
+    reads_identities = any(
+        "identities" in rule["resources"] and {"get", "watch"} <= set(rule["verbs"]) for rule in role["rules"]
+    )
+    assert reads_identities == settings.identities
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

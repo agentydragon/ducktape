@@ -23,9 +23,8 @@ type config struct {
 	HealthProbeBindAddress string                                   `yaml:"health_probe_bind_address"`
 	RunnerGatewayTarget    string                                   `yaml:"runner_gateway_target"`
 	RunnerGatewayTokenFile string                                   `yaml:"runner_gateway_token_file"`
-	// Absent until the rendering sets it, which waits for this image: absent is the ServiceAccount mode.
-	// CLEANUP(added 2026-11-09): require it once settings.py renders it.
-	Identities bool `yaml:"identities"`
+	// Required, so a rendering cannot drop it and silently run the other mode.
+	Identities *bool `yaml:"identities"`
 }
 
 func defaultConfig() config {
@@ -67,6 +66,9 @@ func (c config) validate() error {
 		if err := c.RunnerGatewayTLS.Validate(); err != nil {
 			return fmt.Errorf("runner_gateway_tls: %w", err)
 		}
+	}
+	if c.Identities == nil {
+		return errors.New("identities is required")
 	}
 	for _, required := range []struct{ name, value string }{
 		{"namespace", c.Namespace},

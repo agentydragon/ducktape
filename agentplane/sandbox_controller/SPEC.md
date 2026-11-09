@@ -214,8 +214,8 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - `spec.identity` names an `Identity` in the Sandbox's namespace. Admission lets it be set, changed
   or cleared only while nothing runs: before the controller's first status report, or at
   `status.stopStage: Stopped`.
-- The controller runs in one of two modes, chosen by its `identities` setting; absent is the
-  ServiceAccount mode. IDENTITY_CUTOVER removes the ServiceAccount mode.
+- The controller runs in one of two modes, chosen by its required `identities` setting, which cdk8s
+  renders from `Environment.identity_catalog`. IDENTITY_CUTOVER removes the ServiceAccount mode.
 
 ### Identity mode
 
