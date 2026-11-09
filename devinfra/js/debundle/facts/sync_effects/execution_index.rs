@@ -5969,7 +5969,7 @@ fn stored_global_alias(
     }
 }
 
-struct ExecutionIndex {
+pub(super) struct ExecutionIndex {
     member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
@@ -6985,7 +6985,7 @@ impl ExecutionIndex {
     }
 }
 
-struct SemanticShapeInputs<'a> {
+pub(super) struct SemanticShapeInputs<'a> {
     classes: LocalClassConstructionShapes,
     sets: SetIterableShapes,
     array_spreads: &'a StableArraySpreadShapes,

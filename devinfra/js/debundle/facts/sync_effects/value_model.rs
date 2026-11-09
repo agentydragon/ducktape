@@ -496,30 +496,6 @@ impl<T> PropertyDefinition<T> {
             | Self::Opaque { value, .. } => value,
         }
     }
-    pub(super) fn map<'a, U>(&'a self, map: impl FnOnce(&'a T) -> U) -> PropertyDefinition<U> {
-        match self {
-            Self::Data { name, value } => PropertyDefinition::Data {
-                name: name.clone(),
-                value: map(value),
-            },
-            Self::Method { name, value } => PropertyDefinition::Method {
-                name: name.clone(),
-                value: map(value),
-            },
-            Self::Getter { name, value } => PropertyDefinition::Getter {
-                name: name.clone(),
-                value: map(value),
-            },
-            Self::Setter { name, value } => PropertyDefinition::Setter {
-                name: name.clone(),
-                value: map(value),
-            },
-            Self::Opaque { name, value } => PropertyDefinition::Opaque {
-                name: name.clone(),
-                value: map(value),
-            },
-        }
-    }
 }
 
 /// Syntax-only shape of one statically named own property. Evaluated values

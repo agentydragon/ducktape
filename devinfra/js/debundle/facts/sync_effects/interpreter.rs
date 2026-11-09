@@ -6,11 +6,16 @@ use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
     RootInitializerIdentity,
 };
-use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
-use super::super::local_transfer::{
-    self, CallableSelection, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
-    SelectedValue,
+use super::super::kernel::context::{
+    BindingContext, CallContext, ControlContext, Disposition, HeapContext, NativeContext, Unproved,
 };
+use super::super::kernel::continuation::LocalContinuation;
+use super::super::kernel::driver;
+use super::super::kernel::frame::{
+    CallableSelection, EvaluatedCallee, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
+    LocalValueResult, RemainderDisposition, SelectedValue,
+};
+use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
 use super::super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
 };
@@ -54,7 +59,7 @@ use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
     AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, GlobalReachCause, HavocReach, OrderedCallAdmissionRefusal,
-    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
+    PossibleGetterLookupSite, PossibleGetterPromotion,
 };
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
@@ -1817,48 +1822,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
     }
 }
 
-impl LocalContext for LocalExecutionContext<'_, '_, '_> {
-    fn binary_fallback(&mut self, frame: &LocalFrame, reached: &Values, span: Span) {
-        self.fallback(
-            frame,
-            reached.clone(),
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::ImplicitCoercion,
-                ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: None,
-            },
-            span,
-        );
-    }
-
-    fn array_created(&mut self, allocation: u32, sparse: bool) {
-        if sparse {
-            self.executor
-                .state
-                .surface
-                .tainted_objects
-                .insert(allocation);
-        }
-    }
-    fn array_push_callee(
-        &mut self,
-        receivers: &Values,
-        property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
-        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
-        for cell in [
-            crate::facts::EffectCell::ObjectShape(selection.object),
-            crate::facts::EffectCell::OwnProperty {
-                origin: selection.object,
-                property: "push".into(),
-            },
-        ] {
-            self.outcome
-                .effects
-                .record_heap_read(cell, self.executor.state.assumption.is_none());
-        }
-        Some((selection, effects))
-    }
+impl BindingContext for LocalExecutionContext<'_, '_, '_> {
     fn instantiate_parameter_bindings(&mut self, frame: &mut LocalFrame) {
         for parameter in self.body.parameters.iter() {
             let binding = &parameter.binding;
@@ -1999,115 +1963,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
     }
-    fn selection_prerequisites(&self) -> Box<ProofDependencies> {
-        self.executor.boxed_settled_prefix_dependencies()
-    }
-    fn closure(
-        &mut self,
-        frame: &mut LocalFrame,
-        creation: super::super::local_operations::DeferredCallableCreation,
-    ) -> Option<LocalValueResult> {
-        let callable = creation.callable();
-        assert_eq!(
-            self.executor.inputs.index.callable_creation(callable),
-            Some(creation),
-            "canonical callable creation kind/home-object association"
-        );
-        let body = &self.executor.inputs.index.callables[&callable];
-        let reads = self
-            .executor
-            .inputs
-            .index
-            .prototype_callable_reads
-            .get(&callable)
-            .unwrap_or(&body.reads);
-        if reads
-            .iter()
-            .any(|binding| self.missing_activation_binding(binding, frame))
-        {
-            self.refuse_activation_value(frame);
-            return None;
-        }
-        let captures = self.executor.closure_captures(callable, &frame.environment);
-        let values = Values::from([AbstractValue::Closure(callable, captures)]);
-        frame.inputs.extend(values.iter().cloned());
-        let captured_cells_are_empty = matches!(
-            values.first(),
-            Some(AbstractValue::Closure(_, captured)) if captured.values.cells.is_empty()
-        );
-        // This exact root creates one fresh ordinary function as the provider
-        // call's argument. Its body does not run at creation, even when the
-        // deferred body contains syntax the callable interpreter marks opaque.
-        // Keep the capture-cell restriction and preserve the closure value so
-        // an eager invocation or later escape still follows its usual path.
-        let selected_function_argument = body.opaque
-            && matches!(
-                creation,
-                super::super::local_operations::DeferredCallableCreation::Function(_)
-            )
-            && matches!(self.scope, LocalExecutionScope::RootInitializer)
-            && self
-                .outcome
-                .root_binding_effect_identity
-                .as_ref()
-                .is_some_and(|identity| {
-                    identity.owner == self.owner
-                        && identity.initializer_span == self.body.initializer_span()
-                        && self
-                            .body
-                            .single_identifier_call_with_function_argument_initializer()
-                            .is_some_and(|(callee, call_span)| {
-                                self.executor
-                                    .inputs
-                                    .initializer_call_effect_input(
-                                        self.owner,
-                                        &identity.binding,
-                                        callee,
-                                        call_span,
-                                    )
-                                    .is_some()
-                            })
-                });
-        let effects = if captured_cells_are_empty
-            && (!body.opaque || selected_function_argument)
-            && !body.generator
-            && !self
-                .executor
-                .inputs
-                .index
-                .async_callables
-                .contains(&callable)
-        {
-            // Creating this checked closure allocates a callable without
-            // evaluating its body or touching exterior state. The prefix
-            // prerequisites still select its exact captured environment.
-            let mut effects = EffectCoverageFragment::no_effects();
-            effects.depend_on(&self.executor.settled_prefix_dependencies());
-            effects
-        } else {
-            EffectCoverageFragment::default()
-        };
-        Some(LocalValueResult {
-            selection: effects
-                .lexical_selection_dependencies()
-                .and_then(|dependencies| CallableSelection::observed(&values, dependencies)),
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
-            effects,
-        })
-    }
     fn assign_capture(
         &mut self,
         frame: &mut LocalFrame,
         binding: &Id,
         values: &Values,
         span: Span,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    ) -> Result<super::super::allocation_transfer::AllocationValue, RemainderDisposition> {
         if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
             let cell = &mut self.executor.state.lexical_cells[id.0];
             if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || cell.initialization == CellInitialization::Uninitialized
             {
-                return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                return Ok(super::super::allocation_transfer::AllocationValue::opaque(
                     Values::from([AbstractValue::Value(Value::Unavailable)]),
                 ));
             }
@@ -2124,7 +1992,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 self.executor.state.prefix_revision =
                     self.executor.state.prefix_revision.wrapping_add(1);
             }
-            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+            return Ok(super::super::allocation_transfer::AllocationValue::opaque(
                 result,
             ));
         }
@@ -2138,12 +2006,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             },
             span,
         );
-        None
+        Err(RemainderDisposition::AlreadySummarized)
     }
-    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
+    fn read_binding(
+        &mut self,
+        binding: &Id,
+        frame: &mut LocalFrame,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
         if self.missing_activation_binding(binding, frame) {
             self.refuse_activation_value(frame);
-            return None;
+            return Err(RemainderDisposition::AlreadySummarized);
         }
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor
@@ -2222,18 +2094,21 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .filter(|selection| selection.matches(&values))
                 .cloned()
         };
-        Some(LocalValueResult {
+        Ok(LocalValueResult {
             allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
             effects,
             selection,
         })
     }
+}
+
+impl CallContext for LocalExecutionContext<'_, '_, '_> {
     fn read_call_callee(
         &mut self,
         binding: &Id,
         call_span: Span,
         frame: &mut LocalFrame,
-    ) -> Option<LocalValueResult> {
+    ) -> Result<LocalValueResult, RemainderDisposition> {
         let mut result = self.read_binding(binding, frame)?;
         let selected = matches!(self.scope, LocalExecutionScope::RootInitializer)
             && self
@@ -2262,15 +2137,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         {
             result.effects = EffectCoverageFragment::initialized_module_read();
         }
-        Some(result)
+        Ok(result)
     }
     fn call(
         &mut self,
         frame: &mut LocalFrame,
-        callee: &EvaluatedCallee,
-        arguments: &[SelectedValue],
-        span: Span,
-    ) -> Option<LocalValueResult> {
+        request: &LocalCallRequest,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
+        let LocalCallRequest {
+            callee,
+            arguments,
+            span,
+        } = request;
+        let span = *span;
         if let EvaluatedCallee::Member {
             array_push: Some(selection),
             receiver,
@@ -2286,7 +2165,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .iter()
                 .find(|call| call.kind == CallKind::Call && call.span == span)
                 .expect("a source-covered call has its canonical call record");
-            let caller = self.executor.local_body_identity_for_call(call)?;
+            let Some(caller) = self.executor.local_body_identity_for_call(call) else {
+                return Err(RemainderDisposition::NeedsSummary);
+            };
             if let Some(mut result) = array_transfer::push(self.executor, selection, &args) {
                 for cell in result.reads {
                     self.outcome
@@ -2307,7 +2188,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     },
                     dependencies: Box::new(result.dependencies),
                 });
-                return Some(LocalValueResult {
+                return Ok(LocalValueResult {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(
                         result.values,
                     ),
@@ -2327,7 +2208,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 },
                 span,
             );
-            return None;
+            return Err(RemainderDisposition::AlreadySummarized);
         }
         let targets = callee.targets();
         let mut reached = targets.clone();
@@ -2458,7 +2339,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 } else {
                     outcome.effect_coverage
                 };
-                return Some(LocalValueResult {
+                return Ok(LocalValueResult {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
                     effects,
                     selection: outcome.return_selection,
@@ -2496,14 +2377,12 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 // neither a partial value nor a terminal position is coverage.
                 self.outcome.complete = false;
                 self.outcome.effect_coverage = EffectCoverageFragment::default();
-                frame.returns.extend(values);
-                frame
-                    .returns
-                    .insert(AbstractValue::Value(Value::Unavailable));
+                let mut possible = values;
                 if !self.executor.callable_has_no_normal_return(key) {
-                    frame.returns.insert(AbstractValue::Value(Value::Top));
+                    possible.insert(AbstractValue::Value(Value::Top));
                 }
-                return None;
+                frame.complete_unknown_return(possible);
+                return Err(RemainderDisposition::AlreadySummarized);
             }
             reached.extend(values);
         }
@@ -2519,33 +2398,134 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             }
         };
         self.fallback(frame, reached, fallback_reason, span);
-        None
+        Err(RemainderDisposition::AlreadySummarized)
     }
-    fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> super::super::value_model::LiteralPropertyKind {
-        self.executor
-            .inputs
-            .index
-            .literal_property_kind(allocation, position)
-    }
-    fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
-        self.executor.inputs.index.allocation_layout(allocation)
+}
+
+impl HeapContext for LocalExecutionContext<'_, '_, '_> {
+    fn index(&self) -> &ExecutionIndex {
+        self.executor.inputs.index
     }
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
     }
-    fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome
-            .effects
-            .record_heap_read(cell, self.executor.state.assumption.is_none());
+    fn settled_dependencies(&self) -> Box<ProofDependencies> {
+        self.executor.boxed_settled_prefix_dependencies()
     }
-    fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
-        self.outcome
-            .effects
-            .record_heap_write(cell, self.executor.state.assumption.is_none());
+    fn closure(
+        &mut self,
+        frame: &mut LocalFrame,
+        creation: super::super::local_operations::DeferredCallableCreation,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
+        let callable = creation.callable();
+        assert_eq!(
+            self.executor.inputs.index.callable_creation(callable),
+            Some(creation),
+            "canonical callable creation kind/home-object association"
+        );
+        let body = &self.executor.inputs.index.callables[&callable];
+        let reads = self
+            .executor
+            .inputs
+            .index
+            .prototype_callable_reads
+            .get(&callable)
+            .unwrap_or(&body.reads);
+        if reads
+            .iter()
+            .any(|binding| self.missing_activation_binding(binding, frame))
+        {
+            self.refuse_activation_value(frame);
+            return Err(RemainderDisposition::AlreadySummarized);
+        }
+        let captures = self.executor.closure_captures(callable, &frame.environment);
+        let values = Values::from([AbstractValue::Closure(callable, captures)]);
+        frame.inputs.extend(values.iter().cloned());
+        let captured_cells_are_empty = matches!(
+            values.first(),
+            Some(AbstractValue::Closure(_, captured)) if captured.values.cells.is_empty()
+        );
+        // This exact root creates one fresh ordinary function as the provider
+        // call's argument. Its body does not run at creation, even when the
+        // deferred body contains syntax the callable interpreter marks opaque.
+        // Keep the capture-cell restriction and preserve the closure value so
+        // an eager invocation or later escape still follows its usual path.
+        let selected_function_argument = body.opaque
+            && matches!(
+                creation,
+                super::super::local_operations::DeferredCallableCreation::Function(_)
+            )
+            && matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && self
+                .outcome
+                .root_binding_effect_identity
+                .as_ref()
+                .is_some_and(|identity| {
+                    identity.owner == self.owner
+                        && identity.initializer_span == self.body.initializer_span()
+                        && self
+                            .body
+                            .single_identifier_call_with_function_argument_initializer()
+                            .is_some_and(|(callee, call_span)| {
+                                self.executor
+                                    .inputs
+                                    .initializer_call_effect_input(
+                                        self.owner,
+                                        &identity.binding,
+                                        callee,
+                                        call_span,
+                                    )
+                                    .is_some()
+                            })
+                });
+        let effects = if captured_cells_are_empty
+            && (!body.opaque || selected_function_argument)
+            && !body.generator
+            && !self
+                .executor
+                .inputs
+                .index
+                .async_callables
+                .contains(&callable)
+        {
+            // Creating this checked closure allocates a callable without
+            // evaluating its body or touching exterior state. The prefix
+            // prerequisites still select its exact captured environment.
+            let mut effects = EffectCoverageFragment::no_effects();
+            effects.depend_on(&self.executor.settled_prefix_dependencies());
+            effects
+        } else {
+            EffectCoverageFragment::default()
+        };
+        Ok(LocalValueResult {
+            selection: effects
+                .lexical_selection_dependencies()
+                .and_then(|dependencies| CallableSelection::observed(&values, dependencies)),
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            effects,
+        })
+    }
+}
+
+impl NativeContext for LocalExecutionContext<'_, '_, '_> {
+    fn array_method_callee(
+        &mut self,
+        receivers: &Values,
+        property: &str,
+    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
+        for cell in [
+            crate::facts::EffectCell::ObjectShape(selection.object),
+            crate::facts::EffectCell::OwnProperty {
+                origin: selection.object,
+                property: "push".into(),
+            },
+        ] {
+            self.outcome
+                .effects
+                .record_heap_read(cell, self.executor.state.assumption.is_none());
+        }
+        Some((selection, effects))
     }
     fn native_field_read(
         &mut self,
@@ -2622,96 +2602,120 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             selection: None,
         })
     }
-    fn unproved_field_read(
-        &mut self,
-        frame: &mut LocalFrame,
-        receiver: &Id,
-        receivers: &Values,
-        property: &str,
-        span: Span,
-        refusal: OrderedFieldReadRefusal,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
-        if matches!(self.scope, LocalExecutionScope::RootInitializer)
-            && let Some(read) = self.executor.present_own_data_read(receivers, property)
-        {
-            self.outcome
-                .effects
-                .record_heap_read(read.cell, self.executor.state.assumption.is_none());
-            return Some(super::super::allocation_transfer::AllocationValue::opaque(
-                read.values,
-            ));
-        }
-        let callee = ValueExpr::Member(
-            Arc::new(ValueExpr::Binding(receiver.clone())),
-            Some(property.to_owned()),
-            MemberKey::Static,
-            span.into(),
-        );
-        let lookup = self
-            .calls()
-            .iter()
-            .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
-        let call = match lookup {
-            Some(lookup)
-                if self.executor.callee_lookup_is_certified(lookup)
-                    || (property == "push"
-                        && self.executor.dense_array_push_receiver(receivers).is_some()) =>
-            {
-                lookup.clone()
+}
+
+impl ControlContext for LocalExecutionContext<'_, '_, '_> {
+    fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition {
+        match what {
+            Unproved::FieldRead {
+                receiver,
+                receivers,
+                property,
+                span,
+                refusal,
+            } => {
+                if matches!(self.scope, LocalExecutionScope::RootInitializer)
+                    && let Some(read) = self.executor.present_own_data_read(receivers, property)
+                {
+                    self.outcome
+                        .effects
+                        .record_heap_read(read.cell, self.executor.state.assumption.is_none());
+                    return Disposition::Resolved(
+                        super::super::allocation_transfer::AllocationValue::opaque(read.values),
+                    );
+                }
+                let callee = ValueExpr::Member(
+                    Arc::new(ValueExpr::Binding(receiver.clone())),
+                    Some(property.to_owned()),
+                    MemberKey::Static,
+                    span.into(),
+                );
+                let lookup = self
+                    .calls()
+                    .iter()
+                    .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
+                let call = match lookup {
+                    Some(lookup)
+                        if self.executor.callee_lookup_is_certified(lookup)
+                            || (property == "push"
+                                && self
+                                    .executor
+                                    .dense_array_push_receiver(receivers)
+                                    .is_some()) =>
+                    {
+                        lookup.clone()
+                    }
+                    _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
+                };
+                // Retain established native, array and borrowed-record read proofs.
+                // The receiver is only a declarative cell, so the value projection
+                // cannot replay receiver code. Its judgment stays opaque; execution
+                // completeness is not a source or provider coverage certificate.
+                if self.executor.execute_call(
+                    &call,
+                    &frame.environment,
+                    &frame.environment,
+                    self.outcome,
+                ) && !self.outcome.unknown_call
+                {
+                    let values = self.executor.evaluate(
+                        &call.callee,
+                        &frame.environment,
+                        &frame.environment,
+                    );
+                    frame.inputs.extend(values.iter().cloned());
+                    frame
+                        .borrowed_records
+                        .extend(self.executor.reachable_objects(&values));
+                    return Disposition::Resolved(
+                        super::super::allocation_transfer::AllocationValue::opaque(values),
+                    );
+                }
+                self.fallback(
+                    frame,
+                    receivers.clone(),
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::MemberRead,
+                        ordered_field_read_refusal: Some(refusal),
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+                Disposition::Summarized
             }
-            _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
-        };
-        // Retain established native, array and borrowed-record read proofs.
-        // The receiver is only a declarative cell, so the value projection
-        // cannot replay receiver code. Its judgment stays opaque; execution
-        // completeness is not a source or provider coverage certificate.
-        if self
-            .executor
-            .execute_call(&call, &frame.environment, &frame.environment, self.outcome)
-            && !self.outcome.unknown_call
-        {
-            let values =
-                self.executor
-                    .evaluate(&call.callee, &frame.environment, &frame.environment);
-            frame.inputs.extend(values.iter().cloned());
-            frame
-                .borrowed_records
-                .extend(self.executor.reachable_objects(&values));
-            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+            Unproved::FieldWrite {
+                receivers,
                 values,
-            ));
+                span,
+            } => {
+                let mut reached = receivers.clone();
+                reached.extend(values.iter().cloned());
+                self.fallback(
+                    frame,
+                    reached,
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::PropertyWrite,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+                Disposition::Summarized
+            }
+            Unproved::Operator { operands, span } => {
+                self.fallback(
+                    frame,
+                    operands.clone(),
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::ImplicitCoercion,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+                Disposition::Summarized
+            }
         }
-        self.fallback(
-            frame,
-            receivers.clone(),
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::MemberRead,
-                ordered_field_read_refusal: Some(refusal),
-                ordered_call_admission_refusal: None,
-            },
-            span,
-        );
-        None
-    }
-    fn unproved_field_write(
-        &mut self,
-        frame: &mut LocalFrame,
-        receivers: &Values,
-        values: &Values,
-        span: Span,
-    ) {
-        let mut reached = receivers.clone();
-        reached.extend(values.iter().cloned());
-        self.fallback(
-            frame,
-            reached,
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::PropertyWrite,
-                ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: None,
-            },
-            span,
-        );
     }
     fn publish_throw(&mut self, values: &Values) {
         self.executor.publish_values(
@@ -2719,6 +2723,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             ClassMembersPublicationWriter::ThrowValuePublication,
             None,
         );
+    }
+    fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
+        self.outcome
+            .effects
+            .record_heap_read(cell, self.executor.state.assumption.is_none());
+    }
+    fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
+        self.outcome
+            .effects
+            .record_heap_write(cell, self.executor.state.assumption.is_none());
     }
 }
 
@@ -10398,6 +10412,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
                 unreachable!("the shared transfer evaluates primitive values")
             }
+            // CLEANUP(added 2026-11-09): a read the kernel's own-data transfer
+            // resolves never reaches this arm. Its remaining callers are the
+            // unproved-read fallback in `ControlContext::unproved` (gate: the
+            // Wave 3 descriptor and native read slices give those reads a
+            // kernel path) and this self-evaluating legacy evaluator (gate:
+            // L2c moves it to `legacy/`). Delete the arm with the last one.
             ValueExpr::Member(object, property, is_static_identifier, site) => {
                 if let Some(premise) = self
                     .inputs
@@ -10940,7 +10960,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.executed_owners.insert(owner);
         // The source-covered application consumer supplies access effects and
         // conservative fallback. The shared kernel controls operation order.
-        let coverage = local_transfer::execute(
+        let (frame, attempt) = driver::drive(
             &mut LocalExecutionContext {
                 executor: self,
                 outcome: &mut outcome,
@@ -10949,23 +10969,56 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 body,
             },
             body,
-            &mut frame,
+            LocalContinuation::new(frame),
         );
-        assert!(
-            coverage.is_some() || !outcome.complete,
-            "covered local values use shared transfers or an explicit conservative fallback"
-        );
-        if let Some(coverage) = coverage {
-            outcome.effect_coverage = coverage.effects;
+        match attempt {
+            LocalExecutionAttempt::Completed(result) => {
+                outcome.effect_coverage = result.ledger.effects;
+            }
+            LocalExecutionAttempt::Refused(RemainderDisposition::AlreadySummarized) => {}
+            LocalExecutionAttempt::Refused(RemainderDisposition::NeedsSummary) => {
+                // The kernel stopped at an operation it cannot represent and no
+                // adapter path summarized the remainder on the way out.
+                let span = match scope {
+                    LocalExecutionScope::Callable(key) => self
+                        .inputs
+                        .index
+                        .callable_spans
+                        .get(&key)
+                        .copied()
+                        .unwrap_or(DUMMY_SP),
+                    LocalExecutionScope::RootInitializer => {
+                        body.initializer_span().unwrap_or(DUMMY_SP)
+                    }
+                };
+                LocalExecutionContext {
+                    executor: self,
+                    outcome: &mut outcome,
+                    owner,
+                    scope,
+                    body,
+                }
+                .fallback(
+                    &frame,
+                    Values::new(),
+                    ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::OpaqueExecution,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    span,
+                );
+            }
         }
-        for value in &frame.returns {
+        let returns = frame.returns();
+        for value in &returns {
             if let AbstractValue::OwnDescriptorMap(site) = value {
                 self.invalidate_own_descriptor_map(*site);
             }
         }
-        outcome.returns.extend(frame.returns);
+        outcome.returns.extend(returns);
         outcome.return_selection = frame
-            .return_selection
+            .return_selection()
             .filter(|selection| selection.matches(&outcome.returns));
         outcome
     }
@@ -11269,6 +11322,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        // CLEANUP(added 2026-11-09): the source-summary lane after this block
+        // is the flat lane for bodies that have an ordered plan. It stays until
+        // the kernel covers each gate that still routes such a body there:
+        // `requires_keyed_collection_new` (no application keyed-collection
+        // lane), captured writes to bindings without an active cell, free
+        // reads outside module, imported-primitive and intact-native bindings,
+        // and `established_writes` (member-write proofs the kernel's own-data
+        // store lacks). Remove each gate with the lane it protects.
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()

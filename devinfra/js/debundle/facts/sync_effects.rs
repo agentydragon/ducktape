@@ -9,8 +9,8 @@ pub(crate) use effect_coverage::{
     BindingEffectAuthority, BindingEffectCoverage, SavedBindingEffectCoverage,
 };
 pub(crate) mod execution_index;
+mod kernel;
 mod local_operations;
-mod local_transfer;
 mod namespace_wrapper;
 mod native;
 pub(crate) mod noninvoking_initialization;
