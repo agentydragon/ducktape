@@ -38,9 +38,11 @@ identified by the ownership marker, then starts and tears down its own fresh nod
 
 Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
 family with the VM resource estimate. Baseline fingerprints include the layer mode, k3s, CRDs,
-`baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`, and PKI
-releases/images. VM stacks also include `vm/infrastructure.py` and VM releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup; `vm/runtime.py` owns per-action
-VM volumes and guest evidence. These per-action helpers do not enter infrastructure compatibility.
+`baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`,
+`certificates.py`, and PKI releases/images. VM stacks also include `vm/infrastructure.py` and VM
+releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup;
+`vm/runtime.py` owns per-action VM volumes and guest evidence. The fingerprint includes
+`certificates.py` because its cleanup determines whether retained PKI is clean.
 Only VM suites load `vm/pytest_plugin.py`, which supplies the typed lifecycle extension; Pod/MCP
 runfiles omit VM runtime helpers.
 
@@ -56,6 +58,9 @@ images remain per-action inputs. The runtime fingerprint additionally checks act
 baseline contents, helper code and CRDs before reuse.
 
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
+Fixture Certificates rendered outside the deleted fixture namespaces are removed with their
+CertificateRequests selected by Certificate UID and their declared Secrets. This refreshes the
+fixture root and workload CA while preserving unrelated PKI resources and the retained controllers.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
 controllers remain running after successful teardown.

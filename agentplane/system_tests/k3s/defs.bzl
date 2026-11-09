@@ -278,3 +278,7 @@ def k3s_tcg_vm_image_manifest(name):
         vm = _VM_IMAGES,
         guest = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, _VM_GUEST_ROOT_IMAGE, _VM_RUNNER_DISK_IMAGE),
     )
+
+def k3s_pki_image_manifest(name):
+    """Declare the retained PKI controllers without application or guest images."""
+    image_manifest(name = name, testonly = True, pki = _PKI_IMAGES)
