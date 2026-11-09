@@ -256,6 +256,31 @@ async def test_a_base_skipped_at_deletion_does_not_fail_the_run(
     assert "0 deleted, 1 skipped, 0 failed" in capsys.readouterr().out
 
 
+def test_removal_progress_table_counts_removed_skipped_and_failed() -> None:
+    reporter = workspace_gc._ProgressReporter.for_removals()
+    with reporter:
+        reporter.start_phase("bases", 3)
+        reporter.record("bases", "REMOVED")
+        reporter.record("bases", "REMOVED")
+        reporter.record("bases", "FAILED")
+    output = StringIO()
+    Console(file=output, width=100, force_terminal=False).print(reporter.render())
+
+    header, bases = output.getvalue().splitlines()
+    assert header.split() == ["removed", "skipped", "failed"]
+    assert bases.split()[:4] == ["bases", "2", "0", "1"]
+    assert bases.split()[-1] == "3/3"
+
+
+async def test_run_bounded_reports_each_result_as_it_finishes() -> None:
+    seen: list[int] = []
+
+    results = await workspace_gc._run_bounded([1, 2, 3], lambda item: item * 2, workers=2, on_done=seen.append)
+
+    assert results == [2, 4, 6]
+    assert sorted(seen) == [2, 4, 6]
+
+
 async def test_run_bounded_runs_items_concurrently_and_returns_results_in_item_order() -> None:
     both_running = threading.Barrier(2, timeout=5)  # only passes if two items are inside at once
 
@@ -267,7 +292,7 @@ async def test_run_bounded_runs_items_concurrently_and_returns_results_in_item_o
 
 
 def test_progress_table_aligns_counts_per_phase_without_borders() -> None:
-    reporter = workspace_gc._ProgressReporter()
+    reporter = workspace_gc._ProgressReporter.for_scans()
     with reporter:
         reporter.start_phase("worktrees", 12)
         for _ in range(10):
