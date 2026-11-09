@@ -3064,10 +3064,10 @@ additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject
 identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
 so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
 subject and `PolicySet`'s Kubernetes rule types; the `kubernetesServiceAccount` source on
-`EgressCredential` is added additively in its own change. No reader resolves an identity subject
-yet; each treats such a binding as naming no caller. **Exit:** the CRDs install on the envtest
-apiserver, admission accepts the plan's example objects and rejects malformed ones, and existing
-tests of untouched kinds still pass.
+`EgressCredential` is added additively in its own change. Only `policy/reader`'s Identity lookup
+resolves an identity subject, and no enforcing service makes one yet (`EGRESS_IDENTITY_RULES`).
+**Exit:** the CRDs install on the envtest apiserver, admission accepts the plan's example objects
+and rejects malformed ones, and existing tests of untouched kinds still pass.
 
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
@@ -3139,14 +3139,22 @@ are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Blocked on `IDENTITY_KINDS`** for what remains. The shared `policy/reader` resolves identity
-subjects; the proxy's decision keys on the identity; decision history records the identity; the
-`basic` set carries the shared account's use rule. The Kubernetes-audience projected token is
+**Blocked on `IDENTITY_KINDS`** for what remains. The proxy's decision keys on the identity;
+decision history records the identity; the `basic` set carries the shared account's use rule. The Kubernetes-audience projected token is
 removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken`
 source, so the source, the sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second
 TokenReview per tunnel and the egress `TODO.md` entry on where that token is substituted go with
 it. **Exit:** the egress harness shows two identities acting as one account, one losing its use
 rule without the other noticing.
+
+**Reader side landed (policy reader identity PR, 2026-11-09):** `policy/reader` answers an
+`Identity` lookup by name and UID, watching Identities in the policy namespace, so a recreated
+same-named Identity's UID is a different subject. A ServiceAccount lookup never finds an
+identity-subject binding, nor the reverse. Egress, the Action Service and Notification watch
+Identities (Role rules added) but still look up by ServiceAccount, so no decision changed. The
+proxy keying its decision on the identity waits on the `WorkloadCredential` resolver
+(`plans/workload_identity_lifecycle.md` migration step 2), which yields the identity name and UID
+to look up.
 
 **Landed on ServiceAccount subjects (egress impersonation PR, 2026-11-08):** the
 `kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer

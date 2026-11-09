@@ -1898,6 +1898,14 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - identities
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - policybindings/status
     verbs:
       - patch
@@ -7605,6 +7613,13 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - identities
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - policybindings/status
     verbs:
       - patch
@@ -8830,6 +8845,14 @@ rules:
       - agentplane.allegedly.works
     resources:
       - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
     verbs:
       - get
       - list

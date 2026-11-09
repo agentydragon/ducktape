@@ -175,3 +175,57 @@ func TestTheConditionIsNotRewrittenWhenUnchanged(t *testing.T) {
 		t.Errorf("a binding already carrying its condition was written %d more times", got-written)
 	}
 }
+
+func TestAnIdentityBindingAnswersOnlyALookupOfItsLiveIdentity(t *testing.T) {
+	f := newFixture(t)
+	f.create(f.policySet("test-set", testRule()))
+	agent := f.identity("test-agent")
+	f.create(agent)
+	f.create(f.policyBinding("test-account-grant", "test-set"))
+	identityGrant := f.policyBinding("test-identity-grant", "test-set")
+	identityGrant.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: agent.Name}}
+	f.create(identityGrant)
+	f.start()
+	live := Identity{Name: agent.Name, UID: agent.UID}
+	f.eventually("the identity binding to grant", func() bool {
+		return slices.Equal(grantedBindings(f.index.Grants(live)), []string{"test-identity-grant"})
+	})
+
+	// Neither kind of lookup finds the other kind's binding.
+	if got := grantedBindings(f.index.Grants(subject)); !slices.Equal(got, []string{"test-account-grant"}) {
+		t.Errorf("a ServiceAccount lookup found %v", got)
+	}
+	// A ServiceAccount whose name is the Identity's is still not the Identity.
+	if got := f.index.Bindings(ServiceAccount{Namespace: f.namespace, Name: agent.Name}); len(got) != 0 {
+		t.Errorf("a ServiceAccount lookup by the Identity's name found %+v", got)
+	}
+	if got := f.index.Bindings(live); len(got) != 1 || got[0].Binding.Name != "test-identity-grant" || got[0].Rules() != 1 {
+		t.Errorf("Bindings of the Identity = %+v", got)
+	}
+	if got := f.index.Grants(Identity{Name: agent.Name}); len(got) != 0 {
+		t.Errorf("a lookup naming no UID found %v", grantedBindings(got))
+	}
+
+	f.remove(agent)
+	f.eventually("the deleted Identity to grant nothing", func() bool { return len(f.index.Grants(live)) == 0 })
+
+	// A same-named Identity is another incarnation: what the deleted one's UID could do, it still
+	// cannot, while the new one's UID holds the binding that names the name.
+	recreated := f.identity(agent.Name)
+	f.create(recreated)
+	f.eventually("the recreated Identity to grant", func() bool {
+		return slices.Equal(grantedBindings(f.index.Grants(Identity{Name: recreated.Name, UID: recreated.UID})), []string{"test-identity-grant"})
+	})
+	if got := f.index.Grants(live); len(got) != 0 {
+		t.Errorf("the deleted incarnation inherited %v from the recreated one", grantedBindings(got))
+	}
+}
+
+// grantedBindings is the names of the bindings among grants.
+func grantedBindings(grants []Grant[[]string]) []string {
+	var names []string
+	for _, grant := range grants {
+		names = append(names, grant.Binding)
+	}
+	return names
+}

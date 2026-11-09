@@ -1,6 +1,10 @@
 // Package reader reads PolicySets for a Go service that enforces one rule type: an Index of that
 // type's rules and the bindings that grant them, kept equal to the API server by shared informers
 // whose Health says when it may be acted on, and the service's condition on each PolicyBinding.
+//
+// A lookup names its Subject: a ServiceAccount, or an Identity by name and UID. A binding of a
+// ServiceAccount subject answers only a ServiceAccount lookup, and a binding of an Identity subject
+// only an Identity lookup while the live Identity of that name has the lookup's UID.
 package reader
 
 import (
@@ -16,6 +20,7 @@ import (
 const (
 	PolicySets     watchhealth.Kind = "policysets"
 	PolicyBindings watchhealth.Kind = "policybindings"
+	Identities     watchhealth.Kind = "identities"
 )
 
 // Watches runs one reader's shared informers and keeps its Health. Each kind is a client-go shared

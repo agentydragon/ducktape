@@ -81,7 +81,7 @@ func (p *Policy) Watch(base *rest.Config, namespace string) (*reader.Watches, er
 // PermitsSend reports whether a binding of the sender grants a rule that allows sending to the Sandbox as the caller
 // read it. It says nothing of availability, which the caller checks first.
 func (p *Policy) PermitsSend(sender policyapi.ServiceAccountRef, sandbox *sandboxapi.Sandbox) bool {
-	for _, grant := range p.Rules.Grants(sender) {
+	for _, grant := range p.Rules.Grants(reader.ServiceAccount(sender)) {
 		for _, set := range grant.Sets {
 			for _, rule := range set.Rules {
 				if rule.Rule.covers(sandbox) {

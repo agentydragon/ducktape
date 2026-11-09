@@ -37,7 +37,7 @@ var testCondition = Condition{Type: "TestReady", FieldManager: "agentplane-reade
 var (
 	fixtures atomic.Int32
 
-	subject = policyapi.ServiceAccountRef{Namespace: "test-subject", Name: "test-workload"}
+	subject = ServiceAccount{Namespace: "test-subject", Name: "test-workload"}
 	// bindingSubject is subject as a binding names it.
 	bindingSubject = policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}
 
@@ -293,6 +293,13 @@ func (f *fixture) policyBinding(name string, sets ...string) *policyapi.PolicyBi
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: f.namespace, Name: name},
 		Spec:       policyapi.PolicyBindingSpec{Subject: bindingSubject, PolicySets: sets},
+	}
+}
+
+func (f *fixture) identity(name string) *policyapi.Identity {
+	return &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: f.namespace, Name: name},
+		Spec:       policyapi.IdentitySpec{Description: "test identity"},
 	}
 }
 

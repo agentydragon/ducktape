@@ -3,6 +3,7 @@ package policy
 import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 // EffectivePolicy is an egress policy some binding grants the caller.
@@ -23,7 +24,7 @@ type EffectiveRule struct {
 // bindings by name, each binding's sets as it lists them. A set granted by two bindings appears
 // under each.
 func (i *Index) ListEffectivePolicies(caller policyapi.ServiceAccountRef) []EffectivePolicy {
-	grants := i.Rules.Grants(caller)
+	grants := i.Rules.Grants(reader.ServiceAccount(caller))
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	var policies []EffectivePolicy

@@ -190,8 +190,9 @@ type IdentityRef struct {
 	Name string `json:"name" proto:"1"`
 }
 
-// Subject is who a binding grants to: a ServiceAccount by namespace and name, or an Identity. No
-// reader resolves an Identity subject yet; each treats such a binding as naming no caller.
+// Subject is who a binding grants to: a ServiceAccount by namespace and name, or an Identity. Only
+// the shared policy reader's Identity lookup resolves an Identity subject, and no enforcing service
+// makes one yet; to every other lookup such a binding names no caller.
 // CLEANUP(added 2026-11-08): remove the ServiceAccount variant (namespace, name) in IDENTITY_CUTOVER
 // (agentplane/plans/task_dag.md), which rewrites every binding to an Identity subject.
 // +kubebuilder:validation:XValidation:rule="has(self.identity) ? !has(self.namespace) && !has(self.name) : has(self.namespace) && has(self.name)",message="Name either a ServiceAccount (namespace and name) or an identity."
