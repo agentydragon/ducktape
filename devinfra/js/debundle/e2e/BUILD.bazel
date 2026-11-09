@@ -287,6 +287,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "effect_tv_class_construction_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
     name = "effect_tv_array_spread_test",
     deps = [
         ":graph_support",

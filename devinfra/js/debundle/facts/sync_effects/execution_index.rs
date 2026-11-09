@@ -6005,7 +6005,7 @@ pub(super) struct ExecutionIndex {
     pub(super) class_values: BTreeMap<u32, ClassValueFacts>,
     pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) class_bindings: BTreeMap<u32, Id>,
-    class_spans: BTreeMap<u32, Span>,
+    pub(super) class_spans: BTreeMap<u32, Span>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     pub(super) other_class_uses: BTreeSet<Id>,
@@ -9421,6 +9421,12 @@ impl ExecutionIndex {
                 && let Some(expression) = declarator.init.as_deref()
                 && !matches!(expression.unwrap_parens(), Expr::Ident(_))
                 && let Some(body) = LocalBody::from_initializer(expression)
+                // Only a top-level class declaration can satisfy the kernel's
+                // construct admission; other `new` roots keep the flat lane.
+                && body
+                    .construct_callees()
+                    .iter()
+                    .all(|callee| index.class_ids.contains(callee))
             {
                 debug_assert_eq!(body.initializer_span(), Some(expression.span()));
                 index.ordered_initializers.insert(owner, body);

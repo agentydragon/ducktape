@@ -304,6 +304,10 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    let root_construction = index
+        .ordered_initializers
+        .get(&owner)
+        .is_some_and(|body| executor.ordered_root_construction(body, calls));
     let ordered_initializer = ((initializer_source.is_none()
         || checked_split_binding_copy
         || selected_audited_initializer.is_some())
@@ -357,6 +361,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
+                || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
                         && call.owner == owner

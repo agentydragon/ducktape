@@ -46,6 +46,12 @@ pub(super) enum LocalBodyIdentity {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    /// The lowered base-constructor body (instance fields, then constructor
+    /// statements) of the class defined at `class`.
+    Constructor {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
     Native {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
@@ -259,9 +265,7 @@ impl SavedLexicalBindingEffectReceipt {
 
 impl LexicalBindingEffectReceipt {
     pub(super) fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectReceipt {
-        use crate::reports::schema::{
-            LexicalBindingEffectBody, LexicalBindingEffectCall, LexicalBindingEffectReceipt,
-        };
+        use crate::reports::schema::{LexicalBindingEffectCall, LexicalBindingEffectReceipt};
 
         LexicalBindingEffectReceipt {
             owner: self.identity.owner,
@@ -273,54 +277,43 @@ impl LexicalBindingEffectReceipt {
                 .calls
                 .iter()
                 .map(|call| LexicalBindingEffectCall {
-                    caller: match &call.caller {
-                        LocalBodyIdentity::RootInitializer {
-                            owner,
-                            initializer_span,
-                        } => LexicalBindingEffectBody::RootInitializer {
-                            owner: *owner,
-                            initializer_span: *initializer_span,
-                        },
-                        LocalBodyIdentity::Callable { key, owner } => {
-                            LexicalBindingEffectBody::Callable {
-                                key: *key,
-                                owner: *owner,
-                            }
-                        }
-                        LocalBodyIdentity::Native {
-                            intrinsic,
-                            property,
-                        } => LexicalBindingEffectBody::Native {
-                            intrinsic: *intrinsic,
-                            property: property.clone(),
-                        },
-                    },
+                    caller: call.caller.to_report(),
                     call_span: call.call_span,
-                    target: match &call.target {
-                        LocalBodyIdentity::RootInitializer {
-                            owner,
-                            initializer_span,
-                        } => LexicalBindingEffectBody::RootInitializer {
-                            owner: *owner,
-                            initializer_span: *initializer_span,
-                        },
-                        LocalBodyIdentity::Callable { key, owner } => {
-                            LexicalBindingEffectBody::Callable {
-                                key: *key,
-                                owner: *owner,
-                            }
-                        }
-                        LocalBodyIdentity::Native {
-                            intrinsic,
-                            property,
-                        } => LexicalBindingEffectBody::Native {
-                            intrinsic: *intrinsic,
-                            property: property.clone(),
-                        },
-                    },
+                    target: call.target.to_report(),
                     dependencies: call.dependencies.as_ref().clone(),
                 })
                 .collect(),
+        }
+    }
+}
+
+impl LocalBodyIdentity {
+    fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectBody {
+        use crate::reports::schema::LexicalBindingEffectBody;
+
+        match self {
+            Self::RootInitializer {
+                owner,
+                initializer_span,
+            } => LexicalBindingEffectBody::RootInitializer {
+                owner: *owner,
+                initializer_span: *initializer_span,
+            },
+            Self::Callable { key, owner } => LexicalBindingEffectBody::Callable {
+                key: *key,
+                owner: *owner,
+            },
+            Self::Constructor { class, owner } => LexicalBindingEffectBody::Constructor {
+                class: *class,
+                owner: *owner,
+            },
+            Self::Native {
+                intrinsic,
+                property,
+            } => LexicalBindingEffectBody::Native {
+                intrinsic: *intrinsic,
+                property: property.clone(),
+            },
         }
     }
 }
@@ -670,6 +663,10 @@ enum LocalBodyKey {
         key: u32,
         owner: usize,
     },
+    Constructor {
+        class: u32,
+        owner: usize,
+    },
     Native {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
@@ -698,6 +695,10 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
         },
         LocalBodyIdentity::Callable { key, owner } => LocalBodyKey::Callable {
             key: *key,
+            owner: owner.0,
+        },
+        LocalBodyIdentity::Constructor { class, owner } => LocalBodyKey::Constructor {
+            class: *class,
             owner: owner.0,
         },
         LocalBodyIdentity::Native {

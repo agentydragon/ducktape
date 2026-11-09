@@ -139,6 +139,14 @@ pub(super) enum LocalExpression {
         arguments: Arc<[Self]>,
         span: Span,
     },
+    /// `new callee(...arguments)`: GetValue(callee) precedes every argument;
+    /// the kernel's construct rule runs the class body of an admitted local
+    /// class, every other target is the adapter's to summarize.
+    Construct {
+        callee: Id,
+        arguments: Arc<[Self]>,
+        span: Span,
+    },
     ReadField {
         receiver: Id,
         property: String,
@@ -157,6 +165,14 @@ pub(super) enum LocalExpression {
     DefineThisField {
         property: String,
         value: Arc<Self>,
+    },
+    /// `this.property = value` in a base class constructor: an ordinary
+    /// [[Set]] on the fresh instance, which the kernel admits as a data
+    /// definition only under the adapter's prototype-absence proof.
+    AssignThisField {
+        property: String,
+        value: Arc<Self>,
+        span: Span,
     },
 }
 
@@ -214,6 +230,11 @@ pub(super) struct LocalBody {
     /// interpreter has no keyed-collection heap lane. Keep that interpreter on
     /// its existing flat path when the body contains one.
     requires_keyed_collection_new: bool,
+    /// Callees of every `new` in this body, sorted and unique.
+    construct_callees: Arc<[Id]>,
+    /// Whether some operation can run code outside this body: a call, a
+    /// construction or the iterator protocol of a spread.
+    invokes: bool,
 }
 
 fn is_keyed_collection_new(value: &ValueExpr) -> bool {
@@ -224,6 +245,12 @@ fn is_keyed_collection_new(value: &ValueExpr) -> bool {
                 && matches!(callee.as_ref(), ValueExpr::Binding(binding)
                     if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet"))
     )
+}
+
+fn empty_keyed_collection_new(construction: &NewExpr) -> bool {
+    construction.args.as_deref().is_none_or(<[_]>::is_empty)
+        && matches!(construction.callee.unwrap_parens(), Expr::Ident(callee)
+            if matches!(callee.sym.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet"))
 }
 
 fn value_contains_keyed_collection_new(value: &ValueExpr) -> bool {
@@ -539,6 +566,31 @@ impl LocalExpression {
                     span: call.span,
                 })
             }
+            // An empty keyed-collection `new` keeps its shared value transfer.
+            Expr::New(construction)
+                if construction.type_args.is_none()
+                    && !empty_keyed_collection_new(construction) =>
+            {
+                let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
+                    return None;
+                };
+                let arguments = construction.args.as_deref().unwrap_or_default();
+                if callee.sym == "eval"
+                    || arguments.iter().any(|argument| argument.spread.is_some())
+                {
+                    return None;
+                }
+                Some(Self::Construct {
+                    callee: callee.to_id(),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| {
+                            Self::lower_with_binary(&argument.expr, class_template, allow_binary)
+                        })
+                        .collect::<Option<Arc<[_]>>>()?,
+                    span: construction.span,
+                })
+            }
             Expr::Member(member) => {
                 let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                     return None;
@@ -576,6 +628,17 @@ impl LocalExpression {
                                 value,
                             });
                         }
+                        if class_template
+                            && matches!(member.obj.unwrap_parens(), Expr::This(_))
+                            && let MemberProp::Ident(property) = &member.prop
+                            && property.sym != "__proto__"
+                        {
+                            return Some(Self::AssignThisField {
+                                property: property.sym.to_string(),
+                                value,
+                                span: assignment.span,
+                            });
+                        }
                         let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                             return None;
                         };
@@ -609,6 +672,54 @@ impl LocalExpression {
                     .then(|| unconditional_value(&value).then_some(Self::Value(value)))
                     .flatten()
             }
+        }
+    }
+
+    /// Visit this expression and every nested operand, in no particular order.
+    fn each(&self, visit: &mut impl FnMut(&Self)) {
+        visit(self);
+        match self {
+            Self::Value(_)
+            | Self::PrimitiveLiteral(_)
+            | Self::This
+            | Self::Closure(_)
+            | Self::ReadField { .. }
+            | Self::UpdateBinding { .. } => {}
+            Self::Sequence(expressions)
+            | Self::Template {
+                substitutions: expressions,
+                ..
+            }
+            | Self::Call {
+                arguments: expressions,
+                ..
+            }
+            | Self::Construct {
+                arguments: expressions,
+                ..
+            } => {
+                for expression in expressions.iter() {
+                    expression.each(visit);
+                }
+            }
+            Self::Binary { left, right, .. } => {
+                left.each(visit);
+                right.each(visit);
+            }
+            Self::Record { properties, .. } => {
+                for property in properties.iter() {
+                    property.value().each(visit);
+                }
+            }
+            Self::Array { elements, .. } => {
+                for element in elements.iter().filter_map(LocalArrayElement::value) {
+                    element.each(visit);
+                }
+            }
+            Self::Assign { value, .. }
+            | Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. }
+            | Self::AssignThisField { value, .. } => value.each(visit),
         }
     }
 
@@ -675,7 +786,17 @@ impl LocalExpression {
                 reads.insert(receiver.clone());
                 value.reads(reads);
             }
-            Self::DefineThisField { value, .. } => value.reads(reads),
+            Self::Construct {
+                callee, arguments, ..
+            } => {
+                reads.insert(callee.clone());
+                for argument in arguments.iter() {
+                    argument.reads(reads);
+                }
+            }
+            Self::DefineThisField { value, .. } | Self::AssignThisField { value, .. } => {
+                value.reads(reads)
+            }
         }
     }
 
@@ -685,7 +806,7 @@ impl LocalExpression {
         closure_sites: &mut BTreeSet<u32>,
     ) -> (bool, bool) {
         match self {
-            Self::Call { arguments, .. } => {
+            Self::Call { arguments, .. } | Self::Construct { arguments, .. } => {
                 for argument in arguments.iter() {
                     argument.allocation_syntax(bindings, closure_sites);
                 }
@@ -749,7 +870,9 @@ impl LocalExpression {
                 (local && allocation_only, local && closure_allowed)
             }
             Self::UpdateBinding { .. } => (false, false),
-            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
+            Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. }
+            | Self::AssignThisField { value, .. } => {
                 let (allocation_only, _) = value.allocation_syntax(bindings, closure_sites);
                 (allocation_only, false)
             }
@@ -779,8 +902,9 @@ impl LocalExpression {
             }
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
-            | Self::DefineThisField { value, .. } => value.requires_keyed_collection_new(),
-            Self::Call { arguments, .. } => {
+            | Self::DefineThisField { value, .. }
+            | Self::AssignThisField { value, .. } => value.requires_keyed_collection_new(),
+            Self::Call { arguments, .. } | Self::Construct { arguments, .. } => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
             Self::PrimitiveLiteral(_)
@@ -824,14 +948,14 @@ impl LocalExpression {
                 left.writes(writes);
                 right.writes(writes);
             }
-            Self::Call { arguments, .. } => {
+            Self::Call { arguments, .. } | Self::Construct { arguments, .. } => {
                 for argument in arguments.iter() {
                     argument.writes(writes);
                 }
             }
-            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
-                value.writes(writes)
-            }
+            Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. }
+            | Self::AssignThisField { value, .. } => value.writes(writes),
             Self::Value(_)
             | Self::PrimitiveLiteral(_)
             | Self::This
@@ -963,7 +1087,14 @@ impl LocalBody {
                 _ => return None,
             }
         }
-        Some(Self::from_operations(bindings, parameters, operations))
+        Self::without_constructions(Self::from_operations(bindings, parameters, operations))
+    }
+
+    /// Callable and class bodies run on the flat lane's construction model
+    /// until an invocation-wide construct admission replaces it; only root
+    /// initializers lower `new` today.
+    fn without_constructions(body: Self) -> Option<Self> {
+        body.construct_callees.is_empty().then_some(body)
     }
 
     /// A concise arrow has the same ordered return semantics as a block body.
@@ -972,7 +1103,9 @@ impl LocalBody {
         parameters: impl Iterator<Item = &'a Pat>,
         expression: &Expr,
     ) -> Option<Self> {
-        Self::lower_expression_with_binary(parameters, expression, true)
+        Self::without_constructions(Self::lower_expression_with_binary(
+            parameters, expression, true,
+        )?)
     }
 
     fn lower_expression_with_binary<'a>(
@@ -1097,11 +1230,11 @@ impl LocalBody {
                     }
                     Stmt::Expr(expression) => {
                         let operation = LocalExpression::lower(&expression.expr, true)?;
-                        let LocalExpression::DefineThisField { property, .. } = &operation else {
-                            return None;
-                        };
-                        if !private_fields.contains(property) {
-                            return None;
+                        match &operation {
+                            LocalExpression::DefineThisField { property, .. }
+                                if private_fields.contains(property) => {}
+                            LocalExpression::AssignThisField { .. } => {}
+                            _ => return None,
                         }
                         constructor_operations.push(LocalOperation::Evaluate(operation));
                     }
@@ -1118,7 +1251,11 @@ impl LocalBody {
 
         field_operations.extend(constructor_operations);
         Some((
-            Self::from_operations(bindings, local_parameters, field_operations),
+            Self::without_constructions(Self::from_operations(
+                bindings,
+                local_parameters,
+                field_operations,
+            ))?,
             parameters,
         ))
     }
@@ -1189,6 +1326,23 @@ impl LocalBody {
         closure_allocation_syntax &= !closure_sites.is_empty();
         let requires_keyed_collection_new =
             expressions().any(LocalExpression::requires_keyed_collection_new);
+        let mut construct_callees = BTreeSet::new();
+        let mut invokes = false;
+        for expression in expressions() {
+            expression.each(&mut |expression| match expression {
+                LocalExpression::Construct { callee, .. } => {
+                    construct_callees.insert(callee.clone());
+                    invokes = true;
+                }
+                LocalExpression::Call { .. } => invokes = true,
+                LocalExpression::Array { elements, .. } => {
+                    invokes |= elements
+                        .iter()
+                        .any(|element| matches!(element, LocalArrayElement::Spread { .. }));
+                }
+                _ => {}
+            });
+        }
         let closure_sites: Arc<[_]> = closure_sites.into_iter().collect();
         Self {
             bindings,
@@ -1201,6 +1355,8 @@ impl LocalBody {
             closure_allocation_syntax,
             closure_sites,
             requires_keyed_collection_new,
+            construct_callees: construct_callees.into_iter().collect(),
+            invokes,
         }
     }
 
@@ -1266,6 +1422,25 @@ impl LocalBody {
 
     pub(super) fn closure_sites(&self) -> &[u32] {
         &self.closure_sites
+    }
+
+    pub(super) fn construct_callees(&self) -> &[Id] {
+        &self.construct_callees
+    }
+
+    pub(super) fn invokes(&self) -> bool {
+        self.invokes
+    }
+
+    /// The exact root `new callee(...)` with no other root operation.
+    pub(super) fn single_construction_initializer(&self) -> Option<(&Id, Span)> {
+        self.initializer_span?;
+        match self.operations.as_ref() {
+            [LocalOperation::Return(Some(LocalExpression::Construct { callee, span, .. }))] => {
+                Some((callee, *span))
+            }
+            _ => None,
+        }
     }
 
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {

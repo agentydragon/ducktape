@@ -1,9 +1,8 @@
 //! The owner body: the ordered initializer through the kernel, or the
 //! flattened call lane, then the owner's fallback and settlement.
 
-use super::super::adapters::application::LocalExecutionScope;
 use super::super::effect_coverage::RootInitializerIdentity;
-use super::super::interpreter::{Executor, Outcome};
+use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
 use super::super::value_model::Context;
 use super::operands::RootOperands;
@@ -51,8 +50,7 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
             Context::new(),
             None,
             owner,
-            LocalExecutionScope::RootInitializer,
-            Some(RootInitializerIdentity {
+            LocalActivation::RootInitializer(RootInitializerIdentity {
                 owner,
                 binding: binding.clone(),
                 initializer_span: body.initializer_span(),

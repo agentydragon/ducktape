@@ -13,6 +13,7 @@ use super::execution_index::{
     native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
 };
 use super::kernel::closure::{CapturePolicy, lexical_captures};
+use super::kernel::construct;
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
@@ -1395,6 +1396,49 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     }
 }
 
+/// The lowered body of a checked constructor that the kernel's construct rule
+/// can run: no call, construction or spread of its own, no keyed-collection
+/// operation (the application has no keyed-collection lane), and no
+/// parameter property read (those keep the flat lane's checked plain-data
+/// input proof).
+fn kernel_constructor_body<'index>(
+    index: &'index ExecutionIndex,
+    key: u32,
+    constructor: &LocalConstructor,
+) -> Option<(&'index LocalBody, SourceUnitOrdinal)> {
+    let (body, _) = index.class_provider_bodies.get(&key)?;
+    (constructor.property_reads.is_empty()
+        && !body.invokes()
+        && !body.requires_keyed_collection_new())
+    .then_some(body)
+    .zip(index.class_owners.get(&key).copied())
+}
+
+/// Which body an ordered activation runs, with what only that kind carries:
+/// a root's exact source identity, a constructor's fresh instance.
+pub(super) enum LocalActivation {
+    Callable(u32),
+    RootInitializer(RootInitializerIdentity),
+    Constructor { class: u32, instance: Values },
+}
+
+impl LocalActivation {
+    fn scope(&self) -> LocalExecutionScope {
+        match self {
+            Self::Callable(key) => LocalExecutionScope::Callable(*key),
+            Self::RootInitializer(_) => LocalExecutionScope::RootInitializer,
+            Self::Constructor { class, .. } => LocalExecutionScope::Constructor(*class),
+        }
+    }
+}
+
+/// One `new` the kernel's construct rule evaluated: its value and, when the
+/// class body ran through the kernel to completion, that body and its effects.
+pub(super) struct OrderedConstruction {
+    pub(super) values: Values,
+    pub(super) body: Option<(LocalBodyIdentity, EffectCoverageFragment)>,
+}
+
 impl OwnDataContext for Executor<'_, '_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         self.inputs.index.ordinary_record_shape(allocation)
@@ -1865,7 +1909,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             });
     }
 
-    fn constructor_field_prototype_absent(&mut self, class: u32, property: &str) -> bool {
+    pub(super) fn constructor_field_prototype_absent(
+        &mut self,
+        class: u32,
+        property: &str,
+    ) -> bool {
         if Self::standard_object_prototype_property(property) {
             return false;
         }
@@ -7049,6 +7097,195 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         key: u32,
         args: &[Values],
     ) -> Result<(Outcome, AbstractValue), ConstructionRejection> {
+        let constructor = self.begin_local_construction(key, args)?;
+        let outcome = self.invoke_checked_constructor(&constructor, args);
+        Ok((outcome, self.constructed_instance(key, args)))
+    }
+
+    /// A local construction the checked constructor refused still runs its
+    /// instance fields and body at `new`: record the typed loss and expose the
+    /// class. The caller invokes the arguments' possible callbacks.
+    fn reject_local_construction(
+        &mut self,
+        key: u32,
+        args: &[Values],
+        call: &Call,
+        rejection: ConstructionRejection,
+        outcome: &mut Outcome,
+    ) {
+        let reach = self.construction_reach(key, args);
+        outcome.lose_precision(
+            ExecutionPrecisionLossReason::UnsupportedConstruction { rejection },
+            reach,
+            call.owner,
+            call.span,
+        );
+        outcome.unknown_call = true;
+        self.note_unknown_call(call);
+        self.state
+            .world_mut()
+            .classes
+            .escaped_capabilities
+            .insert(key);
+        // Unsupported constructors still execute their instance fields and
+        // body at `new`, even without a callback argument to seed the opaque
+        // fallback.
+        self.promote_class_members(key, outcome);
+    }
+
+    /// The value of a refused construction: unknown, but it may retain every
+    /// callback its arguments reach.
+    fn refused_construction_values(&mut self, args: &[Values]) -> Values {
+        let mut results = Values::from([AbstractValue::Value(Value::Top)]);
+        let callbacks: Values = args
+            .iter()
+            .flat_map(|values| self.callback_values(values))
+            .collect();
+        if !callbacks.is_empty() {
+            results.insert(self.deferred_callbacks(callbacks));
+        }
+        results
+    }
+
+    /// One `new` of a local class whose callee and arguments the ordered
+    /// kernel evaluated. A checked class body without calls runs through the
+    /// kernel's construct rule against the checked instance; a body the
+    /// kernel cannot run keeps the flat lane's invocation and no coverage.
+    pub(super) fn construct_local_class_ordered(
+        &mut self,
+        key: u32,
+        arguments: Vec<SelectedValue>,
+        call: &Call,
+        outcome: &mut Outcome,
+    ) -> OrderedConstruction {
+        let args: Vec<Values> = arguments
+            .iter()
+            .map(|argument| argument.values.clone())
+            .collect();
+        let constructor = match self.begin_local_construction(key, &args) {
+            Ok(constructor) => constructor,
+            Err(rejection) => {
+                self.reject_local_construction(key, &args, call, rejection, outcome);
+                self.invoke_possible_callbacks_at(&args, false, Some(call.span), outcome);
+                return OrderedConstruction {
+                    values: self.refused_construction_values(&args),
+                    body: None,
+                };
+            }
+        };
+        let inputs = self.inputs;
+        let Some((body, class_owner)) = kernel_constructor_body(inputs.index, key, &constructor)
+        else {
+            let mut nested = self.invoke_checked_constructor(&constructor, &args);
+            self.absorb_construction(&mut nested, outcome);
+            return OrderedConstruction {
+                values: Values::from([self.constructed_instance(key, &args)]),
+                body: None,
+            };
+        };
+        let instance = Values::from([self.constructed_instance(key, &args)]);
+        if let Some(constructor_key) = constructor.key {
+            self.record_executed_owner(class_owner);
+            self.state
+                .statement_invoked_callables
+                .insert(constructor_key);
+            self.activate_native_effects(class_owner, Some(constructor_key));
+        }
+        let mut nested = self.execute_local_body(
+            body,
+            Context::new(),
+            Some(arguments),
+            class_owner,
+            LocalActivation::Constructor {
+                class: key,
+                instance: instance.clone(),
+            },
+        );
+        let effects =
+            (nested.complete && !nested.unknown_call).then(|| nested.effect_coverage.clone());
+        let values = construct::construct_result(&nested.returns, &instance);
+        self.absorb_construction(&mut nested, outcome);
+        match values {
+            Some(values) => OrderedConstruction {
+                values,
+                body: effects.map(|effects| {
+                    (
+                        LocalBodyIdentity::Constructor {
+                            class: key,
+                            owner: class_owner,
+                        },
+                        effects,
+                    )
+                }),
+            },
+            // The checked constructor admits no return statement; an object
+            // result would replace the instance outside this rule.
+            None => OrderedConstruction {
+                values: Values::from([AbstractValue::Value(Value::Top)]),
+                body: None,
+            },
+        }
+    }
+
+    fn absorb_construction(&mut self, nested: &mut Outcome, outcome: &mut Outcome) {
+        self.apply_rebind_effects(&nested.effects.rebinds);
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome
+            .executed_owners
+            .extend(std::mem::take(&mut nested.executed_owners));
+        outcome.unknown_call |= nested.unknown_call;
+        outcome.inherit_completeness(
+            nested.complete,
+            std::mem::take(&mut nested.effects.precision_losses),
+        );
+    }
+
+    /// The application identity of a checked instance: it retains every
+    /// argument capability.
+    fn constructed_instance(&mut self, key: u32, args: &[Values]) -> AbstractValue {
+        let values: Values = args.iter().flatten().cloned().collect();
+        AbstractValue::Instance(
+            key,
+            self.intern_callback_set(values),
+            InstanceOrigin::Constructed,
+        )
+    }
+
+    /// The flat lane's invocation of an admitted constructor body.
+    fn invoke_checked_constructor(
+        &mut self,
+        constructor: &LocalConstructor,
+        args: &[Values],
+    ) -> Outcome {
+        let previous_inputs =
+            std::mem::take(&mut self.state.world_mut().classes.checked_constructor_inputs);
+        self.state.world_mut().classes.checked_constructor_inputs = args
+            .iter()
+            .flatten()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => Some(*object),
+                _ => None,
+            })
+            .collect();
+        let outcome = constructor.key.map_or_else(
+            || Outcome {
+                complete: true,
+                ..Outcome::default()
+            },
+            |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
+        );
+        self.state.world_mut().classes.checked_constructor_inputs = previous_inputs;
+        outcome
+    }
+
+    /// Admit one local construction: the checked constructor's eligibility
+    /// and argument sources, with the export and inference bookkeeping every
+    /// admitted construction records.
+    fn begin_local_construction(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Result<LocalConstructor, ConstructionRejection> {
         let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.inputs.export_reentry_enabled {
             let exported: Values = self
@@ -7123,31 +7360,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        let previous_inputs =
-            std::mem::take(&mut self.state.world_mut().classes.checked_constructor_inputs);
-        self.state.world_mut().classes.checked_constructor_inputs = args
-            .iter()
-            .flatten()
-            .filter_map(|value| match value {
-                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => Some(*object),
-                _ => None,
-            })
-            .collect();
-        let outcome = constructor.key.map_or_else(
-            || Outcome {
-                complete: true,
-                ..Outcome::default()
-            },
-            |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
-        );
-        self.state.world_mut().classes.checked_constructor_inputs = previous_inputs;
-        let values: Values = args.iter().flatten().cloned().collect();
-        let instance = AbstractValue::Instance(
-            key,
-            self.intern_callback_set(values),
-            InstanceOrigin::Constructed,
-        );
-        Ok((outcome, instance))
+        Ok(constructor)
     }
 
     /// The foreign wrapper can invoke its captured callbacks and any values
@@ -8935,6 +9148,38 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// The exact root `new C(...)` of a stable local class whose checked
+    /// constructor body the kernel's construct rule can run: no other root
+    /// operation and no call in the class body.
+    pub(super) fn ordered_root_construction(&mut self, body: &LocalBody, calls: &[Call]) -> bool {
+        let Some((callee, span)) = body.single_construction_initializer() else {
+            return false;
+        };
+        let [call] = calls else {
+            return false;
+        };
+        if call.kind != CallKind::New
+            || call.span != span
+            || call.has_spread
+            || !matches!(&call.callee, ValueExpr::Binding(binding) if binding == callee)
+        {
+            return false;
+        }
+        let Some(key) = self.stable_local_class_key(callee) else {
+            return false;
+        };
+        let inputs = self.inputs;
+        !inputs
+            .index
+            .retained_constructor_calls
+            .contains_key(&CallSite::from(call.span))
+            && self
+                .eligible_local_constructor(key, call.args.len())
+                .is_ok_and(|constructor| {
+                    kernel_constructor_body(inputs.index, key, constructor).is_some()
+                })
+    }
+
     /// Every call of the root is an exact intact intrinsic, so the ordered
     /// lane runs no application code. Identity is decided here; the ordered
     /// call transfer admits or refuses the operands.
@@ -9212,14 +9457,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             // constructor execution taints one of its inputs. Keep the
                             // result opaque, but do not drop callbacks reachable from
                             // the arguments: the unknown instance may retain them.
-                            results.insert(AbstractValue::Value(Value::Top));
-                            let callbacks: Values = successful_args
-                                .iter()
-                                .flat_map(|values| self.callback_values(values))
-                                .collect();
-                            if !callbacks.is_empty() {
-                                results.insert(self.deferred_callbacks(callbacks));
-                            }
+                            let refused = self.refused_construction_values(&successful_args);
+                            results.extend(refused);
                         }
                     }
                     AbstractValue::Value(Value::Unavailable) => {
@@ -9871,9 +10110,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         environment: Context,
         parameters: Option<Vec<SelectedValue>>,
         owner: SourceUnitOrdinal,
-        scope: LocalExecutionScope,
-        root_binding_effect_identity: Option<RootInitializerIdentity>,
+        activation: LocalActivation,
     ) -> Outcome {
+        let scope = activation.scope();
         let mut frame = LocalFrame::new(environment);
         if let Some(parameters) = &parameters {
             frame.inputs.extend(
@@ -9884,14 +10123,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         frame.parameter_inputs = parameters;
-        frame.borrowed_records = self.reachable_objects(&frame.inputs);
-        let root_binding_effect_identity = match scope {
-            LocalExecutionScope::RootInitializer => Some(
-                root_binding_effect_identity
-                    .expect("root initializer execution carries its exact source identity"),
-            ),
-            LocalExecutionScope::Callable(_) => None,
+        let root_binding_effect_identity = match activation {
+            LocalActivation::RootInitializer(identity) => Some(identity),
+            LocalActivation::Constructor { class, instance } => {
+                construct::bind_receiver(&mut frame, class, instance);
+                None
+            }
+            LocalActivation::Callable(_) => None,
         };
+        frame.borrowed_records = self.reachable_objects(&frame.inputs);
         let mut outcome = Outcome {
             complete: true,
             root_binding_effect_identity,
@@ -9953,6 +10193,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     LocalExecutionScope::RootInitializer => {
                         body.initializer_span().unwrap_or(DUMMY_SP)
                     }
+                    LocalExecutionScope::Constructor(class) => self
+                        .inputs
+                        .index
+                        .class_spans
+                        .get(&class)
+                        .copied()
+                        .unwrap_or(DUMMY_SP),
                 };
                 LocalExecutionContext {
                     executor: self,
@@ -10359,8 +10606,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .collect()
                     }),
                     callable.owner,
-                    LocalExecutionScope::Callable(key),
-                    None,
+                    LocalActivation::Callable(key),
                 );
                 if !covered_prologue || (!callable.params.is_empty() && !ordered_prologue) {
                     outcome.effect_coverage = EffectCoverageFragment::default();
@@ -11735,24 +11981,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             );
                         }
                         Err(rejection) => {
-                            let reach = self.construction_reach(key, &args);
-                            outcome.lose_precision(
-                                ExecutionPrecisionLossReason::UnsupportedConstruction { rejection },
-                                reach,
-                                call.owner,
-                                call.span,
-                            );
-                            outcome.unknown_call = true;
-                            self.note_unknown_call(call);
-                            self.state
-                                .world_mut()
-                                .classes
-                                .escaped_capabilities
-                                .insert(key);
-                            // Unsupported constructors still execute their
-                            // instance fields and body at `new`, even without a
-                            // callback argument to seed the opaque fallback.
-                            self.promote_class_members(key, outcome);
+                            self.reject_local_construction(key, &args, call, rejection, outcome);
                             if !invoked_unknown_callbacks {
                                 self.invoke_possible_callbacks_at(
                                     &args,

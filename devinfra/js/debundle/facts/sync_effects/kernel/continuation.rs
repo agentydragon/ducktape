@@ -19,10 +19,11 @@ use super::super::value_model::{
 };
 use super::cells;
 use super::closure;
+use super::construct;
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{
-    CallableSelection, EvaluatedCallee, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
-    LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
+    CallableSelection, EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt,
+    LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -118,6 +119,7 @@ enum Step {
         expressions: Arc<[LocalExpression]>,
         index: usize,
         span: Span,
+        invocation: Invocation,
     },
     StoreField {
         receivers: Values,
@@ -126,6 +128,10 @@ enum Step {
         span: Span,
     },
     DefineThisField(String),
+    AssignThisField {
+        property: String,
+        span: Span,
+    },
 }
 
 impl Step {
@@ -732,6 +738,7 @@ impl LocalContinuation {
                 expressions,
                 index,
                 span,
+                invocation,
             } => {
                 let selected = self.take_value();
                 if selected.values.is_empty() {
@@ -750,6 +757,7 @@ impl LocalContinuation {
                             expressions,
                             index: next,
                             span,
+                            invocation,
                         });
                         self.steps.push(Step::Expression(argument));
                     }
@@ -758,6 +766,7 @@ impl LocalContinuation {
                             callee,
                             arguments,
                             span,
+                            invocation,
                         }));
                     }
                 }
@@ -790,7 +799,22 @@ impl LocalContinuation {
                     self.frame.stop_normal_path();
                     return Ok(None);
                 }
-                define_this_field(context, &self.frame, &property, &selected.values)?;
+                construct::define_field(context, &mut self.frame, &property, &selected.values)?;
+                self.value = Some(selected);
+            }
+            Step::AssignThisField { property, span } => {
+                let selected = self.take_value();
+                if selected.values.is_empty() {
+                    self.frame.stop_normal_path();
+                    return Ok(None);
+                }
+                construct::assign_field(
+                    context,
+                    &mut self.frame,
+                    &property,
+                    &selected.values,
+                    span,
+                )?;
                 self.value = Some(selected);
             }
         }
@@ -820,13 +844,15 @@ impl LocalContinuation {
                 ));
             }
             LocalExpression::This => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
+                // A base constructor's `this` is bound at entry: resolving it
+                // runs no code and cannot be in its TDZ.
                 let Some(this_values) = self.frame.this_values.clone() else {
                     return Err(RemainderDisposition::NeedsSummary);
                 };
+                self.frame
+                    .ledger
+                    .effects
+                    .compose(&EffectCoverageFragment::no_effects());
                 self.value = Some(SelectedValue::raw(this_values));
             }
             LocalExpression::Record {
@@ -966,26 +992,27 @@ impl LocalContinuation {
                     return Ok(None);
                 }
                 self.frame.inputs.extend(callee.targets().iter().cloned());
-                match arguments.first() {
-                    None => {
-                        return Ok(Some(LocalCallRequest {
-                            callee,
-                            arguments: Vec::new(),
-                            span,
-                        }));
-                    }
-                    Some(first) => {
-                        let first = first.clone();
-                        self.steps.push(Step::Arguments {
-                            callee,
-                            arguments: Vec::with_capacity(arguments.len()),
-                            expressions: arguments,
-                            index: 0,
-                            span,
-                        });
-                        self.steps.push(Step::Expression(first));
-                    }
+                return Ok(self.invoke(callee, arguments, span, Invocation::Call));
+            }
+            LocalExpression::Construct {
+                callee,
+                arguments,
+                span,
+            } => {
+                // EvaluateNew: GetValue(constructor) precedes every argument.
+                let result = context.read_binding(&callee, &mut self.frame)?;
+                let callee = absorb(&mut self.frame, result);
+                if callee.values.is_empty() {
+                    self.frame.stop_normal_path();
+                    return Ok(None);
                 }
+                self.frame.inputs.extend(callee.values.iter().cloned());
+                return Ok(self.invoke(
+                    EvaluatedCallee::Direct(callee),
+                    arguments,
+                    span,
+                    Invocation::Construct,
+                ));
             }
             LocalExpression::ReadField {
                 receiver,
@@ -1031,15 +1058,52 @@ impl LocalContinuation {
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
             LocalExpression::DefineThisField { property, value } => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
                 self.steps.push(Step::DefineThisField(property));
+                self.steps.push(Step::Expression(value.as_ref().clone()));
+            }
+            LocalExpression::AssignThisField {
+                property,
+                value,
+                span,
+            } => {
+                // The reference is `this`, already bound; only the value runs.
+                self.steps.push(Step::AssignThisField { property, span });
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
         }
         Ok(None)
+    }
+
+    /// Evaluate the arguments of an already evaluated callee in order, then
+    /// suspend at the invocation.
+    fn invoke(
+        &mut self,
+        callee: EvaluatedCallee,
+        arguments: Arc<[LocalExpression]>,
+        span: Span,
+        invocation: Invocation,
+    ) -> Option<LocalCallRequest> {
+        match arguments.first() {
+            None => Some(LocalCallRequest {
+                callee,
+                arguments: Vec::new(),
+                span,
+                invocation,
+            }),
+            Some(first) => {
+                let first = first.clone();
+                self.steps.push(Step::Arguments {
+                    callee,
+                    arguments: Vec::with_capacity(arguments.len()),
+                    expressions: arguments,
+                    index: 0,
+                    span,
+                    invocation,
+                });
+                self.steps.push(Step::Expression(first));
+                None
+            }
+        }
     }
 }
 
@@ -1442,35 +1506,6 @@ fn store_field(
         None => EffectCoverageFragment::default(),
     };
     frame.ledger.effects.compose(&effects);
-    Ok(())
-}
-
-fn define_this_field(
-    context: &mut impl KernelContext,
-    frame: &LocalFrame,
-    property: &str,
-    values: &Values,
-) -> Result<(), RemainderDisposition> {
-    if values.contains(&AbstractValue::Value(Value::Unavailable)) {
-        return Err(RemainderDisposition::NeedsSummary);
-    }
-    let Some(this_values) = frame.this_values.as_ref() else {
-        return Err(RemainderDisposition::NeedsSummary);
-    };
-    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = this_values.first() else {
-        return Err(RemainderDisposition::NeedsSummary);
-    };
-    if this_values.len() != 1 {
-        return Err(RemainderDisposition::NeedsSummary);
-    }
-    // Constructor summaries use this heap entry only to walk values
-    // retained by the fresh instance. `ordinary_record_shape` remains
-    // the prerequisite for reads, so class slots never become
-    // ordinary data fields by being recorded here.
-    context
-        .world_mut()
-        .literal_heap()
-        .write_property(*object, Some(property.to_owned()), values);
     Ok(())
 }
 
