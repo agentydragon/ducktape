@@ -207,10 +207,9 @@ def build(images: dict[str, Image], attrs: list[str]) -> None:
         print(f"{attr}: {outs[attr]} already verified")
     if not todo:
         return
-    # --keep-going: one broken image must not withhold the others from publishing.
-    subprocess.run(
-        ["nix", "build", "--keep-going", "--no-link", "--print-build-logs", *(f".#{a}" for a in todo)], check=False
-    )
+    # --keep-going: one broken image must not withhold the others from publishing. Nix reports
+    # failure log tails by default; don't stream successful derivations' full compiler output.
+    subprocess.run(["nix", "build", "--keep-going", "--no-link", *(f".#{a}" for a in todo)], check=False)
     failed = []
     for attr in todo:
         out = outs[attr]
