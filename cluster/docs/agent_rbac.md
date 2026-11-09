@@ -230,6 +230,37 @@ cross-object check needs a validating webhook or another authoritative server-si
 Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
 
+### Kubernetes accounts
+
+Each Agentplane environment has an accounts namespace, `<namespace>-k8s-accounts`, for
+ServiceAccounts nothing runs as. The egress proxy acts as one by impersonation, and its
+`egress-impersonator` Role there, `impersonate` on `serviceaccounts`, is the whole of that right
+(<../cdk8s/agentplane/kubernetes_accounts.py>; [egress SPEC](../../agentplane/egress/SPEC.md#decision)).
+An agent reaches an account only through an `egress` rule naming the account's
+`kubernetesServiceAccount` `EgressCredential`. The account's roles come from `ServiceAccountGrant`s
+of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
+([Policy Controller SPEC](../../agentplane/policy_controller/SPEC.md#serviceaccount-grants)).
+
+**Staging today renders the namespace and the Role but no accounts.** `Environment.identity_catalog`
+is off, so Sandboxes act as their own ServiceAccount, and the assignable `PolicySet`s above carry the
+Kubernetes rules. With the switch on (`staging.environment(identity_catalog=True)`, which the
+manifest and RBAC tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`,
+`haku-agent`, `haku-ui`, `public-coder-openclaw`), each assignable set's Kubernetes rules become a
+same-named `KubernetesRoleSet`, and the catalog adds these accounts. Each is a ServiceAccount, a
+Flux-owned grant, a credential and a one-rule use set `k8s-account-<name>`:
+
+- `shared-diagnostics`, with the `shared-diagnostics` role set. Its use set joins the environment's
+  default sets, the reach `basic` gives through the Sandbox's own ServiceAccount today.
+- One per managed preset (`public-coder`, `finance-agent`, `haku`), holding the role sets that
+  preset's launch grants plus cluster diagnostics, so each agent has one `kubectl` identity
+  (operator, 2026-11-09). A launch binds the preset's use set and the egress halves of its sets.
+- One each for `claude-ai` and `haku-agent`, holding exactly the role sets their bindings grant
+  today.
+
+`cluster/cdk8s/test_agent_rbac.py` checks both renderings, including that the proxy impersonates
+only these accounts, that each holds only its grants, and that no Flux binding's holder gains
+Kubernetes access on the switch.
+
 ### Shared deployment definitions and parity contract
 
 `cluster/cdk8s/agent_access_profiles.py` holds existing Kubernetes grant references,

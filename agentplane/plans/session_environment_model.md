@@ -459,7 +459,7 @@ workload or Session able to use it; it is not per-Session isolation. A separate 
 Kubernetes permissions could be used without changing an Environment's Pod-bound identity. Decided
 2026-11-05: the egress proxy impersonates the second account, under an identity's use rule, through
 the `kubernetesServiceAccount` credential source
-([identity plan](identity_and_kubernetes_accounts.md#kubernetes-execution)).
+([egress SPEC](../egress/SPEC.md#decision)).
 The GitHub bot case can instead use an existing EgressCredential, a matching host/method/path
 egress rule and a PolicyBinding for the effective caller; external GitHub permissions and those of
 any shared SA remain shared rather than becoming a unique external account for each Session.
