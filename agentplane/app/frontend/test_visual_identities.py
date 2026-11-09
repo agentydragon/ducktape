@@ -24,8 +24,9 @@ async def test_identities_list(view: VisualPage, app: AgentplaneFixture) -> None
     await app.mount_app("/identities")
     table = view.page.get_by_role("table", name="Identities")
     await expect(table.get_by_role("button", name="referenced-identity", exact=True)).to_be_visible()
-    # The expiring binding's set reaches a ServiceAccount through a credential the egress watch resolves.
-    await expect(table.get_by_text("agentplane-visual/kube-reader").first).to_be_visible()
+    # The expiring binding's set reaches a ServiceAccount through a credential the egress watch resolves;
+    # a phone shows the copy folded under the name, a desktop the one in its own column.
+    await expect(table.get_by_text("agentplane-visual/kube-reader").filter(visible=True)).to_be_visible()
     await view.check(context="identities, bindings and credentials loaded")
     await view.capture(target=view.page.locator("#app"))
 
