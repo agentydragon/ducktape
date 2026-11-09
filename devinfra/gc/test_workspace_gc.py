@@ -1,4 +1,3 @@
-import asyncio
 import pathlib
 import shutil
 import subprocess
@@ -12,6 +11,7 @@ from rich.console import Console
 
 from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
 from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
+from devinfra.gc.pull_request import PrInfo
 
 
 def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,7 +74,7 @@ def test_render_branches_prints_numeric_looking_branch_names_verbatim(
     assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
 
 
-async def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
+def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Plain `workspace-gc --prune`: bases go first, then a re-scan frees the entries only they
@@ -82,7 +82,7 @@ async def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     home = tmp_path / "home"  # holds no session-env bases
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    checkout = repo.clone("checkout")  # `run_all` needs the `origin/HEAD` a real clone has
+    checkout = repo.clone("checkout")  # the scan needs the `origin/HEAD` a real clone has
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
     kept_entry = make_cache_entry(contents, "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -93,16 +93,12 @@ async def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     pruned_base = make_base(root, tmp_path / "gone")
     link_external(pruned_base, "freed_repo", freed_entry)
 
-    await workspace_gc.run_all(
-        checkout.path,
-        output_user_root=root,
-        show_all=False,
-        no_prs=True,
-        sizes=False,
-        prune=True,
-        delete_foreign_clones=False,
-        workers=1,
-    )
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(
+            ["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune", "--workers", "1"]
+        )
+
+    assert exit_info.value.code == 0
 
     assert not pruned_base.exists()
     assert kept_entry.is_dir()
@@ -214,15 +210,22 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
     try:
         assert holder.stdout is not None
         assert holder.stdout.readline() == "locked\n"
-        # Skipped entries are reported but do not fail the run: no SystemExit.
-        asyncio.run(
-            workspace_gc.run_repo_cache(
-                output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose, workers=1
+        with pytest.raises(SystemExit) as exit_info:
+            workspace_gc.main(
+                [
+                    "repo-cache",
+                    "--output-user-root",
+                    str(root),
+                    "--delete",
+                    "--workers",
+                    "1",
+                    *(["-v"] if verbose else []),
+                ]
             )
-        )
     finally:
         holder.communicate("x", timeout=5)
     captured = capsys.readouterr()
+    assert exit_info.value.code == 0  # skipped entries are reported but do not fail the run
     assert "0 deleted, 2 skipped, 0 failed" in captured.out
     assert "a Bazel command holds the repo contents cache" in captured.err
     for entry in entries:
@@ -249,7 +252,7 @@ async def test_a_base_skipped_at_deletion_does_not_fail_the_run(
     deletions = await workspace_gc._apply_base_deletions(candidates, output_user_root=root, workers=1)
 
     assert deletions.ok
-    assert deletions.deleted == frozenset()
+    assert deletions.removed == frozenset()
     assert "0 deleted, 1 skipped, 0 failed" in capsys.readouterr().out
 
 
@@ -285,6 +288,80 @@ def test_progress_table_aligns_counts_per_phase_without_borders() -> None:
     # Counts line up under their headers.
     assert header.index("review") + len("review") == worktrees.index("0", worktrees.index("2")) + 1
     assert not set("│|┌┐└┘├┤┬┴┼+") & set(header + worktrees + branches)
+
+
+class _PrLookups:
+    """Stands in for `github_prs.pr_states`, recording the branch set of every lookup."""
+
+    def __init__(self) -> None:
+        self.branch_sets: list[set[str]] = []
+
+    async def __call__(self, repo: pathlib.Path, branches: set[str]) -> dict[str, PrInfo]:
+        self.branch_sets.append(set(branches))
+        return {}
+
+
+@pytest.fixture
+def pr_lookups(monkeypatch: pytest.MonkeyPatch) -> _PrLookups:
+    lookups = _PrLookups()
+    monkeypatch.setattr(workspace_gc.github_prs, "pr_states", lookups)
+    return lookups
+
+
+def _scan_command(command: str, checkout: GitRepo, root: pathlib.Path, *flags: str) -> None:
+    """Run one subcommand as a dry run against `checkout`. The repo-cache view takes no repo; the
+    worktrees view takes no output root."""
+    repo_flags = [] if command == "repo-cache" else ["--repo", str(checkout.path)]
+    root_flags = [] if command == "worktrees" else ["--output-user-root", str(root)]
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main([command, *repo_flags, *root_flags, "--workers", "1", *flags])
+    assert exit_info.value.code == 0
+
+
+@pytest.mark.parametrize(
+    ("command", "no_prs", "lookups"),
+    [
+        ("all", False, 1),
+        ("worktrees", False, 1),
+        ("bazel-bases", False, 1),
+        ("repo-cache", False, 0),
+        ("all", True, 0),
+        ("worktrees", True, 0),
+        ("bazel-bases", True, 0),
+    ],
+)
+def test_each_run_asks_for_pr_state_at_most_once_and_never_under_no_prs(
+    repo: GitRepo,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pr_lookups: _PrLookups,
+    command: str,
+    no_prs: bool,
+    lookups: int,
+) -> None:
+    monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
+    checkout = repo.clone("checkout")
+    root = tmp_path / "output"
+    root.mkdir()
+
+    _scan_command(command, checkout, root, *(["--no-prs"] if no_prs else []))
+
+    assert len(pr_lookups.branch_sets) == lookups
+
+
+def test_bazel_bases_view_looks_up_only_the_branches_of_base_workspaces(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, pr_lookups: _PrLookups
+) -> None:
+    monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
+    checkout = repo.clone("checkout")
+    based = checkout.worktree("based", "has-a-base")
+    checkout.worktree("unbased", "has-no-base")
+    root = tmp_path / "output"
+    make_base(root, based.path.resolve())
+
+    _scan_command("bazel-bases", checkout, root)
+
+    assert pr_lookups.branch_sets == [{"has-a-base"}]
 
 
 if __name__ == "__main__":

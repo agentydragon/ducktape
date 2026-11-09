@@ -32,13 +32,14 @@ network-free.
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
 import os
 import shutil
 import sys
 import threading
 from collections import Counter
-from collections.abc import Callable, Sequence, Set
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -156,10 +157,23 @@ def _active_worktree(repo: Path) -> Path | None:
     return Path(toplevel) if toplevel else None
 
 
-async def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozenset()) -> dict[str, PrInfo]:
-    if no_prs:
-        return {}
-    return await github_prs.pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
+type _PrSource = Callable[[Path, set[str]], Awaitable[dict[str, PrInfo]]]
+
+
+async def _without_prs(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
+    return {}
+
+
+def _pr_source(*, no_prs: bool) -> _PrSource:
+    """The one place `--no-prs` is decided: where PR state comes from for this run."""
+    return _without_prs if no_prs else github_prs.pr_states
+
+
+@dataclass(frozen=True, slots=True)
+class _RunContext:
+    repo: Path
+    workers: int
+    prs: dict[str, PrInfo]
 
 
 @dataclass(slots=True)
@@ -235,26 +249,24 @@ class _ProgressReporter:
 
 
 def _scan(
-    repo: Path,
+    context: _RunContext,
     *,
-    prs: dict[str, PrInfo],
     output_user_root: Path | None,
     session_bases: Sequence[Path],
     progress: ProgressSink,
-    workers: int,
     foreign_clone_roots: Sequence[Path] = (),
 ) -> WorkspaceScan:
-    pg = git_repo.open_repo(repo)
+    pg = git_repo.open_repo(context.repo)
     return workspace_scan.scan_workspace(
-        repo,
+        context.repo,
         main=git_repo.main_ref(pg),
         default_branch=git_repo.default_branch_name(pg),
-        pr_states=prs,
+        pr_states=context.prs,
         session_bases=session_bases,
-        active_path=_active_worktree(repo),
+        active_path=_active_worktree(context.repo),
         output_user_root=output_user_root,
         foreign_clone_roots=foreign_clone_roots,
-        workers=workers,
+        workers=context.workers,
         progress=progress,
     )
 
@@ -341,31 +353,29 @@ def _report_removals[S](
     return _RemovalOutcome(frozenset(removed), ok=failed == 0)
 
 
-async def _apply_worktree_removals(
-    repo: Path, worktrees: list[Classification], *, prs: dict[str, PrInfo], workers: int
-) -> _RemovalOutcome[Path]:
+async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classification]) -> _RemovalOutcome[Path]:
     """Remove every prunable worktree that is still prunable now."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return _nothing_to_remove()
     logger.info("Removing %d worktrees", len(candidates))
-    main_path = git_repo.main_worktree(repo)
-    active_path = _active_worktree(repo)
+    main_path = git_repo.main_worktree(context.repo)
+    active_path = _active_worktree(context.repo)
     live = worktree_gc.processes_by_worktree(item.worktree.path for item in candidates)
 
     def remove_one(item: PrunableWorktree) -> RemovalResult[Path]:
         logger.info("Removing worktree %s", item.worktree.path)
         return worktree_gc.remove_if_still_prunable(
-            repo,
+            context.repo,
             item.worktree,
             main=item.main,
-            pr_states=prs,
+            pr_states=context.prs,
             main_path=main_path,
             active_path=active_path,
             live_pids=live.get(item.worktree.path, []),
         )
 
-    return _report_removals(await _run_bounded(candidates, remove_one, workers=workers), _WORKTREE_LABELS)
+    return _report_removals(await _run_bounded(candidates, remove_one, workers=context.workers), _WORKTREE_LABELS)
 
 
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
@@ -442,7 +452,7 @@ async def _apply_repo_cache_deletions(
 
 
 async def _apply_foreign_clone_deletions(
-    repo: Path, output_user_root: Path, session_bases: Sequence[Path], prs: dict[str, PrInfo], workers: int
+    context: _RunContext, output_user_root: Path, session_bases: Sequence[Path]
 ) -> _RemovalOutcome[Path]:
     """Remove every prunable foreign clone.
 
@@ -450,11 +460,11 @@ async def _apply_foreign_clone_deletions(
     this call is reused, so a clone that turned dirty (or gained an open PR) in the meantime is
     never passed to `prune_foreign_clone`.
     """
-    roots = workspace_scan.foreign_clone_roots(repo, output_user_root, session_bases=session_bases)
-    active_path = _active_worktree(repo)
+    roots = workspace_scan.foreign_clone_roots(context.repo, output_user_root, session_bases=session_bases)
+    active_path = _active_worktree(context.repo)
 
     def classify_one(root: Path) -> foreign_clone_gc.ForeignCloneClassification:
-        return foreign_clone_gc.classify_foreign_clone(root, pr_states=prs, active_path=active_path)
+        return foreign_clone_gc.classify_foreign_clone(root, pr_states=context.prs, active_path=active_path)
 
     classifications = workspace_scan.parallel_classify(
         roots,
@@ -464,218 +474,288 @@ async def _apply_foreign_clone_deletions(
         progress=NULL_PROGRESS,
         category_of=verdict_of,
         describe=str,
-        workers=workers,
+        workers=context.workers,
     )
     candidates = [item.clone for item in classifications if isinstance(item, PrunableForeignClone)]
     if not candidates:
         return _nothing_to_remove()
     logger.info("Removing %d foreign clones", len(candidates))
     return _report_removals(
-        await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=workers), _FOREIGN_CLONE_LABELS
+        await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=context.workers),
+        _FOREIGN_CLONE_LABELS,
     )
 
 
-async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
-    progress = _ProgressReporter()
-    try:
-        prs = await _gather_prs(repo, no_prs=no_prs)
+class _Domain(enum.StrEnum):
+    WORKTREES = enum.auto()
+    BRANCHES = enum.auto()
+    BASES = enum.auto()
+    REPO_CACHE = enum.auto()
+    FOREIGN_CLONES = enum.auto()
+
+
+@dataclass(frozen=True, slots=True)
+class _Command:
+    """The domains one subcommand shows, and removes when it is told to."""
+
+    domains: frozenset[_Domain]
+    dry_run_hint: str
+
+
+_WORKTREES_COMMAND = _Command(
+    frozenset({_Domain.WORKTREES}), "Dry run only; pass --prune to remove the prunable worktrees."
+)
+_BASES_COMMAND = _Command(frozenset({_Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases.")
+_REPO_CACHE_COMMAND = _Command(
+    frozenset({_Domain.REPO_CACHE}), "Dry run only; pass --delete to remove the unreferenced entries."
+)
+_ALL_COMMAND = _Command(
+    frozenset(_Domain),
+    "Dry run only; pass --prune to remove all prunable worktrees, branches, bases, and repo-cache entries.",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _Options:
+    output_user_root: Path
+    show_all: bool
+    sizes: bool
+    verbose: bool
+    workers: int
+    apply: bool  # --prune / --delete
+    delete_foreign_clones: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Findings:
+    scan: WorkspaceScan
+    entries: list[EntryInspection]
+    context: _RunContext | None  # None for the repo-cache view, which never touches git or PRs
+
+
+async def _collect(
+    command: _Command,
+    options: _Options,
+    *,
+    repo: Path | None,
+    pr_source: _PrSource,
+    session_bases: Sequence[Path],
+    progress: _ProgressReporter,
+) -> _Findings:
+    """Scan what `command` shows. A view of worktrees, branches or foreign clones runs the joint
+    scan. The bases views scan the filesystem alone: the only git input a base needs is whether
+    its workspace is a prunable worktree, so their PR query covers just those workspaces' branches
+    and no branch is classified."""
+    domains = command.domains
+    shows_bases = bool(domains & {_Domain.BASES, _Domain.REPO_CACHE})
+    contents = repo_contents_cache_gc.repo_contents_cache(options.output_user_root)
+
+    async def resolve_context(branches: set[str]) -> _RunContext:
+        assert repo is not None
+        return _RunContext(repo=repo, workers=options.workers, prs=await pr_source(repo, branches))
+
+    context: _RunContext | None = None
+    if domains & {_Domain.WORKTREES, _Domain.BRANCHES, _Domain.FOREIGN_CLONES}:
+        assert repo is not None
+        foreign_roots = (
+            workspace_scan.foreign_clone_roots(repo, options.output_user_root, session_bases=session_bases)
+            if _Domain.FOREIGN_CLONES in domains
+            else []
+        )
+        context = await resolve_context(
+            workspace_scan.pr_branch_candidates(repo) | workspace_scan.foreign_clone_branch_candidates(foreign_roots)
+        )
         with progress:
-            scan = _scan(repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers)
-    except GitError as error:
-        print(error, file=sys.stderr)
-        raise SystemExit(1) from error
-    print(render_worktrees(scan.worktrees, include_kept=show_all))
-    if not prune:
-        if any(isinstance(item, PrunableWorktree) for item in scan.worktrees):
-            print("Dry run only; pass --prune to remove the prunable worktrees.")
-        return
-    if not (await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)).ok:
-        raise SystemExit(1)
-
-
-async def run_bases(
-    repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool, workers: int
-) -> None:
-    # Inspect the bases first: that filesystem pass alone decides every PRUNE/KEEP verdict.
-    # Only the "workspace is a prunable worktree" annotation needs git, and only for the few
-    # worktrees that are actually a base's workspace — so the PR query is scoped to their
-    # branches instead of all of them, and no branch is ever classified.
-    session_bases = output_base_gc.session_env_output_bases()
-    try:
-        with _ProgressReporter() as progress:
-            bases = list(
-                output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases, progress=progress)
+            scan = _scan(
+                context,
+                output_user_root=options.output_user_root if shows_bases else None,
+                session_bases=session_bases if shows_bases else (),
+                progress=progress,
+                foreign_clone_roots=foreign_roots,
             )
-        prs = {} if no_prs else await github_prs.pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
-        with _ProgressReporter() as progress:
+            entries = (
+                repo_contents_cache_gc.scan_repo_contents_cache(contents, scan.bases, progress=progress)
+                if _Domain.REPO_CACHE in domains
+                else []
+            )
+        return _Findings(scan, entries, context)
+
+    with progress:
+        bases = output_base_gc.scan_output_user_root(
+            options.output_user_root, session_bases=session_bases, progress=progress
+        )
+        entries = (
+            repo_contents_cache_gc.scan_repo_contents_cache(contents, bases, progress=progress)
+            if _Domain.REPO_CACHE in domains
+            else []
+        )
+    if repo is not None:
+        context = await resolve_context(workspace_scan.base_workspace_branches(repo, bases))
+        with progress:
             bases = workspace_scan.annotate_bases(
                 repo,
                 bases,
                 main=git_repo.main_ref(git_repo.open_repo(repo)),
-                pr_states=prs,
+                pr_states=context.prs,
                 active_path=_active_worktree(repo),
-                workers=workers,
+                workers=options.workers,
                 progress=progress,
             )
-    except (GitError, OSError, RuntimeError) as error:
-        print(error, file=sys.stderr)
-        raise SystemExit(1) from error
-    print(output_base_gc.render_report(bases, include_kept=show_all, include_sizes=sizes))
-    if not delete:
-        if any(isinstance(item, PrunableBase) for item in bases):
-            print("Dry run only; pass --delete to remove the prunable bases.")
-        return
-    candidates = [item for item in bases if isinstance(item, PrunableBase)]
-    if not (await _apply_base_deletions(candidates, output_user_root=output_user_root, workers=workers)).ok:
-        raise SystemExit(1)
+    return _Findings(WorkspaceScan(worktrees=[], branches=[], bases=bases), entries, context)
 
 
-async def run_repo_cache(
-    *, output_user_root: Path, show_all: bool, sizes: bool, delete: bool, verbose: bool, workers: int
-) -> None:
-    # Entries are classified against every base's PRUNE/KEEP/REVIEW verdict, which the
-    # filesystem alone decides; no worktree, branch, or PR state can change an entry's row.
-    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
-    session_bases = output_base_gc.session_env_output_bases()
-    try:
-        with _ProgressReporter() as progress:
-            bases = output_base_gc.scan_output_user_root(
-                output_user_root, session_bases=session_bases, progress=progress
-            )
-            entries = repo_contents_cache_gc.scan_repo_contents_cache(contents, bases, progress=progress)
-    except (OSError, RuntimeError) as error:
-        print(error, file=sys.stderr)
-        raise SystemExit(1) from error
-    print(
-        repo_contents_cache_gc.render_report(
-            entries, contents=contents, include_kept=show_all, include_sizes=sizes, include_prunable=verbose
-        )
+def _print_findings(command: _Command, options: _Options, findings: _Findings) -> None:
+    scan, entries = findings.scan, findings.entries
+    contents = repo_contents_cache_gc.repo_contents_cache(options.output_user_root)
+    sections: list[tuple[_Domain, str, Callable[[], str]]] = [
+        (_Domain.WORKTREES, "Worktrees", lambda: render_worktrees(scan.worktrees, include_kept=options.show_all)),
+        (_Domain.BRANCHES, "Branches", lambda: render_branches(scan.branches, include_kept=options.show_all)),
+        (
+            _Domain.BASES,
+            "Bazel output bases",
+            lambda: output_base_gc.render_report(
+                scan.bases, include_kept=options.show_all, include_sizes=options.sizes
+            ),
+        ),
+        (
+            _Domain.REPO_CACHE,
+            "Repo contents cache",
+            lambda: repo_contents_cache_gc.render_report(
+                entries,
+                contents=contents,
+                include_kept=options.show_all,
+                include_sizes=options.sizes,
+                include_prunable=options.verbose,
+            ),
+        ),
+        (
+            _Domain.FOREIGN_CLONES,
+            "Foreign clones",
+            lambda: render_foreign_clones(scan.foreign_clones, include_kept=options.show_all),
+        ),
+    ]
+    shown = [(title, render) for domain, title, render in sections if domain in command.domains]
+    for index, (title, render) in enumerate(shown):
+        if len(shown) > 1:
+            print(f"{'\n' if index else ''}# {title}")
+        print(render())
+
+
+def _any_prunable(command: _Command, findings: _Findings) -> bool:
+    """Whether a dry run should point at the apply flag (foreign clones have a flag of their own)."""
+    scan, domains = findings.scan, command.domains
+    return (
+        (_Domain.WORKTREES in domains and any(isinstance(i, PrunableWorktree) for i in scan.worktrees))
+        or (_Domain.BRANCHES in domains and any(isinstance(i, PrunableBranch) for i in scan.branches))
+        or (_Domain.BASES in domains and any(isinstance(i, PrunableBase) for i in scan.bases))
+        or (_Domain.REPO_CACHE in domains and any(isinstance(i, PrunableEntry) for i in findings.entries))
     )
-    if not delete:
-        if any(isinstance(item, PrunableEntry) for item in entries):
-            print("Dry run only; pass --delete to remove the unreferenced entries.")
-        return
-    candidates = [item for item in entries if isinstance(item, PrunableEntry)]
-    outcome = await _apply_repo_cache_deletions(
-        candidates, output_user_root=output_user_root, session_bases=session_bases, verbose=verbose, workers=workers
-    )
-    if not outcome.ok:
-        raise SystemExit(1)
 
 
-async def run_all(
-    repo: Path,
+async def _apply(
+    command: _Command,
+    options: _Options,
+    findings: _Findings,
     *,
-    output_user_root: Path,
-    show_all: bool,
-    no_prs: bool,
-    sizes: bool,
-    prune: bool,
-    delete_foreign_clones: bool,
-    workers: int,
-    verbose: bool = False,
-) -> None:
-    progress = _ProgressReporter()
-    session_bases = output_base_gc.session_env_output_bases()
-    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
-    try:
-        foreign_roots = workspace_scan.foreign_clone_roots(repo, output_user_root, session_bases=session_bases)
-        extra_branches = workspace_scan.foreign_clone_branch_candidates(foreign_roots)
-        prs = await _gather_prs(repo, no_prs=no_prs, extra_branches=extra_branches)
+    session_bases: Sequence[Path],
+    progress: _ProgressReporter,
+) -> bool:
+    """Remove what `command` shows, in dependency order; returns whether every step succeeded.
+
+    Worktrees go first so branches they hold are freed and their bases orphan, and bases before the
+    repo cache so entries only they referenced become unreferenced. Worktrees reuse the scan
+    (`git worktree remove` itself refuses a tree that turned dirty); branches are re-classified
+    because the removals change who holds them. Every step runs regardless of an earlier one's
+    failures — each domain is independent.
+    """
+    domains, scan, context = command.domains, findings.scan, findings.context
+    oks: list[bool] = []
+    if _Domain.WORKTREES in domains:
+        assert context is not None
+        oks.append((await _apply_worktree_removals(context, scan.worktrees)).ok)
+    if _Domain.BRANCHES in domains:
+        assert context is not None
+        pg = git_repo.open_repo(context.repo)
         with progress:
-            scan = _scan(
-                repo,
-                prs=prs,
-                output_user_root=output_user_root,
-                session_bases=session_bases,
+            branches = workspace_scan.scan_branches(
+                context.repo,
+                worktrees=scan.worktrees,
+                main=git_repo.main_ref(pg),
+                default_branch=git_repo.default_branch_name(pg),
+                pr_states=context.prs,
+                workers=context.workers,
                 progress=progress,
-                workers=workers,
-                foreign_clone_roots=foreign_roots,
             )
-            entries: list[EntryInspection] = repo_contents_cache_gc.scan_repo_contents_cache(
-                contents, scan.bases, progress=progress
-            )
+        oks.append(_apply_branch_deletions(context.repo, branches).ok)
+    bases_removed: frozenset[Path] = frozenset()
+    if _Domain.BASES in domains:
+        # Removing worktrees orphans bases the first scan kept, so only then are bases rescanned.
+        bases = (
+            output_base_gc.scan_output_user_root(options.output_user_root, session_bases=session_bases)
+            if _Domain.WORKTREES in domains
+            else scan.bases
+        )
+        outcome = await _apply_base_deletions(
+            [item for item in bases if isinstance(item, PrunableBase)],
+            output_user_root=options.output_user_root,
+            workers=options.workers,
+        )
+        oks.append(outcome.ok)
+        bases_removed = outcome.removed
+    if _Domain.REPO_CACHE in domains:
+        # An entry is newly unreferenced exactly when every base linking to it was just deleted.
+        cache_outcome = await _apply_repo_cache_deletions(
+            repo_contents_cache_gc.unreferenced_after_deleting(findings.entries, bases_removed),
+            output_user_root=options.output_user_root,
+            session_bases=session_bases,
+            verbose=options.verbose,
+            workers=options.workers,
+        )
+        oks.append(cache_outcome.ok)
+    if _Domain.FOREIGN_CLONES in domains:
+        assert context is not None
+        if options.delete_foreign_clones:
+            oks.append((await _apply_foreign_clone_deletions(context, options.output_user_root, session_bases)).ok)
+        elif any(isinstance(i, PrunableForeignClone) for i in scan.foreign_clones):
+            print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
+    return all(oks)
+
+
+async def run(command: _Command, options: _Options, *, repo: Path | None, pr_source: _PrSource) -> None:
+    """Scan, report and (with `options.apply`) remove the domains of one subcommand.
+
+    `repo` is None only for the repo-cache view, which needs no git.
+    """
+    progress = _ProgressReporter()
+    domains = command.domains
+    session_bases = (
+        output_base_gc.session_env_output_bases()
+        if domains & {_Domain.BASES, _Domain.REPO_CACHE, _Domain.FOREIGN_CLONES}
+        else []
+    )
+    try:
+        findings = await _collect(
+            command, options, repo=repo, pr_source=pr_source, session_bases=session_bases, progress=progress
+        )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1) from error
 
-    print("# Worktrees")
-    print(render_worktrees(scan.worktrees, include_kept=show_all))
-    print("\n# Branches")
-    print(render_branches(scan.branches, include_kept=show_all))
-    print("\n# Bazel output bases")
-    print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
-    print("\n# Repo contents cache")
-    print(
-        repo_contents_cache_gc.render_report(
-            entries, contents=contents, include_kept=show_all, include_sizes=sizes, include_prunable=verbose
-        )
+    _print_findings(command, options, findings)
+    multiple = len(domains) > 1
+    foreign_prunable = _Domain.FOREIGN_CLONES in domains and any(
+        isinstance(i, PrunableForeignClone) for i in findings.scan.foreign_clones
     )
-    print("\n# Foreign clones")
-    print(render_foreign_clones(scan.foreign_clones, include_kept=show_all))
-
-    foreign_prunable = any(isinstance(i, PrunableForeignClone) for i in scan.foreign_clones)
-    if not prune:
-        prunable = (
-            any(isinstance(i, PrunableWorktree) for i in scan.worktrees)
-            or any(isinstance(i, PrunableBranch) for i in scan.branches)
-            or any(isinstance(i, PrunableBase) for i in scan.bases)
-            or any(isinstance(i, PrunableEntry) for i in entries)
-        )
-        if prunable:
-            print(
-                "\nDry run only; pass --prune to remove all prunable worktrees, branches, bases, "
-                "and repo-cache entries."
-            )
+    if not options.apply:
+        if _any_prunable(command, findings):
+            print(f"{'\n' if multiple else ''}{command.dry_run_hint}")
         if foreign_prunable:
             print("Foreign clones are prunable too; pass --prune --delete-foreign-clones to remove them.")
         return
 
-    print()
-
-    def rescan_branches() -> list[BranchClassification]:
-        pg = git_repo.open_repo(repo)
-        with progress:
-            return workspace_scan.scan_branches(
-                repo,
-                worktrees=scan.worktrees,
-                main=git_repo.main_ref(pg),
-                default_branch=git_repo.default_branch_name(pg),
-                pr_states=prs,
-                workers=workers,
-                progress=progress,
-            )
-
-    # Remove worktrees first so branches they hold are freed and their bases orphan, and bases
-    # before the repo cache so entries only they referenced become unreferenced. Worktrees reuse
-    # the scan above (`git worktree remove` itself refuses a tree that turned dirty); branches
-    # are re-classified because the removals change who holds them. Every step runs regardless
-    # of an earlier one's failures — each domain is independent — and the combined outcome
-    # decides the process exit status once, at the end.
-    worktrees = await _apply_worktree_removals(repo, scan.worktrees, prs=prs, workers=workers)
-    branches = _apply_branch_deletions(repo, rescan_branches())
-    # Bases are rescanned because removing worktrees orphans bases the first scan kept. Cache
-    # entries need no rescan: one is newly unreferenced exactly when every base linking to it
-    # was just deleted.
-    base_candidates = [
-        item
-        for item in output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
-        if isinstance(item, PrunableBase)
-    ]
-    bases = await _apply_base_deletions(base_candidates, output_user_root=output_user_root, workers=workers)
-    repo_cache = await _apply_repo_cache_deletions(
-        repo_contents_cache_gc.unreferenced_after_deleting(entries, bases.removed),
-        output_user_root=output_user_root,
-        session_bases=session_bases,
-        verbose=verbose,
-        workers=workers,
-    )
-    oks = [worktrees.ok, branches.ok, bases.ok, repo_cache.ok]
-    if delete_foreign_clones:
-        oks.append((await _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)).ok)
-    elif foreign_prunable:
-        print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
-    if not all(oks):
+    if multiple:
+        print()
+    if not await _apply(command, options, findings, session_bases=session_bases, progress=progress):
         raise SystemExit(1)
 
 
@@ -727,19 +807,16 @@ def _all_command(
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
-    asyncio.run(
-        run_all(
-            repo,
-            verbose=verbose,
-            output_user_root=output_user_root,
-            show_all=show_all,
-            no_prs=no_prs,
-            sizes=sizes,
-            prune=prune,
-            delete_foreign_clones=delete_foreign_clones,
-            workers=workers,
-        )
+    options = _Options(
+        output_user_root=output_user_root,
+        show_all=show_all,
+        sizes=sizes,
+        verbose=verbose,
+        workers=workers,
+        apply=prune,
+        delete_foreign_clones=delete_foreign_clones,
     )
+    asyncio.run(run(_ALL_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
 
 @app.command("worktrees")
@@ -753,7 +830,16 @@ def _worktrees_command(
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    asyncio.run(run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune, workers=workers))
+    options = _Options(
+        output_user_root=_DEFAULT_OUTPUT_USER_ROOT,
+        show_all=show_all,
+        sizes=False,
+        verbose=False,
+        workers=workers,
+        apply=prune,
+        delete_foreign_clones=False,
+    )
+    asyncio.run(run(_WORKTREES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
 
 @app.command("bazel-bases")
@@ -769,17 +855,16 @@ def _bases_command(
 ) -> None:
     """The Bazel output-base slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    asyncio.run(
-        run_bases(
-            repo,
-            output_user_root=output_user_root,
-            show_all=show_all,
-            no_prs=no_prs,
-            sizes=sizes,
-            delete=delete,
-            workers=workers,
-        )
+    options = _Options(
+        output_user_root=output_user_root,
+        show_all=show_all,
+        sizes=sizes,
+        verbose=False,
+        workers=workers,
+        apply=delete,
+        delete_foreign_clones=False,
     )
+    asyncio.run(run(_BASES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
 
 @app.command("repo-cache")
@@ -797,16 +882,16 @@ def _repo_cache_command(
 ) -> None:
     """The repo-contents-cache slice of the joint scan: entries no output base links to."""
     _configure_logging(verbose=verbose)
-    asyncio.run(
-        run_repo_cache(
-            output_user_root=output_user_root,
-            show_all=show_all,
-            sizes=sizes,
-            delete=delete,
-            verbose=verbose,
-            workers=workers,
-        )
+    options = _Options(
+        output_user_root=output_user_root,
+        show_all=show_all,
+        sizes=sizes,
+        verbose=verbose,
+        workers=workers,
+        apply=delete,
+        delete_foreign_clones=False,
     )
+    asyncio.run(run(_REPO_CACHE_COMMAND, options, repo=None, pr_source=_without_prs))
 
 
 _COMMANDS = {"all", "worktrees", "bazel-bases", "repo-cache"}
