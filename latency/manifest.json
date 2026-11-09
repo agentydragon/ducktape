@@ -18,7 +18,7 @@
     "prettier"
   ],
   "publication_scope": "Latency namespace only; current telemetry, experiment dispositions and reviewed visualizations.",
-  "report_html_sha256": "287cfdcdef617023a8a64e20567be165db71b6f1fdb8eb92574e73edbeda7411",
+  "report_html_sha256": "416dbe9a0f4c9593e9a634568e8982044a0e253648d02f740cddd46dc618a379",
   "evidence_sha256": "2181714a3567bea96b1506a78849e9ed478dc6124c74c21b7a839620624a6059",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
@@ -46,7 +46,7 @@
   "resource_followup_experiments_end_utc": "2026-11-09T10:18:16.722345Z",
   "resource_followup_visual_scope": "Desktop/mobile, initial light/dark and live preference changes; actual pinned CDNs, telemetry controls, line/bar charts and retained span timelines.",
   "prior_presentation_validation": "../presentation-validation.json",
-  "resource_module_sha256": "238cd9a023e4c8a9901394e91dde4f859ca5433774f5315dd2ad101b409e316f",
+  "resource_module_sha256": "da5b1bc0d6ab459f85c3a5f7b658f5f2ed267b63a6385a68e8b1d9b4684ecba4",
   "resource_timeline_png_sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
   "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00",
   "cpu_followup_assembled_at_utc": "2026-11-09T11:03:17.556787+00:00",

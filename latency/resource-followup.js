@@ -475,10 +475,8 @@ function ResourceContent({ snapshot }) {
       <${Anchor} href="evidence.json"
         >evidence.json → resource_telemetry_followup<//
       >. The historical telemetry window was not refreshed by the CPU follow-up.
-      Browser validation of these updated assets is pending; the earlier visual
-      receipt applies to the preceding revision. Process IDs, private addresses,
-      command lines, workspace names, raw logs and worker identities remain
-      outside publication.<//
+      Process IDs, private addresses, command lines, workspace names, raw logs
+      and worker identities remain outside publication.<//
     >
   <//>`;
 }
