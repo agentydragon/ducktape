@@ -296,11 +296,17 @@ observation window and source SHA easy to find. Use semantic sections/tables and
 purposeful charts; do not wrap a Markdown report in a preformatted block. Visually
 inspect desktop/mobile rendering and exercise any filters before publication.
 
-Prefer a standard CSS framework from a version-pinned CDN for layout, typography,
-tables, cards and responsive utilities. Use its documented integrity and cross-origin
-attributes, and verify the stylesheet actually loads during browser review. Keep
-custom CSS limited to data visualizations and small report-specific adjustments;
-do not build a bespoke design system or add a build pipeline just to style a report.
+Follow the existing site's presentation convention before choosing a framework:
+read the canonical `gh-pages` root `README.md`, shared assets and sibling pages.
+Reuse the site's version-pinned CDN framework and shared shell across reports;
+do not independently select another framework or build a bespoke design system.
+The current convention is Mantine with React, `MantineProvider`
+`defaultColorScheme="auto"`, and the shared `report.js` / `report.css` shell.
+Use Mantine's typography provider for authored HTML and keep custom CSS limited
+to report layout, charts and small adjustments. Preserve report controls when
+mounting the shell. Verify actual CDN loading, readable desktop/mobile layouts,
+both initial themes and a live OS/browser preference change before publication.
+Keep styling-only updates distinct from refreshed measurements and source checks.
 
 Keep compact reviewed measurements and provenance in `evidence.json`. Full API
 payloads, logs, credentials, and profiles stay local. Preserve still-relevant prior
