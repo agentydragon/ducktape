@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import logging
 import os
 import re
 import subprocess
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +59,7 @@ def _repo_slug(repo: Path) -> str | None:
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _GRAPHQL_BATCH = 50  # aliased pullRequests fields per request; well under GraphQL node limits
+_MAX_CONCURRENT_REQUESTS = 4  # kept low: GitHub's secondary rate limits penalize bursts of concurrent requests
 _GRAPHQL_STATE = {"MERGED": PrState.MERGED, "OPEN": PrState.OPEN, "CLOSED": PrState.CLOSED}
 
 
@@ -82,20 +85,57 @@ def _most_decisive(nodes: Iterable[Mapping[str, Any]]) -> PrInfo | None:
     return best
 
 
-def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
-    """Most-decisive PR (merged > open > closed) per branch, via one batched GraphQL query.
+@dataclass(frozen=True, slots=True)
+class _QuotaExhausted:
+    """A batch GitHub refused with RATE_LIMIT."""
+
+
+async def _fetch_batch(
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+    owner: str,
+    name: str,
+    batch: Sequence[str],
+    *,
+    index: int,
+    total: int,
+) -> dict[str, PrInfo] | _QuotaExhausted:
+    async with semaphore:
+        logger.info("Checking GitHub PR state batch %d/%d (%d branches)", index, total, len(batch))
+        query, alias_to_branch = _pr_query(owner, name, list(batch))
+        payload = (await client.post(_GRAPHQL_URL, json={"query": query})).raise_for_status().json()
+    data = payload.get("data")
+    if not data or data.get("repository") is None:
+        errors = payload.get("errors") or []
+        if any(error.get("type") == "RATE_LIMIT" for error in errors):
+            return _QuotaExhausted()
+        raise RuntimeError(f"GraphQL returned no data: {errors}")
+    repository = data["repository"]
+    states: dict[str, PrInfo] = {}
+    for alias, branch in alias_to_branch.items():
+        connection = repository.get(alias)
+        if connection is not None and (info := _most_decisive(connection["nodes"])) is not None:
+            states[branch] = info
+    logger.info("Finished GitHub PR state batch %d/%d", index, total)
+    return states
+
+
+async def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
+    """Most-decisive PR (merged > open > closed) per branch, via batched GraphQL queries.
 
     Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
-    REST call per branch — a few round-trips rather than hundreds. `headRefName` matches PR
+    REST call per branch — a few round-trips rather than hundreds. Up to
+    `_MAX_CONCURRENT_REQUESTS` batches are in flight at once. `headRefName` matches PR
     records, so a branch whose remote ref was deleted after merge still resolves. Returns {}
-    when there is no token, no GitHub remote, or the API is unreachable, and returns whatever
-    it resolved before a mid-sweep quota exhaustion — the caller classifies the rest on git
-    signals alone.
+    when there is no token, no GitHub remote, or any batch fails with a GraphQL or HTTP error
+    other than a quota refusal. A batch refused for quota (RATE_LIMIT) is dropped and every
+    batch that did resolve is kept — with concurrent batches, "resolved" means resolved at all,
+    not resolved before the limit hit — so the caller classifies the rest on git signals alone.
     """
     if not branches:
         return {}
     slug = _repo_slug(repo)
-    token = _github_token()
+    token = await asyncio.to_thread(_github_token)
     if slug is None:
         logger.warning("PR check skipped: origin is not a GitHub remote")
         return {}
@@ -104,38 +144,37 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
         return {}
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
-    states: dict[str, PrInfo] = {}
     batches = list(itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False))
     logger.info("Checking GitHub PR state for %d branches in %d batches", len(branches), len(batches))
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
     try:
-        with httpx.Client(headers=headers, timeout=30) as client:
-            for index, batch in enumerate(batches, start=1):
-                logger.info("Checking GitHub PR state batch %d/%d (%d branches)", index, len(batches), len(batch))
-                query, alias_to_branch = _pr_query(owner, name, list(batch))
-                payload = client.post(_GRAPHQL_URL, json={"query": query}).raise_for_status().json()
-                data = payload.get("data")
-                if not data or data.get("repository") is None:
-                    errors = payload.get("errors") or []
-                    if any(error.get("type") == "RATE_LIMIT" for error in errors):
-                        # Quota is per-hour and shared with every other GitHub caller, so it
-                        # says nothing about this repo: keep the batches already resolved,
-                        # stop asking, and let the rest classify on git signals alone.
-                        logger.warning(
-                            "PR check incomplete: GitHub GraphQL quota exhausted; "
-                            "classified %d of %d branches with PR data",
-                            len(states),
-                            len(branches),
-                        )
-                        return states
-                    raise RuntimeError(f"GraphQL returned no data: {errors}")
-                repository = data["repository"]
-                for alias, branch in alias_to_branch.items():
-                    connection = repository.get(alias)
-                    if connection is not None and (info := _most_decisive(connection["nodes"])) is not None:
-                        states[branch] = info
-                logger.info("Finished GitHub PR state batch %d/%d", index, len(batches))
-        logger.info("GitHub PR state complete: %d/%d branches resolved", len(states), len(branches))
-        return states
+        async with httpx.AsyncClient(headers=headers, timeout=30) as client, asyncio.TaskGroup() as group:
+            tasks = [
+                group.create_task(_fetch_batch(client, semaphore, owner, name, batch, index=index, total=len(batches)))
+                for index, batch in enumerate(batches, start=1)
+            ]
     except Exception:
         logger.warning("PR check skipped: GitHub API error", exc_info=True)
         return {}
+    states: dict[str, PrInfo] = {}
+    exhausted = 0
+    for task in tasks:
+        result = task.result()
+        if isinstance(result, _QuotaExhausted):
+            exhausted += 1
+        else:
+            states.update(result)
+    if exhausted:
+        # Quota is per-hour and shared with every other GitHub caller, so it says nothing about
+        # this repo: keep the batches that resolved and let the rest classify on git signals.
+        logger.warning(
+            "PR check incomplete: GitHub GraphQL quota exhausted for %d of %d batches; "
+            "classified %d of %d branches with PR data",
+            exhausted,
+            len(batches),
+            len(states),
+            len(branches),
+        )
+    else:
+        logger.info("GitHub PR state complete: %d/%d branches resolved", len(states), len(branches))
+    return states
