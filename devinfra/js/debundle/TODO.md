@@ -208,7 +208,13 @@ to one exact source/spec pair and held to the interactive budget in
 1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
    (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
    reproduced and protected in public CI.
-2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
+2. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
+   stylesheet reads through `new URL(..., import.meta.url)` under Node. Still
+   uncontrolled: URL search/fragment and encoded path identity, nested CSS asset
+   references, real browser worker/style loading, dynamic consumers of package
+   replacements, and the direct `Worker`-string rewrite (whose browser document
+   base is not the module URL; the resource inventory marks it unresolved).
+3. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 
