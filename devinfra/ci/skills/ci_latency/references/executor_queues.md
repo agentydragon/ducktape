@@ -104,13 +104,16 @@ remaining consumers before recommending cancellation as a capacity improvement.
 
 Keep each producer's clock semantics and sampling resolution. GitHub creation to
 job start can include dependency, concurrency or environment waits; infer runner
-starvation only after those are resolved. For inner actions, native
+starvation only after those are resolved. The existing `summarize.jq` calls that
+interval `queue_seconds`; label it created-to-start delay in reports until its
+queue owner is established. For inner actions, native
 `queuedTimestamp` to `workerStartTimestamp` measures the recorded queue interval.
 Worker preparation through `executionStartTimestamp` includes input transfer and
 does not by itself isolate VM boot. Separate fetch, execution and output upload
 where their timestamps permit it. Missing, epoch, inverted and future clocks are
 unknown, not zero or absolute-valued durations. Keep valid intervals when another
-phase is unknown. Report unfinished queue ages as censored observations separately
+phase is unknown. A stage such as `EXECUTING` does not supply missing phase clocks.
+Report unfinished queue ages as censored observations separately
 from completed-duration percentiles.
 
 When queues affect the decision, display:
