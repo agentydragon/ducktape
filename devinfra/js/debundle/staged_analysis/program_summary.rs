@@ -20,14 +20,8 @@ use analysis::analysis_inputs::{
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
-    ResolvedImport, resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
-    resolve_asserted_inline_callback_factories, resolve_asserted_member_purities,
-    resolve_asserted_namespace_independent_members, resolve_asserted_no_reentry_bindings,
-    resolve_asserted_no_reentry_callbacks, resolve_asserted_no_reentry_members,
-    resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
-    resolve_asserted_retained_callback_constructors, resolve_asserted_retained_callback_factories,
-    resolve_asserted_retained_callback_factory_members, resolve_export_primitives,
-    resolve_imported_callable_summaries, resolve_imported_purities,
+    ResolvedImport, resolve_export_primitives, resolve_imported_callable_summaries,
+    resolve_imported_purities,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
@@ -48,6 +42,7 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitWith};
 use vendor::VendorResolutionPlan;
 
+use crate::asserted_contracts::{project_export_set, project_onto_importers, scoped};
 use analysis_projection::{
     AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, ChunkAnalysisInputs,
 };
@@ -710,85 +705,7 @@ pub fn collect_program_summary(
         &projection.source_sites.no_accessor_install_callables,
         chunk_filter,
     )?;
-    let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_exports.clone()))
-        .collect();
-    let asserted_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> =
-        chunk_export_purity
-            .iter()
-            .filter(|(_, assertion)| !assertion.pure_members.is_empty())
-            .filter(|(chunk, _)| modules.contains_key(*chunk))
-            .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_members.clone()))
-            .collect();
-    let asserted_fluent: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.fluent_exports.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
-        .collect();
-    let asserted_callback_factories: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.callback_factory_exports.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.callback_factory_exports.clone()))
-        .collect();
-    let asserted_inline_callback_factories: BTreeMap<String, BTreeSet<String>> =
-        chunk_export_purity
-            .iter()
-            .filter(|(_, assertion)| !assertion.inline_callback_factory_exports.is_empty())
-            .filter(|(chunk, _)| modules.contains_key(*chunk))
-            .map(|(chunk, assertion)| {
-                (
-                    chunk.clone(),
-                    assertion.inline_callback_factory_exports.clone(),
-                )
-            })
-            .collect();
-    let asserted_callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> =
-        chunk_export_purity
-            .iter()
-            .filter(|(_, assertion)| !assertion.callback_factory_members.is_empty())
-            .filter(|(chunk, _)| modules.contains_key(*chunk))
-            .map(|(chunk, assertion)| (chunk.clone(), assertion.callback_factory_members.clone()))
-            .collect();
-    let asserted_no_reentry_members = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.no_reentry_members.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.no_reentry_members.clone()))
-        .collect();
-    let asserted_no_reentry_record_members = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.no_reentry_record_members.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.no_reentry_record_members.clone()))
-        .collect();
-    let asserted_no_reentry_exports = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.no_reentry_exports.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.no_reentry_exports.clone()))
-        .collect();
-    let asserted_namespace_independent_members = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.namespace_independent_members.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| {
-            (
-                chunk.clone(),
-                assertion.namespace_independent_members.clone(),
-            )
-        })
-        .collect();
-    let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
-        .iter()
-        .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
-        .filter(|(chunk, _)| modules.contains_key(*chunk))
-        .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_new_exports.clone()))
-        .collect();
+    let mut asserted_pure_new = scoped(chunk_export_purity, &modules, |p| &p.pure_new_exports);
     // A structurally selected member's trusted constructor contract follows
     // every export of that resolved binding. The importer sees its local
     // binding name; neither spec nor analysis needs the minified export name.
@@ -812,16 +729,12 @@ pub fn collect_program_summary(
         .collect();
     let mut callable_summaries = resolve_imported_callable_summaries(
         &modules,
-        &asserted_callback_factories,
-        &chunk_export_purity
-            .iter()
-            .map(|(chunk, assertion)| {
-                (
-                    chunk.clone(),
-                    assertion.descriptor_copy_factory_exports.clone(),
-                )
-            })
-            .collect(),
+        &scoped(chunk_export_purity, &modules, |p| {
+            &p.callback_factory_exports
+        }),
+        &scoped(chunk_export_purity, &modules, |p| {
+            &p.descriptor_copy_factory_exports
+        }),
         CallableSummaryInputs {
             requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
@@ -845,7 +758,11 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
-    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
+    let bindings = resolve_imported_purities(
+        &modules,
+        &scoped(chunk_export_purity, &modules, |p| &p.pure_exports),
+        &mut callable_summaries,
+    )?;
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
@@ -882,58 +799,35 @@ pub fn collect_program_summary(
             }
         }
     }
+    macro_rules! members {
+        ($field:ident) => {
+            project_onto_importers(
+                &modules,
+                &scoped(chunk_export_purity, &modules, |p| &p.$field),
+                stringify!($field),
+            )
+        };
+    }
+    macro_rules! exports {
+        ($field:ident) => {
+            project_export_set(
+                &modules,
+                &scoped(chunk_export_purity, &modules, |p| &p.$field),
+                stringify!($field),
+            )
+        };
+    }
     Ok(ProgramSummary {
-        no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
-            &modules,
-            &chunk_export_purity
-                .iter()
-                .map(|(chunk, assertion)| {
-                    (chunk.clone(), assertion.no_reentry_callback_exports.clone())
-                })
-                .collect(),
-        ),
-        retained_callback_constructors: resolve_asserted_retained_callback_constructors(
-            &modules,
-            &chunk_export_purity
-                .iter()
-                .map(|(chunk, assertion)| {
-                    (
-                        chunk.clone(),
-                        assertion.retained_callback_constructor_exports.clone(),
-                    )
-                })
-                .collect(),
-        ),
-        retained_callback_factories: resolve_asserted_retained_callback_factories(
-            &modules,
-            &chunk_export_purity
-                .iter()
-                .map(|(chunk, assertion)| {
-                    (
-                        chunk.clone(),
-                        assertion.retained_callback_factory_exports.clone(),
-                    )
-                })
-                .collect(),
-        ),
-        retained_callback_factory_members: resolve_asserted_retained_callback_factory_members(
-            &modules,
-            &chunk_export_purity
-                .iter()
-                .map(|(chunk, assertion)| {
-                    (
-                        chunk.clone(),
-                        assertion.retained_callback_factory_members.clone(),
-                    )
-                })
-                .collect(),
-        ),
+        no_reentry_callback_exports: members!(no_reentry_callback_exports),
+        retained_callback_constructors: members!(retained_callback_constructor_exports),
+        retained_callback_factories: members!(retained_callback_factory_exports),
+        retained_callback_factory_members: members!(retained_callback_factory_members),
         values,
         primitive_reads,
         bindings,
-        members: resolve_asserted_member_purities(&modules, &asserted_members),
-        fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
-        constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
+        members: members!(pure_members),
+        fluent: exports!(fluent_exports),
+        constructors: project_export_set(&modules, &asserted_pure_new, "pure_new_exports"),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,
@@ -945,30 +839,12 @@ pub fn collect_program_summary(
         stable_set_spreads: callable_summaries.stable_set_spreads,
         inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
-        inline_callback_factories: resolve_asserted_inline_callback_factories(
-            &modules,
-            &asserted_inline_callback_factories,
-        ),
-        namespace_independent_members: resolve_asserted_namespace_independent_members(
-            &modules,
-            &asserted_namespace_independent_members,
-        ),
-        callback_factory_members: resolve_asserted_callback_factory_members(
-            &modules,
-            &asserted_callback_factory_members,
-        ),
-        no_reentry_members: resolve_asserted_no_reentry_members(
-            &modules,
-            &asserted_no_reentry_members,
-        ),
-        no_reentry_record_members: resolve_asserted_no_reentry_record_members(
-            &modules,
-            &asserted_no_reentry_record_members,
-        ),
-        no_reentry_exports: resolve_asserted_no_reentry_bindings(
-            &modules,
-            &asserted_no_reentry_exports,
-        ),
+        inline_callback_factories: exports!(inline_callback_factory_exports),
+        namespace_independent_members: members!(namespace_independent_members),
+        callback_factory_members: members!(callback_factory_members),
+        no_reentry_members: members!(no_reentry_members),
+        no_reentry_record_members: members!(no_reentry_record_members),
+        no_reentry_exports: exports!(no_reentry_exports),
     })
 }
 
