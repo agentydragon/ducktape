@@ -3094,8 +3094,8 @@ principals, a retained Session with a deleted Sandbox reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**In progress (2026-11-09): `Sandbox.spec.identity` and its admission rule, and the Sandbox
-Controller's identity mode (unrendered), are in review; rendering the mode, EnvironmentService and
+**In progress (2026-11-09): `Sandbox.spec.identity` and its admission rule landed (#15235); the
+Sandbox Controller's identity mode (unrendered) is in review; rendering the mode, EnvironmentService and
 template pieces follow. Blocked on `WORKLOAD_AUTH_CUTOVER`'s
 Action-box step for what reads the caller's ServiceAccount.** Action
 command/build boxes must authenticate by SVID first. Box creation reads the caller's own
