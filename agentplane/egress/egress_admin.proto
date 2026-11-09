@@ -150,7 +150,7 @@ message CredentialRemoval {
   string uid = 2;
 }
 // Snapshot chunks are committed on snapshot_complete, before any upserts or removals.
-// Frames contain no source or Secret value.
+// Frames contain no Secret reference or value; an impersonation credential names its ServiceAccount.
 message WatchCredentialsResponse {
   oneof frame {
     CredentialSnapshot snapshot = 1;

@@ -53,6 +53,9 @@ message Credential {
   repeated Target targets = 4;
   // UID identifies this incarnation of the EgressCredential.
   string uid = 5;
+  // The ServiceAccount the proxy acts as by impersonation, present only for a kubernetesServiceAccount
+  // credential. It is a name, not a secret: impersonation holds no token for the account.
+  agentplane.proto.ServiceAccount kubernetes_service_account = 6;
 }
 
 // One exact location a credential may be presented in. The method selects the fields a target
