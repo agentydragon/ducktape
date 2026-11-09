@@ -67,12 +67,16 @@ message GrantSandboxPolicyBindingResponse { PolicyBinding binding = 1; }
 message RevokeSandboxPolicyBindingResponse {}
 
 message WatchPolicyBindingsRequest {
-  // Absent, with no identity, selects the authenticated caller. Broad readers may select another
-  // subject.
-  agentplane.proto.ServiceAccount subject = 1;
-  // Selects the bindings whose subject is the Identity of this name in the policy namespace, of
-  // whichever incarnation. Exclusive with subject; broad readers only.
-  string identity = 2;
+  // Absent selects the authenticated caller's ServiceAccount.
+  oneof selector {
+    // The bindings naming this ServiceAccount. Broad readers may select one other than their own.
+    agentplane.proto.ServiceAccount subject = 1;
+    // The bindings whose subject is the Identity of this name in the policy namespace, of whichever
+    // incarnation. Broad readers only.
+    string identity = 2;
+    // Every binding whose subject is an Identity; only true is valid. Broad readers only.
+    bool every_identity = 3;
+  }
 }
 message WatchPolicySetsRequest {}
 message ListPolicySetNamesRequest {}

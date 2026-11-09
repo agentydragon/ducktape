@@ -147,11 +147,12 @@ not exist. It is checked once the subject resolves and holds even when applying 
 ## Policy resource watches
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
-observes bindings for one ServiceAccount or one Identity name; `WatchPolicySets` observes PolicySets;
-`WatchIdentities` observes Identities; and `ListPolicySetNames` returns one sorted snapshot of the
-PolicySet names visible to the caller. A directly configured reader may select another subject or
-an Identity, see every set and watch Identities; other authenticated
-ServiceAccounts may read their own bindings and only sets named by those bindings. Losing a binding
+observes bindings for one ServiceAccount, one Identity name, or every Identity subject;
+`WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; and
+`ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
+directly configured reader may select another subject or Identities, see every set and watch
+Identities; other authenticated ServiceAccounts may read their own bindings and only sets named by
+those bindings. Losing a binding
 removes a set from that caller's view when no other binding names it. The server reviews the
 PolicyService-audience bearer at admission, before writes, and while idle; a changed or refused
 identity ends the stream.

@@ -476,7 +476,7 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 	if frame.GetRemoved().GetUid() != "uid-one" {
 		t.Fatalf("removed = %v", frame)
 	}
-	denied, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}})
+	denied, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Subject{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,26 +556,42 @@ func identityBinding(name, identity string, owner *policyapi.Identity) *policyap
 	return bound
 }
 
-func TestIdentityBindingWatchSelectsOnlyBindingsNamingThatIdentity(t *testing.T) {
+func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 	api, _, _ := fixture(t, identityBinding("names-agent", "fake-agent", nil), identityBinding("names-other", "other-agent", nil), binding("account", "fake-agent", "base"))
-	stream, err := api.WatchPolicyBindings(tokenContext(t, "app"), &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	first, err := stream.Recv()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := first.GetSnapshot().GetBindings(); len(got) != 1 || got[0].GetIdentity().GetName() != "names-agent" || got[0].GetSpec().GetSubject().GetIdentity().GetName() != "fake-agent" {
-		t.Fatalf("snapshot = %v", got)
+	byName := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Identity{Identity: "fake-agent"}}
+	every := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_EveryIdentity{EveryIdentity: true}}
+	for _, tc := range []struct {
+		request *policypb.WatchPolicyBindingsRequest
+		want    []string
+	}{
+		{byName, []string{"names-agent"}},
+		{every, []string{"names-agent", "names-other"}},
+	} {
+		stream, err := api.WatchPolicyBindings(tokenContext(t, "app"), tc.request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, item := range first.GetSnapshot().GetBindings() {
+			got = append(got, item.GetIdentity().GetName())
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%v snapshot = %v, want %v", tc.request, got, tc.want)
+		}
 	}
 	for _, tc := range []struct {
 		token   string
 		request *policypb.WatchPolicyBindingsRequest
 		want    codes.Code
 	}{
-		{"alice", &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent"}, codes.PermissionDenied},
-		{"app", &policypb.WatchPolicyBindingsRequest{Identity: "fake-agent", Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "alice"}}, codes.InvalidArgument},
+		{"alice", byName, codes.PermissionDenied},
+		{"alice", every, codes.PermissionDenied},
+		{"app", &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_EveryIdentity{}}, codes.InvalidArgument},
+		{"app", &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Identity{}}, codes.InvalidArgument},
 	} {
 		refused, err := api.WatchPolicyBindings(tokenContext(t, tc.token), tc.request)
 		if err != nil {
