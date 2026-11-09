@@ -198,6 +198,7 @@ py_test(
     srcs = ["test_workspace_gc.py"],
     deps = [
         ":conftest",
+        ":pull_request",
         ":repo_contents_cache_gc",
         ":workspace_gc",
         ":workspace_scan",
