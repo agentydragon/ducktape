@@ -41,6 +41,7 @@ RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 SHARED_DIAGNOSTICS_POLICY = "shared-diagnostics"
+CLUSTER_DIAGNOSTICS_POLICY = "cluster-diagnostics"
 
 
 @dataclass(frozen=True)
@@ -179,7 +180,7 @@ PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 POLICY_SETS = {
     SHARED_DIAGNOSTICS_POLICY: SHARED_DIAGNOSTICS,
     "public-inventory": PUBLIC_INVENTORY,
-    "cluster-diagnostics": ("cluster-diagnostics",),
+    CLUSTER_DIAGNOSTICS_POLICY: ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
     COINBASE_POLICY: ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),

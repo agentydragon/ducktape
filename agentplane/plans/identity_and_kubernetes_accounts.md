@@ -515,6 +515,9 @@ cannot change in place, and the new launch writes the identity.
     as well as a row's. Constraint so D4 stays open: services reference an identity by name and UID
     through the shared reader and nothing else, and no service's correctness depends on `Identity`
     being a Kubernetes object.
+20. **TODO: Accounts per preset vs per role set** (operator, 2026-11-09: per preset for now; reconsider).
+    Per preset gives each agent one `kubectl` identity, holding its preset's role sets plus cluster
+    diagnostics. Per role set is finer-grained, but an agent then needs a different token per command.
 
 ## Exit
 
