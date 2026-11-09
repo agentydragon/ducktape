@@ -3107,7 +3107,7 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**In review (PR #15076 from `claude/policy-grants`, stacked on `IDENTITY_KINDS`, 2026-11-09).** The
+**In review (PR #15076 from `claude/policy-grants` against `devel`, 2026-11-09).** The
 Policy Controller reads `ServiceAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
 Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
 and namespace through the same additive, pruned, never-adopt-on-name machinery. Expiry covers
