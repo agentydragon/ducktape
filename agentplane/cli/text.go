@@ -136,11 +136,15 @@ func receiptLine(raw json.RawMessage) (string, error) {
 	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
 	line := fields(r.GetId(), state, r.GetAction().GetGroup()+"/"+r.GetAction().GetName(), strconv.Quote(r.GetTitle()))
 	if decision := r.GetDecision(); decision != nil {
-		for _, reason := range []*string{decision.DecisionNote, decision.ReasonDescription} {
-			if reason != nil {
-				line += "  decision: " + strconv.Quote(*reason)
-				break
-			}
+		var reason *string
+		switch decider := decision.GetDecider().(type) {
+		case *action_servicepb.Decision_Operator:
+			reason = decider.Operator.DecisionNote
+		case *action_servicepb.Decision_Policy:
+			reason = decider.Policy.ReasonDescription
+		}
+		if reason != nil {
+			line += "  decision: " + strconv.Quote(*reason)
 		}
 	}
 	if execution := r.GetExecution(); execution != nil && execution.GetError() != nil {

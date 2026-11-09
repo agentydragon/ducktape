@@ -1281,12 +1281,10 @@ const ACTIONS: ActionRequest[] = [
     decision: {
       id: "71000000-0000-4000-8000-000000000007",
       verdict: "VERDICT_ALLOW",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decisionNote: null,
-      reasonCode: null,
-      reasonDescription: null,
-      policyEvidence: null,
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
       idempotencyKey: "visual-allow-ssh",
       decidedAt: ago(4 * 60_000),
     },
@@ -1325,12 +1323,10 @@ const ACTIONS: ActionRequest[] = [
     decision: {
       id: "71000000-0000-4000-8000-000000000002",
       verdict: "VERDICT_ALLOW",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decisionNote: null,
-      reasonCode: null,
-      reasonDescription: null,
-      policyEvidence: null,
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
       idempotencyKey: "visual-allow",
       decidedAt: ago(39 * 60_000),
     },
@@ -1374,12 +1370,10 @@ const ACTIONS: ActionRequest[] = [
     decision: {
       id: "71000000-0000-4000-8000-000000000003",
       verdict: "VERDICT_DENY",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decisionNote: "Out of scope for this workload's binding.",
-      reasonCode: null,
-      reasonDescription: null,
-      policyEvidence: null,
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: "Out of scope for this workload's binding.",
+      },
       idempotencyKey: "visual-deny",
       decidedAt: ago(79 * 60_000),
     },
@@ -1401,25 +1395,24 @@ const ACTIONS: ActionRequest[] = [
     decision: {
       id: "71000000-0000-4000-8000-000000000004",
       verdict: "VERDICT_ALLOW",
-      provider: "policy_engine",
-      operator: null,
-      decisionNote: null,
-      reasonCode: null,
-      reasonDescription: null,
-      idempotencyKey: "visual-policy-allow",
-      decidedAt: ago(14 * 60_000),
-      policyEvidence: {
-        bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resourceVersion: "12345" }],
-        policySets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
-        matched: {
-          namespace: "agentplane-visual",
-          policySet: "fixture_auto_allow",
-          source: "POLICY_SOURCE_RULES",
-          index: 0,
-          type: "POLICY_KIND_EXACT_ACTIONS",
-          repository: null,
+      policy: {
+        reasonCode: "REASON_CODE_AUTO_APPROVE",
+        reasonDescription: null,
+        evidence: {
+          bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resourceVersion: "12345" }],
+          policySets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+          matched: {
+            namespace: "agentplane-visual",
+            policySet: "fixture_auto_allow",
+            source: "POLICY_SOURCE_RULES",
+            index: 0,
+            type: "POLICY_KIND_EXACT_ACTIONS",
+            repository: null,
+          },
         },
       },
+      idempotencyKey: "visual-policy-allow",
+      decidedAt: ago(14 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000004",
@@ -1449,12 +1442,10 @@ const ACTIONS: ActionRequest[] = [
     decision: {
       id: "71000000-0000-4000-8000-000000000005",
       verdict: "VERDICT_ALLOW",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decisionNote: null,
-      reasonCode: null,
-      reasonDescription: null,
-      policyEvidence: null,
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
       idempotencyKey: "visual-allow-tool-error",
       decidedAt: ago(9 * 60_000),
     },
@@ -1519,12 +1510,10 @@ const GMAIL_DRAFT_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
   decision: {
     id: "71000000-0000-4000-8000-000000000010",
     verdict: "VERDICT_ALLOW",
-    provider: "human_operator",
-    operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-    decisionNote: null,
-    reasonCode: null,
-    reasonDescription: null,
-    policyEvidence: null,
+    operator: {
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decisionNote: null,
+    },
     idempotencyKey: "visual-allow-gmail-draft",
     decidedAt: ago(6 * 60_000),
   },
@@ -2955,7 +2944,7 @@ routes.push(
       const filtered =
         query.get("includeAutoAllowed") === "false"
           ? past.filter(
-              (request) => !(request.decision?.verdict === Verdict.ALLOW && request.decision.operator === undefined)
+              (request) => !(request.decision?.verdict === Verdict.ALLOW && request.decision.decider.case === "policy")
             )
           : past;
       const page =

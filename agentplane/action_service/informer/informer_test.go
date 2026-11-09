@@ -152,7 +152,7 @@ func TestBindingsResolveAsAdmissionDecidesFromThem(t *testing.T) {
 	if !ok {
 		t.Fatal("the provider does not allow the Action a resolved binding auto-approves")
 	}
-	evidence := allowed.Vote.Evidence
+	evidence := allowed.Vote.Policy.Evidence
 	if len(evidence.Bindings) != 2 || evidence.Bindings[1].ResourceVersion != b.ResourceVersion ||
 		evidence.Matched != (store.MatchedPolicy{
 			Namespace: f.policy, PolicySet: "test-auto", Source: store.PolicySourceRules, Index: 1, Type: store.PolicyExactActions,

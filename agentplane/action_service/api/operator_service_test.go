@@ -50,8 +50,9 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 		t.Fatal(err)
 	}
 	if got.GetState() != action_servicepb.ActionState_ACTION_STATE_ALLOWED ||
-		got.GetDecision().GetVerdict() != allow || got.GetDecision().GetDecisionNote() != "test note for the caller" ||
-		!proto.Equal(got.GetDecision().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) ||
+		got.GetDecision().GetVerdict() != allow ||
+		got.GetDecision().GetOperator().GetDecisionNote() != "test note for the caller" ||
+		!proto.Equal(got.GetDecision().GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) ||
 		got.GetExecution().GetState() != action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH {
 		t.Errorf("the allowed request: %v", got)
 	}
@@ -178,7 +179,7 @@ func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 		}
 		got, err := s.client.GetActionRequest(as(t, readerToken), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()})
 		wantSubject := []string{operatorSubject, "test-other-operator"}[won]
-		if err != nil || got.GetActionRequest().GetDecision().GetOperator().GetSubject() != wantSubject {
+		if err != nil || got.GetActionRequest().GetDecision().GetOperator().GetOperator().GetSubject() != wantSubject {
 			t.Errorf("the request carries %v, %v; want the Decision of %s", got.GetActionRequest().GetDecision(), err, wantSubject)
 		}
 	}
