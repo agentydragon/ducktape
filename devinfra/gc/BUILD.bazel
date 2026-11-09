@@ -12,6 +12,7 @@ py_library(
     srcs = ["output_base_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":removal",
         ":scan_progress",
         ":verdict",
         "@pypi//humanize",
@@ -39,6 +40,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":verdict",
         "@pypi//pygit2",
     ],
@@ -51,6 +53,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
@@ -84,6 +87,7 @@ py_library(
         ":github_prs",
         ":output_base_gc",
         ":pull_request",
+        ":removal",
         ":repo_contents_cache_gc",
         ":scan_progress",
         ":verdict",
@@ -136,6 +140,7 @@ py_test(
     deps = [
         ":conftest",
         ":output_base_gc",
+        ":removal",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -149,6 +154,7 @@ py_test(
         ":conftest",
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pytest",
@@ -164,6 +170,7 @@ py_test(
         ":conftest",
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
@@ -191,6 +198,7 @@ py_test(
     srcs = ["test_workspace_gc.py"],
     deps = [
         ":conftest",
+        ":pull_request",
         ":repo_contents_cache_gc",
         ":workspace_gc",
         ":workspace_scan",
@@ -224,6 +232,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
@@ -237,6 +246,7 @@ py_test(
         ":conftest",
         ":foreign_clone_gc",
         ":pull_request",
+        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
@@ -264,6 +274,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":output_base_gc",
+        ":removal",
         ":scan_progress",
         ":verdict",
         "@pypi//humanize",
@@ -277,6 +288,7 @@ py_test(
     deps = [
         ":conftest",
         ":output_base_gc",
+        ":removal",
         ":repo_contents_cache_gc",
         "//:conftest",
         "@pypi//pytest",
@@ -312,4 +324,9 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
+)
+
+py_library(
+    name = "removal",
+    srcs = ["removal.py"],
 )

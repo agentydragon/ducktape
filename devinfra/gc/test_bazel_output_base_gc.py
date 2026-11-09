@@ -12,6 +12,7 @@ import pytest_bazel
 
 from devinfra.gc import output_base_gc as gc
 from devinfra.gc.conftest import make_base
+from devinfra.gc.removal import Failed, Removed, Skipped
 
 
 @pytest.fixture
@@ -249,7 +250,7 @@ def test_delete_removes_a_prunable_session_env_base(tmp_path: Path, proc: Path, 
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert results == [gc.DeletedBase(base)]
+    assert results == [Removed(base)]
     assert list(base.parent.iterdir()) == []
 
 
@@ -348,7 +349,7 @@ def test_delete_handles_read_only_directories(prunable_base: Path, proc: Path, m
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert results == [gc.DeletedBase(prunable_base)]
+    assert results == [Removed(prunable_base)]
     assert not prunable_base.exists()
 
 
@@ -361,7 +362,7 @@ def test_delete_rechecks_workspace_absence(tmp_path: Path, proc: Path, mountinfo
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert isinstance(results[0], gc.SkippedBase)
+    assert isinstance(results[0], Skipped)
     assert base.exists()
 
 
@@ -376,7 +377,7 @@ def test_delete_rechecks_mounts_under_lock(tmp_path: Path) -> None:
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert isinstance(results[0], gc.SkippedBase)
+    assert isinstance(results[0], Skipped)
     assert base.exists()
 
 
@@ -396,9 +397,9 @@ def test_rmtree_permission_error_fails_with_the_quarantine_kept(
 
     [result] = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert isinstance(result, gc.FailedBase)
-    assert result.quarantine is not None
-    assert result.quarantine.is_dir()
+    assert isinstance(result, Failed)
+    assert result.leftover is not None
+    assert result.leftover.is_dir()
     assert not base.exists()
 
 

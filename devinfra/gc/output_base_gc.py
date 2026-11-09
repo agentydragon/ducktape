@@ -31,6 +31,7 @@ from pathlib import Path
 import humanize
 from tabulate import tabulate
 
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
 from devinfra.gc.verdict import Prunable, Retained, Review, verdict_of
 
@@ -112,27 +113,6 @@ class ReviewBase(Review):
 
 
 type Inspection = PrunableBase | RetainedBase | ReviewBase
-
-
-@dataclass(frozen=True, slots=True)
-class DeletedBase:
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedBase:
-    path: Path
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedBase:
-    path: Path
-    quarantine: Path | None
-    error: str
-
-
-type DeletionResult = DeletedBase | SkippedBase | FailedBase
 
 
 def default_output_user_root() -> Path:
@@ -521,7 +501,7 @@ def delete_prunable_base(
     uid: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-) -> DeletionResult:
+) -> RemovalResult[Path]:
     """Revalidate `candidate` under its Bazel lock, quarantine it, then remove the quarantine.
 
     Independent of every other base (each has its own lock file), so callers may run several at
@@ -540,24 +520,24 @@ def delete_prunable_base(
                 proc_root=proc_root,
             )
             if not isinstance(fresh, PrunableBase):
-                return SkippedBase(candidate.path, _inspection_reason(fresh))
+                return Skipped(candidate.path, _inspection_reason(fresh))
             if fresh.identity != candidate.identity or fresh.workspace != candidate.workspace:
-                return SkippedBase(candidate.path, "output-base identity or workspace changed")
+                return Skipped(candidate.path, "output-base identity or workspace changed")
 
             quarantine = candidate.path.parent / f"{_QUARANTINE_PREFIX}{candidate.path.name}-{uuid.uuid4().hex}"
             candidate.path.rename(quarantine)
             (quarantine / "lock").unlink()
         assert quarantine is not None
         shutil.rmtree(quarantine, onexc=retry_rmtree_after_permission_error)
-        return DeletedBase(candidate.path)
+        return Removed(candidate.path)
     except MetadataError as error:
-        return SkippedBase(candidate.path, str(error))
+        return Skipped(candidate.path, str(error))
     except RuntimeError as error:
         if quarantine is None:
-            return SkippedBase(candidate.path, str(error))
-        return FailedBase(candidate.path, quarantine, str(error))
+            return Skipped(candidate.path, str(error))
+        return Failed(candidate.path, str(error), quarantine)
     except OSError as error:
-        return FailedBase(candidate.path, quarantine, str(error))
+        return Failed(candidate.path, str(error), quarantine)
 
 
 def delete_prunable_bases(
@@ -566,7 +546,7 @@ def delete_prunable_bases(
     uid: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-) -> list[DeletionResult]:
+) -> list[RemovalResult[Path]]:
     return [
         delete_prunable_base(candidate, uid=uid, proc_root=proc_root, mountinfo_path=mountinfo_path)
         for candidate in candidates

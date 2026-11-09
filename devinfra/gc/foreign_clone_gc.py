@@ -35,6 +35,7 @@ import pygit2
 from devinfra.gc import git_repo, worktree_gc
 from devinfra.gc.git_repo import GitError, Worktree
 from devinfra.gc.pull_request import PrInfo
+from devinfra.gc.removal import Failed, RemovalResult, Removed
 from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
@@ -184,36 +185,22 @@ def _classify_foreign_clone(
     return ReviewForeignClone(clone, reason)
 
 
-@dataclass(frozen=True, slots=True)
-class PrunedForeignClone:
-    root: Path
-
-
-@dataclass(frozen=True, slots=True)
-class FailedForeignClone:
-    root: Path
-    error: str
-
-
-type ForeignCloneRemovalResult = PrunedForeignClone | FailedForeignClone
-
-
-def prune_foreign_clone(clone: ForeignClone) -> ForeignCloneRemovalResult:
+def prune_foreign_clone(clone: ForeignClone) -> RemovalResult[Path]:
     """Remove every non-root worktree properly (`git worktree remove`), then the root's own
     directory — safe once its worktrees are gone, since nothing else depends on it.
 
     The caller re-scans and passes only a still-prunable `ForeignClone` here, the same
     revalidate-then-act contract `worktree_gc.remove_worktree` documents; `git worktree remove`
-    itself refuses a member that turned dirty since, surfacing as `FailedForeignClone`.
+    itself refuses a member that turned dirty since, surfacing as `Failed`.
     """
     for member in clone.members:
         if member.path == clone.root:
             continue
         result = worktree_gc.remove_worktree(clone.root, member.path)
-        if isinstance(result, worktree_gc.FailedWorktree):
-            return FailedForeignClone(clone.root, f"removing {member.path}: {result.error}")
+        if isinstance(result, Failed):
+            return Failed(clone.root, f"removing {member.path}: {result.error}")
     try:
         shutil.rmtree(clone.root)
     except OSError as error:
-        return FailedForeignClone(clone.root, str(error))
-    return PrunedForeignClone(clone.root)
+        return Failed(clone.root, str(error))
+    return Removed(clone.root)

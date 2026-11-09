@@ -11,6 +11,7 @@ import pytest_bazel
 
 from devinfra.gc import output_base_gc, repo_contents_cache_gc as gc
 from devinfra.gc.conftest import link_external, make_base, make_cache_entry
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 
 
 def _hash(char: str) -> str:
@@ -77,7 +78,7 @@ def _prunable(cache: FakeCache, proc: Path, mountinfo: Path) -> list[gc.Prunable
     return [item for item in _scan(cache, proc, mountinfo).values() if isinstance(item, gc.PrunableEntry)]
 
 
-def _delete(cache: FakeCache, candidates: list[gc.PrunableEntry], mountinfo: Path) -> list[gc.EntryDeletionResult]:
+def _delete(cache: FakeCache, candidates: list[gc.PrunableEntry], mountinfo: Path) -> list[RemovalResult[Path]]:
     return gc.delete_prunable_entries(
         candidates, contents=cache.contents, output_user_root=cache.root, session_bases=(), mountinfo_path=mountinfo
     )
@@ -188,7 +189,7 @@ def test_unreferenced_after_deleting_nothing_keeps_only_the_prunable_entries(
 def test_delete_removes_exactly_the_unreferenced_entries(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
     results = _delete(cache, _prunable(cache, proc, mountinfo), mountinfo)
 
-    assert results == [gc.DeletedEntry(cache.unreferenced)]
+    assert results == [Removed(cache.unreferenced)]
     assert not cache.unreferenced.exists()
     assert not gc.recorded_inputs_of(cache.unreferenced).exists()
     for survivor in (cache.referenced, cache.prunable_only):
@@ -213,7 +214,7 @@ def test_delete_succeeds_when_a_competing_cleaner_removes_the_trash_root(
 
     [result] = _delete(cache, candidates, mountinfo)
 
-    assert result == gc.DeletedEntry(cache.unreferenced)
+    assert result == Removed(cache.unreferenced)
     assert not cache.unreferenced.exists()
     assert list((cache.contents / "_trash").iterdir()) == []
 
@@ -236,10 +237,10 @@ def test_delete_reports_cleanup_errors_while_the_trash_root_remains(
 
     [result] = _delete(cache, candidates, mountinfo)
 
-    assert isinstance(result, gc.FailedEntry)
-    assert result.trash is not None
-    assert result.trash.is_dir()
-    assert result.path == cache.unreferenced
+    assert isinstance(result, Failed)
+    assert result.leftover is not None
+    assert result.leftover.is_dir()
+    assert result.subject == cache.unreferenced
     assert "simulated cleanup error" in result.error
 
 
@@ -249,7 +250,7 @@ def test_delete_skips_an_entry_a_base_linked_to_since_the_scan(cache: FakeCache,
 
     [result] = _delete(cache, candidates, mountinfo)
 
-    assert isinstance(result, gc.SkippedEntry)
+    assert isinstance(result, Skipped)
     assert cache.unreferenced.is_dir()
 
 
@@ -263,7 +264,7 @@ def test_delete_sees_a_base_created_since_the_scan(
 
     [result] = _delete(cache, candidates, mountinfo)
 
-    assert isinstance(result, gc.SkippedEntry)
+    assert isinstance(result, Skipped)
     assert cache.unreferenced.is_dir()
 
 
@@ -275,7 +276,7 @@ def test_delete_skips_a_replaced_entry(cache: FakeCache, proc: Path, mountinfo: 
 
     [result] = _delete(cache, candidates, mountinfo)
 
-    assert isinstance(result, gc.SkippedEntry)
+    assert isinstance(result, Skipped)
     assert cache.unreferenced.is_dir()
 
 
@@ -302,7 +303,7 @@ def test_delete_yields_to_a_running_bazel_command(cache: FakeCache, proc: Path, 
         assert holder.stdin is not None
         holder.communicate("x", timeout=5)
 
-    assert [type(result) for result in results] == [gc.SkippedEntry]
+    assert [type(result) for result in results] == [Skipped]
     assert cache.unreferenced.is_dir()
     assert gc.recorded_inputs_of(cache.unreferenced).is_file()
 

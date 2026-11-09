@@ -9,6 +9,7 @@ from devinfra.gc import branch_gc as bg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.removal import Failed, Removed, Skipped
 from devinfra.gc.worktree_gc import RetainedWorktree, RetainedWorktreeReason
 
 
@@ -156,7 +157,7 @@ def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
 
 def test_delete_branch_removes_it(repo: GitRepo) -> None:
     repo.branch("feature")
-    assert bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")) == bg.RemovedBranch("feature")
+    assert bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")) == Removed("feature")
     assert not repo.has_branch("feature")
 
 
@@ -167,13 +168,13 @@ def test_delete_branch_skips_a_branch_that_moved_since_it_was_classified(repo: G
 
     result = bg.delete_branch(repo.path, "feature", expected_tip=classified_tip)
 
-    assert isinstance(result, bg.SkippedBranch)
+    assert isinstance(result, Skipped)
     assert repo.has_branch("feature")
 
 
 def test_delete_branch_fails_when_checked_out(repo: GitRepo) -> None:
     repo.worktree("wt", "feature")
-    assert isinstance(bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")), bg.FailedBranch)
+    assert isinstance(bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")), Failed)
 
 
 def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> None:
