@@ -19,7 +19,8 @@
 - [ ] Decide whether KubeVirt console access remains an app-owned browser capability or needs a
       backend API for non-app callers. Establish the intended callers and authorization boundary
       before introducing a shared capability; the current app route is in
-      [`go/sandboxes/console.go`](go/sandboxes/console.go).
+      [`go/sandboxes/console.go`](go/sandboxes/console.go). A browser-facing streaming adapter may
+      stay in the app either way; it does not decide who owns backend console access.
 
 ## Session and Environment listings
 
