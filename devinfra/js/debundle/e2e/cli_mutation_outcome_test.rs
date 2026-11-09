@@ -41,8 +41,17 @@ fn assign_unassign_and_merge_report_the_edits_that_still_run() {
         ),
     ] {
         let fixture = GraphFixture::acyclic_pair();
-        let report = fixture.json(&args);
-        assert_core(&report, args[1], "applied", "passed");
+        let mut json_args = args.clone();
+        json_args.extend(["--format", "json"]);
+        let out = fixture.command(&json_args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{args:?}: {stderr}");
+        let report = parse_stdout_json(&out);
+        // Graph-only writes stay permitted under the legacy gate, labelled as
+        // unassessed and warned about on stderr.
+        assert_core(&report, args[1], "applied", "claims_checked");
+        assert_eq!(report["needs_full_assessment"], true, "{report}");
+        assert!(stderr.contains("needs_full_assessment"), "{stderr}");
         if let Some(count) = count {
             assert_eq!(report[count], 1);
         }
@@ -78,6 +87,7 @@ fn names_only_rename_reports_its_file_and_binding() {
     );
     let report = parse_stdout_json(&out);
     assert_core(&report, "rename", "applied", "names_only");
+    assert!(report.get("needs_full_assessment").is_none(), "{report}");
     assert_eq!(report["identity"]["kind"], "direct_binding_identifier");
     assert_eq!(report["identity"]["name"], "alpha");
     assert!(report.get("binding").is_none());
@@ -98,7 +108,8 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
         "a.yaml",
         "b.yaml",
     ]);
-    assert_core(&report, "merge", "dry-run", "passed");
+    assert_core(&report, "merge", "dry-run", "claims_checked");
+    assert_eq!(report["needs_full_assessment"], true, "{report}");
     assert!(fixture.modules.join("b.yaml").exists());
     write_text_file(&fixture.modules.join("ui/empty.yaml"), "members: []\n");
     fixture.assert_rejected_unchanged(
@@ -108,6 +119,7 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
     fixture.refresh_graph();
     let report = fixture.json(&["modules", "delete", "ui/empty.yaml"]);
     assert_core(&report, "delete", "applied", "not_required");
+    assert!(report.get("needs_full_assessment").is_none(), "{report}");
     assert_eq!(report["files_written"].as_array().unwrap().len(), 0);
     assert_eq!(report["files_deleted"].as_array().unwrap().len(), 1);
     assert!(has_file(&report, "files_deleted", "ui/empty.yaml"));

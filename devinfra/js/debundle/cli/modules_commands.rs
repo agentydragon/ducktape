@@ -710,6 +710,7 @@ fn run_modules_refine(
             return Err(err);
         }
     };
+    outcome.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => println!(
             "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",

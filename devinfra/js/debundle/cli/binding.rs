@@ -455,6 +455,7 @@ pub fn rename_binding(
             } else {
                 GateOutcome::NamesOnly
             },
+            needs_full_assessment: false,
             files_written: if changed {
                 vec![hit.file.display().to_string()]
             } else {
@@ -632,6 +633,7 @@ pub fn rename_bindings(
             } else {
                 GateOutcome::NamesOnly
             },
+            needs_full_assessment: false,
             files_written,
             files_deleted,
         },
@@ -873,6 +875,7 @@ pub fn run_bindings_assign(
                 verb: "assign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
@@ -1120,23 +1123,24 @@ pub fn run_bindings_assign(
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
-        outcome: MutationOutcome {
-            verb: "assign",
-            action: if no_moves {
+        outcome: MutationOutcome::ownership_edit(
+            "assign",
+            if no_moves {
                 "noop"
             } else if dry_run {
                 "dry-run"
             } else {
                 "applied"
             },
-            gate: if no_moves {
+            if no_moves {
                 GateOutcome::NotRequired
             } else {
                 gate.outcome()
             },
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         moves_applied: plan.len(),
         effect_assessment_unavailable: effect_relocation_assessment
             .is_none()
@@ -1617,13 +1621,14 @@ pub fn run_source_unit_refine(
         "applied"
     };
     Ok(SourceUnitRefineOutcome {
-        outcome: MutationOutcome {
-            verb: "refine",
+        outcome: MutationOutcome::ownership_edit(
+            "refine",
             action,
-            gate: GateOutcome::Passed,
+            GateOutcome::ClaimsChecked,
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         source_units_reassigned,
         effect_relocation_assessment,
     })
@@ -2135,6 +2140,7 @@ pub fn run_bindings_unassign(
                 verb: "unassign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
@@ -2211,23 +2217,24 @@ pub fn run_bindings_unassign(
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
-        outcome: MutationOutcome {
-            verb: "unassign",
-            action: if no_symbols {
+        outcome: MutationOutcome::ownership_edit(
+            "unassign",
+            if no_symbols {
                 "noop"
             } else if dry_run {
                 "dry-run"
             } else {
                 "applied"
             },
-            gate: if no_symbols {
+            if no_symbols {
                 GateOutcome::NotRequired
             } else {
                 gate.outcome()
             },
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         unassigned: plan.len(),
         effect_relocation_assessment,
     })

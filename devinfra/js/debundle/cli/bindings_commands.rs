@@ -411,6 +411,7 @@ fn run_bindings_unassign_cmd(
 }
 
 fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result<()> {
+    out.outcome.warn_if_unassessed_write();
     match format {
         OutputFormat::Text => {
             println!(
@@ -427,6 +428,7 @@ fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result
 }
 
 fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
+    out.outcome.warn_if_unassessed_write();
     match format {
         OutputFormat::Text => {
             println!(

@@ -167,7 +167,7 @@ impl<'a> Gate<'a> {
     /// validation mode.
     pub fn outcome(&self) -> crate::outcome::GateOutcome {
         match self {
-            Self::Run { .. } => crate::outcome::GateOutcome::Passed,
+            Self::Run { .. } => crate::outcome::GateOutcome::ClaimsChecked,
             Self::Skip => crate::outcome::GateOutcome::Skipped,
         }
     }

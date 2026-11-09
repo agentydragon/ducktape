@@ -30,6 +30,12 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_ok(&result.result, "bindings assign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
+    // A full candidate assessment upgrades the graph-claims label.
+    assert_eq!(outcome["gate"], "passed", "{outcome:#}");
+    assert!(
+        outcome.get("needs_full_assessment").is_none(),
+        "{outcome:#}"
+    );
     assert_eq!(
         assessment["status"], "accepted_within_checked_scope",
         "{assessment:#}"
@@ -57,8 +63,18 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     // then compare the assessment with run --analysis over that candidate YAML.
     let applied = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), false);
     assert_ok(&applied.result, "bindings assign --analysis");
+    assert!(
+        !applied.result.stderr.contains("needs_full_assessment"),
+        "{}",
+        applied.result.stderr
+    );
     let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(applied["effect_relocation_assessment"], *assessment);
+    assert_eq!(applied["gate"], "passed", "{applied:#}");
+    assert!(
+        applied.get("needs_full_assessment").is_none(),
+        "{applied:#}"
+    );
     assert!(staged.modules.join("a_earlier.yaml").is_file());
     let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(

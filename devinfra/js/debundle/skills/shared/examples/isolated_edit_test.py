@@ -87,7 +87,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     shutil.rmtree(packages)
     worker_records = evidence / "worker"
     merge_and_regenerate(worker, Path("main"), ["values", "calculation"], "arithmetic", worker_records)
-    assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "passed"
+    assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "claims_checked"
     for step in ("baseline", "preview", "apply", "regenerate"):
         assert json.loads((worker_records / f"{step}.result.json").read_text()) == {"exit_code": 0}
     plan = json.loads((worker_records / "apply.plan.json").read_text())
