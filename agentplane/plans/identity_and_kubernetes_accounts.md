@@ -518,6 +518,14 @@ cannot change in place, and the new launch writes the identity.
 20. **TODO: Accounts per preset vs per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per preset gives each agent one `kubectl` identity, holding its preset's role sets plus cluster
     diagnostics. Per role set is finer-grained, but an agent then needs a different token per command.
+21. **How the MCP edge proves an Identity to the Action Service** (open, 2026-11-09). Today the edge
+    mints a TokenRequest for the ServiceAccount a Connection is bound to, and Actions reviews that
+    token. A Connection bound to an `Identity` has no account to mint for, so the edge needs another
+    proof. Recommendation: the [delegated authorization](../docs/delegated_authorization.md) contract,
+    with the edge as the actor and the Identity as the effective caller; its envelope carries an
+    identity reference once `SERVICES_IDENTITY_PRINCIPAL` lands. This is the shape
+    `CENTRAL_SESSION_ACTING_DESIGN` defers for the sampler (question 6), so the two should share one
+    design. Until it is decided, the edge's `mintable_accounts` stays required with OAuth.
 
 ## Exit
 
