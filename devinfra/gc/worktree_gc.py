@@ -23,7 +23,7 @@ import enum
 import logging
 import os
 import subprocess
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -119,32 +119,38 @@ def describe_reason(item: Classification) -> str:
             raise ValueError(f"{item=} lacks the data its reason cites")
 
 
-def _dirty(status: Mapping[str, int]) -> bool:
+def _dirty(status: Sequence[str]) -> bool:
     # status() reports tracked changes and untracked files (ignored excluded by default);
     # any entry means the tree is not clean.
     return bool(status)
 
 
-def _status(pg: pygit2.Repository) -> dict[str, int]:
-    """Git status, cheaply when the tree is already provably dirty.
+def _status(path: Path) -> list[str]:
+    """Paths `git status` reports (tracked changes, then untracked files; ignored excluded).
+
+    Shells out because libgit2's status holds the GIL, which serializes the scan's worker
+    threads; `git` runs in its own process. `--no-optional-locks` keeps concurrent runs from
+    contending on the index lock.
 
     Untracked-file detection has no early-exit: proving "nothing untracked exists" means
     walking every directory the tree doesn't already fully ignore, a cost set by repo size
-    rather than by how much actually changed. A tracked-only check (staged-vs-HEAD,
-    workdir-vs-index) has no such walk — pygit2 can trust the index's cached (mtime, size)
-    per file — and on a worktree with real tracked changes or deletions, that alone already
-    proves the tree isn't clean, so the untracked walk is skipped entirely. Only a worktree
-    that's clean on tracked files pays for the full scan, to also catch untracked work.
+    rather than by how much actually changed. A tracked-only check has no such walk, and on a
+    worktree with real tracked changes or deletions it already proves the tree isn't clean, so
+    the untracked walk is skipped. Only a worktree that's clean on tracked files pays for it.
 
-    The caller's `_last_activity` sees only the tracked-only dict when that already proved
-    dirty, so an untracked file's mtime can't push the reported last-activity time later in
-    that case — acceptable since the classification itself (kept, uncommitted changes)
-    doesn't depend on that timestamp.
+    The caller's `_last_activity` sees only the tracked paths when that already proved dirty,
+    so an untracked file's mtime can't push the reported last-activity time later in that case
+    — acceptable since the classification itself (kept, uncommitted changes) doesn't depend
+    on that timestamp.
     """
-    tracked = pg.status(untracked_files="no")
-    if tracked:
-        return tracked
-    return pg.status()
+    for untracked in ("no", "normal"):
+        outcome = git(path, "--no-optional-locks", "status", "--porcelain=v1", "-z", f"--untracked-files={untracked}")
+        # `-z` entries are `XY <path>` joined by NUL; renames are not detected in porcelain v1
+        # without `-M`, so each entry carries exactly one path.
+        paths = [entry[3:] for entry in outcome.stdout.split("\0") if entry]
+        if paths:
+            return paths
+    return []
 
 
 def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
@@ -225,7 +231,7 @@ def _classify_worktree(
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     pg = pygit2.Repository(os.fspath(path))
     logger.info("Scanning worktree %s: reading Git status", path)
-    status = _status(pg)
+    status = _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
 

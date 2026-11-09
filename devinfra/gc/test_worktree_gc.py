@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import time
 from enum import StrEnum
 from pathlib import Path
@@ -69,17 +70,16 @@ def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
 
 
 def _record_status_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Patch `pygit2.Repository.status` to record each call's `untracked_files` mode while
-    still delegating to the real implementation."""
+    """Patch `worktree_gc.git` to record each `git status` call's `--untracked-files` mode
+    while still delegating to the real implementation."""
     calls: list[str] = []
-    real_status = wg.pygit2.Repository.status
+    real_git = wg.git
 
-    def recording_status(self: object, untracked_files: str = "all", **kwargs: object) -> dict[str, int]:
-        calls.append(untracked_files)
-        result: dict[str, int] = real_status(self, untracked_files=untracked_files, **kwargs)
-        return result
+    def recording_git(repo: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
+        calls.extend(arg.removeprefix("--untracked-files=") for arg in args if arg.startswith("--untracked-files="))
+        return real_git(repo, *args, **kwargs)
 
-    monkeypatch.setattr(wg.pygit2.Repository, "status", recording_status)
+    monkeypatch.setattr(wg, "git", recording_git)
     return calls
 
 
@@ -108,7 +108,7 @@ def test_clean_on_tracked_files_falls_back_to_the_full_status(
 
     result = _classify(repo, wt.path, proc)
 
-    assert calls == ["no", "all"]
+    assert calls == ["no", "normal"]
     assert result.reason is wg.RetainedWorktreeReason.UNCOMMITTED_CHANGES
 
 

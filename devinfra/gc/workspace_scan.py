@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import subprocess
+import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -36,8 +37,8 @@ from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 
 logger = logging.getLogger(__name__)
 
-# pygit2/git calls release the GIL, so threads give real concurrency; configurable (the CLI
-# exposes `--workers`) since the right count depends on the machine and disk, not the code.
+# Configurable (the CLI exposes `--workers`) since the right count depends on the machine and
+# disk, not the code.
 DEFAULT_CLASSIFY_WORKERS = 8
 
 
@@ -92,44 +93,45 @@ def parallel_classify[T, R](
     describe: Callable[[T], str],
     workers: int,
 ) -> list[R]:
-    """Classify `items` in up to `workers`-way parallel contiguous slices.
+    """Classify `items` on up to `workers` threads, returning results in `items` order.
 
     `make_classify_one` is called once per *worker thread*, not once per item: a classifier
-    that needs a shared per-slice resource — a single `pygit2.Repository`, say, since handles
-    aren't shareable across threads — opens it once and reuses it across its whole slice; one
-    with nothing to share (each item opens its own resources independently) just returns the
-    same function every time.
+    that needs a shared per-thread resource — a single `pygit2.Repository`, say, since
+    handles aren't shareable across threads — opens it once and reuses it across everything
+    that thread classifies; one with nothing to share just returns the same function every
+    time.
 
-    Real concurrency despite being threads, not processes: the pygit2/git calls each
-    classifier makes release the GIL. Each worker classifies its own slice in order, so the
-    flattened result stays in `items` order regardless of which slice finishes first;
-    `progress` (thread-safe) is updated as each item completes, from whichever worker
-    finishes it.
+    Concurrency is real only for work that releases the GIL — `git` subprocesses do; libgit2
+    calls generally do not — so classifiers should shell out for anything heavy. Each item is
+    its own task, so `progress` (thread-safe) advances per item and an interrupt abandons all
+    queued items, waiting only for the (at most `workers`) items already running.
     """
     items = list(items)
     total = len(items)
     if total:
         progress.start_phase(phase, total)
+    classifier_by_thread: dict[int, Callable[[T], R]] = {}  # each thread writes only its own key
 
-    def classify_slice(args: tuple[int, list[T]]) -> list[R]:
-        offset, slice_items = args
-        classify_one = make_classify_one()
-        results: list[R] = []
-        for index, item in enumerate(slice_items, start=offset + 1):
-            logger.info("Scanning %s %d/%d %s", noun, index, total, describe(item))
-            result = classify_one(item)
-            results.append(result)
-            logger.info("Finished %s %d/%d %s", noun, index, total, describe(item))
-            progress.record(phase, category_of(result))
-        return results
+    def classify_item(index: int, item: T) -> R:
+        thread = threading.get_ident()
+        if thread not in classifier_by_thread:
+            classifier_by_thread[thread] = make_classify_one()
+        logger.info("Scanning %s %d/%d %s", noun, index, total, describe(item))
+        result = classifier_by_thread[thread](item)
+        logger.info("Finished %s %d/%d %s", noun, index, total, describe(item))
+        progress.record(phase, category_of(result))
+        return result
 
-    workers = min(workers, total)
-    if workers <= 1:
-        return classify_slice((0, items))
-    step = -(-total // workers)  # ceil → `workers` contiguous slices
-    slices = [(i, items[i : i + step]) for i in range(0, total, step)]
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        return [result for chunk in pool.map(classify_slice, slices) for result in chunk]
+    pool = ThreadPoolExecutor(max_workers=max(1, min(workers, total)))
+    try:
+        futures = [pool.submit(classify_item, index, item) for index, item in enumerate(items, start=1)]
+        results = [future.result() for future in futures]
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        git_repo.interrupt_running_git()
+        raise
+    pool.shutdown()
+    return results
 
 
 def _classify_branches(
