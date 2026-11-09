@@ -104,6 +104,7 @@ Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, rea
 <skills/seaweed_operator/SKILL.md>.
 For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
 identity only after credential and other IAM writers have finalized.
+For volume bytes above what the filer accounts for, follow <docs/runbooks/seaweedfs_orphan_chunks.md>.
 
 ## Flux Kustomizations
 
