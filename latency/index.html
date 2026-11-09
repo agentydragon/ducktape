@@ -71,6 +71,7 @@
       import { html, mount } from "../report.js";
       import { useState } from "react";
       import { BarChart } from "@mantine/charts";
+      import { ResourceFollowup } from "./resource-followup.js";
       const phaseData = [
         { phase: "Earlier attempts", seconds: 705.1 },
         { phase: "Between attempts", seconds: 283.9 },
@@ -88,17 +89,17 @@
           <header>
             <${Box}> ${"Ducktape · CI latency · 9 November 2026 UTC"} <//>
             <${Title} order=${1} mt="md" mb="sm">
-              ${" Four minutes needs a shorter system-test path and a healthy KVM lane "}
+              ${" Real-KVM candidate: 214 seconds; four-minute mean CI remains unproven "}
             <//>
             <${Text} component="p" my="sm">
-              ${" Firecracker is now routine coverage on devel, but its only KVM worker has "}
+              ${" The latest production-pool read at 09:21 UTC had "}
               <strong>
-                ${"one active action and 26 queued reservations"}
+                ${"one active action and 41 queued reservations"}
               </strong>
-              ${". An inspected physical test needs 12m42s even after admission. Hosted Pod and VM examples also exceed four minutes before CI setup. Queue relief and faster test execution are separate requirements. "}
+              ${". New telemetry correlates two physical wyrm2 runs with modest CPU use and busy storage. On an independent, unpinned HIL canary, the full real-KVM fixture passed in 278s baseline, 214s candidate and 250s warm baseline. This small, ordered comparison is not a mean-CI saving. Queue relief and faster test execution remain separate requirements. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" Prioritize a smaller Firecracker fixture and a measured worker/storage experiment; retain the real guest, idle suspension and cleanup. The tested extra Pod slot gave little benefit; retain two. Drain conclusively failed work before expanding routine diagnostics. "}
+              ${" Review the passed warm fixture control and finish four/eight-CPU measurements; retain the real guest, idle suspension and cleanup. The import-batching PR stays draft until measured benefit justifies its complexity. Resource telemetry and current host paging are recorded below; the original cohort retains its own window. "}
             <//>
             <${SimpleGrid}
               component=${"div"}
@@ -134,10 +135,10 @@
                 >
                   <${Box}>
                     <${Text} component="span" inherit>
-                      ${"1 slot · 26 queued"}
+                      ${"1 slot · 41 queued"}
                     <//>
                     <${Text} component="p" my="sm">
-                      <strong> ${"Live KVM pool, 07:54 UTC"} </strong>
+                      <strong> ${"Production snapshot, 09:21 UTC"} </strong>
                     <//>
                     <${Text} component="p" my="sm">
                       ${" One 4-core / 16-GiB worker VM. These are executor reservations, not unique still-needed jobs. Only registered user-owned workers are enumerated. "}
@@ -172,6 +173,9 @@
             gap="sm"
             my="md"
           >
+            <${Anchor} href="#resource-followup"
+              >Resource telemetry and HIL trials<//
+            >
             <${Anchor} href=${"#feedback"}> ${"Current feedback"} <//>
             <${Anchor} href=${"#system-tests"}> ${"System-test timeline"} <//>
             <${Anchor} href=${"#experiments"}> ${"Experiments"} <//>
@@ -181,6 +185,7 @@
               ${"Sizing, scaling and cache"}
             <//>
           <//>
+          <${ResourceFollowup} />
           <${Stack} id=${"feedback"} component="section" gap="md" my="xl">
             <${Title} order=${2} mt="md" mb="sm">
               ${"What recent PR heads experience"}
@@ -6598,7 +6603,7 @@
               ${" Bazel elapsed was 375.4→359.1s, but these are isolated RBE experiments, not GitHub CI runs. Both arms overlapped on the same worker; shared-host contention and n=1 limit the estimate. A ten-second Pod gain can yield zero gate savings when Firecracker is the long pole; no four-minute result is claimed. "}
             <//>
             <${Title} order=${3} mt="md" mb="sm">
-              ${" Firecracker without KubeVirt/Kyverno: feasible allocator, timing still open "}
+              ${" Firecracker without KubeVirt/Kyverno: real-KVM acceptance passed "}
             <//>
             <${Text} component="p" my="sm">
               ${" The candidate preserves the production "}
@@ -6627,13 +6632,13 @@
               >
                 ${"The complete candidate Firecracker target built"}
               <//>
-              ${", including runfiles/render and runtime lint/type checks. Focused runtime tests and repository hooks pass. The unchanged full baseline reached the KVM queue and was canceled; no real-KVM candidate timing was obtained. No other queued work was canceled. "}
+              ${", including runfiles/render and runtime lint/type checks. Later, both full real-KVM arms passed on the independent HIL canary: 278.3s baseline and 214.1s candidate. The candidate follows the baseline, so warm caches and scenario variation limit the timing comparison; see the resource follow-up above. The earlier canceled production-pool attempt produced no valid worker-start clocks. "}
               <${Anchor}
                 href=${"https://github.com/agentydragon/ducktape/pull/15099"}
               >
-                ${"The source candidate is draft PR #15099"}
+                ${"The fixture trim landed in PR #15099"}
               <//>
-              ${" until admitted same-input control/candidate guest executions pass. "}
+              ${" at 10:21:37 UTC. Real guest/lifecycle acceptance passed on the matched canary tree; exact PR-head ordinary CI was canceled, while focused probes and execution-contract checks passed. Post-merge complete-CI impact remains unmeasured. "}
             <//>
             <${Title} order=${3} mt="md" mb="sm">
               ${"Cancellation: a passing spike exposed the wrong boundary"}
@@ -6760,13 +6765,13 @@
               <//>
             <//>
             <${Text} component="p" my="sm">
-              ${" Wyrm2 has 24.542 additional requested CPU and 46.98 GiB beyond current Pods. Three OVH control-plane nodes also fit a nominal current-size worker by requests; eight Ready nodes advertise CPU virtualization/KVM, but actual nested execution is verified only on current wyrm2. Control-plane load reserve, exact Pod overhead, scratch placement and a nested-guest smoke test still constrain placement. "}
+              ${" The earlier request inventory showed nominal headroom on wyrm2 and three OVH nodes. Fresh HIL preflight verified NVMe scratch capacity and nested module settings; Kubernetes scheduled the unpinned canary to ovh-ns1001419, where an actual nested-KVM smoke and full Firecracker guest passed. Remaining destinations still need real guest proof before general adoption. "}
             <//>
             <${Text} component="p" my="sm">
               ${" A safe autoscaler needs one replica owner, a pool-scoped demand adapter and a drain owner. The observed hosted Prometheus queue series did not map to this dedicated pool; reservation counts may overlap between workers. Keep one warm and begin with max two. Stop claims and wait for leases, cleanup and guest teardown before choosing a scale-in victim. Current Docker/systemd stop budgets are 30/45 seconds, shorter than a 762-second action; a stabilization window alone is insufficient. "}
             <//>
             <${Text} c="dimmed" component="p" my="sm">
-              ${" The read-only sample covers the whole current VM, not a known Firecracker phase. Guest page cache is not action peak RSS. Host I/O pressure supports an SSD trial but does not prove all setup is I/O-bound. Node requests are not free peak capacity. No worker, scaler, cache or deployed resource setting changed. "}
+              ${" This earlier read-only sample covered the whole VM, not a known Firecracker phase. The new resource section adds historical phase correlation and a separately deployed opt-in HIL canary. Guest page cache is not action peak RSS; node requests are not free peak capacity. Production workers, scalers and cache settings remain unchanged. "}
             <//>
             <${Accordion} variant="contained" my="md">
               <${Accordion.Item} value=${"details-2"}>
@@ -6871,12 +6876,12 @@
                 <//>
                 <${Table.Tbody}>
                   <${Table.Tr}>
-                    <${Table.Td}> ${"1 · Specialize Firecracker setup"} <//>
+                    <${Table.Td}> ${"1 · Measure the landed fixture trim"} <//>
                     <${Table.Td}>
-                      ${" Remove KubeVirt/Kyverno image/controller work from this fixture; the allocator mechanism is tested. Full-action and mean-CI savings remain unmeasured. "}
+                      ${" PR #15099 merged. Full real-KVM acceptance passed; the same-host command comparison was 278.3 → 214.1s. Cache/order and scenario variation confound the observed 64.2s difference. Mean complete-CI impact remains unmeasured. "}
                     <//>
                     <${Table.Td}>
-                      ${" Seven replaced imports total 122.9s in one cold action, before plugin cost. Keep real KVM allocation, guest, launcher and lifecycle. Run a same-input control/candidate on admitted KVM executions before adoption. "}
+                      ${" The warm baseline passed in 250.3s with setup still at 120.2s, versus 76.8s candidate setup. Finish repetitions and measure matched post-merge CI heads. The earlier 122.9s removed-import figure is gross historical work, superseded for decision-making by this comparison. "}
                     <//>
                   <//>
                   <${Table.Tr}>
@@ -6884,7 +6889,7 @@
                       ${"2 · Prepare owned Firecracker infrastructure"}
                     <//>
                     <${Table.Td}>
-                      ${" 431–535s setup in inspected physical actions; most is a candidate for amortization, with no measured net benefit yet. Even ideal setup removal leaves a 277s case plus other work. "}
+                      ${" Historical wyrm2 setup was 431–535s; the new HIL candidate setup was 76.8s in one pair. Prepared infrastructure remains untested; recalculate its headroom from repeated current-source runs. "}
                     <//>
                     <${Table.Td}>
                       ${" Moderate lifecycle work and retained disk cost. Use an exclusive versioned lease; retain pinned infrastructure/images while creating fresh workloads, databases and credentials. Test cold/warm, incompatible, dirty and canceled release. "}
@@ -6898,7 +6903,7 @@
                       ${" Test storage before assuming CPU saturation. A second independent warm worker has a 2× ideal service-rate ceiling; no measured queue/mean-CI gain yet. "}
                     <//>
                     <${Table.Td}>
-                      ${" Keep one slot per guest. One extra current-size guest reserves 4.025 CPU / 16.476 GiB plus 80-GiB virtual scratch. Verify unique demand, nested KVM, disk contention and physical drain; no deployment made. "}
+                      ${" One independent, unpinned HIL canary is running with one slot, four CPUs, 16 GiB RAM and 80-GiB NVMe scratch. Production workers/scalers are unchanged. Record actual placement and physical drain; four/eight-CPU comparison is pending. "}
                     <//>
                   <//>
                   <${Table.Tr}>
@@ -6917,7 +6922,7 @@
                       ${" 5 · Prepared infrastructure + faster outer worker/storage "}
                     <//>
                     <${Table.Td}>
-                      ${" Combine owned prepared infrastructure with faster host image/checkpoint I/O. A 277s case must shrink substantially even after setup is amortized. No demonstrated sub-four-minute combination yet. "}
+                      ${" Combine owned prepared infrastructure with measured fast image/checkpoint I/O if repeated current-source profiles justify it. The old 277s case is historical; the new whole candidate action was 214s on HIL. No mean complete-CI result below four minutes is established. "}
                     <//>
                     <${Table.Td}>
                       ${" Moderate ownership work and measured fast scratch/checkpoint storage. Test 8 outer CPUs only after CPU saturation is demonstrated; deprioritize 16 for now. Keep two guest CPUs and the one-minute idle contract. Measure cold/warm, incompatible, dirty and canceled leases. "}
@@ -6933,7 +6938,7 @@
               >
                 ${"K3s.import_images"}
               <//>
-              ${" into one annotated multi-manifest import, listing stored blobs once per safe group instead of spawning content-list/import commands for every image. Preserve exact digests, pin labels, alias retargeting and garbage-collection protection. Warm setup still contains repeated image work; net latency is unmeasured. This deserves a same-input warm control before more case concurrency. "}
+              ${" with fewer content-list/import commands while preserving exact digests, pins, alias retargeting and GC protection. PR #15126 is draft with auto-merge disabled at user request. A preliminary 132 → 46s span difference used different VMs. Compare serial, one bulk import per lifecycle group, all-at-start bulk, and bounded batching; retain the simplest measured design. "}
             <//>
             <${Group}
               aria-label=${"Required gate dependency model"}
@@ -6964,7 +6969,7 @@
             <//>
             <${Blockquote} my="md">
               <strong> ${"Decision threshold, not a forecast:"} </strong>
-              ${" reserve roughly 40–60s for orchestration/build work only if matched runs support that budget. Then system actions must complete in roughly 180–200s with little queueing, and the other required gates must also fit. The observed 277s Firecracker case already exceeds that budget before setup. A prepared baseline alone is insufficient; faster host preparation/checkpoint work and the hosted Pod/VM paths must improve too. "}
+              ${" reserve roughly 40–60s for orchestration/build work only if matched runs support that budget. Then system actions need roughly 180–200s with little queueing and every other required gate must fit. The new 214s candidate leaves only 26s for all other work, so a single action below four minutes does not meet the complete-CI objective. Recheck the remaining critical path after repeated fixture and CPU trials. "}
             <//>
             <${Text} component="p" my="sm">
               ${" The larger worker/storage trial changes the outer resource organization. Earlier failed four-vCPU guest and duplicate-stack Pod experiments do not test that design. Conversely, their negative results still prevent treating more concurrency or guest CPUs as a free improvement. More generic hosted "}
@@ -6976,7 +6981,7 @@
               ${" cannot route KVM work onto a matching worker. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" A reserved metadata-only cancellation runner or disposable bridge pool remains conditional on current assignment-pressure evidence. Asynchronous submission would also change the authoritative completion gate and publication lineage; it needs a separate design and explicit policy decision. No workflow, required-check, snapshot-save or deployed-resource setting changed here. "}
+              ${" A reserved metadata-only cancellation runner or disposable bridge pool remains conditional on current assignment-pressure evidence. Asynchronous submission would also change the authoritative completion gate and publication lineage; it needs a separate design and explicit policy decision. Production workflow, required-check, snapshot-save and deployed-resource settings are unchanged; the independent opt-in canary is documented above. "}
             <//>
           <//>
           <${Stack} id=${"evidence"} component="section" gap="md" my="xl">

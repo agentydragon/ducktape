@@ -4,7 +4,7 @@
   "window_end_utc": "2026-11-09T07:09:00Z",
   "published_at_utc": "2026-11-09T07:40:22.738978+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "7d68d5d4dae9ca84be973ac8686125371446597d",
+  "previous_report_commit": "b2baef2104493317bb5f6fe312a57c28f8d6d84d",
   "analysis_scope": "72h complete Actions census; latest24h required-gate exact-head proxy and runner occupancy;19 verified green system-suite heads;live KVM capacity;four physical-driver timelines;three bounded mechanism experiments.",
   "window_semantics": "Manifest bounds cover the detailed24h cohort. Census begins2026-11-06T07:09:00Z. Live pool,experiments and publication validation have separately recorded clocks outside the cohort.",
   "source_candidate_pr": "https://github.com/agentydragon/ducktape/pull/15099",
@@ -17,20 +17,36 @@
     "keep-sorted",
     "prettier"
   ],
-  "publication_scope": "latency followup and site-wide shared Mantine presentation; other report refreshes have independent manifests.",
-  "report_html_sha256": "5fe85133e46edabdf1586bb518d980226bd9853f2fd83fc8e0b9e75c6f5b8b88",
-  "evidence_sha256": "5191c5c847a2bce1786b49ce047d50848851951ebd1375bb1fb5d3f2d84e0e1e",
+  "publication_scope": "Latency namespace only; current telemetry, experiment dispositions and reviewed visualizations.",
+  "report_html_sha256": "e46e843c1c3deb300b5e465f6df90a46e70dc41a4f32610490f40836b182c7aa",
+  "evidence_sha256": "1388e694eef7158669ba7beede675f73284946c03728bd074a198519eb73acfa",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
-  "presentation_validation": "../presentation-validation.json",
-  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
+  "presentation_validation": "visual-validation.json",
+  "visual_validation": "visual-validation.json",
   "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10",
   "followup_assembled_at_utc": "2026-11-09T08:28:45.720584+00:00",
-  "published_at_semantics": "Original cohort publication clock;the read-only infrastructure follow-up and presentation update have separate clocks.",
+  "published_at_semantics": "Original cohort publication clock; resource followup, experiment clocks and visual review are separately recorded.",
   "source_recheck_paths": [
     "agentplane/system_tests/k3s/baseline.py",
     "devinfra/buildbuddy/kvm/worker/executor.yaml"
   ],
   "presentation_updated_at_utc": "2026-11-09",
-  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements."
+  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
+  "resource_followup_source_devel_commit": "ce86bc39f2b4638aa0e273363ad4d2b238d430ff",
+  "resource_followup_window": {
+    "start_utc": "2026-11-08T10:03:00+00:00",
+    "end_utc": "2026-11-09T10:03:00+00:00",
+    "step_seconds": 60,
+    "rate_window_seconds": 180,
+    "points_per_selected_series": 1441
+  },
+  "resource_followup_assembled_at_utc": "2026-11-09T10:21:34.993652+00:00",
+  "resource_followup_scope": "Historical host/VM resource correlation, live proportional-memory attribution, and real-KVM HIL fixture comparison. Original cohort/source retained.",
+  "resource_followup_experiments_end_utc": "2026-11-09T10:18:16.722345Z",
+  "resource_followup_visual_scope": "Desktop/mobile, initial light/dark and live preference changes; actual pinned CDNs, telemetry controls, line/bar charts and retained span timelines.",
+  "prior_presentation_validation": "../presentation-validation.json",
+  "resource_module_sha256": "74fbb839b5fe908a5822a97f1d282f9dfcad684f4453f467d5dea81cf2ef2607",
+  "resource_timeline_png_sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
+  "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00"
 }
