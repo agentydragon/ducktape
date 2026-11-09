@@ -43031,7 +43031,8 @@
         "Different VM boot IDs and baseline full-suite versus candidate filtered case; preliminary spans are not a controlled treatment effect.",
         "Eight-image/256MiB bounds were not empirically justified. Compare serial, bulk per lifecycle group, all-at-start bulk and bounded imports; keep the simplest measured design.",
         "Imports stream blob files: the byte cap does not directly bound resident blob memory. Loading everything first can remove existing readiness overlap."
-      ]
+      ],
+      "controlled_comparison": "Prepared serial/bulk alternatives; no valid fixture-level comparison completed because VM startup failures interrupted validation. No measured benefit established; PR remains draft with auto-merge disabled."
     },
     "decisions": [
       "Retain 4 vCPU / 16 GiB and one action per guest: all three matched-state CPU pairs passed; extra CPUs did not shorten the measured critical path.",
@@ -43701,8 +43702,8 @@
     }
   },
   "vm_readiness_followup": {
-    "recorded_at_utc": "2026-11-09T11:03:17.556787+00:00",
-    "source": "Parent investigation handoff; failure-time passive capture and one full-suite attempt still underway at this report snapshot.",
+    "recorded_at_utc": "2026-11-09T11:26:49.071875+00:00",
+    "source": "Retained BuildBuddy test, launcher, serial and passive host-observer artifacts.",
     "failed_child_invocation": "46993f63-7c5b-5685-a009-4664f7c8318f",
     "failed_source_pr": "https://github.com/agentydragon/ducktape/pull/15126",
     "failed_source_commit_prefix": "a099f643",
@@ -43714,8 +43715,58 @@
     "separate_pod_failure": "Same invocation also had an Unschedulable / Insufficient memory Pod admission failure; this is a distinct boundary.",
     "next_attempt": {
       "invocation": "cb469644-f04f-4844-9021-f3a425dce6ef",
-      "status_at_handoff": "PENDING",
-      "result": "not yet established"
+      "status_at_handoff": "FAILED",
+      "result": "QEMU startup rejects the 45-byte workload-trust virtiofs tag; maximum 36 bytes. Distinct from original early-kernel console stop.",
+      "effective_source": "4a2ef6f0f1d4e9da7d7ea7b3dcc08bf0dcc00ea0",
+      "physical_start_utc": "2026-11-09T11:01:32.859Z",
+      "physical_end_utc": "2026-11-09T11:10:31.785Z",
+      "physical_seconds": 538.926,
+      "passive_observer": {
+        "samples": 312,
+        "launcher_pods": 5,
+        "qemu_process_samples": 3,
+        "query_failures": 0,
+        "incomplete_process_scan_samples": 0,
+        "retained_serial_files": 4,
+        "retained_serial_bytes": 0
+      }
+    },
+    "tag_length_repair": {
+      "pr": "https://github.com/agentydragon/ducktape/pull/15144",
+      "head": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+      "new_tag": "runner-workload-trust",
+      "guard": "SandboxController.renderVM rejects every emitted virtiofs tag over 36 UTF-8 bytes before VM creation; guest mount paths unchanged.",
+      "guest_completion": "Full Debian guest fstab/tmpfiles now mount the workload trust; contract regression added.",
+      "validation": "Controller unit target passed (4c68b3d1); Debian guest layout passed (f3538463). Full suite e77e85c9 FAILED during deployment bootstrap, before any VM scenario, with service certificate-chain rejection; no end-to-end boot proof.",
+      "state": "MERGED",
+      "merged_at_utc": "2026-11-09T11:33:09Z",
+      "merge_commit": "8839602c9048f5b6ac5730078afd8ec0d2ffcc46"
+    },
+    "diagnostic_pr": "https://github.com/agentydragon/ducktape/pull/15142",
+    "introducing_pr_ci": {
+      "pr": 15129,
+      "head": "6bb2c3afb1a6c6c07dd8732abaa0f07b4849a046",
+      "merge_commit": "cdc7bb0c337fda8a033f1134d17cdf9f55378aed",
+      "merged_at_utc": "2026-11-09T10:19:38Z",
+      "tested_merge_candidate": "b609e5d34a510a65eddad9c2f1e1f1cf8493ec62",
+      "invocation": "9fdb0262-c424-5870-a92a-823ff9a7a77f",
+      "earlier_failed_target": "//agentplane/env/e2e:test_restart",
+      "earlier_failure_at_utc": "2026-11-09T10:19:22Z",
+      "vm_test_start_utc": "2026-11-09T10:19:38.281Z",
+      "vm_test_end_utc": "2026-11-09T10:28:34.382Z",
+      "vm_test_result": "FAILED; real uncached attempt with same tag error",
+      "conclusion": "Merged before VM result; another test already red. No completed green VM proof at merge."
+    },
+    "post_repair_validation": {
+      "invocation": "e77e85c9-4306-4e40-8593-6b5e0cb3a54c",
+      "source": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+      "result": "FAILED during stack setup; no VM scenarios executed",
+      "test_seconds": 617.4,
+      "pytest_seconds": 580.88,
+      "boundary": "llm-ingress, runner-gateway, history-service, actions and notifications not Available. Gateway local-chain verification and gRPC probes reject the certificate chain against test-k3s-runner-root with ECDSA verification failure.",
+      "conclusion": "Independent earlier bootstrap blocker. Does not exercise the repaired virtiofs tag or establish a cause for the original early-kernel stop.",
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29/56213",
+      "test_log_sha256": "37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29"
     }
   }
 }

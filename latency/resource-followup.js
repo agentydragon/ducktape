@@ -251,7 +251,7 @@ function ResourceContent({ snapshot }) {
         ]}
         valueFormatter=${(value) => `${fixed(value, 1)} s`}
         xAxisProps=${{ interval: 0, tickMargin: 8 }}
-        yAxisProps=${{ width: 45 }}
+        yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
       />
     <//>
     <${Table.ScrollContainer} minWidth=${500} type="native">
@@ -338,18 +338,22 @@ function ResourceContent({ snapshot }) {
         ]}
         valueFormatter=${(value) => `${fixed(value, 1)} s`}
         xAxisProps=${{ interval: 0, tickMargin: 8 }}
-        yAxisProps=${{ width: 45 }}
+        yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
       />
     <//>
     <${Table.ScrollContainer} minWidth=${700} type="native">
-      <${Table} striped verticalSpacing="sm">
+      <${Table}
+        striped
+        verticalSpacing="sm"
+        styles=${{ th: { whiteSpace: "nowrap" }, td: { whiteSpace: "nowrap" } }}
+      >
         <${Table.Caption}
           >Physical action measurements, 9 November 09:56–10:51 UTC. The final
           8-CPU row is a post-watchdog sample.<//
         >
         <${Table.Thead}
           ><${Table.Tr}
-            >${["Pair / vCPU", "Filecache", "Passed command", "Setup", "Input fetch", "Observed cgroup peak"].map((value) => html`<${Table.Th} key=${value}>${value}<//>`)}<//
+            >${["Pair / vCPU", "Cache", "Passed command", "Setup", "Input fetch", "Observed cgroup peak"].map((value) => html`<${Table.Th} key=${value}>${value}<//>`)}<//
           ><//
         >
         <${Table.Tbody}
@@ -370,8 +374,7 @@ function ResourceContent({ snapshot }) {
                 ><${Table.Td}>${fixed(run.setup.wall_s, 3)} s<//
                 ><${Table.Td}>${fixed(run.fetch_s, 3)} s<//
                 ><${Table.Td}
-                  >${fixed(run.observed_cgroup_memory_peak_bytes / 1024 ** 3)}
-                  GiB<//
+                  >${`${fixed(run.observed_cgroup_memory_peak_bytes / 1024 ** 3)} GiB`}<//
                 ><//
               >`;
             }),
@@ -433,22 +436,44 @@ function ResourceContent({ snapshot }) {
       >VM readiness: early boot stop remains unresolved<//
     >
     <${Text}
-      >In
+      >In${" "}
       <${Anchor} href=${invocation("46993f63-7c5b-5685-a009-4664f7c8318f")}
         >failed child 46993f63<//
-      >
-      at PR #15126 source a099f643, VM2 console and raw serial both stop at
-      Linux guest uptime 5.157459 s during early PCI/ACPI boot, before systemd
-      or the runner. The default lane used QEMU 10.1 TCG without /dev/kvm, 2
-      guest vCPUs and 1.5 GiB. ConnectionPending at 300 s is a downstream
-      symptom. The QEMU host snapshot at 09:57:08 UTC followed destruction at
-      09:56:56 UTC, leaving root cause unresolved. Failure-time passive capture
-      and
+      >${" "} at PR #15126 source a099f643, VM2 console and raw serial both stop
+      at Linux guest uptime 5.157459 s during early PCI/ACPI boot, before
+      systemd or the runner. The default lane used QEMU 10.1 TCG without
+      /dev/kvm, 2 guest vCPUs and 1.5 GiB. ConnectionPending at 300 s is a
+      downstream symptom. The QEMU host snapshot at 09:57:08 UTC followed
+      destruction at 09:56:56 UTC, leaving root cause unresolved. Failure-time
+      passive capture is being added in${" "}
+      <${Anchor} href="https://github.com/agentydragon/ducktape/pull/15142"
+        >PR #15142<//
+      >.<//
+    >
+    <${Title} order=${4} id="vm-tag-limit-followup"
+      >Separate startup defect: virtiofs tag limit<//
+    >
+    <${Text}
+      >The${" "}
       <${Anchor} href=${invocation("cb469644-f04f-4844-9021-f3a425dce6ef")}
-        >one existing-observer full-suite attempt<//
-      >
-      were underway at this report snapshot; no result or fix is established. A
-      separate same-invocation Pod failure was Unschedulable / Insufficient
+        >current-source observer attempt<//
+      >${" "} failed before Linux: QEMU rejected the new 45-byte workload-trust
+      virtiofs tag, whose limit is 36 bytes. That is a separate deterministic
+      startup regression.${" "}
+      <${Anchor} href="https://github.com/agentydragon/ducktape/pull/15144"
+        >PR #15144<//
+      >${" "} merged at 11:33 UTC: it shortens the tag, documents the 36-byte
+      limit and validates every final virtiofs name before VM creation. It also
+      adds the missing workload-trust mount in the full Debian guest. Controller
+      and guest-layout tests passed. The uncached full-suite follow-up failed
+      during service bootstrap with certificate-chain rejection, before any VM
+      scenario. End-to-end guest verification is still unproven. The original
+      early-kernel stop remains unresolved.<//
+    >
+    <${Text}
+      >PR #15129 merged before its real VM test finished; that test later failed
+      with the same tag error, while another test was already red. The separate
+      Pod failure in the original invocation was Unschedulable / Insufficient
       memory, a distinct admission boundary.<//
     >
     <${Title} order=${3}>Current decisions<//>
@@ -460,14 +485,15 @@ function ResourceContent({ snapshot }) {
       1.6-second input-fetch stage.<//
     >
     <${Text}
-      ><${Anchor} href=${snapshot.import_batching.pr}>Image-import PR #15126<//>
-      remains draft with auto-merge disabled pending measured benefit. Its 132 →
-      46 s preliminary import-span difference used different VMs. The
+      ><${Anchor} href=${snapshot.import_batching.pr}>Image-import PR #15126<//
+      >${" "} remains draft with auto-merge disabled pending measured benefit.
+      Its 132 → 46 s preliminary import-span difference used different VMs. The
       eight-image/256 MiB policy was not empirically justified; a controlled
-      comparison now includes serial, bulk per lifecycle group, all-at-start
-      bulk and bounded imports. Keep the simplest measured design. Loading all
-      groups first can sacrifice existing readiness overlap, and streaming means
-      the byte cap does not directly bound resident blob memory.<//
+      comparison is still pending. Serial and bulk alternatives are prepared,
+      but VM startup failures prevented a valid fixture-level comparison. Keep
+      the simplest measured design. Loading all groups first can sacrifice
+      existing readiness overlap, and streaming means the byte cap does not
+      directly bound resident blob memory.<//
     >
     <${Text} size="sm" c="dimmed"
       >Full UTC samples, PromQL, sources, physical clocks, experiment commands

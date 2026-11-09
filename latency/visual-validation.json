@@ -1,25 +1,25 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
+  "invocation": "https://app.buildbuddy.io/invocation/e9204a59-d68d-4336-aae4-5892cf68fcd7",
   "cases": [
     "light-desktop 1280x900",
     "light-mobile 390x844",
     "dark-desktop 1280x900",
     "dark-mobile 390x844"
   ],
-  "invocation": "https://app.buildbuddy.io/invocation/f452a593-ceb7-4314-8fee-ad182182edf5",
   "report_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "e46e843c1c3deb300b5e465f6df90a46e70dc41a4f32610490f40836b182c7aa"
+      "sha256": "25335ece4e472c089ae529c7e394edcc15926b90090e9335ca5867e65c7a51a4"
     },
     {
       "path": "latency/resource-followup.js",
-      "sha256": "74fbb839b5fe908a5822a97f1d282f9dfcad684f4453f467d5dea81cf2ef2607"
+      "sha256": "a20351a231ee7c19fa7dfbe02a39bbb0b99df8161d517674e320c6ce1042990a"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "1388e694eef7158669ba7beede675f73284946c03728bd074a198519eb73acfa"
+      "sha256": "3ca08a4b94fff0b61bc9a0705caf74bd3a5a2418a6788e78bae58a0994516794"
     },
     {
       "path": "latency/resource-timeline.png",
@@ -27,446 +27,617 @@
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "d37158b84725b3e6f0e785c5fbd956d2c9a0a6f544c41dc211caca58e619141c"
+      "sha256": "3caa376253b885580864342eab4291593a691643dc8b31ad8689fb61386b5a23"
     }
   ],
   "screenshots": [
     {
-      "path": "screenshots/light-mobile__resource-day-resource-pressure.png",
-      "sha256": "9d09d5096c048fa0fcd8059468430be27762e640ce9c96db9845d2ba03742f7e",
       "case": "light-mobile",
       "checkpoint": "resource-day-resource-pressure",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/16b75d4e2e9626ac0266e8ff1ffb2b78adab79197a31ea6d0e4b60504e9486c5/31042",
+      "sha256": "16b75d4e2e9626ac0266e8ff1ffb2b78adab79197a31ea6d0e4b60504e9486c5",
+      "bytes": 31042
     },
     {
-      "path": "screenshots/light-mobile__resource-physical-runs-table.png",
-      "sha256": "fbd104c6ca452f0546267d1fdc36795a8fd68c0892c8758975952d381ce109ae",
       "case": "light-mobile",
       "checkpoint": "resource-physical-runs-table",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/1f27e02a759718ba4d2d8dc3ae7063e71d79ccf88619ad054015792408c7e4d5/13032",
+      "sha256": "1f27e02a759718ba4d2d8dc3ae7063e71d79ccf88619ad054015792408c7e4d5",
+      "bytes": 13032
     },
     {
-      "path": "screenshots/dark-desktop__resource-memory-table.png",
+      "case": "dark-desktop",
+      "checkpoint": "resource-memory-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a5e277a7d1ceb3138bfcb983f8ad3e637b84aaebb04f361b67d50af2756fc911/24415",
       "sha256": "a5e277a7d1ceb3138bfcb983f8ad3e637b84aaebb04f361b67d50af2756fc911",
-      "case": "dark-desktop",
-      "checkpoint": "resource-memory-table",
-      "title": "latency-dark-1280"
+      "bytes": 24415
     },
     {
-      "path": "screenshots/light-desktop__resource-day-resource-disk.png",
-      "sha256": "1bc8a089c5e55f48990cbc7c6c6c6848d3101d8ffcae9cbfa088f31802cd1514",
       "case": "light-desktop",
       "checkpoint": "resource-day-resource-disk",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6dc3ba98aef58991ffd9bc590dbf050e5b7c05afb5825ebbbd514e0b37753a25/42141",
+      "sha256": "6dc3ba98aef58991ffd9bc590dbf050e5b7c05afb5825ebbbd514e0b37753a25",
+      "bytes": 42141
     },
     {
-      "path": "screenshots/dark-mobile__resource-day-resource-disk.png",
-      "sha256": "4f28bf2018b1138bb77988ac5734bc054cca64b23d49251d49b2dc96525f4eee",
       "case": "dark-mobile",
       "checkpoint": "resource-day-resource-disk",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/66119e791c3a8fbde56fe7620038d4c6ad135d126dd3c4c1526dea54492b5e3b/29006",
+      "sha256": "66119e791c3a8fbde56fe7620038d4c6ad135d126dd3c4c1526dea54492b5e3b",
+      "bytes": 29006
     },
     {
-      "path": "screenshots/dark-mobile__resource-physical-runs-table.png",
-      "sha256": "767e29f77f1556ec7c9ca01f659a7ea8c8d836763389360996505f1dc0b0c72e",
       "case": "dark-mobile",
       "checkpoint": "resource-physical-runs-table",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/9c2304646740db5936f90146c1a71befc96a8a1220f3e7719eeda6ef971c3cfe/12161",
+      "sha256": "9c2304646740db5936f90146c1a71befc96a8a1220f3e7719eeda6ef971c3cfe",
+      "bytes": 12161
     },
     {
-      "path": "screenshots/light-desktop__resource-day-resource-memory.png",
-      "sha256": "832bba72382a9d3aaf8c22bf3f3e654957e989d0589aeed23e8b9df755a96194",
+      "case": "light-mobile",
+      "checkpoint": "resource-cpu-pairs",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f3525aa61ec262eee6881dda325c53a61431a93e4f25029f38178a2223e43501/11633",
+      "sha256": "f3525aa61ec262eee6881dda325c53a61431a93e4f25029f38178a2223e43501",
+      "bytes": 11633
+    },
+    {
       "case": "light-desktop",
       "checkpoint": "resource-day-resource-memory",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/66f9cf1f5594c732ceb5d043c322e27101d990623b2cfbe15fb332e0859ec908/50127",
+      "sha256": "66f9cf1f5594c732ceb5d043c322e27101d990623b2cfbe15fb332e0859ec908",
+      "bytes": 50127
     },
     {
-      "path": "screenshots/dark-desktop__resource-day-resource-memory.png",
-      "sha256": "f63cabd702fc1e2e3616ce69cd648352dbdb9f1d751c1bc649e3f691ef2780e6",
       "case": "dark-desktop",
       "checkpoint": "resource-day-resource-memory",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/140c8f0a8eb1b5d6c847ee22fd82ea7f5f97cf124be5dee058ed80925218071f/49694",
+      "sha256": "140c8f0a8eb1b5d6c847ee22fd82ea7f5f97cf124be5dee058ed80925218071f",
+      "bytes": 49694
     },
     {
-      "path": "screenshots/light-desktop__resource-fixture-pair-table.png",
+      "case": "light-desktop",
+      "checkpoint": "resource-fixture-pair-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/af9b9fccfbc5ff626110e677760a5ab3126fdb21fce3b60f64ad2465dd7a8c61/26988",
       "sha256": "af9b9fccfbc5ff626110e677760a5ab3126fdb21fce3b60f64ad2465dd7a8c61",
-      "case": "light-desktop",
-      "checkpoint": "resource-fixture-pair-table",
-      "title": "latency-light-1280"
+      "bytes": 26988
     },
     {
-      "path": "screenshots/light-mobile__resource-day-resource-memory.png",
-      "sha256": "02e08c80e9c790a495939b81a240d6f02cbdabc509622d93b9de8189715eb324",
       "case": "light-mobile",
       "checkpoint": "resource-day-resource-memory",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/69ec695b80a7c3456ac6c22f65146a9b674bb87b55651ae124a473a8ac3b8dfd/32175",
+      "sha256": "69ec695b80a7c3456ac6c22f65146a9b674bb87b55651ae124a473a8ac3b8dfd",
+      "bytes": 32175
     },
     {
-      "path": "screenshots/dark-mobile__resource-day-resource-cpu.png",
-      "sha256": "d0cfbc5b3d96320893c22305e9c16071ec034702b2f45ac83ee03f319c471875",
       "case": "dark-mobile",
       "checkpoint": "resource-day-resource-cpu",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5ba8ec5431286bc98866d647d757fa5e87e882f60aff5da6eaf910e4cc35cdae/22752",
+      "sha256": "5ba8ec5431286bc98866d647d757fa5e87e882f60aff5da6eaf910e4cc35cdae",
+      "bytes": 22752
     },
     {
-      "path": "screenshots/dark-mobile__retained-mean-phase-bar.png",
-      "sha256": "7ab36df41b75581f122b0bc88436c07acafe741c42e887a6c287768d64f44f78",
       "case": "dark-mobile",
       "checkpoint": "retained-mean-phase-bar",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/30357766ad6bf59b31d0a176fcd6f55054c568ab2b050870603c9638fefcc233/30723",
+      "sha256": "30357766ad6bf59b31d0a176fcd6f55054c568ab2b050870603c9638fefcc233",
+      "bytes": 30723
     },
     {
-      "path": "screenshots/dark-desktop__retained-mean-phase-bar.png",
+      "case": "dark-desktop",
+      "checkpoint": "retained-mean-phase-bar",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fbf6807b05b8f3472266b3d07706b77299205521847c311cd9b713b5832d2fec/32549",
       "sha256": "fbf6807b05b8f3472266b3d07706b77299205521847c311cd9b713b5832d2fec",
-      "case": "dark-desktop",
-      "checkpoint": "retained-mean-phase-bar",
-      "title": "latency-dark-1280"
+      "bytes": 32549
     },
     {
-      "path": "screenshots/dark-mobile__resource-fixture-pair.png",
-      "sha256": "b65a8cd87b103f95300dfbc7a6a33511283659962ab263bd3e233f7181b4ebc7",
       "case": "dark-mobile",
       "checkpoint": "resource-fixture-pair",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c6ddf148a6b21dec998b7945223d0a48d0e492ecfb491c27e68e488affbe9657/13708",
+      "sha256": "c6ddf148a6b21dec998b7945223d0a48d0e492ecfb491c27e68e488affbe9657",
+      "bytes": 13708
     },
     {
-      "path": "screenshots/light-mobile__resource-memory-table.png",
-      "sha256": "3745d2b5f7c9eba4cf6c6e4272a7460c162ff418e6f7b85a947fe904a3594ca8",
+      "case": "light-mobile",
+      "checkpoint": "vm-readiness-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/68f0168fa9a8f2c220ff9dae83a59fec66885edc1f15e4e398a7a8a8f6a45d9c/92476",
+      "sha256": "68f0168fa9a8f2c220ff9dae83a59fec66885edc1f15e4e398a7a8a8f6a45d9c",
+      "bytes": 92476
+    },
+    {
+      "case": "dark-mobile",
+      "checkpoint": "vm-tag-limit-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/54f692a34400e4d7da4ce0158eab00e588ff4a4af7153b16168d7e6d947f8d73/90595",
+      "sha256": "54f692a34400e4d7da4ce0158eab00e588ff4a4af7153b16168d7e6d947f8d73",
+      "bytes": 90595
+    },
+    {
       "case": "light-mobile",
       "checkpoint": "resource-memory-table",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/24de7a73ad206ad354e7d4494ac8d17afe13c3e04c6f00d9c7f7781729c8fdd1/20278",
+      "sha256": "24de7a73ad206ad354e7d4494ac8d17afe13c3e04c6f00d9c7f7781729c8fdd1",
+      "bytes": 20278
     },
     {
-      "path": "screenshots/dark-desktop__resource-runs-resource-disk.png",
-      "sha256": "c2b41b9da067d07fc0ca895b56b00d23abbae690751c5d83ac77603f63c50a5c",
+      "case": "light-desktop",
+      "checkpoint": "resource-cpu-pairs",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a7f12bba7fd27d6ff4bf14ca6edb2f23836dc76bfcde4e0cb3b46612083c26ac/12525",
+      "sha256": "a7f12bba7fd27d6ff4bf14ca6edb2f23836dc76bfcde4e0cb3b46612083c26ac",
+      "bytes": 12525
+    },
+    {
       "case": "dark-desktop",
       "checkpoint": "resource-runs-resource-disk",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/9e048b67280fbe8a6904ab8286eb1a0839b1699c700c7a4f5c0d051d77a4725d/32357",
+      "sha256": "9e048b67280fbe8a6904ab8286eb1a0839b1699c700c7a4f5c0d051d77a4725d",
+      "bytes": 32357
     },
     {
-      "path": "screenshots/dark-mobile__resource-runs-resource-memory.png",
-      "sha256": "6ecd6a79b570bc2a67ba55effec5da3bc6f18ff087b3533e1dde89f178df5769",
       "case": "dark-mobile",
       "checkpoint": "resource-runs-resource-memory",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b877aee623d49dd5cac03b86d06074c26a974cbe1461879dd4f53bab38e75026/25167",
+      "sha256": "b877aee623d49dd5cac03b86d06074c26a974cbe1461879dd4f53bab38e75026",
+      "bytes": 25167
     },
     {
-      "path": "screenshots/light-mobile__resource-runs-resource-cpu.png",
-      "sha256": "60d3b9f9165c7e7be18e4995aa8b21e9c031c7497af0e09050fcf121a13a0b3d",
       "case": "light-mobile",
       "checkpoint": "resource-runs-resource-cpu",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d9adc814d37a61ad80a1e6ce277dff9944649d0b4bfd0b4d5f9db9e0b882da53/21332",
+      "sha256": "d9adc814d37a61ad80a1e6ce277dff9944649d0b4bfd0b4d5f9db9e0b882da53",
+      "bytes": 21332
     },
     {
-      "path": "screenshots/dark-desktop__resource-fixture-pair.png",
-      "sha256": "88010b9c200c2f5454180bcafd6b1647903253e5c2d1fde32390c7b5f06449b2",
       "case": "dark-desktop",
       "checkpoint": "resource-fixture-pair",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/142533705a4cae4c15eed1d191ab730a9d2d4255f98f42cf4570cf81d1c955cc/16522",
+      "sha256": "142533705a4cae4c15eed1d191ab730a9d2d4255f98f42cf4570cf81d1c955cc",
+      "bytes": 16522
     },
     {
-      "path": "screenshots/light-mobile__resource-runs-resource-disk.png",
-      "sha256": "2491c175f48ea4387ac9989d88a762ea4ec896e5ccf34b6f6284a3524586f085",
       "case": "light-mobile",
       "checkpoint": "resource-runs-resource-disk",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0b931b8b1cc2d86fdf0cf2443a071fd5852fcc9965bf5fafcfdf4d6a5be04f9a/26198",
+      "sha256": "0b931b8b1cc2d86fdf0cf2443a071fd5852fcc9965bf5fafcfdf4d6a5be04f9a",
+      "bytes": 26198
     },
     {
-      "path": "screenshots/light-desktop__resource-runs-resource-disk.png",
-      "sha256": "a5b85250510dc20faca80d74c1fba023689a0117fad40face830f98f327bda69",
       "case": "light-desktop",
       "checkpoint": "resource-runs-resource-disk",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/3f6c78349313aac861e9110b70d6c5fb308dcd7cf8f37a57a9985b51ef562c5a/31635",
+      "sha256": "3f6c78349313aac861e9110b70d6c5fb308dcd7cf8f37a57a9985b51ef562c5a",
+      "bytes": 31635
     },
     {
-      "path": "screenshots/dark-desktop__resource-runs-resource-memory.png",
-      "sha256": "610a98e05841d0bf0be4f4a896a6c281f8b663100fa19a58b8eb60c5a61d164e",
       "case": "dark-desktop",
       "checkpoint": "resource-runs-resource-memory",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/610a98e05841d0bf0be4f4a896a6c281f8b663100fa19a58b8eb60c5a61d164e/32267",
+      "sha256": "610a98e05841d0bf0be4f4a896a6c281f8b663100fa19a58b8eb60c5a61d164e",
+      "bytes": 32267
     },
     {
-      "path": "screenshots/dark-desktop__resource-day-resource-cpu.png",
-      "sha256": "7052810fa444a874b0d260c825ec3a86ab7b7187b2c1c4d0ccfbbebc5b971305",
       "case": "dark-desktop",
       "checkpoint": "resource-day-resource-cpu",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/dfbe2dec6e25c93c50f86a8a19a0ad872241596bb1dec92d7e0c50ec9d29bc89/32705",
+      "sha256": "dfbe2dec6e25c93c50f86a8a19a0ad872241596bb1dec92d7e0c50ec9d29bc89",
+      "bytes": 32705
     },
     {
-      "path": "screenshots/dark-desktop__retained-historical-trace.png",
-      "sha256": "2e32abb3420df99181d52c03f4761faf7c51b436b4c9f82ff04013235352cf36",
       "case": "dark-desktop",
       "checkpoint": "retained-historical-trace",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f3fac79cf7a80cdfbde30cd2a3cfdd582a333810c185f44a0ee92f8290c2bd51/17239",
+      "sha256": "f3fac79cf7a80cdfbde30cd2a3cfdd582a333810c185f44a0ee92f8290c2bd51",
+      "bytes": 17239
     },
     {
-      "path": "screenshots/light-mobile__resource-fixture-pair.png",
-      "sha256": "25d41e67e203306d61d3cff81ae961915c64324ee38935a03298a8b9ee159f71",
       "case": "light-mobile",
       "checkpoint": "resource-fixture-pair",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b9d3c8abb07d502ec17b2f52fe0e3ec0f82839c0fd8a73c76fd60f1442b945dc/14443",
+      "sha256": "b9d3c8abb07d502ec17b2f52fe0e3ec0f82839c0fd8a73c76fd60f1442b945dc",
+      "bytes": 14443
     },
     {
-      "path": "screenshots/dark-mobile__resource-memory-table.png",
-      "sha256": "13e1ce76c3a5f678dc24c6b2802be10110ae46b0fbc01e1ecdef666c06948e63",
+      "case": "dark-desktop",
+      "checkpoint": "vm-readiness-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/02ab6eed82c71ebd32975b1ea7b73dbafcb0e449eed33ee4ea4283b17ce9e753/203571",
+      "sha256": "02ab6eed82c71ebd32975b1ea7b73dbafcb0e449eed33ee4ea4283b17ce9e753",
+      "bytes": 203571
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "resource-memory-table",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/224d748a914fe04d0c0c9025168f0adf50122ddd8b5051aa30f85df595f9b746/18084",
+      "sha256": "224d748a914fe04d0c0c9025168f0adf50122ddd8b5051aa30f85df595f9b746",
+      "bytes": 18084
     },
     {
-      "path": "screenshots/light-mobile__resource-day-resource-disk.png",
-      "sha256": "6a7262c325f57bc5c20fc0d0a39ad85c5b6174c14b9d4a1f14bc78e069d79186",
+      "case": "dark-desktop",
+      "checkpoint": "vm-tag-limit-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5ab3a2d855b3bd704222d5395d7bcde8c160d90814b6e34a96969fd6ec2b540c/177618",
+      "sha256": "5ab3a2d855b3bd704222d5395d7bcde8c160d90814b6e34a96969fd6ec2b540c",
+      "bytes": 177618
+    },
+    {
       "case": "light-mobile",
       "checkpoint": "resource-day-resource-disk",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/dadd31763262a6d3454a067cc7c646717898f8e994bf73b2ee82dc160ff190fe/28217",
+      "sha256": "dadd31763262a6d3454a067cc7c646717898f8e994bf73b2ee82dc160ff190fe",
+      "bytes": 28217
     },
     {
-      "path": "screenshots/light-mobile__resource-runs-resource-memory.png",
-      "sha256": "5faca661b3e417cd9245de95bbe971f102169a0da1369d3beb84014dd2d31eab",
       "case": "light-mobile",
       "checkpoint": "resource-runs-resource-memory",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4403d0c22de8ba40c8c00a95413172c1f0b28f2c369070e0e1603afdf6cc5865/25303",
+      "sha256": "4403d0c22de8ba40c8c00a95413172c1f0b28f2c369070e0e1603afdf6cc5865",
+      "bytes": 25303
     },
     {
-      "path": "screenshots/light-desktop__resource-runs-resource-cpu.png",
-      "sha256": "c7f021f9e64867cd197d0068647704abdacdcb5e9b8f3f2fa82a46a859ebda40",
+      "case": "dark-mobile",
+      "checkpoint": "resource-cpu-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/825a3db1e70eab837e6151dd3fbc96ca00175f9686ab4caafd4db64f21f53da2/30023",
+      "sha256": "825a3db1e70eab837e6151dd3fbc96ca00175f9686ab4caafd4db64f21f53da2",
+      "bytes": 30023
+    },
+    {
+      "case": "dark-desktop",
+      "checkpoint": "resource-cpu-pairs",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2b4c51264dd24e87ee7ece68f849e9717b192692d6d587d56b9cc599bbd261cf/12016",
+      "sha256": "2b4c51264dd24e87ee7ece68f849e9717b192692d6d587d56b9cc599bbd261cf",
+      "bytes": 12016
+    },
+    {
       "case": "light-desktop",
       "checkpoint": "resource-runs-resource-cpu",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d729edea5d6589ecc7991798ca1a61f0d7f69ef845776cfe0e92bf92d78a555d/26465",
+      "sha256": "d729edea5d6589ecc7991798ca1a61f0d7f69ef845776cfe0e92bf92d78a555d",
+      "bytes": 26465
     },
     {
-      "path": "screenshots/dark-mobile__resource-runs-resource-pressure.png",
-      "sha256": "b95c0d28e7e9ba3241b9fcdea6678793896abe2490d9a45e8c8489d1396727fe",
+      "case": "light-desktop",
+      "checkpoint": "vm-readiness-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4c09d06c57f77b71490f25aae56974cea62ca4f68c8edbf2a0fbfa7b1a3f7dbb/203391",
+      "sha256": "4c09d06c57f77b71490f25aae56974cea62ca4f68c8edbf2a0fbfa7b1a3f7dbb",
+      "bytes": 203391
+    },
+    {
+      "case": "light-desktop",
+      "checkpoint": "vm-tag-limit-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c9b9f1f0a422933dc1b353e9480aa6cdcb74adbd8c8bd548413bea0b63bbe013/179114",
+      "sha256": "c9b9f1f0a422933dc1b353e9480aa6cdcb74adbd8c8bd548413bea0b63bbe013",
+      "bytes": 179114
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "resource-runs-resource-pressure",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/aad5ffa44527ca01fa4774a65db461744a703ea72207da3ce1ed403cf39eb7f8/25114",
+      "sha256": "aad5ffa44527ca01fa4774a65db461744a703ea72207da3ce1ed403cf39eb7f8",
+      "bytes": 25114
     },
     {
-      "path": "screenshots/dark-mobile__resource-runs-resource-disk.png",
-      "sha256": "85d136bbc74665c877576d4a28306ca2c263c6868b9f32cc3800c1735e333d45",
       "case": "dark-mobile",
       "checkpoint": "resource-runs-resource-disk",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/637ae82559d6e2e511dd815a4470d0db71fe3dd6b33f05fb9bda0ecbf1a4116f/26456",
+      "sha256": "637ae82559d6e2e511dd815a4470d0db71fe3dd6b33f05fb9bda0ecbf1a4116f",
+      "bytes": 26456
     },
     {
-      "path": "screenshots/dark-desktop__resource-day-resource-disk.png",
-      "sha256": "8214c675309250a09d22f0b903dc2bcba6034109e7ec3250cb62c3b0373d215d",
+      "case": "light-desktop",
+      "checkpoint": "resource-cpu-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/7bdd5dc046187495e1380af00039fee8b6e8eb404ecf350a05fcbbb428c9b316/55377",
+      "sha256": "7bdd5dc046187495e1380af00039fee8b6e8eb404ecf350a05fcbbb428c9b316",
+      "bytes": 55377
+    },
+    {
       "case": "dark-desktop",
       "checkpoint": "resource-day-resource-disk",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fcf759c94e091dbaa1051f0cea45c94d71001f67594b5847dab60d72f24c6be9/43428",
+      "sha256": "fcf759c94e091dbaa1051f0cea45c94d71001f67594b5847dab60d72f24c6be9",
+      "bytes": 43428
     },
     {
-      "path": "screenshots/light-desktop__resource-day-resource-pressure.png",
-      "sha256": "dd04249d7f7f3d6f0f2501494086217260e55aa3912f182c70b2efd6500af0c4",
       "case": "light-desktop",
       "checkpoint": "resource-day-resource-pressure",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a24f5769f29b39fb955f477f995edd9d0d668f369eac7b7750b5bd42d854d663/44490",
+      "sha256": "a24f5769f29b39fb955f477f995edd9d0d668f369eac7b7750b5bd42d854d663",
+      "bytes": 44490
     },
     {
-      "path": "screenshots/light-mobile__retained-historical-trace.png",
-      "sha256": "0a6c3d9ac342711b9ae988ef090a52440a723b23b5a27c029fbc8c9d2dbcf002",
       "case": "light-mobile",
       "checkpoint": "retained-historical-trace",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/991dce73c51079d1f0ed7561d71adbdae830656611dc723fe49062133417e584/7240",
+      "sha256": "991dce73c51079d1f0ed7561d71adbdae830656611dc723fe49062133417e584",
+      "bytes": 7240
     },
     {
-      "path": "screenshots/light-mobile__retained-mean-phase-bar.png",
-      "sha256": "e422c1ee832813d823bd2f905066d1712dc951cf932306db6ce2f117dec03b53",
       "case": "light-mobile",
       "checkpoint": "retained-mean-phase-bar",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/63b7531dccd884f6376990140b87f15fc95e8ed1dd177d38c6a7dce84c37e1ae/35641",
+      "sha256": "63b7531dccd884f6376990140b87f15fc95e8ed1dd177d38c6a7dce84c37e1ae",
+      "bytes": 35641
     },
     {
-      "path": "screenshots/dark-mobile__first-screen.png",
-      "sha256": "0539fdf7776bdea3207e4fdd77db04ea81635cda80d645c485667dc0e77a26d8",
+      "case": "dark-mobile",
+      "checkpoint": "vm-readiness-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/29a1a52d6ba51212b11760db6f6b9dfb3e5db0f6fe0cdfd2cc0b768551248d3b/97160",
+      "sha256": "29a1a52d6ba51212b11760db6f6b9dfb3e5db0f6fe0cdfd2cc0b768551248d3b",
+      "bytes": 97160
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "first-screen",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/cd515ec61d06add7a5d264a88e5fb9f12078cec87f70e30cef4e30dc8b206a29/83236",
+      "sha256": "cd515ec61d06add7a5d264a88e5fb9f12078cec87f70e30cef4e30dc8b206a29",
+      "bytes": 83236
     },
     {
-      "path": "screenshots/dark-desktop__resource-day-resource-pressure.png",
-      "sha256": "7b0f83dcfd9900b2c9a1e93e4d34b7395108a76f7154700eb449845bd90135e6",
       "case": "dark-desktop",
       "checkpoint": "resource-day-resource-pressure",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b0ca263ca07da9781b56cf648585e68768592d89088bd7d96a98511725fda55f/46062",
+      "sha256": "b0ca263ca07da9781b56cf648585e68768592d89088bd7d96a98511725fda55f",
+      "bytes": 46062
     },
     {
-      "path": "screenshots/dark-mobile__resource-fixture-pair-table.png",
-      "sha256": "18e576ab69037f6ede5d4eab5245e38a03fb5debf3349c1f61460eab5dc33343",
       "case": "dark-mobile",
       "checkpoint": "resource-fixture-pair-table",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/257e5bd33a0f4946b3208c7c8970ba2c74a945d29a27a1e57885e2559754c7c7/22427",
+      "sha256": "257e5bd33a0f4946b3208c7c8970ba2c74a945d29a27a1e57885e2559754c7c7",
+      "bytes": 22427
     },
     {
-      "path": "screenshots/dark-mobile__retained-historical-trace.png",
-      "sha256": "e3f870e2f2fc53e4022f1e7174d6d1e61c8f57f3aa1e1318d8d60cf815185281",
       "case": "dark-mobile",
       "checkpoint": "retained-historical-trace",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0c1b2d63f4fc304a405a8918321729a795aaea0eb42eb21b776788b145179505/7349",
+      "sha256": "0c1b2d63f4fc304a405a8918321729a795aaea0eb42eb21b776788b145179505",
+      "bytes": 7349
     },
     {
-      "path": "screenshots/dark-mobile__resource-day-resource-pressure.png",
-      "sha256": "0715e477e71a39044193ff262cb83ecc3ec81b9a06f89b819704d7693e775128",
+      "case": "dark-mobile",
+      "checkpoint": "resource-cpu-pairs",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e26e8d42edfbb608a942d82bfa1067f861aa16ec91275f4238bb8b26d1e880fa/10938",
+      "sha256": "e26e8d42edfbb608a942d82bfa1067f861aa16ec91275f4238bb8b26d1e880fa",
+      "bytes": 10938
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "resource-day-resource-pressure",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5835a420c69161f7b165449c3b2c20625d383e529e42cea19075c4243ffc0d48/32079",
+      "sha256": "5835a420c69161f7b165449c3b2c20625d383e529e42cea19075c4243ffc0d48",
+      "bytes": 32079
     },
     {
-      "path": "screenshots/light-mobile__resource-day-resource-cpu.png",
-      "sha256": "252e570a4e0c991708b489923e659928376c377589db8c9290b98947e259068b",
       "case": "light-mobile",
       "checkpoint": "resource-day-resource-cpu",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4efb852d63eea9af91c5dee823f84eb2451e9273e87ab8eac54bc79a183c5603/22503",
+      "sha256": "4efb852d63eea9af91c5dee823f84eb2451e9273e87ab8eac54bc79a183c5603",
+      "bytes": 22503
     },
     {
-      "path": "screenshots/dark-mobile__resource-day-resource-memory.png",
-      "sha256": "a1ee731ec158fba887a1e7efe30b46614352276bc75753b7a4403e0971389a96",
+      "case": "dark-desktop",
+      "checkpoint": "resource-cpu-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d98e0affb5853370d726ae6c61fe68cc18df0133a8fd551308d3ceb555a6003f/52424",
+      "sha256": "d98e0affb5853370d726ae6c61fe68cc18df0133a8fd551308d3ceb555a6003f",
+      "bytes": 52424
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "resource-day-resource-memory",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/35242aa0269b12b3db131f13b801cbcfcae038ce11eff89660485bbdd489c52f/31747",
+      "sha256": "35242aa0269b12b3db131f13b801cbcfcae038ce11eff89660485bbdd489c52f",
+      "bytes": 31747
     },
     {
-      "path": "screenshots/dark-mobile__resource-runs-resource-cpu.png",
-      "sha256": "c6313399676a5bef6fbb66803b570aa0ea6dafa010562185924ef2051bc45ff2",
+      "case": "light-mobile",
+      "checkpoint": "resource-cpu-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f2f10509778c5fed339f9ee275d50b8c8b334c8e69863c019338ec4d358f4a24/30894",
+      "sha256": "f2f10509778c5fed339f9ee275d50b8c8b334c8e69863c019338ec4d358f4a24",
+      "bytes": 30894
+    },
+    {
       "case": "dark-mobile",
       "checkpoint": "resource-runs-resource-cpu",
-      "title": "latency-dark-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0bd9a4e4570f2c53522bb25b9cd890574769fe4223d18be4a84a8648f86c895b/21247",
+      "sha256": "0bd9a4e4570f2c53522bb25b9cd890574769fe4223d18be4a84a8648f86c895b",
+      "bytes": 21247
     },
     {
-      "path": "screenshots/light-desktop__resource-memory-table.png",
-      "sha256": "ac79bcee0ad75ef7afb8f80d51efcf158a8c6dfa8041f44a962377b371c948c5",
       "case": "light-desktop",
       "checkpoint": "resource-memory-table",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ac79bcee0ad75ef7afb8f80d51efcf158a8c6dfa8041f44a962377b371c948c5/26742",
+      "sha256": "ac79bcee0ad75ef7afb8f80d51efcf158a8c6dfa8041f44a962377b371c948c5",
+      "bytes": 26742
     },
     {
-      "path": "screenshots/dark-desktop__resource-fixture-pair-table.png",
+      "case": "dark-desktop",
+      "checkpoint": "resource-fixture-pair-table",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/34b68679a22e316c010be58a540aea2e6edc60e8ea7fc329855c11189a51fd73/26261",
       "sha256": "34b68679a22e316c010be58a540aea2e6edc60e8ea7fc329855c11189a51fd73",
-      "case": "dark-desktop",
-      "checkpoint": "resource-fixture-pair-table",
-      "title": "latency-dark-1280"
+      "bytes": 26261
     },
     {
-      "path": "screenshots/light-desktop__resource-physical-runs-table.png",
-      "sha256": "8651b6b3a0378c4a1315e15c0b04d4b26ef054e8e3ac45f975580bfbaeb03bbb",
       "case": "light-desktop",
       "checkpoint": "resource-physical-runs-table",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/1caccfd7b8faa6ce97352ea4a2ddaa29fac57df5f8c4194f95cd4ceba3eb8e5c/19744",
+      "sha256": "1caccfd7b8faa6ce97352ea4a2ddaa29fac57df5f8c4194f95cd4ceba3eb8e5c",
+      "bytes": 19744
     },
     {
-      "path": "screenshots/dark-desktop__resource-physical-runs-table.png",
-      "sha256": "c77eca18c07624a9af84a4651a78241248177cb6d04501325d74763d605476d9",
       "case": "dark-desktop",
       "checkpoint": "resource-physical-runs-table",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/767e825ecaec15f39354bba2ee25e9f1bf5375a5297e4ad38b235632e5fbc10e/18479",
+      "sha256": "767e825ecaec15f39354bba2ee25e9f1bf5375a5297e4ad38b235632e5fbc10e",
+      "bytes": 18479
     },
     {
-      "path": "screenshots/light-mobile__first-screen.png",
-      "sha256": "b879daeaf14fce7eba27d748139c34a6db623a8eb9ffdbf17397244e776654c2",
+      "case": "light-mobile",
+      "checkpoint": "vm-tag-limit-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/221652b1d6eb7e25022dded967ef61d644e3b4fe7e4c4bba9817bb8b0e7601da/85886",
+      "sha256": "221652b1d6eb7e25022dded967ef61d644e3b4fe7e4c4bba9817bb8b0e7601da",
+      "bytes": 85886
+    },
+    {
       "case": "light-mobile",
       "checkpoint": "first-screen",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6f068dacbf78cafb69122405aae761050488bceeeef87535d4aadb393c99bf4d/80611",
+      "sha256": "6f068dacbf78cafb69122405aae761050488bceeeef87535d4aadb393c99bf4d",
+      "bytes": 80611
     },
     {
-      "path": "screenshots/light-desktop__first-screen.png",
-      "sha256": "ab3531d727b9432e8ceb0a89f04a72db695ca139a5d863dad6b0fac94ef22d87",
       "case": "light-desktop",
       "checkpoint": "first-screen",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ab150b989082e02d60f4f1809531e1e2b4b71c72f6f596f300d75125d9a0152a/163254",
+      "sha256": "ab150b989082e02d60f4f1809531e1e2b4b71c72f6f596f300d75125d9a0152a",
+      "bytes": 163254
     },
     {
-      "path": "screenshots/light-mobile__resource-fixture-pair-table.png",
-      "sha256": "40c025c3872f4172d61c884b17ca15d33fb207c0a0a0f73ed70370ef86dff27e",
       "case": "light-mobile",
       "checkpoint": "resource-fixture-pair-table",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d011b54a8b11d04e9477f67831ad1e68edaf3cfabe4eda0ee7d5834043e100e2/22720",
+      "sha256": "d011b54a8b11d04e9477f67831ad1e68edaf3cfabe4eda0ee7d5834043e100e2",
+      "bytes": 22720
     },
     {
-      "path": "screenshots/light-desktop__resource-runs-resource-memory.png",
-      "sha256": "a5baf1b7b2e6bb0d087597655b5bee70b7eaf2267cf8d9253e0e9c5d236a120f",
       "case": "light-desktop",
       "checkpoint": "resource-runs-resource-memory",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a5baf1b7b2e6bb0d087597655b5bee70b7eaf2267cf8d9253e0e9c5d236a120f/32196",
+      "sha256": "a5baf1b7b2e6bb0d087597655b5bee70b7eaf2267cf8d9253e0e9c5d236a120f",
+      "bytes": 32196
     },
     {
-      "path": "screenshots/dark-desktop__resource-runs-resource-cpu.png",
-      "sha256": "4ce5cbfad25f82a8756b9dcc734031dbb0f198ba0e4b15edb05a931d656648fc",
       "case": "dark-desktop",
       "checkpoint": "resource-runs-resource-cpu",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ed07a355762fdb38116b96515a176a080fde926deeb135f8b14580ac44277ce4/26264",
+      "sha256": "ed07a355762fdb38116b96515a176a080fde926deeb135f8b14580ac44277ce4",
+      "bytes": 26264
     },
     {
-      "path": "screenshots/light-desktop__resource-day-resource-cpu.png",
-      "sha256": "72981e4e033dce4e0d698372ab2b064f319161820b754fe156f34ab93f9b4c2f",
       "case": "light-desktop",
       "checkpoint": "resource-day-resource-cpu",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6d694bb2b5602548ebd0d1b7f12570012f0bd48b12c20800abefd2f72d91db96/32176",
+      "sha256": "6d694bb2b5602548ebd0d1b7f12570012f0bd48b12c20800abefd2f72d91db96",
+      "bytes": 32176
     },
     {
-      "path": "screenshots/dark-desktop__resource-runs-resource-pressure.png",
-      "sha256": "19788c706380ff47bba1213d247834ce97cdf7195140ab6ce0248b7b2e3d1677",
       "case": "dark-desktop",
       "checkpoint": "resource-runs-resource-pressure",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ee06ef1688d940a3366ed207ca653cbdd4476919d6a8ae4bdf4f539577fb6d6f/31417",
+      "sha256": "ee06ef1688d940a3366ed207ca653cbdd4476919d6a8ae4bdf4f539577fb6d6f",
+      "bytes": 31417
     },
     {
-      "path": "screenshots/light-desktop__resource-runs-resource-pressure.png",
-      "sha256": "b305f09f9330772b57ae2e42703621404256aa3b6cc63f9822a8c7c8bbac0971",
       "case": "light-desktop",
       "checkpoint": "resource-runs-resource-pressure",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/1df5fb0a1b0c3d96a1fe7aa9df0e48d5213d7148c51f82514ca9b1eb8938daae/30864",
+      "sha256": "1df5fb0a1b0c3d96a1fe7aa9df0e48d5213d7148c51f82514ca9b1eb8938daae",
+      "bytes": 30864
     },
     {
-      "path": "screenshots/dark-desktop__first-screen.png",
-      "sha256": "89e79e4906a7afb012ff00c41acd560ecb59e0b0b1f34ee6e5ecbf8ace5b716f",
       "case": "dark-desktop",
       "checkpoint": "first-screen",
-      "title": "latency-dark-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b37fa1ca8f56aac320d9b3c0cb3898932a1cf8d4279259d1af8c43d8896feb85/166286",
+      "sha256": "b37fa1ca8f56aac320d9b3c0cb3898932a1cf8d4279259d1af8c43d8896feb85",
+      "bytes": 166286
     },
     {
-      "path": "screenshots/light-desktop__resource-fixture-pair.png",
-      "sha256": "19be0f26bd82b6af581532bf1f70c5f775271e463665e5dc1652021ff73800da",
       "case": "light-desktop",
       "checkpoint": "resource-fixture-pair",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/35f74a79882b780b5e3c72303e357e62c9fe475fc67ad73cc378d183a9ad2405/17073",
+      "sha256": "35f74a79882b780b5e3c72303e357e62c9fe475fc67ad73cc378d183a9ad2405",
+      "bytes": 17073
     },
     {
-      "path": "screenshots/light-mobile__resource-runs-resource-pressure.png",
-      "sha256": "189e536077effcbd35a118ddf609bda830d06fe842b44be355537240499a842b",
       "case": "light-mobile",
       "checkpoint": "resource-runs-resource-pressure",
-      "title": "latency-light-390"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/84c7830e448a61e130a0e10be55f78d3f34413d4d7035653f9cf7654aa87af13/24852",
+      "sha256": "84c7830e448a61e130a0e10be55f78d3f34413d4d7035653f9cf7654aa87af13",
+      "bytes": 24852
     },
     {
-      "path": "screenshots/light-desktop__retained-historical-trace.png",
-      "sha256": "e5fec173eb3b53d87ed5865c5d38df522e91c6febc65c20061568b0a2d09b3d3",
       "case": "light-desktop",
       "checkpoint": "retained-historical-trace",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/cdf2c314c7ecff695ec4a89fc94dd2cc22acdb410c81e4d1b306dcb92db1d1d1/16818",
+      "sha256": "cdf2c314c7ecff695ec4a89fc94dd2cc22acdb410c81e4d1b306dcb92db1d1d1",
+      "bytes": 16818
     },
     {
-      "path": "screenshots/light-desktop__retained-mean-phase-bar.png",
-      "sha256": "5d0bcc481139ce1fe12eaf8ede73527f9538ca1365913ba49e4838f2ab8f6cda",
       "case": "light-desktop",
       "checkpoint": "retained-mean-phase-bar",
-      "title": "latency-light-1280"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5d0bcc481139ce1fe12eaf8ede73527f9538ca1365913ba49e4838f2ab8f6cda/36893",
+      "sha256": "5d0bcc481139ce1fe12eaf8ede73527f9538ca1365913ba49e4838f2ab8f6cda",
+      "bytes": 36893
     }
   ],
-  "reviewed_at_utc": "2026-11-09T10:44:33.532126+00:00",
+  "case_diagnostics": [
+    {
+      "case": "dark-desktop",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/feb7a5f47a17838ad01ebd3f65b15524ad12e0bf0705dc0b7ef46728eec3d5db/2593",
+      "sha256": "feb7a5f47a17838ad01ebd3f65b15524ad12e0bf0705dc0b7ef46728eec3d5db",
+      "bytes": 2593
+    },
+    {
+      "case": "dark-mobile",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b42a44223f8d74e5b58826dbae5e1da2db0d3695444e9c6641cdb7cbd937eb4d/2592",
+      "sha256": "b42a44223f8d74e5b58826dbae5e1da2db0d3695444e9c6641cdb7cbd937eb4d",
+      "bytes": 2592
+    },
+    {
+      "case": "light-mobile",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/74852b70d38a5afef0f5a167142b1e7ad53bbf4ce53fb5fafff8790a7805a789/9459",
+      "sha256": "74852b70d38a5afef0f5a167142b1e7ad53bbf4ce53fb5fafff8790a7805a789",
+      "bytes": 9459
+    },
+    {
+      "case": "light-desktop",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ee924cf4610a360ef19017078dbe9d04401abd78490edb423ebc442a262da990/2594",
+      "sha256": "ee924cf4610a360ef19017078dbe9d04401abd78490edb423ebc442a262da990",
+      "bytes": 2594
+    },
+    {
+      "case": "dark-desktop",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c2484859e73bd6b7a92d78590b13f1462d854e70bc30a1170a2689dd929b2e89/9460",
+      "sha256": "c2484859e73bd6b7a92d78590b13f1462d854e70bc30a1170a2689dd929b2e89",
+      "bytes": 9460
+    },
+    {
+      "case": "dark-mobile",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5d64999daade84ec8e7c57d7804ec42986b9426966e0049579bf18f57e1092e5/9460",
+      "sha256": "5d64999daade84ec8e7c57d7804ec42986b9426966e0049579bf18f57e1092e5",
+      "bytes": 9460
+    },
+    {
+      "case": "light-desktop",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/60752789d69c20a5bc7b05184b4f9b1806c341a0f5b2ef2913983743f9a0ac79/9452",
+      "sha256": "60752789d69c20a5bc7b05184b4f9b1806c341a0f5b2ef2913983743f9a0ac79",
+      "bytes": 9452
+    },
+    {
+      "case": "light-mobile",
+      "checkpoint": "final",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/bdd13db1006d0e13e89fb5b3a65fbe69cdc7cee06ea1d583bf90d44cb36e4619/2593",
+      "sha256": "bdd13db1006d0e13e89fb5b3a65fbe69cdc7cee06ea1d583bf90d44cb36e4619",
+      "bytes": 2593
+    }
+  ],
+  "reviewed_at_utc": "2026-11-09T11:48:19.323166+00:00",
   "visual_review": {
-    "worker_review": "All 60 captures reviewed: populated resource and fixture charts, retained historical phase bars and span timeline, readable labels in desktop/mobile light/dark.",
-    "parent_review": "Reviewed representative first screens, CPU/memory/disk/pressure charts, fixture bars/tables and historical trace; annotated timeline PNG reviewed separately.",
-    "mobile_tables": "Mantine native horizontal scroll containers retain all columns. Mobile screenshots show the left edge; desktop captures show the full tables. Offscreen columns are intentionally horizontally scrollable, not removed.",
+    "parent_review": "Reviewed CPU bars in all four theme/viewport cases; CPU table, VM failure sections, first screens and retained fixture/phase/span charts in representative desktop/mobile captures. Readable second ticks and cache heading; no lost visualizations.",
+    "capture_count": 76,
+    "mobile_tables": "Mantine native horizontal scrolling retains all columns; mobile captures show the left edge.",
     "checks": [
-      "Actual pinned Mantine/React/Charts CDNs",
-      "Initial light/dark and live preference change",
-      "Run-window versus full-day chart control",
-      "Meaningful line paths and twelve fixture bars",
-      "All three fixture rows including warm control",
-      "Retained phase bar and four selectable historical span timelines",
-      "No document horizontal overflow or page errors",
-      "Timeline PNG browser download and byte identity",
-      "Manifest hashes match rendered files"
+      "Actual pinned Mantine/React/Charts CDN responses",
+      "Initial browser light/dark and live preference changes",
+      "No document overflow or page errors",
+      "Full-day/run-window selector and meaningful line paths",
+      "Six CPU comparison bars and six passed rows",
+      "Fixture bars and exact-value tables",
+      "Retained phase bars and selectable historical spans",
+      "Timeline PNG download and byte identity",
+      "Every rendered asset hash matched all four cases"
     ]
-  }
+  },
+  "manifest_semantics": "Rendered input manifest hash is retained above. Final manifest changes only validation metadata and evidence-index hash after browser review; rendered HTML, module, JSON and PNG are unchanged."
 }
