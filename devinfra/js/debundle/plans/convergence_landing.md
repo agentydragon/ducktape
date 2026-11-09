@@ -42,18 +42,27 @@ Every PR in this plan:
 2. Is validated through the CLI: the fixture runs original and emitted programs
    under Node, the candidate has `swapped_pairs > 0` where the slice claims a
    relocation, and the `DEBUNDLE_TV_ORACLE` legacy/effect comparison is on.
-3. Asserts behavior and typed status, not report vocabulary. Exact
-   `emitted_order` arrays, example-row ranking and receipt span pins are change
-   detectors (<../../../STYLE.md> § Testing) and do not land.
+3. Uses one of two test forms, both through the CLI. A **positive**: this
+   bundle and spec debundle to this layout, and the original and emitted
+   programs give the same Node (or browser) output. A **refusal**: this spec is
+   rejected with this typed reason, and the test shows why the split is unsafe
+   (run the emitted program and show the divergence) or names the declared
+   refusal (A1/A3/A5, top-level await, cross-module rebinding). A split that is
+   valid but not yet provable gets the positive test marked `#[ignore]` with
+   the gate that unblocks it; a test asserting that the debundler lacks a
+   capability does not land. Exact `emitted_order` arrays, example-row ranking
+   and receipt span pins are change detectors (<../../../STYLE.md> § Testing)
+   and do not land either.
 4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
 5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
    gate would not have made is a regression unless the PR proves the acceptance
    was unsafe with a Node divergence.
-6. Keeps every `devel` test or replaces it with a stronger one. A refusal that
-   becomes an acceptance needs a relocation with Node parity; an acceptance that
-   becomes a refusal needs a Node divergence. The tests #14552 dropped are listed
-   in § Test debt and are restored by the slice that owns them.
+6. Keeps every `devel` test or replaces it with a stronger one in the forms of
+   item 3. A refusal that becomes an acceptance needs a relocation with Node
+   parity; an acceptance that becomes a refusal needs a Node divergence. The
+   tests #14552 dropped are listed in § Test debt; the slice that owns them
+   restores the behavior they protected in those forms.
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
    cannot meet that and say so in their description.
 8. Runs the canonical-spec check (§ below) when it changes any acceptance,
@@ -285,7 +294,9 @@ expectation or proves the change.
 **Devel refusals that became expected acceptances (~17).** A slice may keep
 such a flip only with a relocation (`swapped_pairs > 0`) and Node parity, or by
 showing the candidate order equals source order and the refusal signal is
-retained in a typed field:
+retained in a typed field. Where the devel refusal pinned a missing capability
+rather than an unsafe split, the slice replaces it with the ignored positive
+form of slice-contract item 3 instead of restoring the refusal:
 
 - Host-timing contracts in `reentry_free_operations_test.rs`: every exact Bun
   host-contract requirement around `AsyncLocalStorage` and `Promise.resolve`
