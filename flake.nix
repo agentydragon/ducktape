@@ -5,6 +5,11 @@
     # NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    nix-fast-build = {
+      url = "github:Mic92/nix-fast-build/1.6.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # OpenClaw's Nix packaging. The image output below consumes its pinned
     # gateway derivation and adds the small public-coder runtime toolset.
     nix-openclaw = {
@@ -75,6 +80,7 @@
       nix-colors,
       nixGL,
       nix-openclaw,
+      nix-fast-build,
       claude-plugins-official,
       siderolabs-docs,
       ...
@@ -441,6 +447,7 @@
       };
       packages.${system} =
         (import ./nix/flake/packages.nix {
+          nixFastBuild = nix-fast-build;
           inherit
             self
             system

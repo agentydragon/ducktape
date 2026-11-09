@@ -6,6 +6,7 @@
   ducktapePkgs,
   gafferPkgs,
   home-manager,
+  nixFastBuild,
   pkgsUnstable,
   pkgsMaster,
   nix-openclaw,
@@ -24,14 +25,10 @@ ducktapePkgs
     name = "ducktape-precommit";
     paths = preCommitPackages;
   };
-  # nix-fast-build 1.4.0 has no way to pass upload concurrency to `attic push`.
-  # Keep its parallel build/upload queues while limiting each Attic push.
-  nix-fast-build-attic-jobs = pkgs.nix-fast-build.overridePythonAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ../../devinfra/ci/patches/nix-fast-build-attic-jobs.patch ];
-    checkPhase = (old.checkPhase or "") + ''
-      python -m unittest discover -s tests -p test_attic_jobs.py
-    '';
-  });
+  # Pinned nixpkgs has nix-fast-build 1.4.0, which lacks --stream-json-lines.
+  # Remove this pin and use pkgs.nix-fast-build once nixpkgs has both
+  # --stream-json-lines and --skip-cached.
+  nix-fast-build = nixFastBuild.packages.${system}.nix-fast-build;
   # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
   # Default: Rust claude-hook plus Python statusline.
   devtools = pkgs.symlinkJoin {

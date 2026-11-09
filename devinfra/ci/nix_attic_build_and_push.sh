@@ -23,7 +23,7 @@ flake=".#atticPushTargets.x86_64-linux"
 case "${1:-}" in
   main)
     # Every target → the broadly readable `main` cache; skip paths already present.
-    nix-fast-build --no-nom --attic-jobs 1 --option pure-eval false --skip-cached \
+    nix-fast-build --no-nom --option pure-eval false --skip-cached \
       --flake "${flake}.main" --attic-cache ducktape:main
     ;;
   public)
@@ -32,7 +32,7 @@ case "${1:-}" in
     # (see devinfra/claude/web_setup.sh, cluster/docs/nix_cache.md "Public
     # bootstrap cache"). No --skip-cached: its query cannot see `public`, so it
     # would wrongly skip paths in `main` but absent from `public`.
-    nix-fast-build --no-nom --attic-jobs 1 --option pure-eval false \
+    nix-fast-build --no-nom --option pure-eval false \
       --flake "${flake}.public" --attic-cache ducktape:public
     ;;
   *)
