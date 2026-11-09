@@ -1,0 +1,141 @@
+/* Mantine Typography owns typography, tables and colors; these are report layout and charts. */
+html {
+  color-scheme: light dark;
+}
+.container {
+  width: min(100% - 2rem, 74rem);
+  margin-inline: auto;
+  padding-block: 2rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+}
+article {
+  padding: var(--mantine-spacing-lg);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  margin-block: 1rem;
+}
+input,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  max-width: 100%;
+  padding: 0.5rem;
+}
+label {
+  display: block;
+}
+nav {
+  display: flex;
+}
+body {
+  overflow-wrap: anywhere;
+}
+main > section {
+  margin-block: 3rem;
+}
+.grid > * {
+  min-width: 0;
+}
+.link-row,
+nav {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.link-row {
+  display: flex;
+  align-items: center;
+}
+.table-scroll {
+  overflow-x: auto;
+  margin-block: 1rem;
+}
+.table-scroll table {
+  min-width: 40rem;
+}
+.muted {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+}
+mark {
+  white-space: normal;
+}
+progress {
+  margin-block: 0.5rem;
+}
+.progress,
+.bar-track {
+  background: var(--mantine-color-default-border);
+  overflow: hidden;
+  border-radius: var(--mantine-radius-default);
+}
+.progress {
+  height: 0.65rem;
+  margin-block: 0.5rem;
+}
+.progress-bar,
+.bar {
+  height: 100%;
+  background: var(--mantine-primary-color-filled);
+}
+.trace-chart {
+  overflow-x: auto;
+  max-width: 100%;
+  margin-block: 1rem;
+}
+.trace-chart[hidden] {
+  display: none;
+}
+.trace-chart svg {
+  display: block;
+  width: 100%;
+  min-width: 1000px;
+  background: var(--mantine-color-body);
+}
+.trace-chart text {
+  fill: #142033;
+  font:
+    11px system-ui,
+    sans-serif;
+}
+.trace-chart .axis {
+  fill: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+}
+.trace-chart rect:focus {
+  stroke: var(--mantine-color-text);
+  stroke-width: 3;
+}
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.3rem;
+  border-radius: 2px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 170px 1fr 90px;
+  gap: 0.75rem;
+  align-items: center;
+  margin-block: 1rem;
+  font-size: 0.875rem;
+}
+.bar-track {
+  height: 1.5rem;
+}
+.bar {
+  min-width: 1px;
+}
+@media (max-width: 700px) {
+  .bar-row {
+    grid-template-columns: 1fr 70px;
+  }
+  .bar-track {
+    grid-column: 1/-1;
+  }
+}

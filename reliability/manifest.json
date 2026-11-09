@@ -5,8 +5,10 @@
   "published_at_utc": "2026-11-01T22:13:41.565804+00:00",
   "attribution": "not collected",
   "previous_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
-  "report_html_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
+  "report_html_sha256": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
   "evidence_sha256": "731f0079fdde9b9a23b562a32b36bf88e991c03e4b613c21b41a963542ae65d0",
-  "visual_validation_invocation": "0ab77479-9c78-4b32-afbe-fd2e35f132d5",
-  "sampling_design": "Target tracker and merged-PR census since previous report; separate shorter Actions job-attempt subset; selected physical failure/retry examples."
+  "sampling_design": "Target tracker and merged-PR census since previous report; separate shorter Actions job-attempt subset; selected physical failure/retry examples.",
+  "presentation_updated_at_utc": "2026-11-09",
+  "presentation_scope": "Styling only. Original measurement/source window retained; no recurrence refresh.",
+  "presentation_validation": "../presentation-validation.json"
 }

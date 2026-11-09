@@ -29,3 +29,28 @@ of their historical commits. GitHub Pages serves this branch at
 Collection and publication tools remain on
 [devel](https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency).
 Keep raw logs, profiles, webhook payloads and credentials out of this branch.
+
+## Presentation convention
+
+Use **Mantine 9.6.1**, the version resolved on the inspected devel
+branch, with React / React DOM 19.3.0. Use the version-pinned stylesheet from
+jsDelivr (with its integrity hash) and the pinned esm.sh import map already in each
+page. Reuse the shared `report.js` and `report.css`; do not introduce a second
+framework or copy a report-specific design system. Update the entire site together
+when changing the common framework. The former root used Pico; Mantine is now the
+site-wide convention.
+
+`report.js` mounts `MantineProvider` with `defaultColorScheme="auto"` and Mantine's
+`Typography` around the authored report HTML. Keep report-specific module scripts
+outside `#report-content` and import the shared shell before attaching listeners.
+This preserves filters and charts when React mounts. Only reviewed, committed HTML
+belongs in the shell; never insert raw API responses or user input as HTML.
+Report content remains present in the document if JavaScript/CDN loading fails.
+
+The head sets the initial system color scheme; the provider follows subsequent
+browser/OS changes. Keep custom CSS to layout, visualization and small native
+control adjustments, using Mantine theme variables. Do not force light or dark.
+Before publishing, render every affected page at desktop and mobile widths in both
+themes, verify real CDN loading and live preference changes, and exercise its
+controls. A presentation refresh must retain the original measurement/source
+window and must not imply that old findings were remeasured.
