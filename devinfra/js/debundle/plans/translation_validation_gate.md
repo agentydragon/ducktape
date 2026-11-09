@@ -253,7 +253,7 @@ the complete conflict enumeration.
    effect-set definition of "unused".
    - Final-candidate edit assessments and emission already use the same
      `AssignmentAnalysis` import order. Graph-only decomposition validation
-     in `peel/propose.rs` still uses the legacy gate without that order; retain
+     in `peel/decompose.rs` still uses the legacy gate without that order; retain
      that boundary until an appropriate search/validation contract is proved.
    - Audit destructuring-sibling and nested-`var` routing refusals before the
      finalized assignment. Keep those hard errors until their request-building
