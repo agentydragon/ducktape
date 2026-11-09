@@ -3140,7 +3140,10 @@ identity's page lists the Connections bound to it beside its Sandboxes and Sessi
 2026-11-09; today's flow is in `app/README.md`). This Connection part lands with
 `IDENTITY_CUTOVER`'s edge prerequisites. Mockups: the plan's operator UI section. **Exit:** BFF routes with
 tests, visual tests capturing each screen, and a browser test that a referenced identity cannot be
-deleted.
+deleted. The first slice (the list with bindings, expiries and the Kubernetes accounts its
+use rules reach, the identity page, and a delete refused while referenced or from git) shows every
+identity not applied from git as of unknown origin: when the app and the Dispatcher start minting
+identities they stamp an origin marker on each, which `identities/origin.ts` then reads.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 

@@ -180,7 +180,9 @@ export function BindingsTable({
               </Table.Td>
               <Table.Td>
                 <Tooltip
-                  label={subject?.identity ? `identity ${subject.identity.name}` : `${subject?.namespace}/${subject?.name}`}
+                  label={
+                    subject?.identity ? `identity ${subject.identity.name}` : `${subject?.namespace}/${subject?.name}`
+                  }
                   withArrow
                 >
                   <Text size="sm" fw={600}>

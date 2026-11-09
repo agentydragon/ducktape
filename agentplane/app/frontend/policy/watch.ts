@@ -146,7 +146,10 @@ function identityFrame(json: JsonValue): CollectionFrame<Identity> {
 function selectorQuery(selector: BindingSelector): URLSearchParams {
   switch (selector.case) {
     case "subject":
-      return new URLSearchParams({ "subject.namespace": selector.value.namespace, "subject.name": selector.value.name });
+      return new URLSearchParams({
+        "subject.namespace": selector.value.namespace,
+        "subject.name": selector.value.name,
+      });
     case "identity":
       return new URLSearchParams({ identity: selector.value });
     case "everyIdentity":

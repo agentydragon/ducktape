@@ -37,7 +37,10 @@ function binding(name: string, subject: string, ownerUid: string | null) {
   });
 }
 const onDeleted = vi.fn();
-async function render(subject: Identity, bindings = [binding("own-launch", subject.identity!.name, subject.identity!.uid)]) {
+async function render(
+  subject: Identity,
+  bindings = [binding("own-launch", subject.identity!.name, subject.identity!.uid)]
+) {
   mocks.identities.mockReturnValue({ identities: [subject], error: null });
   mocks.resources.mockReturnValue({ resources: { bindings, sets: [] }, error: null });
   container = document.createElement("div");
@@ -66,7 +69,10 @@ function referencing(): string[] {
 
 it("watches the bindings naming the identity, fenced by its UID", async () => {
   await render(identity("unreferenced-identity"));
-  expect(mocks.resources).toHaveBeenCalledWith({ case: "identity", value: "unreferenced-identity" }, "uid-unreferenced-identity");
+  expect(mocks.resources).toHaveBeenCalledWith(
+    { case: "identity", value: "unreferenced-identity" },
+    "uid-unreferenced-identity"
+  );
 });
 
 it("deletes an unreferenced identity after confirmation", async () => {
@@ -83,7 +89,10 @@ it("deletes an unreferenced identity after confirmation", async () => {
 
 it("refuses to delete a referenced identity and names what references it", async () => {
   const subject = identity("referenced-identity");
-  await render(subject, [binding("own-launch", "referenced-identity", "uid-referenced-identity"), binding("standing-grant", "referenced-identity", null)]);
+  await render(subject, [
+    binding("own-launch", "referenced-identity", "uid-referenced-identity"),
+    binding("standing-grant", "referenced-identity", null),
+  ]);
   expect(deleteButton().disabled).toBe(true);
   expect(referencing()).toEqual(["PolicyBinding standing-grant"]);
 });

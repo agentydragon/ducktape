@@ -46,7 +46,9 @@ function Selected({ selector, fence }: { selector: BindingSelector; fence: strin
 function Identities() {
   const result = useIdentities();
   return (
-    <output>{result.error ?? (result.identities ? result.identities.map((i) => i.identity?.uid).join(",") : "loading")}</output>
+    <output>
+      {result.error ?? (result.identities ? result.identities.map((i) => i.identity?.uid).join(",") : "loading")}
+    </output>
   );
 }
 async function mount(node: JSX.Element): Promise<void> {
@@ -126,7 +128,9 @@ it("follows identities from a completed snapshot and fences removals by UID", as
   expect([...watches.keys()]).toEqual(["/upstream/policy/v1/identities:watch"]);
   await act(async () => {
     start();
-    frame("identities", { snapshot: { identities: [{ identity: { namespace: "policies", name: "agent", uid: "old" } }] } });
+    frame("identities", {
+      snapshot: { identities: [{ identity: { namespace: "policies", name: "agent", uid: "old" } }] },
+    });
   });
   expect(container.querySelector("output")?.textContent).toBe("loading");
   await act(async () => frame("identities", { snapshotComplete: {} }));

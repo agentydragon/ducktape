@@ -4,15 +4,22 @@ import { displayableError, fetchWithLogin } from "../client";
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
 
 /** How a delete ended: done, refused for the bindings that still name the identity, or failed. */
-export type DeleteOutcome = { case: "deleted" } | { case: "referenced"; bindings: string[] } | { case: "failed"; error: string };
+export type DeleteOutcome =
+  { case: "deleted" } | { case: "referenced"; bindings: string[] } | { case: "failed"; error: string };
 
 /** The PolicyBindings a gRPC-Gateway error body's `PreconditionFailure` names, if it carries one. */
 function referencingBindings(body: unknown): string[] | null {
   if (typeof body !== "object" || body === null || !("details" in body) || !Array.isArray(body.details)) return null;
   const failure: unknown = body.details.find(
-    (detail: unknown) => typeof detail === "object" && detail !== null && "@type" in detail && detail["@type"] === PRECONDITION_FAILURE
+    (detail: unknown) =>
+      typeof detail === "object" && detail !== null && "@type" in detail && detail["@type"] === PRECONDITION_FAILURE
   );
-  if (typeof failure !== "object" || failure === null || !("violations" in failure) || !Array.isArray(failure.violations))
+  if (
+    typeof failure !== "object" ||
+    failure === null ||
+    !("violations" in failure) ||
+    !Array.isArray(failure.violations)
+  )
     return null;
   return failure.violations.flatMap((violation: unknown) =>
     typeof violation === "object" &&

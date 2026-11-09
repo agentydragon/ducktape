@@ -17,7 +17,9 @@ import { AccountsReached, OriginBadge } from "./summary";
 /** Why delete is unavailable, or null when the Policy Controller would accept it. */
 function deleteBlocker(identity: Identity, split: IdentityBindings): JSX.Element | null {
   if (identityOrigin(identity) === "git")
-    return <Text size="sm">Flux applies this identity from git and would recreate it: remove it in the repository.</Text>;
+    return (
+      <Text size="sm">Flux applies this identity from git and would recreate it: remove it in the repository.</Text>
+    );
   if (split.referencing.length === 0) return null;
   return <ReferencingBindings names={split.referencing.map((binding) => binding.identity?.name ?? "")} />;
 }
@@ -75,7 +77,13 @@ function DeleteIdentity({
       )}
       <Group>
         <Tooltip label={blocker ? "Unavailable: see above" : `Delete ${name}`} withArrow>
-          <Button color="red" variant="light" disabled={blocker !== null} loading={pending} onClick={() => setConfirming(true)}>
+          <Button
+            color="red"
+            variant="light"
+            disabled={blocker !== null}
+            loading={pending}
+            onClick={() => setConfirming(true)}
+          >
             Delete identity
           </Button>
         </Tooltip>
@@ -171,7 +179,12 @@ export function IdentityPage({
               Policy bindings naming this identity. The Action Service&apos;s effective policy is not shown here: it is
               looked up by ServiceAccount, not by identity.
             </Text>
-            <BindingsTable bindings={resources.bindings} policySets={resources.sets} onRevoke={null} subjectKind="identity" />
+            <BindingsTable
+              bindings={resources.bindings}
+              policySets={resources.sets}
+              onRevoke={null}
+              subjectKind="identity"
+            />
           </Stack>
           <DeleteIdentity key={identity.identity?.uid} identity={identity} split={split} onDeleted={onDeleted} />
         </>
