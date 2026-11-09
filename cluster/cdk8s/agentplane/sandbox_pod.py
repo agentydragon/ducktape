@@ -38,8 +38,15 @@ EGRESS_TOKEN_FILE = f"{_EGRESS_TOKEN_DIR}/token"
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
 # to under `_EGRESS_TOKEN_DIR`. The volume and sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. Platform service calls use SVID routes; the
-# only projected token retained by Sandbox Pods is the Kubernetes API token.
+# only projected token retained by Sandbox Pods is the Kubernetes API token. With the identity catalog
+# nothing substitutes it: an agent reaches Kubernetes only as an account it may use.
 _SUBSTITUTABLE_AUDIENCE_FILES = {KUBERNETES_AUDIENCE: "kubernetes-token"}
+
+
+def _substitutable_audience_files(env: Environment) -> Mapping[str, str]:
+    return {} if env.identity_catalog else _SUBSTITUTABLE_AUDIENCE_FILES
+
+
 SIDECAR_LISTEN_PORT = 3128
 # The sidecar's settings file: a ConfigMap per Pod template, mounted on the sidecar alone.
 SIDECAR_SETTINGS_VOLUME_NAME = "egress-sidecar-settings"
@@ -191,7 +198,7 @@ def add_sidecar_settings(
         ),
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
         audience_token_files={
-            audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
+            audience: Path(audience_token_file(audience)) for audience in _substitutable_audience_files(env)
         },
         platform_routes=platform_routes,
         workload_routes=dict(workload_routes) if workload_routes is not None else {},
@@ -216,6 +223,7 @@ def _egress_sidecar(
     disable_otel_sdk: bool,
     restart_policy: str | None = None,
     volume_mounts: Sequence[k8s.VolumeMount] = (),
+    token_volume: bool,
 ) -> k8s.Container:
     telemetry_env = (
         [
@@ -251,7 +259,11 @@ def _egress_sidecar(
         ),
         resources=resources,
         volume_mounts=[
-            k8s.VolumeMount(name=EGRESS_TOKEN_VOLUME_NAME, mount_path=_EGRESS_TOKEN_DIR, read_only=True),
+            *(
+                [k8s.VolumeMount(name=EGRESS_TOKEN_VOLUME_NAME, mount_path=_EGRESS_TOKEN_DIR, read_only=True)]
+                if token_volume
+                else []
+            ),
             settings.mount,
             *volume_mounts,
         ],
@@ -265,26 +277,26 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
     ]
 
 
-def _egress_token_volume(additional: Sequence[k8s.ServiceAccountTokenProjection]) -> k8s.Volume:
+def _egress_token_volume(
+    env: Environment, additional: Sequence[k8s.ServiceAccountTokenProjection]
+) -> k8s.Volume | None:
     # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar alone.
     # Destination tokens may be substituted where policy names them; additional projections are explicit caller choices.
-    # All are bound to this Pod and rotated by kubelet.
-    return k8s.Volume(
-        name=EGRESS_TOKEN_VOLUME_NAME,
-        projected=k8s.ProjectedVolumeSource(
-            sources=[
-                *(
-                    k8s.VolumeProjection(
-                        service_account_token=k8s.ServiceAccountTokenProjection(
-                            audience=audience, expiration_seconds=600, path=file
-                        )
-                    )
-                    for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                ),
-                *(k8s.VolumeProjection(service_account_token=projection) for projection in additional),
-            ]
+    # All are bound to this Pod and rotated by kubelet. None when there is nothing to project.
+    sources = [
+        *(
+            k8s.VolumeProjection(
+                service_account_token=k8s.ServiceAccountTokenProjection(
+                    audience=audience, expiration_seconds=600, path=file
+                )
+            )
+            for audience, file in _substitutable_audience_files(env).items()
         ),
-    )
+        *(k8s.VolumeProjection(service_account_token=projection) for projection in additional),
+    ]
+    if not sources:
+        return None
+    return k8s.Volume(name=EGRESS_TOKEN_VOLUME_NAME, projected=k8s.ProjectedVolumeSource(sources=sources))
 
 
 def pod_spec(
@@ -327,6 +339,7 @@ def pod_spec(
         if sidecar_settings is not None
         else None
     )
+    token_volume = _egress_token_volume(env, sidecar_token_projections) if settings is not None else None
     sidecar = (
         _egress_sidecar(
             env,
@@ -340,6 +353,7 @@ def pod_spec(
             disable_otel_sdk=disable_otel_sdk,
             restart_policy="Always" if keep_sidecar_until_workload_exit else None,
             volume_mounts=sidecar_mounts,
+            token_volume=token_volume is not None,
         )
         if settings is not None
         else None
@@ -373,7 +387,7 @@ def pod_spec(
         ),
         volumes=[
             *_egress_volumes(env),
-            *([_egress_token_volume(sidecar_token_projections)] if settings is not None else []),
+            *([token_volume] if token_volume is not None else []),
             *([settings.volume] if settings is not None else []),
             *workload_volumes,
         ],
