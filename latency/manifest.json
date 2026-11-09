@@ -4,7 +4,7 @@
   "window_end_utc": "2026-11-09T07:09:00Z",
   "published_at_utc": "2026-11-09T07:40:22.738978+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "00fcea87fa02f4a783b3c122a622aee243640783",
+  "previous_report_commit": "7d68d5d4dae9ca84be973ac8686125371446597d",
   "analysis_scope": "72h complete Actions census; latest24h required-gate exact-head proxy and runner occupancy;19 verified green system-suite heads;live KVM capacity;four physical-driver timelines;three bounded mechanism experiments.",
   "window_semantics": "Manifest bounds cover the detailed24h cohort. Census begins2026-11-06T07:09:00Z. Live pool,experiments and publication validation have separately recorded clocks outside the cohort.",
   "source_candidate_pr": "https://github.com/agentydragon/ducktape/pull/15099",
@@ -17,159 +17,18 @@
     "keep-sorted",
     "prettier"
   ],
-  "publication_scope": "Only latency/index.html,evidence.json,manifest.json. Root navigation and sibling namespaces preserved. Completed/historical items live in pinned history and evidence,not expanded dashboard reports.",
-  "report_html_sha256": "f73efe6341a041f35868a327df5950efd73be1fc58f2c127ae3e186a9ea78c46",
-  "evidence_sha256": "678cfdd7a60726f06c34635bc29a479eb82ce95f5aa38a9b00b9c74123998d4f",
-  "visual_validation": {
-    "target": "//x/ci_latency_preview:visual_test",
-    "result": "PASSED",
-    "invocation_id": "c4bb6e2c-f8df-436b-b303-45688f65a48a",
-    "invocation_url": "https://app.buildbuddy.io/invocation/c4bb6e2c-f8df-436b-b303-45688f65a48a",
-    "viewports": [
-      {
-        "width": 1280,
-        "height": 900
-      },
-      {
-        "width": 390,
-        "height": 844
-      }
-    ],
-    "report_bytes_sha256_checked_inside_test": true,
-    "all_internal_anchors_checked": true,
-    "all_details_expanded": true,
-    "all_select_options_exercised": true,
-    "horizontal_page_overflow": false,
-    "internal_chart_and_table_scrolling": "Intentional;charts retain1000px readable scale on mobile.",
-    "manual_review": "All18 desktop/mobile first-screen,feedback,system,experiments,options and four per-viewport timeline captures reviewed. Final three changed captures inspected;15 remaining PNGs are SHA256-identical to the preceding reviewed render9e3dc620.",
-    "captures": [
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "phase-trace-0",
-        "name": "4742ab7f4b117e41badaa27dc6cfa803ee2ce07e6d68299c7f1a397750d583ba.png",
-        "sha256": "0f78701914f1f939791486154d6252fefe62b88cd3dd97a9fdf59c73f5c815f7"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "system-tests",
-        "name": "af20886e2a1cb9314eb9384024f38bd9b1343bb2f8b480974f168b78761a4f65.png",
-        "sha256": "1dd701b87f7411987d9fd3681f03d80724f08f85edb8964cbc29a3d8eda8a48b"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "first-screen",
-        "name": "57415f92ed6c44a0efa5c13a2b8aeecab5916488b828dfa0d6e938a441253663.png",
-        "sha256": "d21303bbb90ff6120dc40241b913ac3c8e2b94c7f23168c9993d4a5f502486a0"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "phase-trace-2",
-        "name": "27cbab50df7f680afbc324a14ba1a6e8f2682b33714e75b5d3d68ffc939b9927.png",
-        "sha256": "07c27e2b7be1680ecd3138ebe971f042a62a75a758b42cf788ded964eb13b9a8"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "options",
-        "name": "4fcc3b665290e7d479950355d6e7196bc60a2e155326bb71655f85bb4f383889.png",
-        "sha256": "7868d1572c83a5ff4042510fc3bcc09e309e9292b41458c1d4795255fcb8bcba"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "system-tests",
-        "name": "4675da11f65c4cc0a8c05df4cc77aa7ea29423ac76468644da366e81181e3161.png",
-        "sha256": "3018e2b6f5ecad046681d55fa6b2ec156427a93b07c7f365150a5bb7fa72d5cc"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "experiments",
-        "name": "85b4ff5522655b05880c1c37d3a49ef0f25f5c7fc0ccc2f9c0064d06b233e57c.png",
-        "sha256": "08b526e38c7bae9ef9c6ce840e22be5141736e4042e62c95d07df243eba61ac8"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "phase-trace-2",
-        "name": "c1cabf89719f40f0a0c0341d53598fe65bab29cd77e29e443b2a259931faf21c.png",
-        "sha256": "50ec36fc96de8f124e70eb745668d0b35c206589f287d8f56717e1dbfcdbd937"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "feedback",
-        "name": "8de5a95726aee0f63142a920c32bd2254081c1c9cefdb6d1420687a30136708b.png",
-        "sha256": "e56068c0be529243c47603deba4f3b6ca6845a0a1ccd4856e340b75ea623662e"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "phase-trace-3",
-        "name": "37870ac2470b8dc1f3ae08e71a3c6bcc8689fc56f868877b5b3cf602ce4d7077.png",
-        "sha256": "26dc1d964463b7e01a4b5f63a7243fe8cb8f1c15d4081ba92b8283a3e482a49a"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "options",
-        "name": "4d17be874822c688f8543325a4ff8827ecc7e615865535aea0c0316514c317b4.png",
-        "sha256": "ed594b869e90e05c416bfea485dee934b55487eee5407086febe5d53ca38c7c7"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "phase-trace-3",
-        "name": "6d68b3df0481b3af9787326cb4ab2db3431df4650e1239752036150b36533d4e.png",
-        "sha256": "4f22019a0a59675e8dab385850f2485e9e026a00446ba48b094c7a5c4d2ea434"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "experiments",
-        "name": "9c3b6b0b15071c438524ed6f29beafa38bbed35c275df9839d8437e8c798fa75.png",
-        "sha256": "16d0bb149616374ecae2accc8b92a3dd532c12331362c3688c7a54c2729e0de3"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "first-screen",
-        "name": "4d43a1d035f8a88fb2997399f8875d550dc05a404d7972ed0a15b5f8ba1f25b2.png",
-        "sha256": "1d308157254b493bd5520570f18629148330c9893458b18844d711c470cefd06"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "phase-trace-0",
-        "name": "fccb392790254f64f6bdda43cfd4a3f6f4d04ef70c32b4a73e99c4b522d43706.png",
-        "sha256": "656bf8b42115071307c1b669a68c34c7647a3c154610eb742da6f647b7c4875c"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "feedback",
-        "name": "3e571b21bdbcf8da4131025394069e4ec6d5161ee94f2625b23997a53385b2f8.png",
-        "sha256": "588d2fb6a19c8f1e331c785a5efd8559910cd909d49d8487dacef049e537c0a0"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[desktop]",
-        "checkpoint": "phase-trace-1",
-        "name": "450e737e330e06b94b725e4e0a1361272387b01b0bacf81e233ab0336ec9a961.png",
-        "sha256": "63405ed8ca42f284c8d4cd63219730e9070035016e52bf2d4d2a52a7ea1d2bfa"
-      },
-      {
-        "case_id": "x/ci_latency_preview/test_report.py::test_report[mobile]",
-        "checkpoint": "phase-trace-1",
-        "name": "93d02b4cae52da2d1129edf88356db1b57c09c7a3b5ab51c8b910dd5e6bcb51a.png",
-        "sha256": "4c1a5095517877f7a867bba028b7fd78304dcf25faa4ad6807075d9dd69f06c1"
-      }
-    ],
-    "earlier_validation_attempts": {
-      "f2dee268-0edd-4586-9b4b-aa73c41a6474": "Upstream uv manifest HTTP504;no test ran.",
-      "ca6151b5-8b5d-4684-8ff4-d9de756f41fc": "Superseded formatter bytes;only owned preview outer/child cancellation requested.",
-      "5e78e30f-f9c7-4c0c-b432-651590ddc5a3": "Upstream uv manifest HTTP504;no test ran.",
-      "9e3dc620-d191-4b14-9984-8d096584a261": "Previous narrative bytes PASSED and all18 captures reviewed;the final caveat is separately rendered above.",
-      "86785659-b461-4b13-8efd-d17c9f89293f": "Upstream uv manifest HTTP504;no test ran."
-    }
-  },
-  "publication_audit": {
-    "result": "PASSED",
-    "checks": [
-      "19 selected suite heads and mean independently recomputed",
-      "186 green denominator and31 historical dispositions",
-      "Pod overlap and n1 caveat present",
-      "current headline metrics present",
-      "no placeholders",
-      "published/preview HTML exact byte identity",
-      "publication privacy marker scan"
-    ]
-  }
+  "publication_scope": "latency followup and site-wide shared Mantine presentation; other report refreshes have independent manifests.",
+  "report_html_sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+  "evidence_sha256": "5191c5c847a2bce1786b49ce047d50848851951ebd1375bb1fb5d3f2d84e0e1e",
+  "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+  "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
+  "presentation_validation": "../presentation-validation.json",
+  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
+  "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10",
+  "followup_assembled_at_utc": "2026-11-09T08:28:45.720584+00:00",
+  "published_at_semantics": "Original cohort publication clock;the read-only infrastructure follow-up and presentation update have separate clocks.",
+  "source_recheck_paths": [
+    "agentplane/system_tests/k3s/baseline.py",
+    "devinfra/buildbuddy/kvm/worker/executor.yaml"
+  ]
 }

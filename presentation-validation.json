@@ -31,13 +31,18 @@
     "All HTML byte hashes checked inside RBE"
   ],
   "files": {
+    "index.html": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
     "reliability/index.html": "9833d1fc711fdbe80d912dff71990a342925dfc8a77637b4e2dd200f9d542ba3",
+    "latency/index.html": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
     "bazel-audit/index.html": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+    "fixture-model-audit/index.html": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
     "agentplane-protocol-shapes/index.html": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
+    "storage/index.html": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+    "visual-reliability/index.html": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
     "report.css": "182c584b6e94cec724bbb45437fdec08662b5e2b2f71ca7f5e46abd0676fd79a",
     "report.js": "6a7d2c84cecfa6d9d6f4a48368f41f3d9ec021ca58a8941cea1a9c0f3a7c7634"
   },
-  "manual_review": "All desktop/mobile/light/dark captures for these three reports reviewed as part of the passing32-case site preview.",
+  "manual_review": "All80 screenshots reviewed via7 labeled contact sheets:32 first screens,material report sections,and desktop/mobile captures of all four elapsed-span timelines. Both themes readable;internal table/chart horizontal scrolling is intentional.",
   "earlier_attempts": {
     "c7f0e306-e0bb-4f0b-8c1d-339c9d9e2879": "28 passed;home module path fixed.",
     "e2c4ef77-81c4-4fbe-8fe5-16888cd2ff02": "32 passed;before final per-action-root explanation and contrast adjustment.",
@@ -47,10 +52,87 @@
   "reviewed_at_utc": "2026-11-09T08:28:43.833238+00:00",
   "report_hash_receipts": [
     {
+      "report": "visual-reliability",
+      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
       "report": "agentplane-protocol-shapes",
       "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
       "cdn_loaded": true,
       "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "fixture-model-audit",
+      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "fixture-model-audit",
+      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "visual-reliability",
+      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "home",
+      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "storage",
+      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "storage",
+      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+      "cdn_loaded": true,
+      "theme": "light",
       "viewport": {
         "width": 1280,
         "height": 900
@@ -69,6 +151,17 @@
       "live_theme_change": true
     },
     {
+      "report": "home",
+      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
       "report": "agentplane-protocol-shapes",
       "sha256": "95e97f1bfa642638c08a21398c2996e5e3f01a8c4eafee329ad50a5a5e172566",
       "cdn_loaded": true,
@@ -113,8 +206,52 @@
       "live_theme_change": true
     },
     {
+      "report": "home",
+      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
       "report": "bazel-audit",
       "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "storage",
+      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "latency",
+      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "latency",
+      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
       "cdn_loaded": true,
       "theme": "light",
       "viewport": {
@@ -131,6 +268,17 @@
       "viewport": {
         "width": 1280,
         "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "storage",
+      "sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
       },
       "live_theme_change": true
     },
@@ -157,10 +305,87 @@
       "live_theme_change": true
     },
     {
+      "report": "visual-reliability",
+      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "fixture-model-audit",
+      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "latency",
+      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "latency",
+      "sha256": "7a1d0be323e435f05e5b6a4ed4e9daf945d0359e50a95ebed7d8a34daee6e88d",
+      "cdn_loaded": true,
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
       "report": "bazel-audit",
       "sha256": "516f683ab3924afb210f4bb357df1f7db4149c51ae59315624d3ad37f35b59a1",
       "cdn_loaded": true,
       "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "home",
+      "sha256": "fb9438f47f5b91ee2137e5fab1c038c4050952caa388b8cc594e78e00a290167",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "fixture-model-audit",
+      "sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+      "cdn_loaded": true,
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "live_theme_change": true
+    },
+    {
+      "report": "visual-reliability",
+      "sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+      "cdn_loaded": true,
+      "theme": "dark",
       "viewport": {
         "width": 1280,
         "height": 900
@@ -181,6 +406,16 @@
   ],
   "screenshot_sha256": [
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "feedback",
+      "sha256": "dcf86793e0c2ba22cb099c336426dff97af289d1ff5ac308eefc4a3073c509f6"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-1",
+      "sha256": "100b4d563776f4881f210e9cb8f627e49916c32c657013595d90f103177bdb7e"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
       "checkpoint": "first-screen",
       "sha256": "45618f77c512a9979b047c65657369cab88356de5293b7b61b13253bf8535eeb"
@@ -196,9 +431,64 @@
       "sha256": "7857219a23345af6198b2ad6a65cc49a097cbb7ff868d7958a33fd238fa48deb"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-home]",
+      "checkpoint": "first-screen",
+      "sha256": "d10a191810b2832127b5ae7b83f00117060ecd9c8889f7bee1e8d110b5e1878d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-home]",
+      "checkpoint": "first-screen",
+      "sha256": "40dfbc9e16b82423d9d4f55eb0f7b69e4d79dc9e4bedd50097f4a24a827445f6"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "inventory",
+      "sha256": "389993fb052768be3f760b8e523c9fad95ae7d37ca4315e831919807c232a7e3"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-agentplane-protocol-shapes]",
       "checkpoint": "first-screen",
       "sha256": "7b6b60068d35ab6cffdce29e0c665da58d9b44e7cbfbc5625e914e524c590486"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "sha256": "9bb68970eacceaa7c0de686122b669d760121507f93200ac3548fd761eb97a42"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "first-screen",
+      "sha256": "3b7c2a058128c2f7e0491a5d2fb92e42b088b02524ee9ecc4cc35399eb8864d3"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "system-tests",
+      "sha256": "8debe9490fd70dbcc9c3a548690fc5b203061ad31983c709681184df6b9bf62b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "6f6b1f31af88ddb3d01fe43183683cac73cc9b609b7881faa0dee3c879fbdbcf"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "first-screen",
+      "sha256": "9eb1abd54242ac7ab47508389e6975af221457da6ee4e3d5f6b914cc86325f88"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "inventory",
+      "sha256": "af34c9393f900a0c0247840ac816e5c22c1a5257bb2297ad2186fec398b71b50"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-1",
+      "sha256": "1488acd6dcbdb253c8dcdfa0f2f1c7fff4ad21ed74d40eb10420a62e901253ab"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "first-screen",
+      "sha256": "6aa4c2def95084eaf8197cb9fe4ed244670fe879b7a7157f3f4de02e0014a711"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-bazel-audit]",
@@ -206,14 +496,79 @@
       "sha256": "570762f2945fb68527bf2b0fce45ab20d7062b15ddf813360370a0710fc0743a"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "inventory",
+      "sha256": "01aba9446cb4f2cdefa022e7a7ab06ca8886f2112aa3a88667bb2a669f5e88dc"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-home]",
+      "checkpoint": "first-screen",
+      "sha256": "6d868985a4b12081f5852bbc7eba63f54515817c348e65fa9f9bf8537db51f9f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "sha256": "db3d4decda9cefb3444b6bb83b34647169af9c3780917bd1b90a1e74f4ff4fb1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-storage]",
+      "checkpoint": "decisions",
+      "sha256": "8dbc38313f6f3caae05b6343a2020de87920b44ce3da1adec990d02b218f8e4c"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "inventory",
+      "sha256": "9a20ed9df14bf5d456ef53197c17b9eee13597f1390e714faefa78795123e931"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-0",
+      "sha256": "ad53c14e9837e30b91661ae4c7ca3b8450fd67ee676bf9277260bf7bfcfd3046"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "first-screen",
+      "sha256": "03e774befb7ffe9668e1f907bf026b07b2da36ea7f03f7a2387413b0ce8960f3"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "options",
+      "sha256": "ec95e9a4536f98a695a8fdf6acda10a3898753f1c62b9c74af887b356ad2b8d4"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-2",
+      "sha256": "57d33b05dac322fb2a9b3cfa0d7d95ad8d1129f50f6dd4bfb2a0b8a13f1e1c7d"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "decisions",
+      "sha256": "5bc15d88d98fc7321afb48f91b9d8103e23392b687f258726d77fc610ca392ff"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
       "checkpoint": "first-screen",
       "sha256": "ee18d7c51c69e5959379ee2a3201cab9a7cad781da7cff9e54cb35a7387f6173"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "sha256": "fde87b5602787382520fa5c8b9800618ed8e450c907a56d7a12493bcf7f194a9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "sha256": "717e54573f3bc740e7ed93b9b2a55e596aa9d3987452dfd546bd9fc0c0340aa3"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
       "checkpoint": "population",
       "sha256": "3e9528d45fbd201d4e5e7e13f6561d9025b34102d161d2e8110a2df868617a43"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "a78f2c4a1ca10a0b5279bb7aaa80102011f4e8589d6da153a252dc2fff9328f4"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-bazel-audit]",
@@ -231,9 +586,34 @@
       "sha256": "7c29b1f836d217df3c55aac534e94e2cb1ce5fd10b5008a313ec0e5c71bcdd04"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-3",
+      "sha256": "011049467c5af4c1babb44214609ac15bf2fc6c83f5581f9d1acd95fc1840af9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "first-screen",
+      "sha256": "7e216cf8e00ac4bc8ad221ccd323dfd520a0d98c21d56a33b075442655d1bcea"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "feedback",
+      "sha256": "97194a15703c9e448e6309a05f776203c399c948d8b2979a67b8e4e18798e1e0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-storage]",
+      "checkpoint": "decisions",
+      "sha256": "194abcdee2ecfd72d685387290d51ce5d829f9f4072a20eb86988fbbd174b4f2"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-bazel-audit]",
       "checkpoint": "first-screen",
       "sha256": "29e180726d8209c691010125b5468b32fa564cbb1c94842bf6626de30dec82e1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "feedback",
+      "sha256": "11545da619e89edf4bb5915eb4a22540fa216485600077776bdcbfbc64a24135"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
@@ -246,9 +626,34 @@
       "sha256": "fa7b2173563bfe11ede3f72d42f1f24d8c4218024e06534fa732a6f3b2f2ec3e"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "37e65936a12ce4aac3c86319eab9c3d121c73f6addce78456e94a409370b6299"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-storage]",
+      "checkpoint": "first-screen",
+      "sha256": "d8301e4ea600b5e25a9355385406a7ce4e8da1341d458986bd773398c87986dc"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "sha256": "8417dbbdc9db4d33979d15b450bf05fd7529962c50f0d8f52c56f65e6196481d"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
       "checkpoint": "population",
       "sha256": "f8de7fe236810b18f9067d6866f54a90bfd35f2d774caeb6d466c338d7d7eaf9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "first-screen",
+      "sha256": "530782fe22d5236018f689ee6afe4aa890026eab521e2e00cc01552e3b5d33b1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-3",
+      "sha256": "d6b760ac52f0e491aca832e172fe034b063fe0fa752df2c28d094b11cce9a649"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-agentplane-protocol-shapes]",
@@ -276,9 +681,29 @@
       "sha256": "5d1670d993aa13dbf13ee50a502822c818d5d2c45487ac909fb4919b5995ba11"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-storage]",
+      "checkpoint": "decisions",
+      "sha256": "af620e19c85417f78e6c6f2906fa4991a69ea8df3b390f1f9da8fed5fa7ff97b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "system-tests",
+      "sha256": "92c935a499514451e5d86d4a9313b19781a8f58f105527aa8e61425269955bab"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-bazel-audit]",
       "checkpoint": "first-screen",
       "sha256": "0adb6ecc34c5e4f819847cd68dcd0a55af6538944115b20a84d9376502fdb246"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-latency]",
+      "checkpoint": "options",
+      "sha256": "46380de37e3d3886e9f45926569ad6629ea3243d86facab739b57abdf580bc96"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "system-tests",
+      "sha256": "a66b6e121bb36640ec25aef4b836056dbf28f0c2ffbf2e683495fda3f4b3054b"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-agentplane-protocol-shapes]",
@@ -286,9 +711,29 @@
       "sha256": "16f4c05934cf9fb26809bb2d73cbbe76500a768319ee624a460d2d07885576ed"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "first-screen",
+      "sha256": "9607ab9dcb5b435a5ce8beb28cc30554f935830ffaa4b9740c3ea9174a4b2513"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-visual-reliability]",
       "checkpoint": "open-title",
       "sha256": "86a1b6d09b2265a2a076353baa047b52236cc90c759b4f7804f728c84fda944b"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "sha256": "42d02f9f69a9451410c1a552169356b9c727841459c8c634662eb078046a8fc7"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "trace-2",
+      "sha256": "85047278fe34298cea66aa689f2afbe3c9abc7ea5eec5184114f460e37cf205e"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "checkpoint": "first-screen",
+      "sha256": "4f0c78ea74df65ea8b5a7f8c6ffb88be58941dcadffbd8ee73e081f66d41208b"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-reliability]",
@@ -301,9 +746,19 @@
       "sha256": "f0a48706d779937b3359dcf537bf8f89861bcb4f6fae46906895f89db1e29ada"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "feedback",
+      "sha256": "3e73255585c5cf37aea4a47f71aca9e3a96e01c18835717f00c683730bd5c352"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-reliability]",
       "checkpoint": "population",
       "sha256": "91147212158ff4f8df326c1c092758ecc832e079ebecf8779d7572e0444368e8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "options",
+      "sha256": "b0564636b6d756ba47fda348426e1e0b9e29889b1cebf2d33dfb5a5a4e9a90bb"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-mobile-reliability]",
@@ -311,15 +766,44 @@
       "sha256": "c698cb69e198d67850c3742f5ca1c5109a1da0dc72b08cd26882d88b926d7c04"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "options",
+      "sha256": "6a62705b4d419515aeba4ae53a15e8ae56806a1abca547591fe5b8d0fc93bc85"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-latency]",
+      "checkpoint": "trace-0",
+      "sha256": "e5f1e6fe0ee18e07dce1b2d0934836237f6b3ed8848ab97beae229c40c3b4156"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-reliability]",
       "checkpoint": "first-screen",
       "sha256": "8505784cadcd819a20dbadc6af4b2ee1f95fde93fd9e488439cc153e26c7d2ac"
     },
     {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-desktop-fixture-model-audit]",
+      "checkpoint": "open-title",
+      "sha256": "fc8b4bb537636138b3c3c8eb0844adba48602f700cdbba49ccab56877ad3ed50"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-latency]",
+      "checkpoint": "system-tests",
+      "sha256": "c2ff1cb08f14cde8d15dc292f63637a3cacece50f425ccc9acfbaf5217ff66aa"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-latency]",
+      "checkpoint": "dedicated-kvm-capacity",
+      "sha256": "bec515b28a4f112addf045de4a15f84fc6b23f062aae06fdf48bd264c3f88d0c"
+    },
+    {
       "case_id": "x/ci_reports_preview/test_reports.py::test_report[dark-desktop-visual-reliability]",
       "checkpoint": "open-title",
       "sha256": "850d05f0f43de2ce445c73c445a2979d42fa85e7289a57a5a645998cf4e0ccef"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_report[light-mobile-home]",
+      "checkpoint": "first-screen",
+      "sha256": "6fea9d13a545346b14a19a4fba3b42c9de136f4d4754c8943bfb80bf624fcaf9"
     }
-  ],
-  "scope": "Shared assets and three presentation-only reports in this lower layer. The dependent report refresh adds the home page and other four reports."
+  ]
 }

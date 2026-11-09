@@ -4,155 +4,184 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ducktape reports</title>
+
+    <meta name="color-scheme" content="light dark" />
     <link
       rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/picocss/2.0.6/pico.min.css"
+      href="https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      integrity="sha384-i9tDmARQSxqmzSCjbU/VkZGPbv8PjopI///D0KBD2i8+Y/wjaqYR8TDcV69RytF8"
+      crossorigin="anonymous"
     />
-    <style>
-      .reports {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 1rem;
+    <link rel="stylesheet" href="report.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.3.0?target=es2022",
+          "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+          "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+          "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
+        }
       }
-      .reports article {
-        margin: 0;
-      }
-      .reports small {
-        display: block;
-        color: var(--pico-muted-color);
-      }
-    </style>
+    </script>
+    <script>
+      document.documentElement.dataset.mantineColorScheme = matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
   </head>
   <body>
-    <main class="container">
-      <header>
-        <h1>Ducktape reports</h1>
-        <p>
-          Latest-only snapshots served by GitHub Pages at
-          <a href="https://agentydragon.github.io/ducktape/"
-            >agentydragon.github.io/ducktape</a
-          >, published from the
-          <a href="https://github.com/agentydragon/ducktape/tree/gh-pages"
-            ><code>gh-pages</code></a
-          >
-          branch. CI reports include their reviewed measurements as
-          <code>evidence.json</code> and source commit and observation window in
-          <code>manifest.json</code>. Other reports describe their scope and
-          dates on the page. Earlier versions are in the branch's git history.
-        </p>
-      </header>
-      <section class="reports">
-        <article>
-          <h2><a href="latency/">Latency</a></h2>
+    <div id="report-content">
+      <main class="container">
+        <header>
+          <h1>Ducktape reports</h1>
           <p>
-            Required-check feedback proxies, test and fixture internals, real
-            execution profiles, controlled experiments, and ranked
-            interventions.
+            Latest-only snapshots served by GitHub Pages at
+            <a href="https://agentydragon.github.io/ducktape/"
+              >agentydragon.github.io/ducktape</a
+            >, published from the
+            <a href="https://github.com/agentydragon/ducktape/tree/gh-pages"
+              ><code>gh-pages</code></a
+            >
+            branch. CI reports include their reviewed measurements as
+            <code>evidence.json</code> and source commit and observation window
+            in <code>manifest.json</code>. Other reports describe their scope
+            and dates on the page. Earlier versions are in the branch's git
+            history.
           </p>
-          <small data-manifest="latency/manifest.json"></small>
+        </header>
+        <section class="grid">
+          <article>
+            <h2><a href="latency/">Latency</a></h2>
+            <p>
+              Required-check feedback proxies, test and fixture internals, real
+              execution profiles, controlled experiments, and ranked
+              interventions.
+            </p>
+            <small data-manifest="latency/manifest.json"></small>
+            <p>
+              <a href="latency/evidence.json">evidence</a> ·
+              <a href="latency/manifest.json">manifest</a>
+            </p>
+          </article>
+          <article>
+            <h2><a href="reliability/">Reliability</a></h2>
+            <p>
+              Flakes API samples, non-green merge checks, physical execution
+              provenance, causal failure timelines, and repair validation.
+            </p>
+            <small data-manifest="reliability/manifest.json"></small>
+            <p>
+              <a href="reliability/evidence.json">evidence</a> ·
+              <a href="reliability/manifest.json">manifest</a>
+            </p>
+          </article>
+          <article>
+            <h2><a href="visual-reliability/">Visual reliability</a></h2>
+            <p>
+              Inspected gallery images, viewport identity, browser fixture
+              failures, baseline provenance, and unchanged-source repeats.
+            </p>
+            <small data-manifest="visual-reliability/manifest.json"></small>
+            <p>
+              <a href="visual-reliability/evidence.json">evidence</a> ·
+              <a href="visual-reliability/manifest.json">manifest</a>
+            </p>
+          </article>
+          <article>
+            <h2><a href="bazel-audit/">Bazel build audit</a></h2>
+            <p>
+              Target graph, package ownership, unused wrappers, naming and lint
+              wiring, with prioritized refactoring candidates.
+            </p>
+            <small
+              >Source review: 79a2524e7f · 4 November PST / 5 November
+              UTC</small
+            >
+            <p><a href="bazel-audit/evidence.json">evidence</a></p>
+          </article>
+          <article>
+            <h2><a href="storage/">Cluster storage</a></h2>
+            <p>
+              Current SeaweedFS bucket inventory, S3 consumers, PostgreSQL
+              backup choices, and storage alternatives.
+            </p>
+            <small
+              >Live read: 9 November UTC; resource-reported usage ages
+              vary.</small
+            >
+            <p>
+              <a href="storage/evidence.json">evidence</a> ·
+              <a href="storage/manifest.json">manifest</a>
+            </p>
+          </article>
+          <article>
+            <h2><a href="fixture-model-audit/">Fixture and model audit</a></h2>
+            <p>
+              Open risks in preview fixtures, generated-client adapters, test
+              projections, and shared configuration.
+            </p>
+            <small>Source review: 69f35d736d · 9 November UTC.</small>
+            <p>
+              <a href="fixture-model-audit/evidence.json">evidence</a> ·
+              <a href="fixture-model-audit/manifest.json">manifest</a>
+            </p>
+          </article>
+          <article>
+            <h2>
+              <a href="agentplane-protocol-shapes/"
+                >Agentplane protocol shapes</a
+              >
+            </h2>
+            <p>
+              Open typed-presence, adapter mapping, config parity, policy
+              vocabulary, and telemetry contracts.
+            </p>
+            <small
+              >Source review: 79a2524e7f · 4 November PST / 5 November
+              UTC.</small
+            >
+          </article>
+        </section>
+        <footer>
           <p>
-            <a href="latency/evidence.json">evidence</a> ·
-            <a href="latency/manifest.json">manifest</a>
+            <small
+              >Collection and publication tools live on
+              <a
+                href="https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency"
+                >devel</a
+              >. The site redeploys when <code>gh-pages</code> changes.</small
+            >
           </p>
-        </article>
-        <article>
-          <h2><a href="reliability/">Reliability</a></h2>
-          <p>
-            Flakes API samples, non-green merge checks, physical execution
-            provenance, causal failure timelines, and repair validation.
-          </p>
-          <small data-manifest="reliability/manifest.json"></small>
-          <p>
-            <a href="reliability/evidence.json">evidence</a> ·
-            <a href="reliability/manifest.json">manifest</a>
-          </p>
-        </article>
-        <article>
-          <h2><a href="visual-reliability/">Visual reliability</a></h2>
-          <p>
-            Inspected gallery images, viewport identity, browser fixture
-            failures, baseline provenance, and unchanged-source repeats.
-          </p>
-          <small data-manifest="visual-reliability/manifest.json"></small>
-          <p>
-            <a href="visual-reliability/evidence.json">evidence</a> ·
-            <a href="visual-reliability/manifest.json">manifest</a>
-          </p>
-        </article>
-        <article>
-          <h2><a href="bazel-audit/">Bazel build audit</a></h2>
-          <p>
-            Target graph, package ownership, unused wrappers, naming and lint
-            wiring, with prioritized refactoring candidates.
-          </p>
-          <small
-            >Source review: 79a2524e7f · 4 November PST / 5 November UTC</small
-          >
-          <p><a href="bazel-audit/evidence.json">evidence</a></p>
-        </article>
-        <article>
-          <h2><a href="storage/">Cluster storage</a></h2>
-          <p>
-            Current SeaweedFS bucket inventory, S3 consumers, PostgreSQL backup
-            choices, and storage alternatives.
-          </p>
-          <small
-            >Live read: 4 November PST / 5 November UTC · last-reported bucket
-            usage varies by resource.</small
-          >
-        </article>
-        <article>
-          <h2><a href="fixture-model-audit/">Fixture and model audit</a></h2>
-          <p>
-            Open risks in preview fixtures, generated-client adapters, test
-            projections, and shared configuration.
-          </p>
-          <small
-            >Source review: 79a2524e7f · 4 November PST / 5 November UTC.</small
-          >
-        </article>
-        <article>
-          <h2>
-            <a href="agentplane-protocol-shapes/">Agentplane protocol shapes</a>
-          </h2>
-          <p>
-            Open typed-presence, adapter mapping, config parity, policy
-            vocabulary, and telemetry contracts.
-          </p>
-          <small
-            >Source review: 79a2524e7f · 4 November PST / 5 November UTC.</small
-          >
-        </article>
-      </section>
-      <footer>
-        <p>
-          <small
-            >Collection and publication tools live on
-            <a
-              href="https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency"
-              >devel</a
-            >. The site redeploys when <code>gh-pages</code> changes.</small
-          >
-        </p>
-      </footer>
-    </main>
-    <script>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="report.js"></script>
+    <script type="module">
+      import "./report.js";
+
       document.querySelectorAll("[data-manifest]").forEach(function (el) {
         fetch(el.dataset.manifest)
           .then(function (r) {
             return r.json();
           })
           .then(function (m) {
-            el.textContent =
-              "Window " +
-              m.window_start_utc +
-              " → " +
-              m.window_end_utc +
-              " · devel " +
-              m.source_devel_commit.slice(0, 10) +
-              " · published " +
-              m.published_at_utc.slice(0, 16) +
-              "Z";
+            el.textContent = m.audited_at_utc
+              ? "Reviewed " +
+                m.audited_at_utc +
+                " · devel " +
+                m.source_devel_commit.slice(0, 10)
+              : "Window " +
+                m.window_start_utc +
+                " → " +
+                m.window_end_utc +
+                " · devel " +
+                m.source_devel_commit.slice(0, 10) +
+                " · published " +
+                m.published_at_utc.slice(0, 16) +
+                "Z";
           })
           .catch(function () {});
       });

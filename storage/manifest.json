@@ -1,0 +1,13 @@
+{
+  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+  "previous_report_commit": "7d68d5d4dae9ca84be973ac8686125371446597d",
+  "snapshot_bucket_response_written_at_utc": "2026-11-09T07:52:12.402236+00:00",
+  "snapshot_pools_last_response_written_at_utc": "2026-11-09T07:54:15.566889+00:00",
+  "request_start_clock": "Not retained",
+  "assembled_at_utc": "2026-11-09T07:58:35.452343+00:00",
+  "scope": "Read-only inventory38BucketCRs,23CNPGclusters,20latestactivebackups,2cachePVCs,6thin-pools;productresearchchecksandretirementdispositions.",
+  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
+  "report_html_sha256": "d2962d48f71e8e49019fd7a88a2a8f8bd28212e1776a59178b9da498a8d13647",
+  "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
+  "presentation_validation": "../presentation-validation.json"
+}

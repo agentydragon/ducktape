@@ -1,0 +1,18 @@
+{
+  "report": "fixture-model-audit",
+  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+  "audited_at_utc": "2026-11-09T08:07:23Z",
+  "previous_report_commit": "552b8b2af66bc6cd94c30777f4594988a92bc5ca",
+  "evidence_file": "evidence.json",
+  "summary": "Seven current source-backed coverage or maintenance opportunities; no behavior failure or recurrence claim.",
+  "limits": [
+    "Selected static source inspection only.",
+    "No focused tests or live runtime checks were run on audited source.",
+    "Hosted checks are attached to their listed PR heads."
+  ],
+  "report_html_sha256": "4b26f7a1fbaea071ebc7047aae16ff1b2c8f365609014ed18b3cde62b2894755",
+  "evidence_sha256": "12e704952cae596eba5a3ba44176bbcd48e384ae6b8053d3c86fb5c3fe080deb",
+  "presentation_validation": "../presentation-validation.json",
+  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks.",
+  "source_paths_rechecked_unchanged_through_devel": "241be9c2ca430e69325ccca2ba22f8fc5bb2ae10"
+}

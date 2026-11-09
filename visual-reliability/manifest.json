@@ -1,7 +1,17 @@
 {
-  "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-  "window_start_utc": "2026-10-30T09:29:41Z",
-  "window_end_utc": "2026-10-30T22:09:35Z",
-  "published_at_utc": "2026-10-30T23:27:37.619468+00:00",
-  "attribution": "not collected"
+  "report": "visual-reliability",
+  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+  "audited_at_utc": "2026-11-09T08:07:23Z",
+  "previous_report_commit": "8fa7340f7fd559fef23427953fea5682fa44e190",
+  "evidence_file": "evidence.json",
+  "summary": "One stale open PR requires revalidation; scroll framing and capture identity fixes are closed. Current recurrence absence is not established.",
+  "limits": [
+    "No current-source repeated run or broad fleet test.",
+    "Target history is mixed/cache and physical execution exposure is unknown.",
+    "Prior measurements are preserved with their original source and time window."
+  ],
+  "report_html_sha256": "9cd6eb26231fb613744c3a6e1929fa207d27259f46578c6893821d68868d1a64",
+  "evidence_sha256": "1acc9cdd4a3bd4426cc86e97df55cf3648166fdaa79045f87bd42735202cf680",
+  "presentation_validation": "../presentation-validation.json",
+  "visual_validation": "See shared presentation-validation.json for exact-byte receipts and source-independent rendering checks."
 }

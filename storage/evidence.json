@@ -1,0 +1,969 @@
+{
+  "schema_version": 1,
+  "source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+  "prior_gh_pages_commit": "7d68d5d4dae9ca84be973ac8686125371446597d",
+  "collection_start_utc": null,
+  "assembled_at_utc": "2026-11-09T07:56:19.587155+00:00",
+  "clocks": "Non-atomic read-only inventory. Request-start clocks were not retained. Response-file write clocks bound the observed collection phase;Bucket usage has its own per-item lastUpdated. Pool reads follow the Bucket/backup read.",
+  "buckets": [
+    {
+      "name": "agentplane-staging-db-backups",
+      "resource_namespace": "agentplane-staging",
+      "resource_name": "agentplane-staging-db-backups",
+      "flux_owner": "agentplane-staging-db-backups",
+      "ready": true,
+      "size_bytes": 48201293488,
+      "object_count": 15830,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "atuin-db-backups",
+      "resource_namespace": "atuin",
+      "resource_name": "atuin-db-backups",
+      "flux_owner": "atuin",
+      "ready": true,
+      "size_bytes": 614871520,
+      "object_count": 678,
+      "usage_updated_at": "2026-11-09T04:37:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "authentik-db-backups",
+      "resource_namespace": "authentik",
+      "resource_name": "authentik-db-backups",
+      "flux_owner": "authentik-db-backups",
+      "ready": true,
+      "size_bytes": 10394865784,
+      "object_count": 4471,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "cdviz-db-backups",
+      "resource_namespace": "cdviz",
+      "resource_name": "cdviz-db-backups",
+      "flux_owner": "cdviz-database",
+      "ready": true,
+      "size_bytes": 1758630712,
+      "object_count": 1019,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud PostgreSQL base backups and archived WAL; preserve the recovery chain.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "claude-session-sync-db-backups",
+      "resource_namespace": "claude-session-sync",
+      "resource_name": "claude-session-sync-db-backups",
+      "flux_owner": "claude-session-sync",
+      "ready": true,
+      "size_bytes": 20718134488,
+      "object_count": 9873,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "pr-visuals",
+      "resource_namespace": "flux-system",
+      "resource_name": "pr-visuals",
+      "flux_owner": "seaweedfs-pr-visuals-bucket",
+      "ready": true,
+      "size_bytes": 5608480312,
+      "object_count": 154536,
+      "usage_updated_at": "2026-11-09T07:42:14Z",
+      "backend_assessment": "Code change",
+      "role": "Artifacts",
+      "assessment": "The publisher, baseline reader and retention tools use S3 APIs; filesystem publication would require code and URL changes.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "forgejo",
+      "resource_namespace": "forgejo",
+      "resource_name": "forgejo",
+      "flux_owner": "forgejo",
+      "ready": true,
+      "size_bytes": 97538089496,
+      "object_count": 39577,
+      "usage_updated_at": "2026-11-09T07:42:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Application data",
+      "assessment": "Local filesystem or S3-compatible. Two application replicas need shared access; keep the current backend through the planned Forgejo-to-GitLab migration.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "forgejo-db-backups",
+      "resource_namespace": "forgejo",
+      "resource_name": "forgejo-db-backups",
+      "flux_owner": "forgejo",
+      "ready": true,
+      "size_bytes": 3345063724,
+      "object_count": 4556,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gatus-db-backups",
+      "resource_namespace": "gatus",
+      "resource_name": "gatus-db-backups",
+      "flux_owner": "gatus",
+      "ready": true,
+      "size_bytes": 1497974696,
+      "object_count": 8034,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-artifacts",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-artifacts",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 12544,
+      "object_count": 8,
+      "usage_updated_at": "2026-11-04T06:32:14Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-backup-tmp",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-backup-tmp",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": null,
+      "object_count": null,
+      "usage_updated_at": "2026-10-25T06:40:38Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-backups",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-backups",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 7096496,
+      "object_count": 2,
+      "usage_updated_at": "2026-11-04T06:07:14Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-db-backups",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-db-backups",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 958341248,
+      "object_count": 4443,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-lfs",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-lfs",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 232,
+      "object_count": 1,
+      "usage_updated_at": "2026-11-04T05:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-packages",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-packages",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": null,
+      "object_count": null,
+      "usage_updated_at": "2026-10-25T06:40:38Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-registry",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-registry",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 5552968,
+      "object_count": 24,
+      "usage_updated_at": "2026-11-04T04:17:14Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "gitlab-spike-uploads",
+      "resource_namespace": "gitlab-spike",
+      "resource_name": "gitlab-spike-uploads",
+      "flux_owner": "gitlab-spike-dependencies",
+      "ready": true,
+      "size_bytes": 16224,
+      "object_count": 1,
+      "usage_updated_at": "2026-11-04T04:17:14Z",
+      "backend_assessment": "Object API",
+      "role": "GitLab spike",
+      "assessment": "GitLab Helm deployment uses object storage; keep with the planned Forgejo-to-GitLab migration (#14223).",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "haku-console-db-backups",
+      "resource_namespace": "haku-console",
+      "resource_name": "haku-console-db-backups",
+      "flux_owner": "haku-console",
+      "ready": true,
+      "size_bytes": 6878318664,
+      "object_count": 2076,
+      "usage_updated_at": "2026-11-09T04:32:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "haku-mailbox-db-backups",
+      "resource_namespace": "haku-mailbox",
+      "resource_name": "haku-mailbox-db-backups",
+      "flux_owner": "haku-mailbox",
+      "ready": true,
+      "size_bytes": 1728846992,
+      "object_count": 8234,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "home-assistant-backups",
+      "resource_namespace": "home-assistant",
+      "resource_name": "home-assistant-backups",
+      "flux_owner": "home-assistant",
+      "ready": true,
+      "size_bytes": 3460100,
+      "object_count": 192,
+      "usage_updated_at": "2026-11-09T06:22:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Backup",
+      "assessment": "Restic can use a filesystem, REST, SFTP or S3. Installed VolSync exposes moverVolumes for an additional repository PVC.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "home-assistant-db-backups",
+      "resource_namespace": "home-assistant",
+      "resource_name": "home-assistant-db-backups",
+      "flux_owner": "home-assistant",
+      "ready": true,
+      "size_bytes": 422161120,
+      "object_count": 4734,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "langfuse",
+      "resource_namespace": "langfuse",
+      "resource_name": "langfuse",
+      "flux_owner": "langfuse",
+      "ready": true,
+      "size_bytes": 525172541376,
+      "object_count": 625486,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "Application data",
+      "assessment": "Raw event storage requires an object service. S3-compatible storage is our known self-hosted path.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "langfuse-db-backups",
+      "resource_namespace": "langfuse",
+      "resource_name": "langfuse-db-backups",
+      "flux_owner": "langfuse",
+      "ready": true,
+      "size_bytes": 155491312,
+      "object_count": 440,
+      "usage_updated_at": "2026-11-09T07:37:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "litellm-db-backups",
+      "resource_namespace": "litellm",
+      "resource_name": "litellm-db-backups",
+      "flux_owner": "litellm",
+      "ready": true,
+      "size_bytes": 24556021584,
+      "object_count": 11525,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "loki",
+      "resource_namespace": "loki",
+      "resource_name": "loki",
+      "flux_owner": "loki",
+      "ready": true,
+      "size_bytes": 117858315872,
+      "object_count": 1208114,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Observability",
+      "assessment": "Object stores or filesystem. The current deployment has multiple replicas; upstream does not support filesystem storage for production.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "matrix-db-backups",
+      "resource_namespace": "matrix",
+      "resource_name": "matrix-db-backups",
+      "flux_owner": "matrix",
+      "ready": true,
+      "size_bytes": 442932968,
+      "object_count": 7927,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "mcp-oauth-state-db-backups",
+      "resource_namespace": "mcp-oauth-state",
+      "resource_name": "mcp-oauth-state-db-backups",
+      "flux_owner": "mcp-oauth-state-db",
+      "ready": true,
+      "size_bytes": 214076888,
+      "object_count": 267,
+      "usage_updated_at": "2026-11-09T04:37:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "mimir-blocks",
+      "resource_namespace": "monitoring",
+      "resource_name": "mimir-blocks",
+      "flux_owner": "mimir",
+      "ready": true,
+      "size_bytes": 262302581304,
+      "object_count": 56998,
+      "usage_updated_at": "2026-11-09T07:37:14Z",
+      "backend_assessment": "Object API",
+      "role": "Observability",
+      "assessment": "S3-compatible or self-hosted Swift object storage; filesystem is configurable, but distributed components need the same view.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "mimir-ruler",
+      "resource_namespace": "monitoring",
+      "resource_name": "mimir-ruler",
+      "flux_owner": "mimir",
+      "ready": true,
+      "size_bytes": 208640,
+      "object_count": 74,
+      "usage_updated_at": "2026-11-09T01:47:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Observability",
+      "assessment": "Object-store or filesystem backends; the separate local ruler backend is read-only.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "monitoring-db-backups",
+      "resource_namespace": "monitoring",
+      "resource_name": "monitoring-db-backups",
+      "flux_owner": "grafana-instance",
+      "ready": true,
+      "size_bytes": 3693166668,
+      "object_count": 3922,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "tempo",
+      "resource_namespace": "monitoring",
+      "resource_name": "tempo",
+      "flux_owner": "tempo",
+      "ready": true,
+      "size_bytes": 107700412,
+      "object_count": 434,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Observability",
+      "assessment": "S3-compatible storage or local filesystem. Upstream recommends object storage for production.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "ntfy-db-backups",
+      "resource_namespace": "ntfy",
+      "resource_name": "ntfy-db-backups",
+      "flux_owner": "ntfy",
+      "ready": true,
+      "size_bytes": 341246424,
+      "object_count": 8031,
+      "usage_updated_at": "2026-11-09T07:47:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "plaid-mcp-db-backups",
+      "resource_namespace": "plaid-mcp",
+      "resource_name": "plaid-mcp-db-backups",
+      "flux_owner": "plaid-mcp",
+      "ready": true,
+      "size_bytes": 4157288680,
+      "object_count": 1618,
+      "usage_updated_at": "2026-11-09T01:37:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "public-coder-agent-backups",
+      "resource_namespace": "public-coder-agent",
+      "resource_name": "public-coder-agent-backups",
+      "flux_owner": "public-coder-agent-backup",
+      "ready": true,
+      "size_bytes": 15771669168,
+      "object_count": 4673,
+      "usage_updated_at": "2026-11-04T04:17:14Z",
+      "backend_assessment": "Filesystem option",
+      "role": "Parked backup",
+      "assessment": "Restic supports local filesystem, REST, SFTP and S3. Current VolSync source is paused; retain the repository and password.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "drivefs-artifacts",
+      "resource_namespace": "seaweedfs",
+      "resource_name": "drivefs-artifacts",
+      "flux_owner": "seaweedfs-drivefs-artifacts-bucket",
+      "ready": true,
+      "size_bytes": 90008696,
+      "object_count": 19,
+      "usage_updated_at": "2026-11-04T04:17:14Z",
+      "backend_assessment": "Unknown",
+      "role": "Artifacts",
+      "assessment": "External credentials and consumers exist. The full producer set and supported non-S3 options remain unverified.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "loom-gym",
+      "resource_namespace": "seaweedfs",
+      "resource_name": "loom-gym",
+      "flux_owner": "seaweedfs-loom-gym-bucket",
+      "ready": true,
+      "size_bytes": 1238992568,
+      "object_count": 153,
+      "usage_updated_at": "2026-11-04T04:17:14Z",
+      "backend_assessment": "Code change",
+      "role": "Artifacts",
+      "assessment": "Custom clients currently access S3. A filesystem or alternate artifact service requires client changes.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "study-casino-db-backups",
+      "resource_namespace": "study-casino",
+      "resource_name": "study-casino-db-backups",
+      "flux_owner": "study-casino",
+      "ready": true,
+      "size_bytes": 167818616,
+      "object_count": 698,
+      "usage_updated_at": "2026-11-09T06:02:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    },
+    {
+      "name": "tofu-state-db-backups",
+      "resource_namespace": "tofu-state",
+      "resource_name": "tofu-state-db-backups",
+      "flux_owner": "tofu-state-db",
+      "ready": true,
+      "size_bytes": 190369480,
+      "object_count": 250,
+      "usage_updated_at": "2026-11-09T04:12:14Z",
+      "backend_assessment": "Object API",
+      "role": "CNPG backup",
+      "assessment": "Barman Cloud base backups and WAL use S3-compatible object storage here. CNPG snapshots are a separate backup design.",
+      "assessment_scope": "Existing client/backend classification retained from the pinned previous report,checked against current configuration; not an alternative-backend migration proof."
+    }
+  ],
+  "removed_bucket_resources": [
+    "nix-cache-db-backups",
+    "session-backup-db-backups"
+  ],
+  "added_bucket_resources": ["cdviz-db-backups"],
+  "bucket_removal_dispositions": {
+    "nix-cache-db-backups": "Intentional retirement of rebuildable cache DB backups;#14955 and identity cleanup#14993;Bucket absent in current read.",
+    "session-backup-db-backups": "Disposable Restic-derived projection;#14953/#14956;Bucket absent in current read."
+  },
+  "cnpg": [
+    {
+      "namespace": "agentplane-staging",
+      "name": "postgres",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T02:49:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "atuin",
+      "name": "atuin-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:33:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "authentik",
+      "name": "authentik-db-ovh",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:37:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "cdviz",
+      "name": "db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:37:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "claude-session-sync",
+      "name": "claude-session-sync-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-08T18:17:09Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "forgejo",
+      "name": "forgejo-db-ssd",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:16:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "gatus",
+      "name": "gatus-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:23:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "gitlab-spike",
+      "name": "gitlab-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:33:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "haku-console",
+      "name": "haku-console-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:29:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "haku-mailbox",
+      "name": "haku-mailbox-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:00:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "home-assistant",
+      "name": "home-assistant-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T03:19:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "langfuse",
+      "name": "langfuse-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T02:51:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "litellm",
+      "name": "litellm-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:22:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "matrix",
+      "name": "matrix-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:08:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "mcp-oauth-state",
+      "name": "mcp-oauth-state-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:34:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "monitoring",
+      "name": "grafana-db-ovh",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T02:53:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "nix-cache",
+      "name": "attic-db",
+      "barman_wal_archiver": false,
+      "continuous_archiving": "True",
+      "latest_backup": null,
+      "durability_note": "Disposable Nix cache metadata;backup retirement landed#14955."
+    },
+    {
+      "namespace": "ntfy",
+      "name": "ntfy-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T02:31:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "plaid-mcp",
+      "name": "plaid-mcp-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:34:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "seaweedfs",
+      "name": "seaweedfs-filer-db-ssd",
+      "barman_wal_archiver": false,
+      "continuous_archiving": "True",
+      "latest_backup": null,
+      "durability_note": "No Barman plugin in this Cluster;separate filer recovery coverage requires its own verification."
+    },
+    {
+      "namespace": "session-backup",
+      "name": "session-archive-db",
+      "barman_wal_archiver": false,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-08T06:35:18Z",
+        "phase": "failed",
+        "method": "plugin"
+      },
+      "durability_note": "Restic-derived rebuildable projection;backup retirement#14953/#14956."
+    },
+    {
+      "namespace": "study-casino",
+      "name": "study-casino-db",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T01:27:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    },
+    {
+      "namespace": "tofu-state",
+      "name": "tofu-state-db-ovh",
+      "barman_wal_archiver": true,
+      "continuous_archiving": "True",
+      "latest_backup": {
+        "created_at": "2026-11-09T04:08:00Z",
+        "phase": "completed",
+        "method": "plugin"
+      },
+      "durability_note": null
+    }
+  ],
+  "cache_pvcs": [
+    {
+      "namespace": "nix-cache",
+      "name": "attic-local-storage",
+      "storage_class": "piraeus-hdd-2",
+      "phase": "Bound",
+      "capacity": "100Gi",
+      "used_bytes": null
+    },
+    {
+      "namespace": "oci-cache",
+      "name": "zot-cache",
+      "storage_class": "piraeus-hdd-2",
+      "phase": "Bound",
+      "capacity": "100Gi",
+      "used_bytes": null
+    }
+  ],
+  "cache_workloads": [
+    {
+      "namespace": "oci-cache",
+      "name": "zot",
+      "desired_replicas": 1,
+      "ready_replicas": 1
+    },
+    {
+      "namespace": "nix-cache",
+      "name": "attic-next",
+      "desired_replicas": 1,
+      "ready_replicas": 1
+    }
+  ],
+  "volume_snapshot_class_count": 0,
+  "thin_pools": [
+    {
+      "node": "ovh-ns1001419",
+      "pool": "piraeus_ssd",
+      "capacity_bytes": 503517806592,
+      "data_percent": 22.85,
+      "metadata_percent": 1.33
+    },
+    {
+      "node": "ovh-ns102453",
+      "pool": "piraeus_hdd",
+      "capacity_bytes": 3992193073152,
+      "data_percent": 42.31,
+      "metadata_percent": 15.19
+    },
+    {
+      "node": "ovh-ns103656",
+      "pool": "piraeus_hdd",
+      "capacity_bytes": 1987512893440,
+      "data_percent": 57.03,
+      "metadata_percent": 10.02
+    },
+    {
+      "node": "ovh-ns103711",
+      "pool": "piraeus_hdd",
+      "capacity_bytes": 1991807860736,
+      "data_percent": 59.01,
+      "metadata_percent": 10.4
+    },
+    {
+      "node": "ovh-ns104952",
+      "pool": "piraeus_ssd",
+      "capacity_bytes": 441505021952,
+      "data_percent": 29.01,
+      "metadata_percent": 1.39
+    },
+    {
+      "node": "ovh-ns104963",
+      "pool": "piraeus_ssd",
+      "capacity_bytes": 441505021952,
+      "data_percent": 13.76,
+      "metadata_percent": 0.9
+    }
+  ],
+  "seaweed_components": {
+    "admin": {},
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-11-07T23:39:35Z",
+        "message": "Seaweed cluster is ready",
+        "observedGeneration": 49,
+        "reason": "Ready",
+        "status": "True",
+        "type": "Ready"
+      }
+    ],
+    "filer": {
+      "readyReplicas": 2,
+      "replicas": 2
+    },
+    "master": {
+      "readyReplicas": 3,
+      "replicas": 3
+    },
+    "observedGeneration": 49,
+    "s3": {
+      "readyReplicas": 2,
+      "replicas": 2
+    },
+    "sftp": {},
+    "volume": {
+      "readyReplicas": 6,
+      "replicas": 6
+    },
+    "worker": {}
+  },
+  "limits": [
+    "Bucket CR inventory is not an exhaustive list of physical buckets or external readers.",
+    "Ready and a completed Backup object do not prove recoverability;no restore performed.",
+    "No unreferenced-data deletion,compaction,trim,migration or capacity change performed.",
+    "Thin pool allocation is shared by workloads;logical bucket bytes and physical reclaim are separate.",
+    "Alternative-product research retained in pinned history;no new product deployment/benchmark.",
+    "Raw payloads,privatevolumeidentities and credentials remain local."
+  ],
+  "bucket_response_file_written_at_utc": "2026-11-09T07:52:12.402236+00:00",
+  "pool_response_last_written_at_utc": "2026-11-09T07:54:15.566889+00:00",
+  "current_followups": {
+    "attic_refill": {
+      "closedAt": null,
+      "number": 13704,
+      "state": "OPEN",
+      "title": "Make GitHub Attic refill fit available build storage",
+      "url": "https://github.com/agentydragon/ducktape/issues/13704"
+    },
+    "gitlab_plan": {
+      "mergedAt": "2026-11-04T20:10:44Z",
+      "number": 14223,
+      "state": "MERGED",
+      "title": "Plan Forgejo to GitLab migration and record preflights",
+      "url": "https://github.com/agentydragon/ducktape/pull/14223"
+    },
+    "forgejo_ready_replicas": 2
+  },
+  "product_research": {
+    "checked_at_utc": "2026-11-09T07:58:35.451564+00:00",
+    "klio": "Official E2E docs label experimental;no new pilot.",
+    "garage": "Official configuration supports multiple data directories;block placement owned by Garage.",
+    "versitygw": "Official POSIX docs map object operations to filesystem paths;no client-compatibility/reclaim pilot."
+  },
+  "prior_topics": {
+    "completed": "Zot/Attic S3 cache migrations remain closed;two disposable database backup retirements removed from active list.",
+    "retained": "DurableLangfuse,observability,20CNPG backup paths;GitHubAtticrefill;Forgejo-to-GitLab consumer/data cutover.",
+    "physical_reclaim": "Currentlvsallocationmeasured;oldcontrolledreclaimexperimentsremainhistorical;no newtreatmentattribution.",
+    "other_products": "Swift,Ceph,MinIO/AIStor,RustFS,pgBackRest,logicaldumpcomparisons and Klio examples remain in pinned report;not rebenchmarked."
+  }
+}
