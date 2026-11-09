@@ -142,7 +142,9 @@ def _clickhouse_pod_template(
                     "ports": [_METRICS.k8s_container_port()],
                     "resources": {
                         "requests": {"cpu": "500m", "memory": "2Gi"},
-                        "limits": {"cpu": "4", "memory": "8Gi"},
+                        # ClickHouse caps itself at 90% of this. Rewriting a large
+                        # langfuse.events_full part (~400 KB rows) needs ~8 GiB.
+                        "limits": {"cpu": "4", "memory": "16Gi"},
                     },
                     "securityContext": _CONTAINER_SECURITY_CONTEXT,
                 }
