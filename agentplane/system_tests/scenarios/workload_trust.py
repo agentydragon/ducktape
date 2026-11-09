@@ -362,8 +362,8 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
                     break
                 await asyncio.sleep(2)
         sandbox = await _object(cluster, f"sandboxes.{GROUP}", name)
-        ready = next((c for c in sandbox["status"].get("conditions", []) if c["type"] == "Ready"), {})
-        assert ready.get("status") != "True", f"a Sandbox serving a cluster-internal-ca leaf naming {uri} is Ready"
+        ready = {c["type"]: c["status"] for c in sandbox["status"].get("conditions", [])}.get("Ready")
+        assert ready != "True", f"a Sandbox serving a cluster-internal-ca leaf naming {uri} is Ready"
 
         await _put_tls_secret(cluster, name, *await _secret_pem(cluster, cluster.namespace, own_secret))
         await cluster.kubectl("wait", f"sandboxes.{GROUP}/{name}", "--for=condition=Ready=True", "--timeout=300s")
