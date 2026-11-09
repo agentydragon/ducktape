@@ -157,15 +157,7 @@ def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (
-        *_base_env(*entries),
-        _SecretEnv(
-            "OTEL_EXPORTER_OTLP_ENDPOINT", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_ENDPOINT"), optional=True
-        ),
-        _SecretEnv(
-            "OTEL_EXPORTER_OTLP_HEADERS", _LANGFUSE_OTEL_CONFIG.key("OTEL_EXPORTER_OTLP_HEADERS"), optional=True
-        ),
-    )
+    return (*_base_env(*entries), _SecretEnv("EXPORTERS", _LANGFUSE_OTEL_CONFIG.key("EXPORTERS"), optional=True))
 
 
 def proxy_specs() -> tuple[ProxySpec, ...]:
@@ -177,13 +169,14 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                # Use the generic OTel callback. The optional Secret supplies an endpoint
-                # and headers together: an endpoint selects OTLP; if it is absent, LiteLLM
-                # keeps its console exporter so the proxy can start without Langfuse.
+                # Use the generic OTel callback. The optional Secret supplies EXPORTERS, the
+                # Langfuse OTLP exporter; if it is absent, LiteLLM keeps its console exporter
+                # so the proxy can start without Langfuse.
                 _LiteralEnv("LITELLM_OTEL_V2", "true"),
-                # Fills the /v1/responses root observation; stores each prompt twice
-                # (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
                 _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
+                # Export only model-call spans, each as its trace root, so Langfuse stores
+                # each request once (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
+                _LiteralEnv("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE", "llm_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
                 _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-salt-key").key("key")),

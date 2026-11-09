@@ -1,11 +1,13 @@
 """Invariants over the generated main-proxy config."""
 
 import json
+import re
 from typing import Any
 
+import pytest
 import pytest_bazel
 from litellm.integrations.otel.model.baggage import DEFAULT_BAGGAGE_METADATA_KEYS, promoted_baggage
-from litellm.integrations.otel.model.config import OpenTelemetryV2Config
+from litellm.integrations.otel.model.config import CaptureMessageContent, ExporterOwner, OpenTelemetryV2Config
 from litellm.integrations.otel.model.metadata import RequestIdentity
 from litellm.litellm_core_utils.litellm_logging import (
     StandardLoggingPayloadSetup,
@@ -15,6 +17,7 @@ from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
 from cluster.cdk8s.litellm.proxy import proxy_specs
+from cluster.cdk8s.litellm.secrets import LANGFUSE_EXPORTERS_TEMPLATE
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
 from model_catalog.catalog import (
     RUGGED_LOCAL_CANDIDATE_ROUTES,
@@ -63,21 +66,30 @@ def test_route_timeouts_are_projected_independently() -> None:
     assert "stream_timeout" not in untimed
 
 
-def test_langfuse_otel_v2_uses_otlp_when_secret_exists_and_console_without_it() -> None:
+def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     [spec] = proxy_specs()
     env = {entry.name: getattr(entry, "value", None) for entry in spec.env}
     config = main_proxy_config()
-
-    assert env["LITELLM_OTEL_V2"] == "true"
-    assert "OTEL_EXPORTER" not in env
-    assert "OTEL_EXPORTER_OTLP_ENDPOINT" in env
-    assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "span_only"
-    assert "OTEL_EXPORTER_OTLP_HEADERS" in env
-    secret_env = {entry.name: entry for entry in spec.env if getattr(entry, "optional", False)}
-    assert getattr(secret_env["OTEL_EXPORTER_OTLP_ENDPOINT"], "optional", False)
-    assert getattr(secret_env["OTEL_EXPORTER_OTLP_HEADERS"], "optional", False)
+    secret_env = {entry.name for entry in spec.env if getattr(entry, "optional", False)}
+    assert "EXPORTERS" in secret_env
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
+
+    # LiteLLM's own settings loader reads the Deployment's literal env; ESO renders the Go
+    # template in EXPORTERS, so any credential string stands in for it here.
+    for name, value in env.items():
+        if value is not None:
+            monkeypatch.setenv(name, value)
+    without_secret = OpenTelemetryV2Config()
+    assert [exporter.kind for exporter in without_secret.exporters] == ["console"]
+
+    monkeypatch.setenv("EXPORTERS", re.sub(r"\{\{.*?\}\}", "ZmFrZTpmYWtl", LANGFUSE_EXPORTERS_TEMPLATE))
+    otel = OpenTelemetryV2Config()
+    [exporter] = otel.exporters
+    assert exporter.kind == "otlp_http"
+    assert exporter.owner is ExporterOwner.LANGFUSE_OTEL
+    assert otel.langfuse_span_scope == "llm_only"
+    assert otel.capture_message_content == CaptureMessageContent.SPAN_ONLY
 
 
 def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:

@@ -917,6 +917,8 @@ spec:
               value: "true"
             - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
               value: span_only
+            - name: LITELLM_OTEL_LANGFUSE_SPAN_SCOPE
+              value: llm_only
             - name: LITELLM_MASTER_KEY
               valueFrom:
                 secretKeyRef:
@@ -968,16 +970,10 @@ spec:
                 secretKeyRef:
                   key: token
                   name: rugged-local-llm-bearer-token
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: EXPORTERS
               valueFrom:
                 secretKeyRef:
-                  key: OTEL_EXPORTER_OTLP_ENDPOINT
-                  name: litellm-langfuse-otel-config
-                  optional: true
-            - name: OTEL_EXPORTER_OTLP_HEADERS
-              valueFrom:
-                secretKeyRef:
-                  key: OTEL_EXPORTER_OTLP_HEADERS
+                  key: EXPORTERS
                   name: litellm-langfuse-otel-config
                   optional: true
           image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
