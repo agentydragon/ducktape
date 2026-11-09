@@ -66,6 +66,13 @@ in
   # Swap-based kills require both RAM and swap use to exceed this limit.
   systemd.oomd.settings.OOM.SwapUsedLimit = "75%";
   systemd.slices.user.sliceConfig.ManagedOOMSwap = "kill";
+  systemd.slices.user.sliceConfig.ManagedOOMMemoryPressureLimit = "40%";
+  # The NixOS oomd module also installs an 80% generic user-slice drop-in.
+  systemd.user.units.slice.text = lib.mkForce ''
+    [Slice]
+    ManagedOOMMemoryPressure=kill
+    ManagedOOMMemoryPressureLimit=40%
+  '';
 
   # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
   # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
