@@ -47,6 +47,7 @@ go_library(
     srcs = [
         "conditions.go",
         "doc.go",
+        "expiry.go",
         "scheme.go",
         "types.go",
         ":deepcopy",

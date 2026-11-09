@@ -3037,7 +3037,7 @@ the sidecar and the command-box templates keep a bearer hop, each marked `CLEANU
 
 ```mermaid
 flowchart LR
-    IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
+    IDENTITY_KINDS --> POLICY_GRANTS[In review: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
@@ -3120,16 +3120,22 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `ServiceAccountGrant` and
-`KubernetesRoleSet` instead of `PolicyBinding` Kubernetes rules, keeping native RoleBindings per
-grant, role and namespace with the existing additive, pruned, never-adopt-on-name semantics;
-expiry extends to grants and managed accounts; `ManagedServiceAccount` creates the SA in the
-accounts namespace with a UID label, emits the account's `EgressCredential` and one-rule
-`PolicySet` owned by it, and prunes the SA on reconcile once the account is gone. Local apiserver
-only; remote targets are a settings entry added when one exists. **Exit:** envtest coverage for a
-grant on a Flux SA, a temporary account's full lifecycle including expiry with no restart, and a
-same-name SA recreated while a grant is live; the controller's RBAC adds SA create and delete in the
-accounts namespace and nothing else.
+**In review (PR #15076 from `claude/policy-grants` against `devel`, 2026-11-09).** The
+Policy Controller reads `ServiceAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
+Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
+and namespace through the same additive, pruned, never-adopt-on-name machinery. Expiry covers
+bindings, grants and managed accounts through one helper; an expired object is absent to the shared
+reader and the controller before its deletion, and an account-owned object setting its own
+`expiresAt` reports `ConflictingExpiry`. `ManagedServiceAccount` creates the SA in the
+environment's accounts namespace (`<namespace>-k8s-accounts`, rendered by the egress `KubernetesAccounts`) with a
+UID label, reports `KubernetesReady`, and on expiry or deletion removes the SA and every native
+binding on it in one pass. The controller's RBAC gains SA create, delete and reads in the accounts
+namespace only, plus reads, expiry deletes and status patches on the new kinds. The test apiserver
+has no garbage collector, so owned grants and bindings going with their account is left to
+`IDENTITY_SYSTEM_TESTS`. **Remaining:** emitting each managed account's `EgressCredential` and
+one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount` credential source, not on
+devel at 2026-11-09, together with open question 11's admission rule. **Exit:** those two objects
+are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
@@ -3191,7 +3197,9 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 (`claude-ai`, `haku-agent`) and the standing workload caller `haku-ui` in place of their ServiceAccounts, the `shared-diagnostics` SA with its
 grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
 an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
-proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. Rendering is
+proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. The controller's
+RBAC carries `bind` on every role a Flux-authored `KubernetesRoleSet` names, since the apiserver
+refuses a binding to a role the controller cannot bind. Rendering is
 behind the same staging switch as the rest, so `devel` keeps rendering today's objects until the
 cutover. **Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
 renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.

@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	policyNamespace  = "test-policies"
-	subjectNamespace = "test-subjects"
-	namespaceReader  = "test-namespace-reader"
-	nodeReader       = "test-node-reader"
+	policyNamespace   = "test-policies"
+	subjectNamespace  = "test-subjects"
+	accountsNamespace = "test-accounts"
+	namespaceReader   = "test-namespace-reader"
+	nodeReader        = "test-node-reader"
 )
 
 var grantRequest = reconcile.Request{NamespacedName: client.ObjectKey{Namespace: policyNamespace, Name: "test-grant"}}
@@ -392,5 +393,25 @@ func TestMissingSetIsReportedAndTheRestStillGrant(t *testing.T) {
 	}
 	if got := nativeScopes(t, c); !maps.Equal(got, granted) {
 		t.Fatalf("natives = %v", got)
+	}
+}
+
+func TestIdentitySubjectGetsNoNativeBindings(t *testing.T) {
+	r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+	reconcileOnce(t, r)
+	var binding policyapi.PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
+	if err := c.Update(context.Background(), &binding); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := condition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SubjectNotServiceAccount" {
+		t.Fatalf("condition = %+v", got)
+	}
+	if got := nativeScopes(t, c); len(got) != 0 {
+		t.Fatalf("natives for an identity subject = %v", got)
 	}
 }

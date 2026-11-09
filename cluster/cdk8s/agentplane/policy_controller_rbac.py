@@ -29,6 +29,7 @@ class PolicyControllerRbac(Construct):
         *,
         account: ServiceAccount,
         assignable_grants: Sequence[KubernetesGrant],
+        accounts_namespace: str,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -59,6 +60,24 @@ class PolicyControllerRbac(Construct):
                 ),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
                 RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "kubernetesrolesets")], verbs=["get", "list", "watch"]
+                ),
+                # Deleting is how a grant or a managed account expires.
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(_GROUP, "serviceaccountgrants"),
+                        custom_resource(_GROUP, "managedserviceaccounts"),
+                    ],
+                    verbs=["get", "list", "watch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(_GROUP, "serviceaccountgrants/status"),
+                        custom_resource(_GROUP, "managedserviceaccounts/status"),
+                    ],
+                    verbs=["patch"],
+                ),
+                RolePolicyRule(
                     resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
                 ),
                 # Leader election.
@@ -79,6 +98,24 @@ class PolicyControllerRbac(Construct):
             "role-binding",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             role=Role.from_role_name(self, "role-ref", role_name),
+        ).add_subjects(account)
+        # ManagedServiceAccounts' ServiceAccounts, created and pruned only in the accounts namespace.
+        accounts_role = Role(
+            self,
+            "accounts-role",
+            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            rules=[
+                RolePolicyRule(
+                    resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)],
+                    verbs=["create", "delete", "get", "list", "watch"],
+                )
+            ],
+        )
+        RoleBinding(
+            self,
+            "accounts-role-binding",
+            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            role=accounts_role,
         ).add_subjects(account)
         cluster_role_name = f"{namespace}-policy-controller"
         k8s.KubeClusterRole(

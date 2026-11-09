@@ -19,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -339,17 +340,23 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 		t.Fatal(err)
 	}
 	managed := labels.Set(map[string]string{ManagedByLabel: FieldManager, PolicyNamespaceLbl: policyNamespace}).AsSelector()
+	skipNameValidation := true
 	manager, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		// Controller names are unique per process, and each test starts its own manager.
+		Controller:             ctrlconfig.Controller{SkipNameValidation: &skipNameValidation},
 		Metrics:                server.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
 		WebhookServer:          webhook.NewServer(webhook.Options{Port: 0}),
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:       {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.PolicyBinding{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&corev1.ServiceAccount{}:     {Namespaces: map[string]cache.Config{subjectNamespace: {}}},
-			&rbacv1.RoleBinding{}:        {Label: managed},
-			&rbacv1.ClusterRoleBinding{}: {Label: managed},
+			&policyapi.PolicySet{}:             {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.PolicyBinding{}:         {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.KubernetesRoleSet{}:     {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ServiceAccountGrant{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ManagedServiceAccount{}: {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&corev1.ServiceAccount{}:           {Namespaces: map[string]cache.Config{subjectNamespace: {}, accountsNamespace: {}}},
+			&rbacv1.RoleBinding{}:              {Label: managed},
+			&rbacv1.ClusterRoleBinding{}:       {Label: managed},
 		}},
 	})
 	if err != nil {
@@ -360,18 +367,14 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 		APIReader:         manager.GetAPIReader(),
 		PolicyNamespace:   policyNamespace,
 		SubjectNamespaces: []string{subjectNamespace},
+		AccountsNamespace: accountsNamespace,
 	}
 	if controller {
 		if err := r.SetupWithManager(manager); err != nil {
 			t.Fatal(err)
 		}
-	} else {
-		indexNativeBinding := func(obj client.Object) []string { return bindingIndex(obj) }
-		for _, object := range []client.Object{&rbacv1.RoleBinding{}, &rbacv1.ClusterRoleBinding{}} {
-			if err := manager.GetFieldIndexer().IndexField(context.Background(), object, nativeBindingIndex, indexNativeBinding); err != nil {
-				t.Fatal(err)
-			}
-		}
+	} else if err := r.IndexFields(context.Background(), manager.GetFieldIndexer()); err != nil {
+		t.Fatal(err)
 	}
 	managerCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

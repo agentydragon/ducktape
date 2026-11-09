@@ -1249,6 +1249,27 @@ py_test(
 )
 
 py_test(
+    name = "test_policy_controller_rbac",
+    # Synthesizes the staging chart to check the controller's RBAC against its settings.
+    size = "medium",
+    srcs = ["test_policy_controller_rbac.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":namespaces",
+        ":policy_controller",
+        "//:conftest",
+        "//agentplane/policy_controller:settings",
+        "//cluster/cdk8s:conftest",
+        "//util:settings_contract",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_sandbox_controller",
     # Synthesizes the staging chart to check its settings file and projected token wiring.
     size = "medium",

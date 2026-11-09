@@ -15,6 +15,7 @@ import (
 type config struct {
 	PolicyNamespace        string   `mapstructure:"policy_namespace"`
 	SubjectNamespaces      []string `mapstructure:"subject_namespaces"`
+	AccountsNamespace      string   `mapstructure:"accounts_namespace"`
 	MetricsBindAddress     string   `mapstructure:"metrics_bind_address"`
 	HealthProbeBindAddress string   `mapstructure:"health_probe_bind_address"`
 	GRPCBindAddress        string   `mapstructure:"grpc_bind_address"`
@@ -46,6 +47,7 @@ func (c config) validate() error {
 	}{
 		{"policy_namespace", []string{c.PolicyNamespace}},
 		{"subject_namespaces", c.SubjectNamespaces},
+		{"accounts_namespace", []string{c.AccountsNamespace}},
 	} {
 		if len(setting.namespaces) == 0 {
 			return fmt.Errorf("%s is required", setting.name)

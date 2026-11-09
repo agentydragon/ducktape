@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     subject_namespaces: Set[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts a PolicyBinding may bind."
     )
+    accounts_namespace: str = Field(
+        min_length=1,
+        description=(
+            "Namespace where ManagedServiceAccounts' ServiceAccounts are created; ServiceAccountGrants may name "
+            "accounts here as well as in subject_namespaces."
+        ),
+    )
     metrics_bind_address: str = Field(default=":8080", min_length=1, description="Where Prometheus metrics are served.")
     health_probe_bind_address: str = Field(
         default=":8081", min_length=1, description="Where /healthz and /readyz are served."

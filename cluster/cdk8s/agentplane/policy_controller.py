@@ -56,6 +56,7 @@ class PolicyController(Construct):
         id: str,
         env: Environment,
         *,
+        accounts_namespace: str,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
@@ -68,6 +69,7 @@ class PolicyController(Construct):
             field: checked_value(Settings, field, value)
             for field, value in {
                 "policy_namespace": namespace,
+                "accounts_namespace": accounts_namespace,
                 "metrics_bind_address": f":{endpoint.port.number}",
                 "health_probe_bind_address": f":{_HEALTH_PORT}",
                 "grpc_bind_address": f":{service(namespace).pod_port}",
