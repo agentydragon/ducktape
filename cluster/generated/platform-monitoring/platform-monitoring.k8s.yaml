@@ -764,6 +764,33 @@ spec:
             severity: warning
     - name: roaming-node-workload-alerts
       rules:
+        - alert: AlloyNodeUnavailable
+          annotations:
+            description: This Ready node has no Ready alloy-node pod successfully scraping and forwarding its own metrics. Offline nodes are excluded.
+            summary: Node-local Alloy is unavailable on {{ $labels.node }}
+          expr: |-
+            max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1)
+            unless on (node)
+            max by (node) (
+              kube_pod_info{namespace="monitoring",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (kube_pod_status_ready{namespace="monitoring",condition="true"} == 1)
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (up{namespace="monitoring",service="alloy-node"} == 1)
+            )
+          for: 10m
+          labels:
+            severity: warning
+        - alert: AlloyNodeRolloutStalled
+          annotations:
+            description: Fewer Alloy pods have the new template than there are Ready nodes. Offline nodes are excluded, but an updated pod on an offline node can mask an outdated online pod; check revisions after upgrades.
+            summary: Node-local Alloy rollout has not reached all online nodes
+          expr: |-
+            count(max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1))
+            > scalar(max(kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}))
+          for: 15m
+          labels:
+            severity: warning
         - alert: KubePodNotReady
           annotations:
             description: Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for longer than 15 minutes on cluster {{ $labels.cluster }}.

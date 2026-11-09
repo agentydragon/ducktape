@@ -1,0 +1,73 @@
+rule_files:
+  - roaming-node.yaml
+evaluation_interval: 1m
+tests:
+  - name: healthy online nodes and an offline laptop do not alert
+    interval: 1m
+    input_series:
+      - series: kube_node_status_condition{node="fixed",condition="Ready",status="true"}
+        values: 1+0x20
+      - series: kube_node_status_condition{node="laptop",condition="Ready",status="true"}
+        values: 0+0x20
+      - series: kube_pod_info{namespace="monitoring",pod="alloy-fixed",node="fixed",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+        values: 1+0x20
+      - series: kube_pod_status_ready{namespace="monitoring",pod="alloy-fixed",condition="true"}
+        values: 1+0x20
+      - series: up{namespace="monitoring",service="alloy-node",pod="alloy-fixed"}
+        values: 1+0x20
+      - series: kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}
+        values: 1+0x20
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: AlloyNodeUnavailable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: AlloyNodeRolloutStalled
+        exp_alerts: []
+  - name: online nodes without a healthy scrape alert; offline nodes do not
+    interval: 1m
+    input_series:
+      - series: kube_node_status_condition{node="fixed",condition="Ready",status="true"}
+        values: 1+0x20
+      - series: kube_node_status_condition{node="rugged",condition="Ready",status="true"}
+        values: 1+0x20
+      - series: kube_node_status_condition{node="iguana",condition="Ready",status="true"}
+        values: 0+0x20
+      - series: kube_pod_info{namespace="monitoring",pod="alloy-fixed",node="fixed",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+        values: 1+0x20
+      - series: kube_pod_status_ready{namespace="monitoring",pod="alloy-fixed",condition="true"}
+        values: 1+0x20
+      - series: up{namespace="monitoring",service="alloy-node",pod="alloy-fixed"}
+        values: 1+0x20
+      - series: kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}
+        values: 1+0x20
+    promql_expr_test:
+      - expr: ALERTS{alertname="AlloyNodeUnavailable",alertstate="firing"}
+        eval_time: 16m
+        exp_samples:
+          - labels: ALERTS{alertname="AlloyNodeUnavailable",alertstate="firing",node="rugged",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname="AlloyNodeRolloutStalled",alertstate="firing"}
+        eval_time: 16m
+        exp_samples:
+          - labels: ALERTS{alertname="AlloyNodeRolloutStalled",alertstate="firing",severity="warning"}
+            value: 1
+  - name: a ready pod whose self scrape fails is unavailable
+    interval: 1m
+    input_series:
+      - series: kube_node_status_condition{node="rugged",condition="Ready",status="true"}
+        values: 1+0x20
+      - series: kube_pod_info{namespace="monitoring",pod="alloy-rugged",node="rugged",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+        values: 1+0x20
+      - series: kube_pod_status_ready{namespace="monitoring",pod="alloy-rugged",condition="true"}
+        values: 1+0x20
+      - series: up{namespace="monitoring",service="alloy-node",pod="alloy-rugged"}
+        values: 0+0x20
+      - series: kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}
+        values: 1+0x20
+    promql_expr_test:
+      - expr: ALERTS{alertname="AlloyNodeUnavailable",alertstate="firing"}
+        eval_time: 16m
+        exp_samples:
+          - labels: ALERTS{alertname="AlloyNodeUnavailable",alertstate="firing",node="rugged",severity="warning"}
+            value: 1

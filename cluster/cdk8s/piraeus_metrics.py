@@ -37,6 +37,7 @@ def add_thin_pool_monitoring(
     thin_pool: str,
     storage_pool: str,
     name: str = _NAME,
+    only_when_node_ready: str | None = None,
 ) -> None:
     """Build a scoped reader/exporter pair and its Alloy scrape and alert resources.
 
@@ -47,6 +48,8 @@ def add_thin_pool_monitoring(
     _validate_lvm_name(volume_group, field="volume_group")
     _validate_lvm_name(thin_pool, field="thin_pool")
     _validate_lvm_name(storage_pool, field="storage_pool")
+    if only_when_node_ready is not None:
+        _validate_lvm_name(only_when_node_ready, field="only_when_node_ready")
     if not namespace:
         raise ValueError("namespace must be non-empty")
     if not node_selector:
@@ -207,6 +210,13 @@ def add_thin_pool_monitoring(
     labels = f'namespace="{namespace}",service="{name}",vg="{volume_group}",pool="{thin_pool}"'
     target = f'namespace="{namespace}",service="{name}"'
     expected = f'kube_daemonset_status_desired_number_scheduled{{namespace="{namespace}",daemonset="{name}"}} > 0'
+    # A laptop can be away for an arbitrary time. Alert for a missing collector
+    # while it is online, not for the intentional absence of its samples offline.
+    if only_when_node_ready:
+        expected = (
+            f"({expected}) and on() "
+            f'(max(kube_node_status_condition{{node="{only_when_node_ready}",condition="Ready",status="true"}}) == 1)'
+        )
     PrometheusRule(
         scope,
         "prometheus-rule",
