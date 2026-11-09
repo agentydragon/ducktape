@@ -92,7 +92,10 @@ Values must be representable as a Go `time.Duration` after conversion from milli
 
 In `mtls` mode, Environment Runtime verifies that its server certificate URI names the Sandbox namespace and UID from `launch.json`;
 the Gateway presents the fixed `spiffe://agentplane/runner-gateway` identity. Both directions require
-mTLS. Missing, malformed or expired credentials fail; they never select plaintext.
+mTLS. `ca_file` verifies the local chain and the services the Runtime dials. The optional absolute
+`client_ca_file` replaces it for the Gateway's client certificate, so the control listener can trust
+the Agentplane workload CA alone; without it, `ca_file` verifies clients too. It cannot be combined
+with `workload_api_socket`. Missing, malformed or expired credentials fail; they never select plaintext.
 
 Tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
 This serves plaintext without peer authentication. An insecure configuration containing a `tls`

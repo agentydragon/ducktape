@@ -46,6 +46,9 @@ type vmGuestContract struct {
 		VolumeName string `json:"volume_name"`
 		Mount      string `json:"mount"`
 	} `json:"environment_runtime_trust"`
+	EnvironmentRuntimeWorkloadTrust struct {
+		VolumeName string `json:"volume_name"`
+	} `json:"environment_runtime_workload_trust"`
 }
 
 func readVMGuestContract(t *testing.T) vmGuestContract {
@@ -214,8 +217,14 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	for _, filesystem := range filesystems {
 		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
 	}
-	if len(filesystems) != 3 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] {
-		t.Errorf("VM filesystems = %v, want state and runner TLS/trust volumes over virtiofs", filesystems)
+	if len(filesystems) != 4 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeWorkloadTrust.VolumeName] {
+		t.Errorf("VM filesystems = %v, want state and runner TLS/trust/workload trust volumes over virtiofs", filesystems)
+	}
+	if trust := volume(vm, contract.EnvironmentRuntimeTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerTrustBundleName {
+		t.Errorf("VM trust volume = %v, want the cluster bundle", trust)
+	}
+	if trust := volume(vm, contract.EnvironmentRuntimeWorkloadTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerWorkloadTrustBundleName {
+		t.Errorf("VM workload trust volume = %v, want the workload CA bundle", trust)
 	}
 	if LaunchDiskSerial != contract.Disks.Launch.Serial || LaunchMountPath != contract.Disks.Launch.Mount || LaunchFile != contract.Files.Launch {
 		t.Fatalf("launch disk contract = serial %q, mount %q, file %q; want %q, %q, %q", LaunchDiskSerial, LaunchMountPath, LaunchFile, contract.Disks.Launch.Serial, contract.Disks.Launch.Mount, contract.Files.Launch)

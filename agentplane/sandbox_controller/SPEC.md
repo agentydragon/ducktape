@@ -107,12 +107,15 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   carry the Sandbox's name, its UID (`agentplane.allegedly.works/sandbox-uid`) and the credential
   ID as labels, so a former incarnation's Secrets are found by label; the controller does not mount
   a Secret whose labels name another Sandbox UID or credential. Runner TLS files mount from that
-  generation's unique Secret, and the shared trust-manager CA bundle supplies the root. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path
+  generation's unique Secret. Two trust-manager bundles are mounted beside them:
+  `cluster-internal-ca-bundle`, the cluster root, and `agentplane-workload-ca-bundle`, the workload
+  CA alone, which a runner's control listener can trust for the Gateway's client SVID. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path
   in any regular or init container. A renewed key can update only its own generation's Secret.
   Reconciliation upgrades the usages of a previously issued controller-owned Certificate only when
   every other identity and key-policy field still matches; SAN, issuer or other drift remains a
   conflict.
-- A Pod projects the same per-incarnation Secret and trust bundle to the Environment Runtime and,
+- A Pod projects the same per-incarnation Secret and both trust bundles, the workload CA as
+  `workload-ca.crt` beside the cluster bundle's `ca.crt`, to the Environment Runtime and,
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
   valid. The workload and executor containers receive no mount. The sidecar uses those files when
   `proxy.transport` selects TLS with `auth.mode: spiffe`; a handshake or certificate failure ends the
@@ -151,8 +154,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   virtiofs mount. Kyverno's admission controller gets only namespace-scoped Sandbox `get` for the
   status lookup; the kubelet projects the Secret without Kyverno reading its value. Missing accepted
   credential data fails admission; KubeVirt retries after status is bound, without an admitted Pod
-  waiting forever on a placeholder Secret. The trust-manager CA bundle is mounted separately as
-  public trust data.
+  waiting forever on a placeholder Secret. Each trust-manager bundle is its own virtiofs filesystem
+  of public trust data: `agentplane-environment-runtime-trust` and
+  `agentplane-environment-runtime-workload-trust`.
 - The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
   `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
   disks at `/run/agentplane/config` and `/run/agentplane/sandbox`. Their filenames, device serials

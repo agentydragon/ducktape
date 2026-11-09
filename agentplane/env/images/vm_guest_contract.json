@@ -53,5 +53,11 @@
     "mount": "/run/agentplane/environment-runtime-trust",
     "key": "ca-certificates.crt",
     "filesystem": "virtiofs"
+  },
+  "environment_runtime_workload_trust": {
+    "volume_name": "agentplane-environment-runtime-workload-trust",
+    "mount": "/run/agentplane/environment-runtime-workload-trust",
+    "key": "ca-certificates.crt",
+    "filesystem": "virtiofs"
   }
 }

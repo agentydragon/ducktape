@@ -345,6 +345,81 @@ func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 	}
 }
 
+// The runner trusts the cluster root for its own chain and the servers it dials, and the workload
+// CA alone for the Gateway's client certificate: a leaf the root signs directly naming the Gateway
+// is refused, through both the file-backed and the opened sources.
+func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
+	root := environmentruntimetransporttesting.NewCA(t)
+	workload := root.Intermediate(t)
+	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := workload.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
+	runner.CAFile = root.RootFile
+	gateway := workload.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageClientAuth)
+	gateway.CAFile = root.RootFile
+	impostor := root.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageClientAuth)
+
+	clientOf := func(config environment_runtime_transport.Config) credentials.TransportCredentials {
+		creds, err := config.ClientCredentials(runnerURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return creds
+	}
+	rootOnly := runner
+	rootOnly.ClientCAFile = ""
+	rootOnlyServer, err := rootOnly.ServerCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := handshake(t, clientOf(impostor), rootOnlyServer); err != nil {
+		t.Fatalf("without client_ca_file the cluster root still verifies clients: %v", err)
+	}
+
+	runner.ClientCAFile = workload.RootFile
+	fileServer, err := runner.ServerCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := (environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &runner}).Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	openedServer, err := opened.ServerCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, server := range map[string]credentials.TransportCredentials{"file": fileServer, "opened": openedServer} {
+		t.Run(name, func(t *testing.T) {
+			if _, serverInfo, err := handshake(t, clientOf(gateway), server); err != nil {
+				t.Fatalf("workload CA Gateway was refused: %v", err)
+			} else if got, err := environment_runtime_transport.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != environment_runtime_transport.GatewayURI {
+				t.Fatalf("server saw peer identity %q, error %v", got, err)
+			}
+			if _, _, err := handshake(t, clientOf(impostor), server); err == nil {
+				t.Fatal("a root-signed leaf naming the Gateway authenticated as a client")
+			}
+		})
+	}
+
+	// Dialing, the runner still verifies servers against ca_file: a root-signed server passes.
+	service := root.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
+	serviceServer, err := service.ServerCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerClient, err := opened.ClientCredentials(environment_runtime_transport.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := handshake(t, runnerClient, serviceServer); err != nil {
+		t.Fatalf("client_ca_file changed the trust the runner dials with: %v", err)
+	}
+}
+
 func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 	trustedCA := environmentruntimetransporttesting.NewCA(t)
 	otherCA := environmentruntimetransporttesting.NewCA(t)
