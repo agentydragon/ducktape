@@ -386,6 +386,7 @@ def cluster_chart(app: App) -> Chart:
         thin_pool=_FIRST_NODE_THIN_POOL,
         storage_pool="ssd",
         name="piraeus-lvm-metrics-rugged",
+        only_when_node_ready="rugged",
     )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"

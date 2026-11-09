@@ -1,0 +1,36 @@
+rule_files:
+  - piraeus.yaml
+evaluation_interval: 1m
+tests:
+  - name: laptop offline suppresses missing scrape and collector alerts
+    interval: 1m
+    input_series:
+      - series: kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"}
+        values: 1+0x5
+      - series: kube_node_status_condition{node="rugged",condition="Ready",status="true"}
+        values: 0+0x5
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PiraeusThinPoolCollectorStale
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PiraeusThinPoolScrapeMissing
+        exp_alerts: []
+  - name: laptop online with absent metrics fires both alerts
+    interval: 1m
+    input_series:
+      - series: kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"}
+        values: 1+0x5
+      - series: kube_node_status_condition{node="rugged",condition="Ready",status="true"}
+        values: 1+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="PiraeusThinPoolScrapeMissing",alertstate="firing"}
+        eval_time: 4m
+        exp_samples:
+          - labels: ALERTS{alertname="PiraeusThinPoolScrapeMissing",alertstate="firing",namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname="PiraeusThinPoolCollectorStale",alertstate="firing"}
+        eval_time: 4m
+        exp_samples:
+          - labels: ALERTS{alertname="PiraeusThinPoolCollectorStale",alertstate="firing",namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",severity="warning",vg="piraeus_ssd",pool="data"}
+            value: 1

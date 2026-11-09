@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecInstall, HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
@@ -117,6 +118,9 @@ def chart(app: App) -> Chart:
         version="1.x",
         interval="30m",
         chart_interval="12h",
+        # Roaming nodes may be offline; alert separately for online nodes instead.
+        install=HelmReleaseSpecInstall(disable_wait=True),
+        upgrade=HelmReleaseSpecUpgrade(disable_wait=True),
         values={
             # Its own name label, so neither the central release's selectors nor the OTLP
             # NetworkPolicy below match these pods.
@@ -136,26 +140,9 @@ def chart(app: App) -> Chart:
                 "volumes": {
                     "extra": [{"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}}]
                 },
-                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-                # Roaming laptops are left out: their metrics aren't wanted, and an offline
-                # laptop's pod would hold the DaemonSet's rollout budget.
-                "affinity": k8s.Affinity(
-                    node_affinity=k8s.NodeAffinity(
-                        required_during_scheduling_ignored_during_execution=k8s.NodeSelector(
-                            node_selector_terms=[
-                                k8s.NodeSelectorTerm(
-                                    match_expressions=[
-                                        k8s.NodeSelectorRequirement(
-                                            key=node_scheduling.REGION_LABEL,
-                                            operator="NotIn",
-                                            values=[node_scheduling.ROAMING_REGION],
-                                        )
-                                    ]
-                                )
-                            ]
-                        )
-                    )
-                ),
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
+                # Two roaming nodes may be offline; leave room to update another pod.
+                "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
             },
             "serviceMonitor": {"enabled": True},
         },

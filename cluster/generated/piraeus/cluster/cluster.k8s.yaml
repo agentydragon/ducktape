@@ -4004,7 +4004,7 @@ spec:
           annotations:
             description: The last successful sample or textfile update for piraeus_ssd/data is missing or older than 90 seconds.
             summary: Piraeus thin-pool metrics are stale
-          expr: (time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",vg="piraeus_ssd",pool="data"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",vg="piraeus_ssd",pool="data"}) or time() - node_textfile_mtime_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",file="/textfiles/lvm_thin_pool.prom"} > 90) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"} > 0)
+          expr: (time() - lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",vg="piraeus_ssd",pool="data"} > 90 or absent(lvm_thin_pool_collector_last_success_timestamp_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",vg="piraeus_ssd",pool="data"}) or time() - node_textfile_mtime_seconds{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged",file="/textfiles/lvm_thin_pool.prom"} > 90) and on(namespace) ((kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"} > 0) and on() (max(kube_node_status_condition{node="rugged",condition="Ready",status="true"}) == 1))
           for: 2m
           labels:
             severity: warning
@@ -4012,7 +4012,7 @@ spec:
           annotations:
             description: Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.
             summary: Piraeus thin-pool exporter is not being scraped
-          expr: ((up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged"} == 0) or absent(up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged"})) and on(namespace) (kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"} > 0)
+          expr: ((up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged"} == 0) or absent(up{namespace="piraeus-datastore",service="piraeus-lvm-metrics-rugged"})) and on(namespace) ((kube_daemonset_status_desired_number_scheduled{namespace="piraeus-datastore",daemonset="piraeus-lvm-metrics-rugged"} > 0) and on() (max(kube_node_status_condition{node="rugged",condition="Ready",status="true"}) == 1))
           for: 2m
           labels:
             severity: warning

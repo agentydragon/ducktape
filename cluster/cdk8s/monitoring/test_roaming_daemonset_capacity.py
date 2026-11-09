@@ -30,7 +30,7 @@ from cdk8s import (
 from more_itertools import one
 
 from cluster.cdk8s import node_feature_discovery
-from cluster.cdk8s.monitoring import loki
+from cluster.cdk8s.monitoring import alloy, loki
 from cluster.scripts import nebula_mesh
 
 # Roaming k8s nodes are exactly the `laptop`-role hosts in the mesh roster: they
@@ -43,6 +43,7 @@ _ROAMING_ROLE = "laptop"
 # here — a roaming DaemonSet missing from this list is unprotected, which is the
 # one gap this test cannot close on its own.
 _ROAMING_DAEMONSETS = (
+    ("alloy-node", ("controller", "updateStrategy")),
     ("promtail", ("updateStrategy",)),
     ("promtail-journal", ("updateStrategy",)),
     ("node-feature-discovery", ("worker", "updateStrategy")),
@@ -52,7 +53,11 @@ _ROAMING_DAEMONSETS = (
 @pytest.fixture(scope="module")
 def release_manifests(scratch_app_factory: Callable[[], App]) -> list[dict]:
     app = scratch_app_factory()
-    return [*Cdk8sTesting.synth(loki.chart(app)), *Cdk8sTesting.synth(node_feature_discovery.chart(app))]
+    return [
+        *Cdk8sTesting.synth(alloy.chart(app)),
+        *Cdk8sTesting.synth(loki.chart(app)),
+        *Cdk8sTesting.synth(node_feature_discovery.chart(app)),
+    ]
 
 
 @pytest.fixture(scope="module")

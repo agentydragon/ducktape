@@ -119,6 +119,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:telemetry",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -327,6 +328,7 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":alloy",
         ":loki",
         "//:conftest",
         "//cluster/cdk8s:conftest",
@@ -343,6 +345,7 @@ py_test(
     name = "test_rules",
     srcs = ["test_rules.py"],
     data = [
+        "testdata/alloy_roaming_rules.yaml",
         "testdata/disk_usage_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",

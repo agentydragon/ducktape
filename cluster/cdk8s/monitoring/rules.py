@@ -499,6 +499,41 @@ _PIRAEUS = [
 ]
 
 _ROAMING_NODE_WORKLOAD = [
+    Rule.alert(
+        "AlloyNodeUnavailable",
+        dedent("""\
+            max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1)
+            unless on (node)
+            max by (node) (
+              kube_pod_info{namespace="monitoring",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (kube_pod_status_ready{namespace="monitoring",condition="true"} == 1)
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (up{namespace="monitoring",service="alloy-node"} == 1)
+            )
+        """).strip(),
+        for_="10m",
+        labels={"severity": "warning"},
+        summary="Node-local Alloy is unavailable on {{ $labels.node }}",
+        description=(
+            "This Ready node has no Ready alloy-node pod successfully scraping and forwarding its own metrics. "
+            "Offline nodes are excluded."
+        ),
+    ),
+    Rule.alert(
+        "AlloyNodeRolloutStalled",
+        dedent("""\
+            count(max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1))
+            > scalar(max(kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}))
+        """).strip(),
+        for_="15m",
+        labels={"severity": "warning"},
+        summary="Node-local Alloy rollout has not reached all online nodes",
+        description=(
+            "Fewer Alloy pods have the new template than there are Ready nodes. Offline nodes are excluded, "
+            "but an updated pod on an offline node can mask an outdated online pod; check revisions after upgrades."
+        ),
+    ),
     # The stock rule has no node label. Join through kube_pod_info so a pod
     # on a tainted roaming node disappears from the alert, while the same
     # pod condition remains alertable on ordinary nodes.
