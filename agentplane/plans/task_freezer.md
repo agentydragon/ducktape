@@ -34,6 +34,22 @@ Backend tokens for LLM ingress and Action Service retain the `agentplane-egress`
 longer verifies this audience. Revisit the name for the remaining backend consumers; any rename
 must coordinate those verifiers and their projected tokens.
 
+## Central sampler
+
+Deferred by the operator on 2026-11-09. Revisit when a central Session needs Actions, notifications
+or history access under its own bindings.
+
+### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
+
+A central-sampler Session has an `Identity` but nothing acts as it: the sampler calls LLM ingress
+and the Action Service with its own credentials, and the agent's bindings take effect only once an
+environment is attached ([identity plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)).
+Design how the sampler would call the Action Service, Notification and History as the agent under
+the [delegated authorization contract](../docs/delegated_authorization.md) with an identity reference
+as effective caller: which identities it may assert (recommendation: only those Dispatcher bound to
+its Sessions), how such calls originate from the V8 isolates, and what each receiving service
+records. Nothing in the identity cutover depends on it.
+
 ## Haku
 
 ### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client

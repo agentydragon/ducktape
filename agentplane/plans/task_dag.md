@@ -3120,15 +3120,13 @@ account and the proxy.
 
 **Blocked on `IDENTITY_KINDS`.** History's execution principal, Dispatcher's Session rows,
 Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
-identity reference plus the workload incarnation as provenance; the central sampler delegates as
-the Session's identity and its own account never becomes the agent's; `CreateSession` names an
+identity reference plus the workload incarnation as provenance; `CreateSession` names an
 identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
 a Session whose identity differs from its environment's current one, so a bypassed identity change
 strands Sessions rather than re-attributing them. Migrations rewrite rows whose
 Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
 existing service tests pass with identity principals, a retained Session with a deleted Sandbox
-reads as historical, and the sampler scenario in the k3s stack submits an Action as an identity
-with no environment.
+reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
