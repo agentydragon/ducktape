@@ -16,7 +16,7 @@ mod chunk_constraining_module_edges_tests {
 
     fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
         let module = raw_js_test_support::parse(source);
-        analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts
+        analyze_chunk(&module, &AnalysisInputs::default(), None).facts
     }
 
     fn parse_and_build(source: &str) -> DependencyGraph {

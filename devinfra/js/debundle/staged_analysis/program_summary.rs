@@ -1439,7 +1439,7 @@ fn resolve_argument_inputs(
             body: facts.body.to_vec(),
             shebang: None,
         };
-        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
+        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None);
         let source_contradictions = source_facts.per_statement.clone();
         let mut selected = Vec::new();
         for (input_index, (contract, declaration)) in

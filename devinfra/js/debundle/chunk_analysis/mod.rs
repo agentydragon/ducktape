@@ -24,7 +24,6 @@ pub use chunk_admission::DynamicImportTarget;
 use chunk_admission::enforce_chunk_admission;
 
 use anyhow::{Context, Result, bail};
-use swc_common::Span;
 use swc_ecma_ast::Module;
 
 use analysis::AnalysisInputs;
@@ -32,6 +31,7 @@ use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::atomic_groups::{
     DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
 };
+use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
@@ -52,27 +52,18 @@ use spec::AdmissionOverrides;
 /// supplies where a dynamic-import specifier lands, for the A3 check; the
 /// analysis itself stays artifact-free.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_chunk_facts<F>(
+pub fn compute_chunk_facts(
     chunk_id: &str,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
-    source_path: Option<&str>,
-    line_range_for_span: F,
+    locator: Option<SourceLocator<'_>>,
     admission_overrides: AdmissionOverrides,
     export_reentry_policy: &ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<ChunkFactAnalysis>
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    let fact_analysis = analyze_chunk_with_policy(
-        structural,
-        hints,
-        export_reentry_policy,
-        source_path,
-        line_range_for_span,
-    );
+) -> Result<ChunkFactAnalysis> {
+    let fact_analysis =
+        analyze_chunk_with_policy(structural, hints, export_reentry_policy, locator);
     check_chunk_facts(
         chunk_id,
         module,

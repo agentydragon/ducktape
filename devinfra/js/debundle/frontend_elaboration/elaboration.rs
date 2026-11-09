@@ -8,6 +8,7 @@ use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast, binding_declaration}
 use crate::source_ast::RuntimeImportKind;
 use analysis::AnalysisAssumptions;
 use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
+use analysis::execution_evidence::SourceLocator;
 use analysis::facts::StructuralChunkSourceFacts;
 use analysis_projection::{
     self, AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, AnalysisSpec,
@@ -499,7 +500,7 @@ fn resolve_imported_array_spread_inputs(
         let consumer_selector = SelectorChunk::new(
             consumer_chunk,
             consumer_module,
-            analysis::facts::collect_chunk_source_facts(consumer_module, None, |_| None),
+            analysis::facts::collect_chunk_source_facts(consumer_module, None),
         );
         let consumer_declaration =
             select_one_source_declaration(&consumer_selector, &request, &contract.source_match)?;
@@ -586,7 +587,7 @@ fn resolve_imported_array_spread_inputs(
             let provider_selector = SelectorChunk::new(
                 &operand.provider_chunk,
                 &provider_entry.module,
-                analysis::facts::collect_chunk_source_facts(&provider_entry.module, None, |_| None),
+                analysis::facts::collect_chunk_source_facts(&provider_entry.module, None),
             );
             let provider_declaration = select_one_source_declaration(
                 &provider_selector,
@@ -647,7 +648,7 @@ fn resolve_provider_source_sites(
     options: &ProjectedChunkOptions,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<ProviderSourceSites> {
-    let structural = analysis::facts::collect_chunk_source_facts(module, None, |_| None);
+    let structural = analysis::facts::collect_chunk_source_facts(module, None);
     let selector_chunk = SelectorChunk::new(chunk_name, module, structural);
     let mut resolved = ProviderSourceSites {
         value_inputs: Vec::with_capacity(options.analysis.value_inputs.len()),
@@ -954,8 +955,10 @@ fn prepare_chunk<'a>(
     let line_index = runtime_ast.line_index();
     let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
+        Some(SourceLocator {
+            source_path: &source_path,
+            lines: &line_index,
+        }),
     );
     let selectors =
         selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);

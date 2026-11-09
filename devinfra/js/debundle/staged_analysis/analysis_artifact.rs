@@ -286,7 +286,7 @@ mod tests {
                         .unwrap_or_default(),
                     ..AnalysisInputs::default()
                 };
-                let facts = analysis::facts::analyze_chunk(module, &inputs, None, |_| None);
+                let facts = analysis::facts::analyze_chunk(module, &inputs, None);
                 (name, facts)
             })
             .collect();

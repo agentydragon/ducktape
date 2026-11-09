@@ -478,7 +478,7 @@ impl<'m> Chunk<'m> {
 
     /// A chunk read from a file, outside a pipeline run.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
-        let structural = analysis::facts::collect_chunk_source_facts(module, None, |_| None);
+        let structural = analysis::facts::collect_chunk_source_facts(module, None);
         Self::new(name, module, structural)
     }
 
