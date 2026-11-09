@@ -21,11 +21,28 @@ type ProjectedWorkloadTokenSource struct {
 	Audience string `json:"audience"`
 }
 
+// KubernetesServiceAccountSource names a ServiceAccount the proxy acts as by impersonation on the API
+// server its own credential reaches: it presents its own bearer and asks the API server to treat the
+// request as this account's. No token for the account is minted or held. A named API server is the
+// intended extension for remote clusters, not modelled for lack of a use case and additive when one
+// appears.
+type KubernetesServiceAccountSource struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Namespace string `json:"namespace"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	Name string `json:"name"`
+}
+
 // CredentialSource is exactly one source for the substituted value.
-// +kubebuilder:validation:ExactlyOneOf=secretRef;projectedWorkloadToken
+// +kubebuilder:validation:ExactlyOneOf=secretRef;projectedWorkloadToken;kubernetesServiceAccount
 type CredentialSource struct {
-	SecretRef              *SecretKeyRef                 `json:"secretRef,omitempty"`
-	ProjectedWorkloadToken *ProjectedWorkloadTokenSource `json:"projectedWorkloadToken,omitempty"`
+	SecretRef                *SecretKeyRef                   `json:"secretRef,omitempty"`
+	ProjectedWorkloadToken   *ProjectedWorkloadTokenSource   `json:"projectedWorkloadToken,omitempty"`
+	KubernetesServiceAccount *KubernetesServiceAccountSource `json:"kubernetesServiceAccount,omitempty"`
 }
 
 // TargetMethod is how a target's value is parsed.
@@ -64,6 +81,7 @@ type Target struct {
 	Scheme string `json:"scheme,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.source.kubernetesServiceAccount) || (size(self.targets) == 1 && self.targets[0].method == 'schemeToken' && has(self.targets[0].header) && self.targets[0].header.lowerAscii() == 'authorization' && has(self.targets[0].scheme) && self.targets[0].scheme.lowerAscii() == 'bearer')",message="a kubernetesServiceAccount credential has exactly one target: schemeToken Bearer on Authorization"
 type EgressCredentialSpec struct {
 	// What this credential is and what it can do, in prose, for the sandbox that will present it
 	// without ever seeing it. It is served to agents over the rules endpoint, so it must contain
@@ -71,9 +89,12 @@ type EgressCredentialSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Description string `json:"description"`
 	// Exactly one source for the substituted value. secretRef is resolved in the proxy's configured
-	// credentials namespace, never this object's.
+	// credentials namespace, never this object's; kubernetesServiceAccount substitutes the proxy's
+	// own API server bearer and names the account it impersonates.
 	Source CredentialSource `json:"source"`
-	// Every exact location this credential may be presented in.
+	// Every exact location this credential may be presented in. A kubernetesServiceAccount credential
+	// takes exactly one, schemeToken Bearer on Authorization: it substitutes the proxy's own bearer,
+	// which anywhere else, such as a JSON field, could be written into an object.
 	// +kubebuilder:validation:MinItems=1
 	Targets []Target `json:"targets"`
 }

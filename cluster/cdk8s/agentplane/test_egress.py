@@ -44,6 +44,7 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.catalog import Provider
@@ -100,6 +101,7 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
         .env_value(chart, "test-database-url"),
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
+        act_as_kubernetes_accounts=True,
         placement=None,
         registry_secret_name=None,
     ).add_platform_resources()
@@ -629,6 +631,49 @@ def test_inference_is_granted_separately_from_platform_operations(staging_manife
         secret = _by_name(staging_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
+
+
+def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    proxy = ("ServiceAccount", "egress", staging.ENV.namespace)
+    granted = [
+        (doc["roleRef"]["kind"], doc["roleRef"]["name"], doc["metadata"].get("namespace"))
+        for doc in staging_manifests
+        if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}
+        and any((s["kind"], s["name"], s.get("namespace")) == proxy for s in doc.get("subjects", []))
+    ]
+    roles = {
+        (doc["kind"], doc["metadata"]["name"], doc["metadata"].get("namespace")): doc
+        for doc in staging_manifests
+        if doc["kind"] in {"Role", "ClusterRole"}
+    }
+    # A RoleBinding to a ClusterRole grants it in the binding's namespace; either way the rules are the role's.
+    impersonating = [
+        (kind, name, namespace)
+        for kind, name, namespace in granted
+        if any(
+            {"impersonate", "*"} & set(rule["verbs"])
+            for rule in roles[(kind, name, None if kind == "ClusterRole" else namespace)]["rules"]
+        )
+    ]
+    kind, name, namespace = one(impersonating)
+    assert (kind, namespace) == ("Role", kubernetes_accounts_namespace(staging.ENV.namespace))
+    assert roles[(kind, name, namespace)]["rules"] == [
+        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["impersonate"]}
+    ]
+
+
+def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_manifests: list[dict[str, Any]]) -> None:
+    settings = yaml.safe_load(
+        _by_name(svid_egress_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    server = settings["local_api_server"]
+    assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
+    pod = _by_name(svid_egress_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
+    # The kubelet mounts the API-server token here when the Pod automounts it.
+    assert pod["automountServiceAccountToken"] is True
+    assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
 
 
 if __name__ == "__main__":

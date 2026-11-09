@@ -838,6 +838,7 @@ py_library(
         ":environment_sandbox",
         ":environment_vm",
         ":generation",
+        ":kubernetes_accounts",
         ":llm_ingress",
         ":mcp_edge",
         ":namespaces",
@@ -978,7 +979,9 @@ py_test(
         ":egress",
         ":egress_staging_credentials",
         ":environment_sandbox",
+        ":kubernetes_accounts",
         ":llm_ingress",
+        ":namespaces",
         ":notifications",
         ":policy_controller",
         ":staging",
@@ -1043,6 +1046,20 @@ py_library(
         "//cluster/cdk8s/ollama:app",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "kubernetes_accounts",
+    srcs = ["kubernetes_accounts.py"],
+    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
+    deps = [
+        ":egress",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -1366,6 +1383,7 @@ py_library(
     srcs = ["namespaces.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/scenarios:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/monitoring:__pkg__",
     ],

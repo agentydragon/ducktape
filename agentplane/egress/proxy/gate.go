@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -91,9 +92,16 @@ func (p *Proxy) decide(
 		return refused(decision.Unavailable)
 	}
 	caller := policyapi.ServiceAccountRef{Namespace: who.principal.Account.Namespace, Name: who.principal.Account.Name}
-	request := policy.Request{Method: req.Method, Host: host, Headers: req.Header, Body: body}
+	request := policy.Request{Method: req.Method, Host: host, Port: port, Headers: req.Header, Body: body}
+	if server := p.options.Policy.LocalAPIServer; server != nil {
+		// Both evaluations below must see one token, or a rotation between them would read as a
+		// change of decision. Read lazily: most requests never substitute it.
+		request.APIServerToken = sync.OnceValues(server.Token)
+	}
 	if req.Method != http.MethodConnect {
 		request.Path = req.URL.RequestURI()
+		// relay dials https with UpstreamRoots verification; nothing else is TLS to the upstream.
+		request.TLS = req.URL.Scheme == "https"
 	}
 	workload := &policy.WorkloadContext{
 		Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
@@ -187,6 +195,9 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 		address := result.pin.Address.String()
 		record.Outcome, record.Binding, record.Policy, record.Rule = decision.Allow, &d.Binding, &d.Policy, &d.Rule
 		record.Substituted = len(d.Rewrites) > 0 || d.BodyRewrite != nil
+		if d.Impersonated != nil {
+			record.Impersonated = &decision.Subject{Namespace: d.Impersonated.Namespace, Name: d.Impersonated.Name}
+		}
 		record.Address = &address
 	case policy.Denied:
 		record.Outcome, record.Reason = decision.Deny, &d.Reason

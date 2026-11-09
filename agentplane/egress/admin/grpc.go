@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -281,6 +282,11 @@ func decisionsOf(records []decision.Record) []*egressadminpb.Decision {
 			EventId: record.EventID.String(), At: timestamppb.New(record.At), Method: record.Method, Host: record.Host, Port: int32(record.Port),
 			Outcome: outcomeOf(record.Outcome), Binding: record.Binding, Policy: record.Policy,
 			Substituted: record.Substituted, Address: record.Address,
+		}
+		if record.Impersonated != nil {
+			decisions[i].Impersonated = &identitypb.ServiceAccount{
+				Namespace: record.Impersonated.Namespace, Name: record.Impersonated.Name,
+			}
 		}
 		if record.Reason != nil {
 			decisions[i].Reason = proto.String(string(*record.Reason))

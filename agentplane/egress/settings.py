@@ -17,6 +17,19 @@ from agentplane.log_levels import LogLevels
 from agentplane.workload_auth.listener import Listener
 
 
+class APIServer(BaseModel):
+    """An API server the proxy acts on by ServiceAccount impersonation."""
+
+    model_config = SettingsConfigDict(extra="forbid")
+
+    host: str = Field(min_length=1, description="The host requests to this API server name.")
+    port: int = Field(ge=1, le=65535, description="The port requests to this API server name.")
+    token_file: Path = Field(
+        description="File holding the proxy's own bearer for this API server, read on every request that "
+        "substitutes it so a kubelet-rotated token is used from the next request on."
+    )
+
+
 class Settings(BaseModel):
     """Typed values and environment naming metadata, without runtime settings loading."""
 
@@ -76,6 +89,11 @@ class Settings(BaseModel):
     decision_retention_days: int = Field(default=7, ge=1, le=365)
     decision_queue_size: int = Field(default=2000, ge=1, le=100000)
     decision_batch_size: int = Field(default=100, ge=1, le=1000)
+    local_api_server: APIServer | None = Field(
+        default=None,
+        description="The `local` API server kubernetesServiceAccount credentials act on. Unset, every such "
+        "credential is unavailable. The proxy's RBAC, not this setting, bounds which accounts it may impersonate.",
+    )
     exempt_networks: list[IPv4Network | IPv6Network] = Field(
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",

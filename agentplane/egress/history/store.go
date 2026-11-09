@@ -34,9 +34,10 @@ const (
 )
 
 const columns = "event_id, decided_at, producer_id, subject_namespace, subject_name, source_pod_uid, connection_id, " +
-	"phase, method, host, port, outcome, reason, binding, policy, rule, substituted, address"
+	"phase, method, host, port, outcome, reason, binding, policy, rule, substituted, address, " +
+	"impersonated_namespace, impersonated_name"
 
-const columnCount = 18
+const columnCount = 20
 
 // Open opens the history database with the connection bounds every operation relies on: a small pool
 // and a connect timeout, either of which the URL may override.
@@ -147,16 +148,41 @@ func insertStatement(records []decision.Record) (string, []any) {
 			fmt.Fprintf(&query, "$%d", i*columnCount+column+1)
 		}
 		query.WriteByte(')')
-		var namespace, name *string
-		if record.Subject != nil {
-			namespace, name = &record.Subject.Namespace, &record.Subject.Name
-		}
+		namespace, name := subjectColumns(record.Subject)
+		impersonatedNamespace, impersonatedName := subjectColumns(record.Impersonated)
 		args = append(args, record.EventID, record.At, record.ProducerID, namespace, name, record.SourcePodUID,
 			record.ConnectionID, record.Phase, record.Method, record.Host, record.Port, record.Outcome,
-			record.Reason, record.Binding, record.Policy, record.Rule, record.Substituted, record.Address)
+			record.Reason, record.Binding, record.Policy, record.Rule, record.Substituted, record.Address,
+			impersonatedNamespace, impersonatedName)
 	}
 	query.WriteString(" ON CONFLICT (event_id) DO NOTHING")
 	return query.String(), args
+}
+
+func subjectColumns(subject *decision.Subject) (namespace, name *string) {
+	if subject == nil {
+		return nil, nil
+	}
+	return &subject.Namespace, &subject.Name
+}
+
+// scanRecord reads one row selected as `columns`.
+func scanRecord(rows *sql.Rows) (decision.Record, error) {
+	var record decision.Record
+	var namespace, name, impersonatedNamespace, impersonatedName sql.NullString
+	if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
+		&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
+		&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address,
+		&impersonatedNamespace, &impersonatedName); err != nil {
+		return decision.Record{}, err
+	}
+	if namespace.Valid && name.Valid {
+		record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
+	}
+	if impersonatedNamespace.Valid && impersonatedName.Valid {
+		record.Impersonated = &decision.Subject{Namespace: impersonatedNamespace.String, Name: impersonatedName.String}
+	}
+	return record, nil
 }
 
 // Recent is one subject's retained decisions, oldest first and at most the store's capacity of the
@@ -179,15 +205,9 @@ func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decisi
 	defer rows.Close()
 	records := []decision.Record{}
 	for rows.Next() {
-		var record decision.Record
-		var namespace, name sql.NullString
-		if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
-			&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
-			&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address); err != nil {
+		record, err := scanRecord(rows)
+		if err != nil {
 			return nil, err
-		}
-		if namespace.Valid && name.Valid {
-			record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
 		}
 		records = append(records, record)
 	}
@@ -221,15 +241,9 @@ func (s *Store) ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decisio
 	defer rows.Close()
 	records := make([]decision.Record, 0, len(eventIDs))
 	for rows.Next() {
-		var record decision.Record
-		var namespace, name sql.NullString
-		if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
-			&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
-			&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address); err != nil {
+		record, err := scanRecord(rows)
+		if err != nil {
 			return nil, err
-		}
-		if namespace.Valid && name.Valid {
-			record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
 		}
 		records = append(records, record)
 	}

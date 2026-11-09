@@ -156,6 +156,14 @@ projects that token and sends it under `X-Agentplane-Workload-Token`. Central re
 the SVID's live Sandbox binding and substitutes it only at a matching rule's declared target and
 placeholder. Missing, stale or mismatched projected context fails closed.
 
+## Kubernetes accounts
+
+A `kubernetesServiceAccount` credential acts as a ServiceAccount on the proxy's own API server by
+impersonation (contract: <SPEC.md> § Decision). The deployment sets `local_api_server` (host, port,
+and the proxy's automounted token file) and renders the accounts namespace with a Role granting the
+proxy `impersonate` on `serviceaccounts` there and nowhere else
+(<../../cluster/cdk8s/agentplane/kubernetes_accounts.py>).
+
 ## Rules API
 
 `agentplane egress rules` calls native `EgressRules.GetRules` through the sidecar's shared

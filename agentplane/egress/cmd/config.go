@@ -22,6 +22,9 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // The gRPC listener serves rules and health, and the admin API beside them when
 // admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
 // ServiceAccounts it admits as `namespace/name`, are set.
+//
+// local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
+// and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
 type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
@@ -43,6 +46,15 @@ type config struct {
 	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
 	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
 	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
+	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
+}
+
+// apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
+// requests to it name, and the file holding the proxy's bearer for it, read on every use.
+type apiServerConfig struct {
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	TokenFile string `mapstructure:"token_file"`
 }
 
 func defaultConfig() config {
@@ -131,6 +143,10 @@ func (c *config) validate() error {
 	}
 	if err := c.validateAdminGRPC(); err != nil {
 		return err
+	}
+	if server := c.LocalAPIServer; server != nil &&
+		(server.Host == "" || server.TokenFile == "" || server.Port < 1 || server.Port > 65535) {
+		return errors.New("local_api_server needs a host, a port between 1 and 65535 and a token_file")
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

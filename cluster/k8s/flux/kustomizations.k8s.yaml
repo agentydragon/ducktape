@@ -4586,6 +4586,9 @@ spec:
     - apiVersion: v1
       kind: Namespace
       name: agentplane-staging-egress-credentials
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging-k8s-accounts
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: postgres

@@ -198,6 +198,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	refusal := decision.NoRule
 	admitted := record(&subject)
 	admitted.Binding, admitted.Policy, admitted.Rule, admitted.Address, admitted.Substituted = &binding, &policy, &rule, &address, true
+	admitted.Impersonated = &decision.Subject{Namespace: "test-accounts", Name: "test-account"}
 	refused := record(&subject)
 	refused.Outcome, refused.Reason = decision.Deny, &refusal
 	store := &fakeDecisions{records: []decision.Record{admitted, refused}}
@@ -212,6 +213,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 			EventId: admitted.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
 			Outcome: egressadminpb.Decision_OUTCOME_ALLOW, Binding: &binding, Policy: &policy,
 			Rule: proto.Int32(2), Address: &address, Substituted: true,
+			Impersonated: &identitypb.ServiceAccount{Namespace: "test-accounts", Name: "test-account"},
 		},
 		{
 			EventId: refused.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,

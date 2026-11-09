@@ -81,9 +81,30 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; or `projectedWorkloadToken`, naming the
-  audience of a token the sidecar presented on the hop. Absent, stale or mismatched context refuses
+  `secretRef`, preserving the central-held Secret behavior; `projectedWorkloadToken`, naming the
+  audience of a token the sidecar presented on the hop; or `kubernetesServiceAccount`, naming an
+  account the proxy acts as on its own API server. Absent, stale or mismatched context refuses
   with `credential-unavailable`.
+- **A Kubernetes account is acted as by impersonation.** A `kubernetesServiceAccount` credential
+  names a namespace and a ServiceAccount on the API server the proxy's own credential reaches. A
+  named API server is the intended extension for remote clusters, not modelled for lack of a use
+  case and additive when one appears. Its only target is `schemeToken` `Bearer` on
+  `Authorization`. Like a credential of any source the proxy cannot read, one
+  that breaks these rules is dropped from its index, so its placeholder is unknown and reaches the
+  API server inert. A request it decides gets the
+  proxy's own bearer for that server in place of the placeholder, read from its token file once
+  per request, and `Impersonate-User: system:serviceaccount:<namespace>:<name>` beside it, in one
+  decision: the proxy's bearer is never forwarded without that header. The API server adds the
+  ServiceAccount groups itself; the proxy never sends `Impersonate-Group`, `Impersonate-Uid` or
+  `Impersonate-Extra-*`. A request decided by such a credential that carries any `Impersonate-*`
+  header of its own is refused with `impersonation-forbidden`. The bearer goes only to the
+  configured local API server host and port over TLS the proxy verifies; plaintext, another
+  admitted host or another port refuses with `credential-unavailable`. No token is minted or cached
+  for the account. What the proxy may impersonate is its RBAC: `impersonate` on `serviceaccounts`
+  in one accounts namespace. Revocation is the use rule going, enforced from the next request,
+  including the next one inside an established tunnel; the account's own roles are revoked only
+  when their RoleBindings go. The decision records the impersonated account beside the subject,
+  and the API server's audit log names the proxy as the original user.
 - **Kubernetes keeps its projected workload credential.** The sidecar sends it as
   `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
   forwarding it. TokenReview must resolve it to the Sandbox's own ServiceAccount and the Pod UID
@@ -128,7 +149,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   proxy recognised is never one it forwards. A value of that header the request sent alongside and
   did not present the placeholder in is forwarded untouched. A credential whose Secret or key is
   absent, or whose authenticated workload context is unavailable or unbound, denies with
-  `credential-unavailable` rather than forwarding. Neither token source copies a raw
+  `credential-unavailable` rather than forwarding. No token source copies a raw
   `Proxy-Authorization` value and never appends `Authorization`; the declared target and exact
   placeholder presentation remain the only substitution authority.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,
@@ -136,8 +157,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   (`502` when the proxy itself could not decide) with an empty body and
   `x-agentplane-egress: denied; reason=<reason>`, where reason is one of `token-missing`,
   `token-rejected`, `pod-mismatch`, `no-binding`, `no-rule`,
-  `placeholder-unresolved`, `credential-unavailable`, `invalid-body`, `address-forbidden`, `host-unresolved`,
-  `unavailable`.
+  `placeholder-unresolved`, `credential-unavailable`, `impersonation-forbidden`, `invalid-body`,
+  `address-forbidden`, `host-unresolved`, `unavailable`.
 
 ## Upstream address
 

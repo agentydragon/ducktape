@@ -89,7 +89,9 @@ from cluster.cdk8s.agentplane.environment import (
     OrchestrationProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -476,6 +478,7 @@ def build_chart(
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
+        act_as_kubernetes_accounts=True,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -691,6 +694,9 @@ def build_chart(
     add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
+    )
+    KubernetesAccounts(
+        chart, "kubernetes-accounts", namespace=kubernetes_accounts_namespace(NAMESPACE), proxy_namespace=NAMESPACE
     )
     if isinstance(models, PublicLiteLLM):
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)

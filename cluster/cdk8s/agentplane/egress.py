@@ -119,6 +119,8 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
+# The automounted API-server token the proxy's own client uses; kubelet rotates it in place.
+_API_SERVER_TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
@@ -526,6 +528,7 @@ class Egress(Construct):
         database_url: EnvValue,
         runners: Pods,
         admin_grpc_callers: Sequence[ServiceAccountRef],
+        act_as_kubernetes_accounts: bool,
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -534,7 +537,9 @@ class Egress(Construct):
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         tls_passthrough_services: Sequence[ServiceRef] = (),
     ) -> None:
-        """`runners` are the runner Pods, which the proxy admits."""
+        """`runners` are the runner Pods, which the proxy admits. `act_as_kubernetes_accounts` configures
+        the local API server that kubernetesServiceAccount credentials impersonate on; what the proxy may
+        impersonate there is `kubernetes_accounts.py`'s Role."""
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
@@ -585,6 +590,8 @@ class Egress(Construct):
                 ],
             ).model_dump(mode="json", exclude_none=True),
         }
+        if act_as_kubernetes_accounts:
+            content["local_api_server"] = {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE}
         settings = SettingsFile(
             self,
             "settings",

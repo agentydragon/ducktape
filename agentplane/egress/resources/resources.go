@@ -12,6 +12,7 @@ import (
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -102,8 +103,19 @@ type SecretKey struct{ Name, Key string }
 // same Pod that authenticated the hop before substitution.
 type ProjectedWorkloadToken struct{ Audience string }
 
-func (SecretKey) isSource()              {}
-func (ProjectedWorkloadToken) isSource() {}
+// KubernetesServiceAccount is a ServiceAccount the proxy acts as by impersonation on its own API
+// server: it presents its own bearer there with Impersonate-User naming the account.
+type KubernetesServiceAccount struct{ Namespace, Name string }
+
+// Username is the account as the API server names it, which is what Impersonate-User carries. A
+// ServiceAccount username is the one form `impersonate` on `serviceaccounts` authorizes.
+func (a KubernetesServiceAccount) Username() string {
+	return "system:serviceaccount:" + a.Namespace + ":" + a.Name
+}
+
+func (SecretKey) isSource()                {}
+func (ProjectedWorkloadToken) isSource()   {}
+func (KubernetesServiceAccount) isSource() {}
 
 // Credential is a credential a sandbox may present without holding, named so that its
 // placeholder is unique.
@@ -154,7 +166,23 @@ func CredentialFromAPI(credential *egressapi.EgressCredential) (Credential, erro
 		}
 		parsed.Targets = append(parsed.Targets, targeted)
 	}
+	if _, ok := source.(KubernetesServiceAccount); ok && !onlyAuthorizationBearer(parsed.Targets) {
+		// The value is the proxy's own API server bearer: anywhere but that header, a JSON field above
+		// all, it could be written into an object other callers read.
+		return Credential{}, fmt.Errorf(
+			"EgressCredential %s: spec.targets: a kubernetesServiceAccount credential has exactly one target, "+
+				"schemeToken Bearer on Authorization", name,
+		)
+	}
 	return parsed, nil
+}
+
+func onlyAuthorizationBearer(targets []Target) bool {
+	if len(targets) != 1 {
+		return false
+	}
+	bearer, ok := targets[0].(SchemeToken)
+	return ok && strings.EqualFold(bearer.Header, "Authorization") && strings.EqualFold(bearer.Scheme, "Bearer")
 }
 
 func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
@@ -168,8 +196,18 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 		}
 		parsed = append(parsed, ProjectedWorkloadToken{Audience: source.ProjectedWorkloadToken.Audience})
 	}
+	if account := source.KubernetesServiceAccount; account != nil {
+		// The API server builds the username from these, so a name it would not accept must not reach a header.
+		if problems := validation.IsDNS1123Label(account.Namespace); len(problems) > 0 {
+			return nil, fmt.Errorf("kubernetesServiceAccount.namespace %q: %s", account.Namespace, strings.Join(problems, "; "))
+		}
+		if problems := validation.IsDNS1123Subdomain(account.Name); len(problems) > 0 {
+			return nil, fmt.Errorf("kubernetesServiceAccount.name %q: %s", account.Name, strings.Join(problems, "; "))
+		}
+		parsed = append(parsed, KubernetesServiceAccount{Namespace: account.Namespace, Name: account.Name})
+	}
 	if len(parsed) != 1 {
-		return nil, errors.New("source must set exactly one of secretRef or projectedWorkloadToken")
+		return nil, errors.New("source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount")
 	}
 	return parsed[0], nil
 }

@@ -9,6 +9,7 @@ go_library(
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/policy/api/v1alpha1",
         "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/util/validation",
     ],
 )
 

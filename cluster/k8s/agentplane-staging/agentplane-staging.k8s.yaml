@@ -11456,6 +11456,44 @@ subjects:
     namespace: agentplane-staging
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Kubernetes accounts the agentplane-staging egress proxy acts as by impersonation.
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  name: agentplane-staging-k8s-accounts
+spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: egress-impersonator
+  namespace: agentplane-staging-k8s-accounts
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: egress
+  namespace: agentplane-staging-k8s-accounts
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: egress-impersonator
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: egress
+    namespace: agentplane-staging
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: external-creds-reader

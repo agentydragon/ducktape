@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -145,6 +146,17 @@ func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, 
 	return identity.NewVerifier(hop, projected), nil
 }
 
+// tokenFile reads a kubelet-rotated token file each time it is called.
+func tokenFile(path string) func() (string, error) {
+	return func() (string, error) {
+		token, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("local_api_server.token_file: %w", err)
+		}
+		return strings.TrimSpace(string(token)), nil
+	}
+}
+
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the
 // system roots.
 func upstreamRoots(path string) (*x509.CertPool, error) {
@@ -244,6 +256,9 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 
 	index := policy.NewIndex()
+	if server := c.LocalAPIServer; server != nil {
+		index.LocalAPIServer = &policy.APIServer{Host: server.Host, Port: server.Port, Token: tokenFile(server.TokenFile)}
+	}
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
 	})

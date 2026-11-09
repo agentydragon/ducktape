@@ -1,5 +1,6 @@
 // Package policy decides what a sandbox workload may reach: the bindings that name it, the egress
-// rules of the sets they grant, and the credential a request presents. It performs no I/O; the
+// rules of the sets they grant, and the credential a request presents. Its only I/O is reading the
+// proxy's own API server token for a request a kubernetesServiceAccount credential decides; the
 // informer keeps the Index equal to the API server's.
 package policy
 
@@ -19,12 +20,25 @@ const (
 	Secrets     watchhealth.Kind = "secrets"
 )
 
+// APIServer is the API server a kubernetesServiceAccount credential acts on: where requests to it go,
+// and the proxy's own bearer for it.
+type APIServer struct {
+	Host string
+	Port int
+	// Token reads the proxy's bearer. The proxy reads it once per admitted request (Request's
+	// APIServerToken), so a rotated token file is used from the next request on.
+	Token func() (string, error)
+}
+
 // Index is everything the decision reads, keyed by name. Its writer is the informer.
 type Index struct {
 	// Rules is the egress rules of the namespace's PolicySets and the bindings that grant them.
 	Rules *reader.Index[resources.Rule]
 	// Health covers the rules, credentials and Secrets alike.
 	Health *watchhealth.Health
+	// LocalAPIServer is the proxy's own API server, set before serving; nil leaves every
+	// kubernetesServiceAccount credential unavailable.
+	LocalAPIServer *APIServer
 
 	mu                sync.RWMutex
 	credentials       map[string]resources.Credential

@@ -3120,16 +3120,24 @@ accounts namespace and nothing else.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Blocked on `IDENTITY_KINDS`.** The shared `policy/reader` resolves identity subjects; the proxy's
-decision keys on the identity; the `kubernetesServiceAccount` source substitutes the proxy's own
-apiserver bearer and adds `Impersonate-User` for the named account, bounded by a Role granting
-`impersonate` on `serviceaccounts` in the accounts namespace; decision history records identity and
-account. The Kubernetes-audience projected token is removed with the kubeconfig
-(`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken` source, so the source, the
-sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and
-the egress `TODO.md` entry on where that token is substituted go with it. **Exit:** the egress harness shows two identities acting as one account,
-one losing its use rule without the other noticing, and the apiserver audit entry naming both the
-account and the proxy.
+**Blocked on `IDENTITY_KINDS`** for what remains. The shared `policy/reader` resolves identity
+subjects; the proxy's decision keys on the identity; decision history records the identity; the
+`basic` set carries the shared account's use rule. The Kubernetes-audience projected token is
+removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only `projectedWorkloadToken`
+source, so the source, the sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second
+TokenReview per tunnel and the egress `TODO.md` entry on where that token is substituted go with
+it. **Exit:** the egress harness shows two identities acting as one account, one losing its use
+rule without the other noticing.
+
+**Landed on ServiceAccount subjects (egress impersonation PR, 2026-11-08):** the
+`kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer
+with `Impersonate-User`, refusing caller `Impersonate-*` headers, the accounts-namespace Role
+granting `impersonate` on `serviceaccounts`, and the impersonated account in decision history. The
+k3s Pod suite shows two Sandboxes acting as one account and one losing its rule. Staging renders
+the Role but not the proxy's `local_api_server` setting until its image reads it (tombstone in
+`cluster/cdk8s/agentplane/chart.py`). The k3s API server keeps no audit log, so the audit entry
+naming both account and proxy is unverified there; the scenario checks a `SelfSubjectReview` and
+the decision history instead.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 

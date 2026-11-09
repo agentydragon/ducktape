@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -753,5 +754,113 @@ func TestAdditionalHopCredentialsFailBeforePolicy(t *testing.T) {
 		if record.Subject != nil || record.Reason == nil || *record.Reason != decision.TokenRejected {
 			t.Fatalf("additional credential reached policy: %+v", record)
 		}
+	}
+}
+
+// actAsAccount has the runner act as a ServiceAccount on an API server the lab's TLS upstream plays.
+func actAsAccount(t *testing.T, l *lab, port int) resources.Credential {
+	t.Helper()
+	account := resources.Credential{
+		Name:    "k8s-account",
+		Source:  resources.KubernetesServiceAccount{Namespace: "accounts", Name: "diagnostics"},
+		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
+	}
+	l.index.PutCredential(account)
+	l.index.LocalAPIServer = &policy.APIServer{
+		Host: fixtureHost, Port: port, Token: func() (string, error) { return "proxy-own-token", nil },
+	}
+	l.allow(rule("/api/**", account.Name))
+	return account
+}
+
+func TestATunnelToTheAPIServerActsAsTheAccountUntilTheRuleGoes(t *testing.T) {
+	l := newLab(t)
+	var authorization, impersonated seen
+	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization.set(r.Header.Get("Authorization"))
+		impersonated.set(strings.Join(r.Header.Values("Impersonate-User"), ","))
+	}))
+	port, _ := strconv.Atoi(portOf(upstream))
+	account := actAsAccount(t, l, port)
+	_, client := l.tunnel(t, portOf(upstream), true)
+	send := func(extra ...string) *http.Response {
+		t.Helper()
+		req := request(bounded(t), portOf(upstream), "/api/v1/namespaces", true, nil)
+		req.Header.Del("x-api-key")
+		req.Header.Set("Authorization", "Bearer "+account.Placeholder())
+		for i := 0; i < len(extra); i += 2 {
+			req.Header.Add(extra[i], extra[i+1])
+		}
+		response, err := client.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response
+	}
+
+	if response := send(); response.StatusCode != 200 || authorization.take() != "Bearer proxy-own-token" ||
+		impersonated.take() != "system:serviceaccount:accounts:diagnostics" {
+		t.Fatalf("status %d: the API server did not see the proxy's bearer acting as the account", response.StatusCode)
+	}
+	admitted := l.records.all()[1]
+	if admitted.Outcome != decision.Allow || !admitted.Substituted || admitted.Impersonated == nil ||
+		*admitted.Impersonated != (decision.Subject{Namespace: "accounts", Name: "diagnostics"}) {
+		t.Errorf("record %+v, want the impersonated account beside the subject", admitted)
+	}
+
+	// A caller asking for more on the proxy's rights is refused before anything is dialed.
+	response := send("Impersonate-Group", "system:masters")
+	if response.StatusCode != 403 || response.Header.Get("x-agentplane-egress") != "denied; reason=impersonation-forbidden" ||
+		authorization.take() != "" {
+		t.Errorf("caller-supplied Impersonate-Group: status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+	if refused := l.records.all()[2]; refused.Outcome != decision.Deny || *refused.Reason != decision.ImpersonationForbidden {
+		t.Errorf("record %+v", refused)
+	}
+
+	// The established tunnel decides each request again: the next one after the rule goes is refused.
+	l.allow(rule("/api/**", ""))
+	if response := send(); response.StatusCode != 403 || authorization.take() != "" || impersonated.take() != "" {
+		t.Errorf("after revocation: status %d, the API server was reached", response.StatusCode)
+	}
+}
+
+// The gate evaluates each request twice; a token file rotated between the two reads must not turn
+// into a refusal, and each request forwards the one token its admission read.
+func TestARotatedTokenFileStillForwardsOneTokenPerRequest(t *testing.T) {
+	l := newLab(t)
+	var authorization seen
+	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization.set(r.Header.Get("Authorization"))
+	}))
+	port, _ := strconv.Atoi(portOf(upstream))
+	account := actAsAccount(t, l, port)
+	var reads atomic.Int32
+	l.index.LocalAPIServer.Token = func() (string, error) { return fmt.Sprintf("token-%d", reads.Add(1)), nil }
+	_, client := l.tunnel(t, portOf(upstream), true)
+	for _, want := range []string{"Bearer token-1", "Bearer token-2"} {
+		req := request(bounded(t), portOf(upstream), "/api/v1/namespaces", true, nil)
+		req.Header.Del("x-api-key")
+		req.Header.Set("Authorization", "Bearer "+account.Placeholder())
+		response, err := client.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if got := authorization.take(); response.StatusCode != 200 || got != want {
+			t.Errorf("status %d, Authorization %q, want 200 with %q", response.StatusCode, got, want)
+		}
+	}
+}
+
+func TestTheAccountsBearerIsNotSentInPlaintext(t *testing.T) {
+	l := newLab(t)
+	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { t.Error("plaintext request reached the API server") })
+	port, _ := strconv.Atoi(portOf(upstream))
+	account := actAsAccount(t, l, port)
+	response := l.send(t, "GET", portOf(upstream), "/api/v1/namespaces", header("Authorization", "Bearer "+account.Placeholder()), nil)
+	if response.StatusCode != 403 || response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
+		t.Errorf("status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
 	}
 }

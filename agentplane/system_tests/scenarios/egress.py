@@ -32,6 +32,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.egress_admin_pb2 import Decision
+from agentplane.egress.resources import placeholder_of
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -44,6 +45,7 @@ from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import Text
+from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
 GITHUB_CLONE = "github-clone"
@@ -266,7 +268,8 @@ async def the_model_call_itself_goes_through_the_proxy(
 
 async def _kubectl_create_binding(
     cluster: Cluster, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_set: str
-) -> None:
+) -> str:
+    """Bind the Sandbox's account to `policy_set`, owned by the Sandbox; returns the binding's name."""
     body = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicyBinding",
@@ -292,7 +295,7 @@ async def _kubectl_create_binding(
     with tracer.start_as_current_span(
         "system_test.egress.policy_binding.apply", record_exception=False, set_status_on_exception=False
     ):
-        await cluster.kubectl("create", "-f", "-", body=body)
+        return await cluster.kubectl("create", "-f", "-", "-o", "jsonpath={.metadata.name}", body=body)
 
 
 async def _granted_request(cluster: Cluster) -> tuple[str, int, str]:
@@ -340,6 +343,138 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
                 admitted = await _decision_for(cluster, client, view.target.name, view.target.uid, host, after=after)
                 assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
+
+
+def _owned_by(*sandboxes: environment_service_pb2.EnvironmentDescriptor) -> list[dict[str, str]]:
+    """Owner references that collect an object once every one of these Sandboxes is gone."""
+    return [
+        {"apiVersion": SANDBOX_API_VERSION, "kind": SANDBOX_KIND, "name": view.target.name, "uid": str(view.target.uid)}
+        for view in sandboxes
+    ]
+
+
+async def _whoami(cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, credential: str) -> str:
+    """The username the API server sees for a `kubectl auth whoami` the Sandbox sends through its proxy."""
+    return await cluster.kubectl(
+        "exec",
+        view.kubernetes_diagnostics.pod.name,
+        "-c",
+        "environment-runtime",
+        "--",
+        "kubectl",
+        f"--server=https://{KUBERNETES_HOST}",
+        f"--token={placeholder_of(credential)}",
+        "auth",
+        "whoami",
+        "-o",
+        "jsonpath={.status.userInfo.username}",
+    )
+
+
+async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
+    cluster: Cluster, client: Client, sandbox: Sandboxes
+) -> None:
+    """Two Sandboxes act as one shared ServiceAccount through the proxy's impersonation, and
+    removing one's use rule refuses it on its next request while the other keeps the account.
+
+    `kubectl auth whoami` is a SelfSubjectReview, so its answer is the username the API server
+    authorized the request as: the impersonated account, not the proxy. The k3s API server keeps
+    no audit log, so the proxy's half of the pair is checked in the decision history instead.
+    """
+    first, second = await asyncio.gather(sandbox("systest-account-first"), sandbox("systest-account-second"))
+    suffix = secrets.token_hex(4)
+    account, credential = f"shared-{suffix}", f"k8s-account-{suffix}"
+    accounts = kubernetes_accounts_namespace(cluster.namespace)
+    username = f"system:serviceaccount:{accounts}:{account}"
+    # The later -n overrides the fixture namespace the driver passes.
+    await cluster.kubectl(
+        "create",
+        "-n",
+        accounts,
+        "-f",
+        "-",
+        body={"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": account, "namespace": accounts}},
+    )
+    try:
+        owners = _owned_by(first, second)
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "EgressCredential",
+                "metadata": {"name": credential, "ownerReferences": owners},
+                "spec": {
+                    "description": f"Act as {accounts}/{account} on the local API server.",
+                    "source": {"kubernetesServiceAccount": {"namespace": accounts, "name": account}},
+                    "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
+                },
+            },
+        )
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "PolicySet",
+                "metadata": {"name": credential, "ownerReferences": owners},
+                "spec": {
+                    "rules": [
+                        {
+                            "type": "egress",
+                            "hosts": [KUBERNETES_HOST],
+                            "clusterInternal": True,
+                            "credentialRef": {"name": credential},
+                        }
+                    ]
+                },
+            },
+        )
+        revoked = await _kubectl_create_binding(cluster, first, credential)
+        await _kubectl_create_binding(cluster, second, credential)
+
+        with tracer.start_as_current_span(
+            "system_test.egress.account.observe", record_exception=False, set_status_on_exception=False
+        ):
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True
+            ):
+                with attempt:
+                    for view in (first, second):
+                        assert await _whoami(cluster, view, credential) == username
+        for view in (first, second):
+            acted = await _decision_for(cluster, client, view.target.name, view.target.uid, KUBERNETES_HOST)
+            assert acted.outcome == Decision.OUTCOME_ALLOW, f"{acted!r}"
+            assert acted.policy == credential, f"{acted!r}"
+            assert acted.substituted, f"{acted!r}"
+            assert (acted.impersonated.namespace, acted.impersonated.name) == (accounts, account), (
+                f"the decision does not name the impersonated account: {acted!r}"
+            )
+
+        await cluster.kubectl("delete", "policybinding", revoked, "--wait=true")
+        with tracer.start_as_current_span(
+            "system_test.egress.account.revoke", record_exception=False, set_status_on_exception=False
+        ):
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True
+            ):
+                with attempt:
+                    after = datetime.now(UTC)
+                    try:
+                        still = await _whoami(cluster, first, credential)
+                    except RuntimeError:
+                        still = None
+                    assert still is None, f"{first.target.name} still acts as {still} after losing its rule"
+        refused = await _decision_for(
+            cluster, client, first.target.name, first.target.uid, KUBERNETES_HOST, after=after
+        )
+        assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
+        assert refused.reason == "placeholder-unresolved", f"{refused!r}"
+        assert await _whoami(cluster, second, credential) == username
+    finally:
+        await cluster.kubectl("delete", "serviceaccount", account, "-n", accounts, "--ignore-not-found")
 
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
