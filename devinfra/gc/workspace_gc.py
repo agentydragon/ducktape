@@ -39,7 +39,7 @@ import shutil
 import sys
 import threading
 from collections import Counter
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -70,7 +70,7 @@ from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.repo_contents_cache_gc import EntryInspection, PrunableEntry
-from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
 from devinfra.gc.verdict import verdict_of
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
@@ -78,7 +78,8 @@ from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWo
 logger = logging.getLogger(__name__)
 
 _DEFAULT_OUTPUT_USER_ROOT = default_output_user_root()
-_PROGRESS_COUNT_COLUMNS: dict[ProgressCategory, str] = {"PRUNE": "prune", "KEEP": "keep", "REVIEW": "review"}
+_SCAN_COLUMNS = {"PRUNE": "prune", "KEEP": "keep", "REVIEW": "review"}
+_REMOVAL_COLUMNS = {"REMOVED": "removed", "SKIPPED": "skipped", "FAILED": "failed"}
 _PROGRESS_BAR_WIDTH = 24
 
 
@@ -179,30 +180,39 @@ class _RunContext:
 @dataclass(slots=True)
 class _PhaseProgress:
     total: int
-    counts: dict[ProgressCategory, int]
+    counts: dict[str, int]
 
 
 class _ProgressReporter:
-    """Live per-phase progress rendered as a borderless table: one row per scan phase, with
-    its prune/keep/review counts in aligned columns and a bar; a no-op off a TTY (`rich.live.Live`
-    detects this itself).
+    """Live per-phase progress rendered as a borderless table: one row per phase, with its
+    outcome counts in aligned columns and a bar; a no-op off a TTY (`rich.live.Live` detects
+    this itself).
 
-    A scan over hundreds of worktrees and branches can take minutes with nothing else to show
-    for it in the meantime — this renders in place instead of the wall of `logger.info` lines
-    underneath (still there, for `--verbose`). Updates take a lock, which the classification
-    worker pools rely on. `transient=True` clears the table on completion — the CLI's own
-    report print, right after, is the record of the outcome.
+    A scan over hundreds of worktrees and branches, or the removal of large trees, can take
+    minutes with nothing else to show for it in the meantime — this renders in place instead
+    of the wall of `logger.info` lines underneath (still there, for `--verbose`). Updates take
+    a lock, which the classification worker pools rely on. `transient=True` clears the table
+    on completion — the CLI's own report print, right after, is the record of the outcome.
 
-    Used as a context manager around each scan call: `Live` owns the terminal's bottom region
-    while live, so any other output must happen with it stopped, not interleaved. Each entry
-    starts with an empty table.
+    Used as a context manager around each scan or removal step: `Live` owns the terminal's
+    bottom region while live, so any other output must happen with it stopped, not
+    interleaved. Each entry starts with an empty table.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, columns: Mapping[str, str]) -> None:
+        self._columns = columns  # outcome key → column header
         self._console = Console(stderr=True)
         self._phases: dict[str, _PhaseProgress] = {}
         self._live: Live | None = None
         self._lock = threading.Lock()
+
+    @classmethod
+    def for_scans(cls) -> _ProgressReporter:
+        return cls(_SCAN_COLUMNS)
+
+    @classmethod
+    def for_removals(cls) -> _ProgressReporter:
+        return cls(_REMOVAL_COLUMNS)
 
     def __enter__(self) -> _ProgressReporter:
         self._phases.clear()
@@ -218,16 +228,16 @@ class _ProgressReporter:
     def render(self) -> Table:
         table = Table.grid(padding=(0, 2))
         table.add_column()
-        for _ in _PROGRESS_COUNT_COLUMNS:
+        for _ in self._columns:
             table.add_column(justify="right")
         table.add_column()
         table.add_column(justify="right")
-        table.add_row("", *(Text(label, style="dim") for label in _PROGRESS_COUNT_COLUMNS.values()), "", "")
+        table.add_row("", *(Text(label, style="dim") for label in self._columns.values()), "", "")
         for phase, state in self._phases.items():
             done = sum(state.counts.values())
             table.add_row(
                 phase,
-                *(str(state.counts[category]) for category in _PROGRESS_COUNT_COLUMNS),
+                *(str(state.counts[key]) for key in self._columns),
                 ProgressBar(total=state.total, completed=done, width=_PROGRESS_BAR_WIDTH),
                 f"{done}/{state.total}",
             )
@@ -239,12 +249,12 @@ class _ProgressReporter:
 
     def start_phase(self, phase: str, total: int) -> None:
         with self._lock:
-            self._phases[phase] = _PhaseProgress(total, {"PRUNE": 0, "KEEP": 0, "REVIEW": 0})
+            self._phases[phase] = _PhaseProgress(total, dict.fromkeys(self._columns, 0))
             self._refresh()
 
-    def record(self, phase: str, category: ProgressCategory) -> None:
+    def record(self, phase: str, outcome: str) -> None:
         with self._lock:
-            self._phases[phase].counts[category] += 1
+            self._phases[phase].counts[outcome] += 1
             self._refresh()
 
 
@@ -275,14 +285,20 @@ def _relative_to(path: Path, start: Path) -> str:
     return os.path.relpath(path, start)
 
 
-async def _run_bounded[T, R](items: Sequence[T], function: Callable[[T], R], *, workers: int) -> list[R]:
+async def _run_bounded[T, R](
+    items: Sequence[T], function: Callable[[T], R], *, workers: int, on_done: Callable[[R], None] | None = None
+) -> list[R]:
     """Run blocking `function` over `items` on worker threads, `workers` at a time; results are in
-    `items` order. `function` must be independent per item."""
+    `items` order. `function` must be independent per item. `on_done` sees each result as it
+    finishes, on the event-loop thread."""
     semaphore = asyncio.Semaphore(workers)
 
     async def run_one(item: T) -> R:
         async with semaphore:
-            return await asyncio.to_thread(function, item)
+            result = await asyncio.to_thread(function, item)
+        if on_done is not None:
+            on_done(result)
+        return result
 
     return list(await asyncio.gather(*(run_one(item) for item in items)))
 
@@ -309,6 +325,30 @@ _WORKTREE_LABELS = _RemovalLabels("worktree", "worktrees", "Worktrees", "removed
 _BRANCH_LABELS = _RemovalLabels("branch", "branches", "Branches", "deleted", str)
 _BASE_LABELS = _RemovalLabels("base", "bases", "Bases", "deleted", _short, leftover="quarantine")
 _FOREIGN_CLONE_LABELS = _RemovalLabels("foreign clone", "foreign clones", "Foreign clones", "removed", _short)
+
+
+def _removal_outcome[S](result: RemovalResult[S]) -> str:
+    match result:
+        case Removed():
+            return "REMOVED"
+        case Skipped():
+            return "SKIPPED"
+        case Failed():
+            return "FAILED"
+
+
+async def _remove_all[T, S](
+    items: Sequence[T], function: Callable[[T], RemovalResult[S]], labels: _RemovalLabels[S], *, workers: int
+) -> list[RemovalResult[S]]:
+    """Run the removals with a live removed/skipped/failed row; the caller reports once it clears."""
+    with _ProgressReporter.for_removals() as progress:
+        progress.start_phase(labels.plural, len(items))
+        return await _run_bounded(
+            items,
+            function,
+            workers=workers,
+            on_done=lambda result: progress.record(labels.plural, _removal_outcome(result)),
+        )
 
 
 def _nothing_to_remove[S]() -> _RemovalOutcome[S]:
@@ -375,7 +415,9 @@ async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classif
             live_pids=live.get(item.worktree.path, []),
         )
 
-    return _report_removals(await _run_bounded(candidates, remove_one, workers=context.workers), _WORKTREE_LABELS)
+    return _report_removals(
+        await _remove_all(candidates, remove_one, _WORKTREE_LABELS, workers=context.workers), _WORKTREE_LABELS
+    )
 
 
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
@@ -399,7 +441,7 @@ async def _apply_base_deletions(
     if not candidates:
         return _nothing_to_remove()
     free_before = shutil.disk_usage(output_user_root).free
-    results = await _run_bounded(candidates, output_base_gc.delete_prunable_base, workers=workers)
+    results = await _remove_all(candidates, output_base_gc.delete_prunable_base, _BASE_LABELS, workers=workers)
     free_change = shutil.disk_usage(output_user_root).free - free_before
     return _report_removals(
         results, _BASE_LABELS, summary_suffix=f"; free-space change {humanize.naturalsize(free_change, binary=True)}"
@@ -430,11 +472,6 @@ async def _apply_repo_cache_deletions(
         output_user_root=output_user_root,
         session_bases=session_bases,
     )
-    results = [
-        *trashed.results,
-        *await _run_bounded(trashed.trashed, lambda item: repo_contents_cache_gc.empty_trash(*item), workers=workers),
-    ]
-    free_change = shutil.disk_usage(contents).free - free_before
     labels: _RemovalLabels[Path] = _RemovalLabels(
         "repo-cache entry",
         "repo-cache entries",
@@ -443,6 +480,13 @@ async def _apply_repo_cache_deletions(
         lambda path: _relative_to(path, contents),
         leftover="trash",
     )
+    results = [
+        *trashed.results,
+        *await _remove_all(
+            trashed.trashed, lambda item: repo_contents_cache_gc.empty_trash(*item), labels, workers=workers
+        ),
+    ]
+    free_change = shutil.disk_usage(contents).free - free_before
     return _report_removals(
         results,
         labels,
@@ -481,7 +525,9 @@ async def _apply_foreign_clone_deletions(
         return _nothing_to_remove()
     logger.info("Removing %d foreign clones", len(candidates))
     return _report_removals(
-        await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=context.workers),
+        await _remove_all(
+            candidates, foreign_clone_gc.prune_foreign_clone, _FOREIGN_CLONE_LABELS, workers=context.workers
+        ),
         _FOREIGN_CLONE_LABELS,
     )
 
@@ -726,7 +772,7 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
 
     `repo` is None only for the repo-cache view, which needs no git.
     """
-    progress = _ProgressReporter()
+    progress = _ProgressReporter.for_scans()
     domains = command.domains
     session_bases = (
         output_base_gc.session_env_output_bases()
