@@ -2,11 +2,12 @@
 //! provider's isolated allocation-only query.
 
 use super::super::allocation_transfer::{self, AllocationJudgment, AllocationValue};
+use super::super::alternatives::{PathState, join_worlds};
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
-    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
 use super::super::kernel::frame::{
@@ -19,6 +20,7 @@ use super::super::value_model::{
     ValueExpr, Values,
 };
 use super::super::world::World;
+use super::super::world::join::Joined;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::integrity::Integrity;
@@ -45,6 +47,9 @@ pub(in crate::facts::sync_effects) struct ProviderContext<'a> {
     /// The query's fresh heap: an isolated scope, so its cells never reach a
     /// caller's effects and no literal writability is proven.
     pub(in crate::facts::sync_effects) world: World,
+    /// The retained-closure proof projects one closure and refuses a fork;
+    /// an allocation-only body explores it.
+    pub(in crate::facts::sync_effects) fork_policy: ForkPolicy,
 }
 
 impl ProviderContext<'_> {
@@ -250,7 +255,62 @@ impl NativeContext for ProviderContext<'_> {
     }
 }
 
+/// The path state of a provider query: its private heap and what the path
+/// found about its own allocations.
+#[derive(Clone)]
+pub(in crate::facts::sync_effects) struct ProviderPath {
+    world: World,
+    unsupported_closures: BTreeSet<u32>,
+    native_constructions: BTreeSet<NativeIntrinsic>,
+}
+
+impl PathState for ProviderPath {
+    fn world(&self) -> &World {
+        &self.world
+    }
+}
+
+impl ProviderContext<'_> {
+    /// Install the join of a family's leaves. Refusals and consumed native
+    /// identities are may-facts; a world the join refuses refuses the query.
+    #[must_use]
+    pub(in crate::facts::sync_effects) fn join(&mut self, leaves: Vec<ProviderPath>) -> bool {
+        let Joined {
+            world,
+            widened: _,
+            refused,
+        } = join_worlds(leaves.iter().map(|leaf| &leaf.world));
+        self.world = world;
+        for leaf in leaves {
+            self.unsupported_closures.extend(leaf.unsupported_closures);
+            self.native_constructions.extend(leaf.native_constructions);
+        }
+        refused.is_none()
+    }
+}
+
 impl ControlContext for ProviderContext<'_> {
+    type Branch = ProviderPath;
+    fn fork_policy(&self) -> ForkPolicy {
+        self.fork_policy
+    }
+    fn branch(&self) -> ProviderPath {
+        ProviderPath {
+            world: self.world.clone(),
+            unsupported_closures: self.unsupported_closures.clone(),
+            native_constructions: self.native_constructions.clone(),
+        }
+    }
+    fn enter(&mut self, path: ProviderPath) {
+        let ProviderPath {
+            world,
+            unsupported_closures,
+            native_constructions,
+        } = path;
+        self.world = world;
+        self.unsupported_closures = unsupported_closures;
+        self.native_constructions = native_constructions;
+    }
     fn unproved(&mut self, _frame: &mut LocalFrame, _what: Unproved<'_>) -> Disposition {
         // Symbolic inputs and captures prove no descriptor, getter or coercion
         // behavior. Only the shared transfers can certify an operation, and
