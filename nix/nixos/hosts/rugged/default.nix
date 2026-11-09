@@ -28,7 +28,6 @@ in
     ./hardware-configuration.nix
     ../../modules/claude-desktop.nix
     ../../modules/k8s-workstation.nix
-    ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
     ./nebula-underlay-refresh.nix
@@ -63,9 +62,6 @@ in
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # Attribution for the GitHub GraphQL quota drain; see the module header.
-  ducktape.githubApiRecorder.enable = true;
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;

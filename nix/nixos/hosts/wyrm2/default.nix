@@ -49,7 +49,6 @@ in
     ../../modules/home-wifi.nix
     ../../modules/k8s-workstation.nix
     ../../modules/gpu-monitor.nix
-    ../../modules/github-api-recorder.nix
     ../../modules/attic-substituter.nix
     ../../modules/piraeus-host.nix
   ];
@@ -137,9 +136,6 @@ in
   # GPU health monitoring — periodic telemetry + dmesg error watcher.
   # See debug/atlas/gpu_lockup_20260417/README.md for context.
   ducktape.gpuMonitor.enable = true;
-
-  # Attribution for the GitHub GraphQL quota drain; see the module header.
-  ducktape.githubApiRecorder.enable = true;
 
   # MT7921 USB WiFi stick firmware (for CPAP ez Share sync)
   hardware.firmware = [ pkgs.linux-firmware ];
