@@ -14,6 +14,7 @@ metrics_bind_address: ":9090"
 health_probe_bind_address: ":9091"
 runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
 runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+identities: true
 `
 
 func writeSettings(t *testing.T, content string) string {
@@ -45,6 +46,7 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
 		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
+		Identities:             true,
 	}
 	if c != want {
 		t.Fatalf("unexpected settings: %+v", c)
@@ -76,6 +78,17 @@ func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
 	}
 	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" {
 		t.Fatalf("bind address defaults were lost: %+v", c)
+	}
+}
+
+func TestAnAbsentIdentitiesSettingIsTheServiceAccountMode(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, strings.Replace(validSettings, "identities: true\n", "", 1)))
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Identities {
+		t.Fatal("identity mode without the setting")
 	}
 }
 

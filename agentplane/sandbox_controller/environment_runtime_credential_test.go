@@ -87,7 +87,7 @@ func issueCredential(t *testing.T, c client.Client, sandbox client.ObjectKey) {
 func requestIssued(t *testing.T, r *Reconciler, sandbox *sandboxapi.Sandbox, binding requester.Binding) requester.Issued {
 	t.Helper()
 	for range 2 {
-		issued, pending, err := r.requestCredential(context.Background(), sandbox, binding)
+		issued, pending, err := r.requestCredential(context.Background(), sandbox, requester.ServiceAccount{Name: sandbox.Name}, binding)
 		if err != nil {
 			t.Fatal(err)
 		}
