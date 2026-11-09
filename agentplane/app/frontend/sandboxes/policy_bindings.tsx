@@ -86,7 +86,7 @@ export function PolicyBindingsSection({
     void getSandboxForm().then(
       (form) => {
         setError(null);
-        setPolicySets(form.policy_sets);
+        setPolicySets(form.policySets);
       },
       (failure: unknown) => setError(displayableError(failure))
     );
