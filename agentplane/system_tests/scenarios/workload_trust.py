@@ -343,14 +343,15 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
         )
         cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")
         cleanup.push_async_callback(cluster.kubectl, "delete", f"sandboxes.{GROUP}", name, "--timeout=300s")
-        credential = await _sandbox_status(cluster, name, "runnerCredential", "id")
+        # The Sandbox's WorkloadCredential, once issued, names the Runtime's URI and its own key pair's Secret.
         async with asyncio.timeout(READY_SECONDS):
             while True:
                 with contextlib.suppress(RuntimeError):
-                    runtime_certificate = await _object(cluster, "certificate", f"runner-{credential}")
-                    break
+                    status = (await _object(cluster, "workloadcredential", name)).get("status", {})
+                    if status.get("uri") and status.get("secretName"):
+                        break
                 await asyncio.sleep(1)
-        (uri,) = runtime_certificate["spec"]["uris"]
+        uri, own_secret = status["uri"], status["secretName"]
         impostor = await _cluster_ca_leaf(cluster, uri, ("digital signature", "server auth", "client auth"))
         await _put_tls_secret(cluster, name, *impostor)
 
@@ -364,7 +365,7 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
         ready = next((c for c in sandbox["status"].get("conditions", []) if c["type"] == "Ready"), {})
         assert ready.get("status") != "True", f"a Sandbox serving a cluster-internal-ca leaf naming {uri} is Ready"
 
-        await _put_tls_secret(cluster, name, *await _secret_pem(cluster, cluster.namespace, f"runner-{credential}"))
+        await _put_tls_secret(cluster, name, *await _secret_pem(cluster, cluster.namespace, own_secret))
         await cluster.kubectl("wait", f"sandboxes.{GROUP}/{name}", "--for=condition=Ready=True", "--timeout=300s")
     # The Gateway's real runner connection still holds: a Sandbox is Ready only while its runner is connected.
     await cluster.kubectl(
