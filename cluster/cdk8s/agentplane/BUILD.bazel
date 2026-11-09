@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
     "//agentplane/system_tests/deployment:__pkg__",
@@ -1277,6 +1277,38 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "render_managed_account_admission",
+    testonly = True,
+    srcs = ["render_managed_account_admission.py"],
+    deps = [
+        ":managed_account_admission",
+        "//agentplane:subjects",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_binary(
+    name = "render_managed_account_admission_bin",
+    testonly = True,
+    main_module = "cluster.cdk8s.agentplane.render_managed_account_admission",
+    deps = [":render_managed_account_admission"],
+)
+
+# The names are the Policy Controller envtest's (agentplane/policy_controller/controller_test.go).
+genrule(
+    name = "managed_account_admission_envtest",
+    testonly = True,
+    outs = ["managed_account_admission_envtest.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) $(execpath :render_managed_account_admission_bin)" +
+          " --namespace=test-policies --controller=test-policy-controller --accounts-namespace=test-accounts $@",
+    tools = [
+        ":render_managed_account_admission_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/policy_controller:__pkg__"],
 )
 
 py_test(

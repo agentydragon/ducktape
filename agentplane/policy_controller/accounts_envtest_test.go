@@ -2,7 +2,9 @@ package policycontroller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -12,9 +14,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/bazelbuild/rules_go/go/runfiles"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
@@ -313,6 +318,70 @@ func TestManagedAccountUseIsNeverAdopted(t *testing.T) {
 			}
 			assertAccountUse(t, api, account, readServiceAccount(t, api, account.Name))
 		})
+	}
+}
+
+// The controller's real writes of an account's use pass the admission policy cdk8s renders over them
+// (cluster/cdk8s/agentplane/managed_account_admission.py), and one outside that shape does not, so
+// the controller and the policy cannot drift apart on the host, prefix or shape.
+func TestManagedAccountUseIsAdmitted(t *testing.T) {
+	ctx := context.Background()
+	controllerUser := "system:serviceaccount:" + policyNamespace + ":test-policy-controller"
+	api, cached, r := startPolicyAPIServerAs(t, false, controllerUser)
+	for _, name := range []string{policyNamespace, accountsNamespace} {
+		create(t, api, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+	}
+	installManagedAccountAdmission(t, api)
+	account := testManagedAccount("test-admitted-account")
+	create(t, api, account)
+	waitForCachedAccount(t, cached, account)
+
+	mismatched := &policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: policyNamespace, Name: AccountCredentialName(account.Name),
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(account, policyapi.SchemeGroupVersion.WithKind("ManagedServiceAccount"))},
+		},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
+			Type: resources.EgressRuleType, Hosts: []string{"test.example"}, ClusterInternal: true,
+			CredentialRef: &policyapi.CredentialRef{Name: AccountCredentialName(account.Name)},
+		}}},
+	}
+	// The API server loads a new policy in the background, and shows no sign of having loaded it.
+	eventually(t, "the policy to refuse the controller a use set to another host", func() (bool, string) {
+		err := r.Create(ctx, mismatched.DeepCopy(), client.DryRunAll)
+		return apierrors.IsInvalid(err), fmt.Sprint(err)
+	})
+
+	if _, err := r.ReconcileManagedServiceAccount(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(account)}); err != nil {
+		t.Fatal(err)
+	}
+	assertAccountUse(t, api, account, readServiceAccount(t, api, account.Name))
+	if reason := accountReason(readManagedAccount(t, api, account.Name).Status); reason != "Created" {
+		t.Fatalf("reason after an admitted reconcile: %s", reason)
+	}
+}
+
+// installManagedAccountAdmission creates the rendered policy and binding, named for this package's
+// namespaces and the controller test-policy-controller.
+func installManagedAccountAdmission(t *testing.T, api client.Client) {
+	t.Helper()
+	path, err := runfiles.Rlocation(os.Getenv("MANAGED_ACCOUNT_ADMISSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var documents []map[string]any
+	if err := json.Unmarshal(rendered, &documents); err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 {
+		t.Fatalf("want the policy and its binding, rendered %d objects", len(documents))
+	}
+	for _, document := range documents {
+		create(t, api, &unstructured.Unstructured{Object: document})
 	}
 }
 

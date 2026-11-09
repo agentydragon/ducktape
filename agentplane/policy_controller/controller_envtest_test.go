@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -318,6 +319,13 @@ func waitForBindingStatus(t *testing.T, c client.Client, name string, ready meta
 // Reconcile themselves.
 func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.Client, *Reconciler) {
 	t.Helper()
+	return startPolicyAPIServerAs(t, controller, "")
+}
+
+// startPolicyAPIServerAs is startPolicyAPIServer with the manager acting as user, an administrator
+// whom admission sees by name; "" keeps the envtest administrator.
+func startPolicyAPIServerAs(t *testing.T, controller bool, user string) (client.Client, client.Client, *Reconciler) {
+	t.Helper()
 	kube, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -345,7 +353,12 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 	}
 	managed := labels.Set(map[string]string{ManagedByLabel: FieldManager, PolicyNamespaceLbl: policyNamespace}).AsSelector()
 	skipNameValidation := true
-	manager, err := ctrl.NewManager(config, ctrl.Options{
+	managerConfig := config
+	if user != "" {
+		managerConfig = rest.CopyConfig(config)
+		managerConfig.Impersonate = rest.ImpersonationConfig{UserName: user, Groups: []string{"system:masters"}}
+	}
+	manager, err := ctrl.NewManager(managerConfig, ctrl.Options{
 		Scheme: scheme,
 		// Controller names are unique per process, and each test starts its own manager.
 		Controller:             ctrlconfig.Controller{SkipNameValidation: &skipNameValidation},
