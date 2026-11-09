@@ -3033,12 +3033,10 @@ resolves to the Sandbox's own ServiceAccount and yields the same `Principal` a T
 (`SERVICES_IDENTITY_PRINCIPAL`); a Sandbox sidecar forwards its Kubernetes-audience token beside
 the SVID for `kubectl` substitution (`EGRESS_IDENTITY_RULES`); the proxy's `forward` listener,
 the sidecar and the command-box templates keep a bearer hop, each marked `CLEANUP(added 2026-11-09)`
-(`WORKLOAD_AUTH_CUTOVER`); and staging has not run a Sandbox since the listeners changed
-(`SVID_STAGING_CHECK`).
+(`WORKLOAD_AUTH_CUTOVER`).
 
 ```mermaid
 flowchart LR
-    SVID_STAGING_CHECK[Ready: one Sandbox through the SVID route on staging]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
@@ -3064,16 +3062,6 @@ flowchart LR
 the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the envtest apiserver,
 admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
 tests of untouched kinds still pass.
-
-### `SVID_STAGING_CHECK` — one Sandbox through the SVID route on staging
-
-**Ready; live check for a deployment-specific gap.** Every staging service and the egress proxy run
-the two-mode listeners (images from 2026-11-09), and staging held zero Sandbox CRs at that point, so
-the SVID route has only run in k3s. Launch one Pod Sandbox from the app, confirm the egress decision
-history and one platform service record a SPIFFE-authenticated caller for it, confirm `kubectl`
-still works through the forwarded Kubernetes-audience token, then finish it. Stop there: a failure
-is a bug to fix in the slice, not a reason to widen the check. **Exit:** the observation recorded
-in the PR that closes this node, and the node removed.
 
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
