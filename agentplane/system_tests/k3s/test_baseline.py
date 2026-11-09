@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -141,6 +142,27 @@ def test_reused_pid_cannot_be_stopped(retained_root: Path, monkeypatch: pytest.M
     }
     with pytest.raises(RuntimeError, match="PID was reused"):
         baseline.stop_owned(node, previous)
+
+
+@pytest.mark.parametrize(
+    ("unclean_stop", "free_bytes", "retainable"),
+    [
+        (False, baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, True),
+        (True, baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, False),
+        (False, baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES - 1, False),
+    ],
+)
+def test_image_store_is_dropped_after_unclean_stop_or_low_free_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unclean_stop: bool, free_bytes: int, retainable: bool
+) -> None:
+    node = baseline.K3s(tmp_path, tmp_path / "unused-binary")
+    node.data_dir = tmp_path / "k3s-env"
+    marker = node.data_dir / "agent/containerd/.stack-running"
+    marker.parent.mkdir(parents=True)
+    if unclean_stop:
+        marker.touch()
+    monkeypatch.setattr(baseline.shutil, "disk_usage", lambda _path: SimpleNamespace(free=free_bytes))
+    assert node.image_store_is_retainable() is retainable
 
 
 if __name__ == "__main__":

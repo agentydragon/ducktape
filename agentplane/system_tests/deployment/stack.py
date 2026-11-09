@@ -400,7 +400,7 @@ def running_stack(
                 baseline.stop_previous()
                 process = k3s.start(
                     layers_in_memory=not uses_virtualization,
-                    preserve_image_store=not fixture.firecracker_sandboxes,
+                    preserve_image_store=k3s.image_store_is_retainable(),
                     database_in_memory=fixture.firecracker_sandboxes,
                 )
                 cleanup.callback(k3s.stop, process)

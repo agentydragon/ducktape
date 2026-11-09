@@ -39,6 +39,12 @@ CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 WORKING_SET_SAMPLE_SECONDS = 10
 # k3s/defs.bzl imports every fixture and guest image under this repository with a fixture-local tag.
 FIXTURE_IMAGE_REPOSITORY = "git.allegedly.works/ducktape-ci/"
+# A kept image store shares the worker's work disk with a file cache that grows toward its cap. Below this
+# much free space an action has too little room for its image imports and one RAM checkpoint, so the
+# store is dropped. Not the scheduler's `EstimatedFreeDiskBytes`: a full cache would then keep the store from ever being kept.
+RETAINED_IMAGE_STORE_MIN_FREE_BYTES = 20 * 10**9
+# Present from a stack's start until its clean stop. Inside the store so that a wipe removes it too.
+_IMAGE_STORE_IN_USE_MARKER = Path("agent/containerd/.stack-running")
 
 
 def run(
@@ -204,6 +210,22 @@ class K3s:
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
+    def image_store_is_retainable(self) -> bool:
+        """Whether the image store a previous stack left may seed this one.
+
+        Blobs are digest-addressed, so a stale store cannot serve the wrong image; the policy only bounds
+        disk use and distrusts a store whose last stack did not stop cleanly."""
+        if (self.data_dir / _IMAGE_STORE_IN_USE_MARKER).exists():
+            logger.warning("dropping the image store: its last stack did not stop cleanly")
+            return False
+        free = shutil.disk_usage(self.data_dir).free
+        if free < RETAINED_IMAGE_STORE_MIN_FREE_BYTES:
+            logger.warning(
+                "dropping the image store: %s bytes free, need %s", free, RETAINED_IMAGE_STORE_MIN_FREE_BYTES
+            )
+            return False
+        return True
+
     def start(
         self,
         *,
@@ -294,6 +316,8 @@ class K3s:
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
             iptables_rule.ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
+            if not detached:
+                (self.data_dir / _IMAGE_STORE_IN_USE_MARKER).touch()
         except BaseException:
             process.terminate()
             try:
@@ -506,6 +530,7 @@ class K3s:
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
         self._database_cleanup.close()
         self.cleanup_stopped()
+        (self.data_dir / _IMAGE_STORE_IN_USE_MARKER).unlink(missing_ok=True)
 
     def cleanup_stopped(self) -> None:
         """Remove Pods after an owned detached server has exited between test actions."""
