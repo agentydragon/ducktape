@@ -23,14 +23,14 @@ suspends (all `ret=0 dev_wake=0 pending_pkts=0`).
 
 ## Sequence
 
-| Time (PST) | Event                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| 19:11:02   | ModemManager: `connected -> disabled`, `power state updated: low`, drops inhibitor          |
-| 19:11:03   | First suspend; probe `ret=0`; resume at 19:11:14                                            |
-| 19:11:14   | Six MBIM `Transaction timed out`; ports reprobed from 19:11:16                              |
-| 19:11:26   | "about to suspend" and "ready to sleep; dropping inhibitor" in the same second              |
-| 19:11:27   | Kernel suspend fails twice: `ret=-16 pending_pkts=4`                                        |
-| 19:11:35   | ModemManager creates `modem20`; `unknown -> disabled` at 19:11:47                           |
+| Time (PST) | Event                                                                              |
+| ---------- | ---------------------------------------------------------------------------------- |
+| 19:11:02   | ModemManager: `connected -> disabled`, `power state updated: low`, drops inhibitor |
+| 19:11:03   | First suspend; probe `ret=0`; resume at 19:11:14                                   |
+| 19:11:14   | Six MBIM `Transaction timed out`; ports reprobed from 19:11:16                     |
+| 19:11:26   | "about to suspend" and "ready to sleep; dropping inhibitor" in the same second     |
+| 19:11:27   | Kernel suspend fails twice: `ret=-16 pending_pkts=4`                               |
+| 19:11:35   | ModemManager creates `modem20`; `unknown -> disabled` at 19:11:47                  |
 
 At 19:11:26 ModemManager logged no `power state updated: low`, and the new
 modem object did not exist yet: the suspend came 12 s after resume, mid-reprobe.
