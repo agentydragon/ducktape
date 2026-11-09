@@ -19,6 +19,8 @@ from agentplane.crds.generate import (
     POLICY_GENERATED_CRDS,
     SANDBOX_CRDS,
     SANDBOX_GENERATED_CRDS,
+    WORKLOAD_IDENTITY_CRDS,
+    WORKLOAD_IDENTITY_GENERATED_CRDS,
     generated_files,
 )
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -36,8 +38,16 @@ def test_committed_files_are_generated(runfiles: Runfiles) -> None:
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
     policy_generated = runfiles_root / POLICY_GENERATED_CRDS
     policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
+    workload_identity_generated = runfiles_root / WORKLOAD_IDENTITY_GENERATED_CRDS
+    workload_identity_crds = {
+        name: (workload_identity_generated / source).read_text() for name, source in WORKLOAD_IDENTITY_CRDS.items()
+    }
     for relative, content in generated_files(
-        {name: _committed(CRDS_DIR / name, runfiles) for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
+        {name: _committed(CRDS_DIR / name, runfiles) for name in CRD_FILES},
+        sandbox_crds,
+        egress_crds,
+        policy_crds,
+        workload_identity_crds,
     ):
         (undeclared_outputs_dir() / relative.name).write_text(content)
         assert content == _committed(relative, runfiles), f"{relative} is stale"

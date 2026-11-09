@@ -27,6 +27,7 @@ CRD_FILES = (
     "crd-managedserviceaccounts.yaml",
     "crd-sandboxtemplates.yaml",
     "crd-sandboxes.yaml",
+    "crd-workloadcredentials.yaml",
 )
 SANDBOX_CRDS = {
     "crd-sandboxtemplates.yaml": "agentplane.allegedly.works_sandboxtemplates.yaml",
@@ -36,6 +37,8 @@ EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egressc
 SANDBOX_GENERATED_CRDS = "ducktape/agentplane/sandboxes/api/generated_crds"
 EGRESS_GENERATED_CRDS = "ducktape/agentplane/egress/api/v1alpha1/generated_crds"
 POLICY_GENERATED_CRDS = "ducktape/agentplane/policy/api/v1alpha1/generated_crds"
+WORKLOAD_IDENTITY_GENERATED_CRDS = "ducktape/agentplane/workload_identity/api/v1alpha1/generated_crds"
+WORKLOAD_IDENTITY_CRDS = {"crd-workloadcredentials.yaml": "agentplane.allegedly.works_workloadcredentials.yaml"}
 POLICY_CRDS = {
     "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",
     "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
@@ -80,6 +83,7 @@ def generated_files(
     sandbox_crds: Mapping[str, str],
     egress_crds: Mapping[str, str],
     policy_crds: Mapping[str, str],
+    workload_identity_crds: Mapping[str, str],
 ) -> Iterator[tuple[Path, str]]:
     """(repo-relative path, content) of each generated CRD."""
     for crd_file, committed in crds.items():
@@ -93,6 +97,8 @@ def generated_files(
         elif crd_file in POLICY_CRDS:
             text = yaml.safe_dump(_generated_crd(policy_crds[crd_file]), sort_keys=False)
             yield CRDS_DIR / crd_file, text
+        elif crd_file in WORKLOAD_IDENTITY_CRDS:
+            yield CRDS_DIR / crd_file, yaml.safe_dump(_generated_crd(workload_identity_crds[crd_file]), sort_keys=False)
         else:
             yield CRDS_DIR / crd_file, committed
 
@@ -106,8 +112,16 @@ def main() -> None:
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
     policy_generated = runfiles_root / POLICY_GENERATED_CRDS
     policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
+    workload_identity_generated = runfiles_root / WORKLOAD_IDENTITY_GENERATED_CRDS
+    workload_identity_crds = {
+        name: (workload_identity_generated / source).read_text() for name, source in WORKLOAD_IDENTITY_CRDS.items()
+    }
     for relative, content in generated_files(
-        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
+        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES},
+        sandbox_crds,
+        egress_crds,
+        policy_crds,
+        workload_identity_crds,
     ):
         (root / relative).write_text(content)
 

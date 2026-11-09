@@ -1,7 +1,7 @@
 # Agentplane CRDs
 
 `Sandbox`, `SandboxTemplate`, `EgressCredential`, `PolicySet`, `PolicyBinding`, `Identity`,
-`KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount` schemas come from their Go
+`KubernetesRoleSet`, `ServiceAccountGrant`, `ManagedServiceAccount` and `WorkloadCredential` schemas come from their Go
 API types and kubebuilder markers. Bazel runs the pinned `controller-gen` with a declared
 Go SDK and GoPath. `generate.py` keeps `PersistentVolumeClaimSpec` opaque while retaining its
 generated `volumeMode` property, which the workspace CEL rule must inspect. PolicySet rule and
@@ -11,7 +11,7 @@ After changing those types or markers, run `bb run //agentplane/crds:generate_bi
 generated manifests. `//agentplane/crds:test_generate` checks committed outputs and publishes the
 expected manifests as test artifacts when they drift. PolicyBinding's Go schema owns the
 condition list's field ownership; its subject union and the source and target union constraints
-use generated CEL rules. `//agentplane/crds:test_{sandbox,policyset,identity}_admission` exercise the schemas through the
+use generated CEL rules. `//agentplane/crds:test_{sandbox,policyset,identity,workloadcredential}_admission` exercise the schemas through the
 real API server. CEL rules must fit the API server's cost budget: bound every list a rule iterates
 or sits under with `MaxItems`.
 
