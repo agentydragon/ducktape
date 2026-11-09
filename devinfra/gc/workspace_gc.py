@@ -47,7 +47,10 @@ import httpx
 import humanize
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
+from rich.live import Live
+from rich.progress_bar import ProgressBar
+from rich.table import Table
+from rich.text import Text
 from tabulate import tabulate
 
 from devinfra.gc import (
@@ -85,6 +88,8 @@ logger = logging.getLogger(__name__)
 
 _PR_RANK = {PrState.MERGED: 3, PrState.OPEN: 2, PrState.CLOSED: 1}
 _DEFAULT_OUTPUT_USER_ROOT = default_output_user_root()
+_PROGRESS_COUNT_COLUMNS: dict[ProgressCategory, str] = {"PRUNE": "prune", "KEEP": "keep", "REVIEW": "review"}
+_PROGRESS_BAR_WIDTH = 24
 
 
 def _github_token() -> str | None:
@@ -310,65 +315,76 @@ def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozense
     return pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
 
 
+@dataclass(slots=True)
+class _PhaseProgress:
+    total: int
+    counts: dict[ProgressCategory, int]
+
+
 class _ProgressReporter:
-    """A live progress bar per scan phase; a no-op off a TTY (`rich.progress.Progress` detects
-    this itself).
+    """Live per-phase progress rendered as a borderless table: one row per scan phase, with
+    its prune/keep/review counts in aligned columns and a bar; a no-op off a TTY (`rich.live.Live`
+    detects this itself).
 
     A scan over hundreds of worktrees and branches can take minutes with nothing else to show
     for it in the meantime — this renders in place instead of the wall of `logger.info` lines
-    underneath (still there, for `--verbose`). `Progress.update` is thread-safe, which the
-    branch phase's worker pool (`workspace_scan._BRANCH_WORKERS`) relies on. `transient=True`
-    clears each bar on completion — the CLI's own report print, right after, is the record of
-    the outcome.
+    underneath (still there, for `--verbose`). Updates take a lock, which the classification
+    worker pools rely on. `transient=True` clears the table on completion — the CLI's own
+    report print, right after, is the record of the outcome.
 
-    Used as a context manager around each scan call: `Progress` owns the terminal's bottom
-    region while live, so any other output must happen with it stopped, not interleaved.
+    Used as a context manager around each scan call: `Live` owns the terminal's bottom region
+    while live, so any other output must happen with it stopped, not interleaved. Each entry
+    starts with an empty table.
     """
 
     def __init__(self) -> None:
-        self._progress = Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            console=Console(stderr=True),
-            transient=True,
-        )
-        self._tasks: dict[str, TaskID] = {}
-        self._counts: dict[str, dict[ProgressCategory, int]] = {}
-        self._totals: dict[str, int] = {}
-        self._done: dict[str, int] = {}
+        self._console = Console(stderr=True)
+        self._phases: dict[str, _PhaseProgress] = {}
+        self._live: Live | None = None
         self._lock = threading.Lock()
 
     def __enter__(self) -> _ProgressReporter:
-        for task in self._tasks.values():
-            self._progress.update(task, visible=False)
-        self._progress.start()
+        self._phases.clear()
+        self._live = Live(self.render(), console=self._console, transient=True)
+        self._live.start()
         return self
 
     def __exit__(self, *exc_info: object) -> None:
-        self._progress.stop()
+        assert self._live is not None
+        self._live.stop()
+        self._live = None
+
+    def render(self) -> Table:
+        table = Table.grid(padding=(0, 2))
+        table.add_column()
+        for _ in _PROGRESS_COUNT_COLUMNS:
+            table.add_column(justify="right")
+        table.add_column()
+        table.add_column(justify="right")
+        table.add_row("", *(Text(label, style="dim") for label in _PROGRESS_COUNT_COLUMNS.values()), "", "")
+        for phase, state in self._phases.items():
+            done = sum(state.counts.values())
+            table.add_row(
+                phase,
+                *(str(state.counts[category]) for category in _PROGRESS_COUNT_COLUMNS),
+                ProgressBar(total=state.total, completed=done, width=_PROGRESS_BAR_WIDTH),
+                f"{done}/{state.total}",
+            )
+        return table
+
+    def _refresh(self) -> None:
+        assert self._live is not None
+        self._live.update(self.render())
 
     def start_phase(self, phase: str, total: int) -> None:
         with self._lock:
-            self._counts[phase] = {"PRUNE": 0, "KEEP": 0, "REVIEW": 0}
-            self._totals[phase] = total
-            self._done[phase] = 0
-            description = f"{phase} PRUNE 0 KEEP 0 REVIEW 0"
-            task = self._tasks.get(phase)
-            if task is None:
-                task = self._progress.add_task(description, total=total)
-                self._tasks[phase] = task
-            self._progress.update(task, total=total, completed=0, description=description, visible=True)
+            self._phases[phase] = _PhaseProgress(total, {"PRUNE": 0, "KEEP": 0, "REVIEW": 0})
+            self._refresh()
 
     def record(self, phase: str, category: ProgressCategory) -> None:
         with self._lock:
-            counts = self._counts[phase]
-            counts[category] += 1
-            self._done[phase] += 1
-            description = f"{phase} PRUNE {counts['PRUNE']} KEEP {counts['KEEP']} REVIEW {counts['REVIEW']}"
-            self._progress.update(
-                self._tasks[phase], total=self._totals[phase], completed=self._done[phase], description=description
-            )
+            self._phases[phase].counts[category] += 1
+            self._refresh()
 
 
 def _scan(

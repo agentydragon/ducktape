@@ -6,11 +6,13 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable
+from io import StringIO
 
 import httpx
 import pytest
 import pytest_bazel
 import respx
+from rich.console import Console
 
 from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
 from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
@@ -327,6 +329,30 @@ async def test_run_bounded_runs_items_concurrently_and_returns_results_in_item_o
         return item * 10
 
     assert await workspace_gc._run_bounded([3, 1], function, workers=2) == [30, 10]
+
+
+def test_progress_table_aligns_counts_per_phase_without_borders() -> None:
+    reporter = workspace_gc._ProgressReporter()
+    with reporter:
+        reporter.start_phase("worktrees", 12)
+        for _ in range(10):
+            reporter.record("worktrees", "PRUNE")
+        for _ in range(2):
+            reporter.record("worktrees", "KEEP")
+        reporter.start_phase("branches", 3)
+        reporter.record("branches", "REVIEW")
+    output = StringIO()
+    Console(file=output, width=100, force_terminal=False).print(reporter.render())
+
+    header, worktrees, branches = output.getvalue().splitlines()
+    assert header.split() == ["prune", "keep", "review"]
+    assert worktrees.split()[:4] == ["worktrees", "10", "2", "0"]
+    assert worktrees.split()[-1] == "12/12"
+    assert branches.split()[:4] == ["branches", "0", "0", "1"]
+    assert branches.split()[-1] == "1/3"
+    # Counts line up under their headers.
+    assert header.index("review") + len("review") == worktrees.index("0", worktrees.index("2")) + 1
+    assert not set("│|┌┐└┘├┤┬┴┼+") & set(header + worktrees + branches)
 
 
 if __name__ == "__main__":
