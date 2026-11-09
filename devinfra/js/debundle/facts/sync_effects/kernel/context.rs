@@ -97,6 +97,16 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     ) -> Result<ClosureAdmission, RemainderDisposition>;
     /// The adapter's run-scoped identity for these captures.
     fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext;
+    /// Conditions under which `this.property = value` in a base constructor
+    /// of `class` reaches no accessor or non-writable property on the fresh
+    /// instance's prototype chain. `None` leaves the store unproved.
+    fn constructor_assignment_absence(
+        &mut self,
+        _class: u32,
+        _property: &str,
+    ) -> Option<Box<ProofDependencies>> {
+        None
+    }
 }
 
 pub(in crate::facts::sync_effects) trait NativeContext {

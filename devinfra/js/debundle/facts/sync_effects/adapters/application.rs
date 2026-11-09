@@ -3,7 +3,9 @@
 
 use super::super::array_transfer::{self, ArrayPushSelection};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
-use super::super::execution_index::{Call, CallKind, ExecutionIndex, native_own_data_read_slots};
+use super::super::execution_index::{
+    Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
+};
 use super::super::interpreter::{Executor, Outcome, unknown};
 use super::super::kernel::cells::missing_activation_binding;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
@@ -11,9 +13,11 @@ use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, HeapContext,
     NativeContext, Unproved,
 };
+// Module-qualified: the builtin table's `Invocation` also has a
+// tagged-template form the kernel never requests.
 use super::super::kernel::frame::{
-    CallableSelection, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
-    RemainderDisposition,
+    self as kernel_frame, CallableSelection, EvaluatedCallee, LocalCallRequest, LocalFrame,
+    LocalValueResult, RemainderDisposition,
 };
 use super::super::local_operations::{LocalBody, LocalExpression, LocalOperation};
 use super::super::own_data_transfer::OwnDataContext;
@@ -29,7 +33,7 @@ use crate::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };
 use crate::facts::abstract_domain::builtins;
-use crate::facts::abstract_domain::value::Value;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use crate::reports::schema::NativeIntegrityGuard;
 use source_identity::SourceUnitOrdinal;
@@ -42,13 +46,16 @@ use swc_ecma_ast::*;
 pub(in crate::facts::sync_effects) enum LocalExecutionScope {
     Callable(u32),
     RootInitializer,
+    /// The lowered base-constructor body of this class, run by the kernel's
+    /// construct rule. It has no call operation of its own.
+    Constructor(u32),
 }
 
 impl LocalExecutionScope {
     pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
         match self {
             Self::Callable(key) => Some(key),
-            Self::RootInitializer => None,
+            Self::RootInitializer | Self::Constructor(_) => None,
         }
     }
 }
@@ -90,6 +97,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             LocalExecutionScope::RootInitializer => {
                 &self.executor.inputs.index.top_calls[self.owner.0]
             }
+            LocalExecutionScope::Constructor(_) => &[],
         }
     }
 
@@ -140,13 +148,14 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             }
         }
 
-        let writes = match self.scope {
+        let writes: &[MemberValueWrite] = match self.scope {
             LocalExecutionScope::Callable(key) => {
                 &self.executor.inputs.index.callables[&key].member_value_writes
             }
             LocalExecutionScope::RootInitializer => {
                 &self.executor.inputs.index.top_member_value_writes[self.owner.0]
             }
+            LocalExecutionScope::Constructor(_) => &[],
         };
         for write in writes {
             let source_span = write.site.source_span();
@@ -242,6 +251,85 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                 self.outcome.lose_call_target(call.owner, call.span);
             }
         }
+    }
+}
+
+impl LocalExecutionContext<'_, '_, '_> {
+    /// The kernel evaluated `new`'s callee and arguments in order. A checked
+    /// local class runs its lowered body through the kernel's construct rule;
+    /// a refused construction keeps the flat lane's typed loss; any other
+    /// target summarizes the remainder.
+    fn construct(
+        &mut self,
+        frame: &mut LocalFrame,
+        request: &LocalCallRequest,
+    ) -> Result<LocalValueResult, RemainderDisposition> {
+        let span = request.span;
+        let targets = request.callee.targets();
+        let mut reached = targets.clone();
+        reached.extend(
+            request
+                .arguments
+                .iter()
+                .flat_map(|argument| &argument.values)
+                .cloned(),
+        );
+        frame
+            .borrowed_records
+            .extend(self.executor.reachable_objects(&reached));
+        let call = self
+            .calls()
+            .iter()
+            .find(|call| call.kind == CallKind::New && call.span == span && !call.has_spread);
+        let class = match targets.iter().collect::<Vec<_>>().as_slice() {
+            [AbstractValue::Value(Value::Alloc(Kind::Class, key))] => Some(*key),
+            _ => None,
+        };
+        let (Some(call), Some(class)) = (call, class) else {
+            self.fallback(
+                frame,
+                reached,
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                span,
+            );
+            return Err(RemainderDisposition::AlreadySummarized);
+        };
+        let caller = self.executor.local_body_identity_for_call(call);
+        let constructed = self.executor.construct_local_class_ordered(
+            class,
+            request.arguments.clone(),
+            call,
+            self.outcome,
+        );
+        frame.inputs.extend(constructed.values.iter().cloned());
+        frame
+            .borrowed_records
+            .extend(self.executor.reachable_objects(&constructed.values));
+        let effects = match (caller, constructed.body) {
+            (Some(caller), Some((target, mut effects))) => {
+                let dependencies = self.executor.boxed_settled_prefix_dependencies();
+                effects.depend_on(&dependencies);
+                effects.selected_local_call(LocalCallReceipt {
+                    caller,
+                    call_span: span,
+                    target,
+                    dependencies,
+                });
+                effects
+            }
+            _ => EffectCoverageFragment::default(),
+        };
+        Ok(LocalValueResult {
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(
+                constructed.values,
+            ),
+            effects,
+            selection: None,
+        })
     }
 }
 
@@ -401,10 +489,14 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         frame: &mut LocalFrame,
         request: &LocalCallRequest,
     ) -> Result<LocalValueResult, RemainderDisposition> {
+        if request.invocation == kernel_frame::Invocation::Construct {
+            return self.construct(frame, request);
+        }
         let LocalCallRequest {
             callee,
             arguments,
             span,
+            invocation: _,
         } = request;
         let span = *span;
         if let EvaluatedCallee::Member {
@@ -615,6 +707,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 LocalExecutionScope::RootInitializer => {
                     self.body.single_identifier_call_initializer() == Some(span)
                 }
+                // A constructor body is admitted without calls.
+                LocalExecutionScope::Constructor(_) => false,
             };
             let terminal_local_target = (terminal_position
                 && matches!(callee, EvaluatedCallee::Direct(_)))
@@ -755,6 +849,29 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     }
     fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
         self.executor.intern_captures(captures)
+    }
+    /// The checked constructor proved each of its own field writes absent from
+    /// the class and built-in prototypes, so [[Set]] defines a data property.
+    fn constructor_assignment_absence(
+        &mut self,
+        class: u32,
+        property: &str,
+    ) -> Option<Box<ProofDependencies>> {
+        let LocalExecutionScope::Constructor(scope) = self.scope else {
+            return None;
+        };
+        (scope == class
+            && self
+                .executor
+                .inputs
+                .index
+                .local_constructors
+                .get(&class)
+                .is_some_and(|constructor| constructor.own_fields.contains(property))
+            && self
+                .executor
+                .constructor_field_prototype_absent(class, property))
+        .then(|| self.executor.boxed_settled_prefix_dependencies())
     }
 }
 

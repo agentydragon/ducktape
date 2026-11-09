@@ -245,7 +245,7 @@ pub(super) fn finalize(
     if let Some(identity) = outcome.root_binding_effect_identity.take() {
         let expected_root_calls: BTreeSet<_> = calls
             .iter()
-            .filter(|call| call.kind == CallKind::Call)
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
             .map(|call| (call.span.lo.0, call.span.hi.0))
             .collect();
         let receipt = effect_initializer_source.and_then(|(source, binding, span)| {

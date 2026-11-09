@@ -28,9 +28,13 @@ pub(in crate::facts::sync_effects) struct LocalFrame {
     pub(in crate::facts::sync_effects) inputs: Values,
     pub(in crate::facts::sync_effects) borrowed_records: BTreeSet<u32>,
     pub(in crate::facts::sync_effects) fresh_records: BTreeSet<u32>,
-    /// Set only by a checked constructor provider query. Other local calls do
-    /// not acquire a receiver just because their syntax mentions `this`.
+    /// Set only by a checked constructor provider query or the kernel's
+    /// construct rule. Other local calls do not acquire a receiver just
+    /// because their syntax mentions `this`.
     pub(in crate::facts::sync_effects) this_values: Option<Values>,
+    /// The class whose base constructor this activation runs, when the
+    /// receiver is the fresh instance of the kernel's construct rule.
+    pub(in crate::facts::sync_effects) constructed_class: Option<u32>,
 }
 
 impl LocalFrame {
@@ -49,6 +53,7 @@ impl LocalFrame {
             borrowed_records: BTreeSet::new(),
             fresh_records: BTreeSet::new(),
             this_values: None,
+            constructed_class: None,
         }
     }
 
@@ -245,6 +250,14 @@ pub(in crate::facts::sync_effects) struct LocalCallRequest {
     pub(in crate::facts::sync_effects) callee: EvaluatedCallee,
     pub(in crate::facts::sync_effects) arguments: Vec<SelectedValue>,
     pub(in crate::facts::sync_effects) span: Span,
+    pub(in crate::facts::sync_effects) invocation: Invocation,
+}
+
+/// Which internal method the request invokes on its evaluated callee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::facts::sync_effects) enum Invocation {
+    Call,
+    Construct,
 }
 
 pub(in crate::facts::sync_effects) struct LocalTransferResult {

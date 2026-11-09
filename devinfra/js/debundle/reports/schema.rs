@@ -737,6 +737,11 @@ pub enum LexicalBindingEffectBody {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    /// A local class's base-constructor body run by a checked construction.
+    Constructor {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
     Native {
         intrinsic: crate::analysis_inputs::NativeIntrinsic,
         property: Option<String>,

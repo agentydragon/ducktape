@@ -216,7 +216,8 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
 reference's (no regions, `if`/`try`/`catch` bindings, argument spread,
-optional calls, conditional and logical operators, class definitions, or
+optional calls, conditional and logical operators, class definitions and
+their static members, `new` outside a root initializer, or
 `Function.prototype.call`/`apply`). Several kernel rules in <kernel_design.md>
 (regions, catch cells, forks) have nothing to apply to until
 the construct is lowered. Each construct family lands as its own slice inside
@@ -243,7 +244,7 @@ slice may recover more or fewer cases than its row says.
 |     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`) |    23 |                   7 / 7 | L1b, L2a; L2b for the placement-blocked cases |
 |     3 | Provider activation and imported constructor/factory bodies, then callbacks and retained factories, as one vertical in two PRs (`imported_callback_timing_test` spans both)                              |    77 |                 11 / 16 | L2a, L2b, L2d                                 |
 |     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                              |    26 |                   2 / 5 | L2b, L1f                                      |
-|     5 | Class construction                                                                                                                                                                                       |    15 |                   2 / 5 | L2a; parallel to 4                            |
+|     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                           |    15 |                   2 / 5 | L2a; parallel to 4                            |
 |     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                              |     7 |                   1 / 1 | L2a, L2b; required by L4a                     |
 |     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                              |    16 |                   1 / 1 | L2c                                           |
 |     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                |    26 |                   8 / 8 | re-measure after 1–5; not a slice             |
