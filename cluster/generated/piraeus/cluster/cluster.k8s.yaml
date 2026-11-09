@@ -4659,6 +4659,7 @@ spec:
         name: piraeus-ssd-local
         parameters:
           linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
+          linstor.csi.linbit.com/mountOpts: discard
           linstor.csi.linbit.com/placementCount: "1"
           linstor.csi.linbit.com/storagePool: ssd
         reclaimPolicy: Retain
@@ -4667,6 +4668,7 @@ spec:
         name: piraeus-hdd-local
         parameters:
           linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
+          linstor.csi.linbit.com/mountOpts: discard
           linstor.csi.linbit.com/placementCount: "1"
           linstor.csi.linbit.com/storagePool: hdd
         reclaimPolicy: Retain
@@ -4680,6 +4682,7 @@ spec:
           linstor.csi.linbit.com/allowRemoteVolumeAccess: |
             - fromSame:
               - topology.kubernetes.io/zone
+          linstor.csi.linbit.com/mountOpts: discard
           linstor.csi.linbit.com/placementCount: "2"
           linstor.csi.linbit.com/replicasOnSame: topology.kubernetes.io/zone=hil-ovh
           linstor.csi.linbit.com/storagePool: ssd
@@ -4694,6 +4697,7 @@ spec:
           linstor.csi.linbit.com/allowRemoteVolumeAccess: |
             - fromSame:
               - topology.kubernetes.io/zone
+          linstor.csi.linbit.com/mountOpts: discard
           linstor.csi.linbit.com/placementCount: "2"
           linstor.csi.linbit.com/replicasOnSame: topology.kubernetes.io/zone=hil-ovh
           linstor.csi.linbit.com/storagePool: hdd
