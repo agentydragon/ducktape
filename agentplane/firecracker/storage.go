@@ -332,6 +332,9 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 	return nil
 }
 
+// Checkpoint commits a generation of the live disks plus the captured RAM and VM state. It takes ownership
+// of the `memory` and `vmstate` files: they are renamed into the generation, so both must be on
+// the filesystem holding `storage.Work`. Live disks are copied, because the VM keeps writing them.
 func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID string) (*Manifest, error) {
 	if bootID == "" {
 		return nil, fmt.Errorf("checkpoint boot ID must be non-empty")
@@ -350,7 +353,7 @@ func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID 
 		files[name] = record
 	}
 	for name, source := range map[string]string{"memory": memory, "vmstate": vmstate} {
-		record, err := copyDurable(ctx, source, filepath.Join(directory, name))
+		record, err := moveDurable(source, filepath.Join(directory, name))
 		if err != nil {
 			return nil, fmt.Errorf("checkpoint %s: %w", name, err)
 		}
@@ -446,6 +449,33 @@ func digest(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// moveDurable renames a finished capture into the generation after flushing its contents.
+func moveDurable(source, destination string) (FileRecord, error) {
+	file, err := os.Open(source)
+	if err != nil {
+		return FileRecord{}, err
+	}
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if err := errors.Join(syncErr, closeErr); err != nil {
+		return FileRecord{}, err
+	}
+	if err := os.Chmod(source, 0o600); err != nil {
+		return FileRecord{}, err
+	}
+	if err := os.Rename(source, destination); err != nil {
+		return FileRecord{}, err
+	}
+	info, err := os.Lstat(destination)
+	if err != nil {
+		return FileRecord{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return FileRecord{}, fmt.Errorf("checkpoint capture is not a regular file: %s", destination)
+	}
+	return FileRecord{Size: info.Size()}, nil
 }
 
 func copyDurable(ctx context.Context, source, destination string) (FileRecord, error) {
