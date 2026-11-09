@@ -9,6 +9,8 @@ Layout:
 - `central/`: the mitmproxy-based service and its tests.
 - `host/`: workstation trust preparation script.
 - `nix/`: Home Manager module and pinned public interception CA (not imported by any host).
+- `nix/recorder/`: NixOS module for the node-wide bpftrace connection recorder and `ss` socket
+  snapshots (formerly enabled on wyrm2 and rugged; host logs under `/var/log/tcp-connect-recorder/`).
 - `k8s/`: hand-written kustomization inputs and the design README. Generated manifests,
   SOPS client credentials and the Flux image-automation entry were deleted.
 - `../../../cluster/cdk8s/x/github_api_proxy/`: cdk8s generator and Flux Kustomization.
@@ -18,4 +20,5 @@ Layout:
 Reviving needs: re-add the generator to `cluster/cdk8s/generate_manifests.py`, regenerate the
 Flux and image-automation outputs, restore `image_targets.json` and
 `cluster/cdk8s/external_secrets/config.py` entries, mint new client credentials, and import
-the Nix module in `nix/home/home.nix`.
+the Nix module in `nix/home/home.nix`, and import `nix/recorder/github-api-recorder.nix` in a
+NixOS host with `ducktape.githubApiRecorder.enable = true`.
