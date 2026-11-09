@@ -54,6 +54,38 @@ def _refuse_batch_containing(branch: str, refusal: dict) -> Callable[[httpx.Requ
     return handler
 
 
+async def test_github_token_prefers_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+    monkeypatch.setenv("PATH", "")  # `gh` must not even be looked up
+
+    assert await github_prs._github_token() == "env-token"
+
+
+async def test_github_token_falls_back_to_gh_auth_token(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = tmp_path / "gh"
+    gh.write_text('#!/bin/sh\n[ "$*" = "auth token" ] && echo gh-token\n')
+    gh.chmod(0o755)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert await github_prs._github_token() == "gh-token"
+
+
+async def test_github_token_is_none_when_gh_is_missing_or_fails(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))  # no `gh` here
+    assert await github_prs._github_token() is None
+
+    gh = tmp_path / "gh"
+    gh.write_text("#!/bin/sh\nexit 1\n")
+    gh.chmod(0o755)
+    assert await github_prs._github_token() is None
+
+
 _RATE_LIMITED = {"data": None, "errors": [{"type": "RATE_LIMIT", "message": "exceeded"}]}
 _NOT_FOUND = {"data": None, "errors": [{"type": "NOT_FOUND"}]}
 
