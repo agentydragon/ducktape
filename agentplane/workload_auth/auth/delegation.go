@@ -204,6 +204,9 @@ func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorizati
 	if err := proto.Unmarshal(encoded, envelope); err != nil || !validDelegation(envelope) {
 		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
+	if err := p.resolver.requireBearerSelection(reviewContext); err != nil {
+		return nil, err
+	}
 
 	actor, err := p.resolver.ResolveToken(reviewContext, value)
 	if err != nil {

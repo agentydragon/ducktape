@@ -172,6 +172,25 @@ func (r *Resolver) usesSVID(ctx context.Context) bool {
 	return len(info.State.PeerCertificates) > 0
 }
 
+// requireBearerSelection applies the listener's explicit credential policy to
+// a bearer that is verified outside Resolve, such as a delegated actor token.
+// Resolvers without listener configuration retain their existing bearer path,
+// but a TLS peer cannot be combined with that credential.
+func (r *Resolver) requireBearerSelection(ctx context.Context) error {
+	hasCertificate := r.usesSVID(ctx)
+	if r.listenerAuth == nil {
+		if hasCertificate {
+			return status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
+		return nil
+	}
+	mode, err := r.listenerAuth.Select(hasCertificate, true)
+	if err != nil || mode != listener.KubernetesBearer {
+		return status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	}
+	return nil
+}
+
 func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {
 	if r.listenerAuth == nil {
 		return Principal{}, false, nil

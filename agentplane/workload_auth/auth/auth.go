@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -35,6 +36,8 @@ var (
 	ErrInvalidBearer = errors.New("invalid workload bearer")
 	ErrUnavailable   = errors.New("workload authentication unavailable")
 )
+
+var bearerCredential = regexp.MustCompile(`(?i)\ABearer +([A-Za-z0-9._~+/=-]+)\z`)
 
 // Account is the ServiceAccount identity used by caller and method allowlists.
 type Account struct {
@@ -246,18 +249,18 @@ func (r *Resolver) ResolveReviewedCallerAuthorization(ctx context.Context, value
 	return r.ResolveReviewedCallerToken(ctx, token)
 }
 
-// BearerToken is the token of the one `authorization` value, which must be `Bearer <token>`; anything else is
-// ErrInvalidBearer. A door that admits more than workload tokens reads the bearer with it before choosing who
-// verifies the token.
+// BearerToken reads the token from exactly one RFC 6750 Bearer value. A door
+// that admits more than workload tokens reads the bearer before choosing who
+// verifies it.
 func BearerToken(values []string) (string, error) {
 	if len(values) != 1 {
 		return "", ErrInvalidBearer
 	}
-	value := values[0]
-	if !strings.HasPrefix(value, "Bearer ") || strings.TrimSpace(value[7:]) == "" || strings.ContainsAny(value[7:], " \t\r\n") {
+	match := bearerCredential.FindStringSubmatch(values[0])
+	if match == nil {
 		return "", ErrInvalidBearer
 	}
-	return value[7:], nil
+	return match[1], nil
 }
 
 // ResolveToken reviews one bearer token, however the caller received it. It fails with

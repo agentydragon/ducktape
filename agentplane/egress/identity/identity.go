@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -38,22 +37,12 @@ func NewVerifier(hop *auth.Resolver, projected map[string]*auth.Resolver) *Verif
 	return &Verifier{hop: hop, projected: projected}
 }
 
-// bearer matches `Bearer <token>`, the token drawn from the RFC 6750 `b64token` characters, which a
-// projected ServiceAccount token (a JWT) is made of.
-var bearer = regexp.MustCompile(`(?i)\ABearer +([A-Za-z0-9._~+/=-]+)\z`)
-
 // BearerToken reads the token out of a `Proxy-Authorization` header, which must be present exactly
 // once: a request carrying two credentials has not said which it stands on, and picking either
 // would let a caller smuggle a second past whatever inspected the first.
 func BearerToken(values []string) (string, bool) {
-	if len(values) != 1 {
-		return "", false
-	}
-	match := bearer.FindStringSubmatch(values[0])
-	if match == nil {
-		return "", false
-	}
-	return match[1], true
+	token, err := auth.BearerToken(values)
+	return token, err == nil
 }
 
 // Identify reviews a hop bearer. A failure is a *Rejection: TokenRejected when the token does not
