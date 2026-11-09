@@ -11,6 +11,7 @@ use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
+use final_global_resolution::{GlobalResolutionSources, assess_final_global_resolution};
 use gate::{CandidateRelocationAssessmentReport, UnmatchedSpecClaim};
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
@@ -21,6 +22,7 @@ use lowering::{
     GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
     ReportEmission, materialize_logical_modules,
 };
+use output_layout::GLOBAL_RESOLUTION_REPORT;
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
 use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
@@ -627,13 +629,14 @@ fn run_prepared_transform(
     let mut unmatched_spec_claims: Vec<UnmatchedSpecClaim> = Vec::new();
     // Chunks the gate rejected but lowered anyway (`RunOutput::EmitOnRejection`).
     let mut gate_rejections = Vec::new();
+    let report_out_dir = options
+        .artifacts
+        .reports_root()
+        .or(options.report_dir_override.clone())
+        .or(spec.materialize_logical_modules.report_out_dir.clone());
+    // Captured before materialization consumes the prepared artifact.
+    let global_resolution_sources = GlobalResolutionSources::capture(source_program.artifact());
     let candidate_draft = if !materialise_chunk_ids.is_empty() {
-        let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
-        let report_out_dir = options
-            .artifacts
-            .reports_root()
-            .or(options.report_dir_override.clone())
-            .or(report_out_dir);
         let materialize_result = materialize_logical_modules(
             source_program.into_artifact(),
             MaterializeSpecInputs {
@@ -663,7 +666,7 @@ fn run_prepared_transform(
                 // evidence at the same reports/tree/<chunk>/ location.
                 // Graph-backed follow-ups additionally require --graphs.
                 graph_reports: options.graph_reports,
-                report_emission: match report_out_dir.filter(|_| !suppress_reports) {
+                report_emission: match report_out_dir.clone().filter(|_| !suppress_reports) {
                     Some(dir) if dry_run => ReportEmission::OnRejection(dir),
                     Some(dir) => ReportEmission::Full(dir),
                     None => ReportEmission::None,
@@ -698,6 +701,9 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let candidate = candidate_draft.finalize()?;
+    // Report-only input; reconstruction consumes the candidate below.
+    let global_use_elisions = candidate.global_use_elisions().clone();
+
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
 
@@ -744,6 +750,26 @@ fn run_prepared_transform(
     .validate()?;
     let emission_files = validated_plan.files();
     let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
+
+    // Report-only: the legacy gate and final validation above stay the
+    // acceptance authority.
+    if !dry_run
+        && !suppress_reports
+        && let Some(report_dir) = &report_out_dir
+    {
+        let global_resolution = assess_final_global_resolution(
+            &global_resolution_sources,
+            emission_files.files(),
+            excluded_chunk_ids,
+            &global_use_elisions,
+        );
+        fs::create_dir_all(report_dir)
+            .with_context(|| format!("create report directory {}", report_dir.display()))?;
+        artifact::reports::write_json(
+            report_dir.join(GLOBAL_RESOLUTION_REPORT),
+            &global_resolution,
+        )?;
+    }
 
     // Vendor emission outputs: full-swap wrappers and bundled bundle
     // copies / facades, plus the combined manifest — all write-gated

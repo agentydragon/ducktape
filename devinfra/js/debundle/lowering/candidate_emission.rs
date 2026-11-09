@@ -11,6 +11,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{EmissionFiles, SourceProgram};
+use js_ast::GlobalUseElisions;
 use source_identity::ChunkId;
 use vendor::{VendorResolutionPlan, apply_emission_rewrites_in_place};
 
@@ -34,6 +35,7 @@ pub struct FinalizedCandidateEmissionDraft {
     files: EmissionFiles,
     vendor_plan: Arc<VendorResolutionPlan>,
     references_by_symbol: BTreeMap<(ChunkId, String), usize>,
+    global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
 }
 
 impl CandidateEmissionDraft {
@@ -94,7 +96,7 @@ impl CandidateEmissionDraft {
         //
         // Runs after materialization so the per-symbol consumer rewrite
         // cannot erase binding names spec selectors matched on.
-        let (files, emission_references) = files.rewrite_bodies(|artifact, indexes| {
+        let (files, emission_rewrites) = files.rewrite_bodies(|artifact, indexes| {
             naturalize_cross_chunk_imports(
                 artifact,
                 indexes,
@@ -104,7 +106,7 @@ impl CandidateEmissionDraft {
             apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
         })?;
         let mut references_by_symbol = vendor_reference_rewrites;
-        for (key, count) in emission_references {
+        for (key, count) in emission_rewrites.references_by_symbol {
             *references_by_symbol.entry(key).or_insert(0) += count;
         }
 
@@ -128,6 +130,7 @@ impl CandidateEmissionDraft {
             files,
             vendor_plan,
             references_by_symbol,
+            global_use_elisions: emission_rewrites.global_use_elisions,
         })
     }
 }
@@ -141,6 +144,12 @@ impl FinalizedCandidateEmissionDraft {
     /// construction during lowering and the whole-program emission rewrite.
     pub fn references_by_symbol(&self) -> &BTreeMap<(ChunkId, String), usize> {
         &self.references_by_symbol
+    }
+
+    /// Prepared-parse global-use sites each vendor residual strip removed,
+    /// per partially-swapped chunk.
+    pub fn global_use_elisions(&self) -> &BTreeMap<ChunkId, GlobalUseElisions> {
+        &self.global_use_elisions
     }
 
     /// Consume the finalized product for reconstruction. No caller can

@@ -7,10 +7,10 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Id, Ident,
     IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
     Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
     VarDeclarator,
@@ -57,6 +57,26 @@ pub struct ParsedJsModule {
     pub module: Module,
     pub unresolved_mark: Mark,
     pub top_level_mark: Mark,
+}
+
+/// Identifier reference sites that have no lexical binding in one parsed
+/// module. This is an inventory only: an unresolved identifier may name a host
+/// global and still needs a separate host/read proof before it carries value or
+/// effect authority.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ParsedGlobalUses {
+    /// Unresolved binding identity to every reference span in the source AST.
+    pub uses: BTreeMap<Id, Vec<Span>>,
+    /// Whether source contains a construct whose dynamic scope can affect
+    /// identifier resolution (`with` or nontrivial direct `eval`).
+    pub dynamic_scope: bool,
+}
+
+/// Exact `ParsedGlobalUses` sites that a successful vendor strip removed from
+/// the emitted residual of the same chunk.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct GlobalUseElisions {
+    pub uses: BTreeMap<Id, Vec<Span>>,
 }
 
 impl ParsedJsModule {

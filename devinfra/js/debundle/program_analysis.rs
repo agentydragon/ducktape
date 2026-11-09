@@ -1,5 +1,6 @@
 use artifact::runtime_resources::{RuntimeResourceKind, RuntimeResourceUse};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
 use analysis::facts::module_has_top_level_await;
@@ -22,7 +23,7 @@ use binding_targets::{
     member_root_sym, module_export_name, record_assign_target, record_pat_write,
     record_update_target,
 };
-use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
+use js_ast::{ParsedGlobalUses, ParsedJsModule, SourceLineIndex, str_value};
 
 mod loader_phase;
 mod loader_reach;
@@ -468,9 +469,17 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         resources,
         binding_declarations,
         binding_writes,
+        mut unresolved_uses,
         dynamic_scope,
         ..
     } = module_scan;
+    for spans in unresolved_uses.values_mut() {
+        spans.sort_unstable_by_key(|span| (span.lo.0, span.hi.0));
+    }
+    let global_uses = Arc::new(ParsedGlobalUses {
+        uses: unresolved_uses,
+        dynamic_scope,
+    });
     let has_cjs_interop = visitor_has_cjs_interop
         || parsed.module.body.iter().any(|item| {
             matches!(
@@ -567,6 +576,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         })
         .collect();
     let mut runtime_facts = ChunkRuntimeFacts {
+        global_uses: Some(global_uses),
         resources,
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
@@ -910,6 +920,7 @@ struct ModuleScanVisitor {
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
+    unresolved_uses: BTreeMap<Id, Vec<Span>>,
     dynamic_scope: bool,
 }
 
@@ -972,8 +983,21 @@ impl Visit for ModuleScanVisitor {
         node.visit_children_with(self);
     }
 
+    fn visit_labeled_stmt(&mut self, node: &LabeledStmt) {
+        // Labels have their own namespace; keep walking the statement body.
+        node.body.visit_with(self);
+    }
+
+    fn visit_break_stmt(&mut self, _node: &BreakStmt) {}
+
+    fn visit_continue_stmt(&mut self, _node: &ContinueStmt) {}
+
     fn visit_ident(&mut self, node: &Ident) {
         if node.ctxt == self.unresolved_context {
+            self.unresolved_uses
+                .entry(node.to_id())
+                .or_default()
+                .push(node.span);
             let kind = match node.sym.as_ref() {
                 "require" => Some(InteropUseKind::UnboundRequire),
                 "module" | "exports" => {
@@ -1180,7 +1204,8 @@ impl Visit for ModuleScanVisitor {
         if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
+        // Import specifiers only name the provider interface and establish
+        // local bindings; neither is a lexical read in this module.
     }
 
     fn visit_named_export(&mut self, node: &NamedExport) {
@@ -1190,14 +1215,23 @@ impl Visit for ModuleScanVisitor {
         {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
+        // A local named export reads its original local binding. Public
+        // aliases and every name in a re-export are interface syntax.
+        if node.src.is_none() && !node.type_only {
+            for specifier in &node.specifiers {
+                if let ExportSpecifier::Named(named) = specifier
+                    && !named.is_type_only
+                {
+                    named.orig.visit_with(self);
+                }
+            }
+        }
     }
 
     fn visit_export_all(&mut self, node: &ExportAll) {
         if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
             self.has_rewritable_specifier = true;
         }
-        node.visit_children_with(self);
     }
 }
 
@@ -1232,5 +1266,91 @@ mod tests {
                 );
             });
         }
+    }
+
+    #[test]
+    fn records_all_and_only_resolver_unbound_identifier_sites() {
+        GLOBALS.set(&Default::default(), || {
+            let parsed = js_ast::parse_js_module(
+                "fixture/chunk.js",
+                r#"
+import { imported } from './dep.js';
+const local = 1;
+const undefined = 2;
+const beforeInitialization = later;
+let later = 3;
+function f(parameter) {
+    return missing + missing + local + imported + parameter + undefined + later;
+}
+eval('dynamicRead');
+"#,
+            )
+            .expect("parse");
+            let global_uses = analyze_program_shallow(&parsed)
+                .runtime_facts
+                .global_uses
+                .expect("parsed shallow analysis records an inventory");
+            let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+            assert!(global_uses.uses.keys().all(|(_, ctxt)| *ctxt == unresolved));
+            let counts = global_uses
+                .uses
+                .iter()
+                .map(|((name, _), spans)| (name.to_string(), spans.len()))
+                .collect::<BTreeMap<_, _>>();
+            assert_eq!(
+                counts,
+                BTreeMap::from([("eval".to_string(), 1), ("missing".to_string(), 2)])
+            );
+            assert!(global_uses.dynamic_scope);
+        });
+    }
+
+    #[test]
+    fn global_use_inventory_tracks_lexical_refs_not_interface_names_or_labels() {
+        GLOBALS.set(&Default::default(), || {
+            let parsed = js_ast::parse_js_module(
+                "fixture/module-interfaces.js",
+                r#"
+import { remoteImport as localImport } from './dep.js';
+const local = actualRead;
+const shorthand = { shorthandRead };
+const imported = localImport;
+export { local as publicLocal };
+export { plainMissing };
+export { missingLocal as publicUnresolved };
+export { remoteName as publicReexport } from './reexport.js';
+export * as publicNamespace from './namespace.js';
+export default defaultRead;
+scopeLabel: for (;;) {
+    if (condition) continue scopeLabel;
+    if (shouldBreak) break scopeLabel;
+}
+"#,
+            )
+            .expect("parse");
+            let names = analyze_program_shallow(&parsed)
+                .runtime_facts
+                .global_uses
+                .expect("parsed shallow analysis records an inventory")
+                .uses
+                .keys()
+                .map(|(name, _)| name.to_string())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                names,
+                BTreeSet::from(
+                    [
+                        "actualRead",
+                        "condition",
+                        "defaultRead",
+                        "missingLocal",
+                        "plainMissing",
+                        "shouldBreak",
+                        "shorthandRead",
+                    ]
+                    .map(str::to_string)
+                )
+            );
+        });
     }
 }

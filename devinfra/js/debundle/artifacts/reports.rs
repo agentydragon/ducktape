@@ -4,10 +4,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 use analysis_model::DepKind;
 use analysis_model::StableExportValue;
 use anyhow::{Context, Result};
+use js_ast::ParsedGlobalUses;
 use serde::{Deserialize, Serialize};
 use swc_common::Span;
 
@@ -193,6 +195,9 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
+    /// Unresolved identifier sites of the prepared parse. `None` means the
+    /// inventory was not computed (no prepared parse for this chunk).
+    pub global_uses: Option<Arc<ParsedGlobalUses>>,
     pub resources: Vec<crate::runtime_resources::RuntimeResourceUse>,
     /// Direct ESM exports whose complete local binding history is primitive
     /// once their copied imports are. Resolved by the program-level

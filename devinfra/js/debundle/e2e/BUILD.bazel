@@ -478,6 +478,11 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(
+    name = "final_global_resolution_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "bundle_owned_globals_test",
     deps = [
         ":graph_support",

@@ -3429,3 +3429,67 @@ fn bundled_reentry_proof_requires_closed_bundle() {
         );
     }
 }
+
+#[test]
+fn named_swap_capturing_a_source_global_is_reported_changed_while_the_run_still_accepts() {
+    // The caller reads a host global spelled like the upstream export. The
+    // named-kind swap renames the import local to `observer`, which captures
+    // that read: Node output diverges, and `global_resolution.json` reports
+    // the capture. The report is not acceptance authority yet, so the run
+    // still succeeds.
+    const PACKAGE_NAME: &str = "mobx-react-lite";
+    const VERSION: &str = "4.0.7";
+    const SUBPATH: &str = "dist/index.js";
+    const UPSTREAM: &str = "export const observer = (value) => value;\n";
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-global-capture-",
+        "export const o = (value) => value;\n",
+        "import { o as wrap } from \"./megachunk.js\";\n\
+         console.log(typeof observer + \":\" + wrap(\"X\"));\n",
+        PACKAGE_NAME,
+        VERSION,
+        SUBPATH,
+        UPSTREAM,
+    );
+    write_text_file(
+        &ws.snapshot_root.join("package.json"),
+        "{\"type\":\"module\"}\n",
+    );
+    assert_node_output(&ws.snapshot_root.join("static/app.js"), "undefined:X\n", "");
+
+    let vendor = partial_swap_vendor(
+        "megachunk named swap capturing a global",
+        &[(PACKAGE_NAME, partial_package(VERSION, SUBPATH, None))],
+        &[(
+            "o",
+            swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("observer"), None),
+        )],
+    );
+    let report_root = ws.out_root.join("reports/tree");
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let mut spec = ws.transform_spec(json!({ "static/megachunk.js": vendor }));
+    spec["materialize_logical_modules"] = json!({ "report_out_dir": report_root });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert_success(&result);
+
+    let caller = ws.out_root.join("app/static/app/entry.js");
+    assert_source_file(
+        &caller,
+        &["import { observer } from \"mobx-react-lite\""],
+        &[],
+    );
+    install_node_module(&ws.out_root.join("app"), PACKAGE_NAME, VERSION, UPSTREAM);
+    assert_node_output(&caller, "function:X\n", "");
+
+    let report: Value = read_json(&report_root.join("global_resolution.json"));
+    assert_eq!(report["status"], "changed", "{report:#}");
+    let app = &report["chunks"]["static/app"];
+    assert_eq!(app["status"], "changed", "{report:#}");
+    assert!(
+        app["findings"].as_array().unwrap().iter().any(|finding| {
+            finding["reason"] == "captured_by_binding" && finding["symbol"] == "observer"
+        }),
+        "{report:#}"
+    );
+}

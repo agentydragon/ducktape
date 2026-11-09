@@ -22,6 +22,7 @@
 
 use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -32,7 +33,7 @@ use swc_ecma_visit::VisitMutWith;
 use artifact::{
     ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts, list_chunk_file_paths,
 };
-use js_ast::ParsedJsModule;
+use js_ast::{GlobalUseElisions, ParsedGlobalUses, ParsedJsModule};
 use spec::PartialSwapSymbol;
 
 use crate::passthrough::{PassthroughContext, rewrite_passthrough_module};
@@ -44,13 +45,22 @@ use crate::{
     SelfRewriteOutputs, seed_bundled_partial_swap_self_rewrites,
 };
 
+/// What the emission rewrites changed beyond the file bodies themselves.
+#[derive(Debug, Default)]
+pub struct EmissionRewriteOutput {
+    /// Rewritten references per (swapped chunk, chunk export).
+    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
+    /// Prepared-parse global-use sites each vendor residual strip removed.
+    pub global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
+}
+
 /// Body-only emit pass: ASTs are taken out for parallel rewrites and put back
 /// at the same file paths. The caller may retain its output-path indexes.
 pub fn apply_emission_rewrites_in_place(
     artifact: &mut ChunkBundle,
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
-) -> Result<BTreeMap<(ChunkId, String), usize>> {
+) -> Result<EmissionRewriteOutput> {
     let chunk_table = artifact.chunk_table.clone();
     let materialized_index = MaterializedOutputChunkIndex::build(&chunk_table);
     let context = PassthroughContext {
@@ -179,6 +189,7 @@ pub fn apply_emission_rewrites_in_place(
             .collect()
     })?;
 
+    let mut global_use_elisions = BTreeMap::new();
     for output in outputs {
         let js_chunk = artifact.js_chunk_mut(output.chunk_id)?;
         for (parts, ast) in output.files {
@@ -187,9 +198,15 @@ pub fn apply_emission_rewrites_in_place(
         for (key, count) in output.references_by_symbol {
             *references_by_symbol.entry(key).or_insert(0) += count;
         }
+        if !output.global_use_elisions.uses.is_empty() {
+            global_use_elisions.insert(output.chunk_id, output.global_use_elisions);
+        }
     }
 
-    Ok(references_by_symbol)
+    Ok(EmissionRewriteOutput {
+        references_by_symbol,
+        global_use_elisions,
+    })
 }
 
 struct PassthroughFileJob {
@@ -217,12 +234,14 @@ struct ResidualJob<'a> {
     symbols: &'a BTreeMap<String, PartialSwapSymbol>,
     bundled: Option<&'a ChunkBundledPartialSwapPlan>,
     files: Vec<(String, JsFileAstParts, ParsedJsModule)>,
+    global_uses: Option<Arc<ParsedGlobalUses>>,
 }
 
 struct ResidualOutput {
     chunk_id: ChunkId,
     files: Vec<(JsFileAstParts, ParsedJsModule)>,
     references_by_symbol: BTreeMap<(ChunkId, String), usize>,
+    global_use_elisions: GlobalUseElisions,
 }
 
 fn extract_residual_job<'a>(
@@ -235,6 +254,12 @@ fn extract_residual_job<'a>(
     bundled: Option<&'a ChunkBundledPartialSwapPlan>,
 ) -> Result<ResidualJob<'a>> {
     let chunk_name = chunk_table.name(chunk_id).to_string();
+    let global_uses = artifact
+        .chunk(chunk_id)?
+        .analysis
+        .runtime_facts
+        .global_uses
+        .clone();
     let js_chunk = artifact.js_chunk_mut(chunk_id)?;
     if js_chunk.get_file(entry_file).is_none() {
         bail!(
@@ -269,6 +294,7 @@ fn extract_residual_job<'a>(
         symbols,
         bundled,
         files,
+        global_uses,
     })
 }
 
@@ -302,6 +328,7 @@ fn emit_vendor_residual(
         symbols,
         bundled,
         mut files,
+        global_uses,
     } = job;
     let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     let mut replacement_import_locals: BTreeSet<Id> = BTreeSet::new();
@@ -356,11 +383,12 @@ fn emit_vendor_residual(
     // matching the former stage order (strip re-appended the entry
     // after the pass-through and self-rewrite waves).
     let (_, _, entry_ast) = &mut files[entry_index];
-    strip_one_chunk_with_replacement_imports(
+    let global_use_elisions = strip_one_chunk_with_replacement_imports(
         &mut entry_ast.module,
         symbols,
         chunk_path,
         &replacement_import_locals,
+        global_uses.as_deref(),
     )?;
     let entry = files.remove(entry_index);
     files.push(entry);
@@ -371,6 +399,7 @@ fn emit_vendor_residual(
             .map(|(_, parts, ast)| (parts, ast))
             .collect(),
         references_by_symbol,
+        global_use_elisions,
     })
 }
 
