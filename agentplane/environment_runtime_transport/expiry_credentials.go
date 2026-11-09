@@ -22,7 +22,18 @@ type expiringCredentials struct {
 }
 
 func newExpiringCredentials(config *tls.Config, server bool) credentials.TransportCredentials {
-	return &expiringCredentials{config: config.Clone(), server: server}
+	return &expiringCredentials{config: cloneExpiryTLSConfig(config, server), server: server}
+}
+
+// Server-side expiry tracking needs GetCertificate on every handshake. TLS 1.3
+// session resumption skips certificate selection, so these server configs must
+// not issue resumable sessions.
+func cloneExpiryTLSConfig(config *tls.Config, server bool) *tls.Config {
+	cloned := config.Clone()
+	if server {
+		cloned.SessionTicketsDisabled = true
+	}
+	return cloned
 }
 
 // ServerCredentials adapts a TLS configuration from the shared listener
@@ -41,7 +52,7 @@ func ServerCredentials(config *tls.Config) (credentials.TransportCredentials, er
 	allowMissingPeerCertificate := config.ClientAuth == tls.NoClientCert ||
 		config.ClientAuth == tls.RequestClientCert || config.ClientAuth == tls.VerifyClientCertIfGiven
 	return &expiringCredentials{
-		config: config.Clone(), server: true, allowMissingPeerCertificate: allowMissingPeerCertificate,
+		config: cloneExpiryTLSConfig(config, true), server: true, allowMissingPeerCertificate: allowMissingPeerCertificate,
 	}, nil
 }
 

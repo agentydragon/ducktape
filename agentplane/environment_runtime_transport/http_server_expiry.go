@@ -11,12 +11,15 @@ import (
 
 // ConfigureHTTPServerTLSExpiry wraps config.GetCertificate and returns a ConnState
 // hook that closes connections when either TLS leaf expires. The config must use
-// GetCertificate as its only certificate selector. The hook observes and closes
-// the original *tls.Conn so net/http can retain HTTP/2 support.
+// GetCertificate as its only certificate selector. It disables server-side TLS
+// session resumption because resumed handshakes skip GetCertificate and therefore
+// do not expose the local leaf whose expiry must bound the connection. The hook
+// observes and closes the original *tls.Conn so net/http can retain HTTP/2 support.
 func ConfigureHTTPServerTLSExpiry(config *tls.Config) (func(net.Conn, http.ConnState), error) {
 	if config == nil || config.GetCertificate == nil || config.GetConfigForClient != nil || len(config.Certificates) != 0 {
 		return nil, errors.New("HTTP server TLS expiry requires GetCertificate as the only certificate selector")
 	}
+	config.SessionTicketsDisabled = true
 	var mu sync.Mutex
 	selectedExpiry := map[net.Conn]time.Time{}
 	timers := map[*tls.Conn]func(){}

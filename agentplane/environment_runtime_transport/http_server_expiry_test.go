@@ -68,6 +68,60 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 	connState(server, http.StateClosed)
 }
 
+func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	localURI := environment_runtime_transport.EgressProxyURI
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := ca.IssueWithUsage(t, localURI, x509.ExtKeyUsageServerAuth)
+	runtime := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	serverTLS, err := local.WorkloadServerTLSConfig(localURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.SessionTicketsDisabled = false
+	// Keep the ticket key stable across tls.Server configs. Without the expiry
+	// hook's setting, the shared client cache would otherwise resume this session.
+	for i := range serverTLS.SessionTicketKey {
+		serverTLS.SessionTicketKey[i] = byte(i + 1)
+	}
+	selections := 0
+	getCertificate := serverTLS.GetCertificate
+	serverTLS.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		selections++
+		return getCertificate(hello)
+	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := runtime.ClientTLSConfig(localURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS.ServerName = "egress-proxy.test"
+	clientTLS.ClientSessionCache = tls.NewLRUClientSessionCache(1)
+	for i := 0; i < 2; i++ {
+		client, server := handshakeTLSConnections(t, clientTLS, serverTLS)
+		if _, err := server.Write([]byte("ticket")); err != nil {
+			t.Fatalf("server write for TLS ticket processing: %v", err)
+		}
+		if _, err := client.Read(make([]byte, len("ticket"))); err != nil {
+			t.Fatalf("client read for TLS ticket processing: %v", err)
+		}
+		if client.ConnectionState().DidResume {
+			t.Fatalf("handshake %d resumed a TLS session", i+1)
+		}
+		connState(server, http.StateActive)
+		connState(server, http.StateClosed)
+	}
+	if selections != 2 {
+		t.Fatalf("GetCertificate called %d times for two handshakes", selections)
+	}
+}
+
 func TestConfigureHTTPServerTLSExpiryRejectsUntrackedCertificateSelection(t *testing.T) {
 	for _, config := range []*tls.Config{
 		{},

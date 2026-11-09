@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -398,6 +399,54 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 	}
 }
 
+func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	runtime := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	serverTLS, err := local.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A stable key ensures the second handshake would resume if the expiry
+	// wrapper left server-side session tickets enabled.
+	for i := range serverTLS.SessionTicketKey {
+		serverTLS.SessionTicketKey[i] = byte(i + 1)
+	}
+	selections := 0
+	getCertificate := serverTLS.GetCertificate
+	serverTLS.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		selections++
+		return getCertificate(hello)
+	}
+	clientTLS, err := runtime.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS.ClientSessionCache = tls.NewLRUClientSessionCache(1)
+	clientCredentials := credentials.NewTLS(clientTLS)
+	serverCredentials, err := environment_runtime_transport.ServerCredentials(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		clientInfo, _, err := handshakeWithApplicationData(t, clientCredentials, serverCredentials)
+		if err != nil {
+			t.Fatalf("handshake %d: %v", i+1, err)
+		}
+		tlsInfo, ok := clientInfo.(credentials.TLSInfo)
+		if !ok || tlsInfo.State.DidResume {
+			t.Fatalf("client handshake %d resumed or returned %T", i+1, clientInfo)
+		}
+	}
+	if selections != 2 {
+		t.Fatalf("server selected a certificate %d times across two handshakes", selections)
+	}
+}
+
 func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	oldCA := environmentruntimetransporttesting.NewCA(t)
 	newCA := environmentruntimetransporttesting.NewCA(t)
@@ -696,6 +745,14 @@ func TestParseEnvironmentRuntimeURIRejectsNonCanonicalAndMalformedPaths(t *testi
 }
 
 func handshake(t *testing.T, client, server credentials.TransportCredentials) (clientInfo, serverInfo credentials.AuthInfo, err error) {
+	return handshakeWithApplicationDataMode(t, client, server, false)
+}
+
+func handshakeWithApplicationData(t *testing.T, client, server credentials.TransportCredentials) (clientInfo, serverInfo credentials.AuthInfo, err error) {
+	return handshakeWithApplicationDataMode(t, client, server, true)
+}
+
+func handshakeWithApplicationDataMode(t *testing.T, client, server credentials.TransportCredentials, exchange bool) (clientInfo, serverInfo credentials.AuthInfo, err error) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -733,6 +790,16 @@ func handshake(t *testing.T, client, server credentials.TransportCredentials) (c
 		_ = serverRaw.Close()
 	}
 	serverResult := <-serverDone
+	if exchange && clientErr == nil && serverResult.err == nil {
+		if _, err := serverResult.conn.Write([]byte("ticket")); err != nil {
+			clientErr = fmt.Errorf("write TLS ticket processing data: %w", err)
+		} else {
+			_ = clientConn.SetReadDeadline(time.Now().Add(3 * time.Second))
+			if _, err := io.ReadFull(clientConn, make([]byte, len("ticket"))); err != nil {
+				clientErr = fmt.Errorf("read TLS ticket processing data: %w", err)
+			}
+		}
+	}
 	if clientConn != nil {
 		_ = clientConn.Close()
 	}
