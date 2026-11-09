@@ -73,8 +73,9 @@ type errorDocument struct {
 	WakeAssessment    json.RawMessage      `json:"wake_assessment,omitempty"`
 }
 
+// diagnosticsDocument is what a stored MCP diagnostics object holds that is still read; rows from earlier releases
+// also carry an `exception_type`, which is no longer written.
 type diagnosticsDocument struct {
-	ExceptionType    string  `json:"exception_type"`
 	ConnectionAgeS   float64 `json:"connection_age_s"`
 	RequestDurationS float64 `json:"request_duration_s"`
 }
@@ -102,8 +103,7 @@ func encodeExecutionError(e *action_servicepb.ExecutionError) (json.RawMessage, 
 	document := errorDocument{Kind: storedErrorKinds[e.GetKind()], Message: e.GetMessage()}
 	if diagnostics := e.GetMcpUnavailable().GetDiagnostics(); diagnostics != nil {
 		document.Diagnostics = &diagnosticsDocument{
-			ExceptionType: diagnostics.GetExceptionType(), ConnectionAgeS: diagnostics.GetConnectionAgeSeconds(),
-			RequestDurationS: diagnostics.GetRequestDurationSeconds(),
+			ConnectionAgeS: diagnostics.GetConnectionAgeSeconds(), RequestDurationS: diagnostics.GetRequestDurationSeconds(),
 		}
 	}
 	if resume := e.GetResume(); resume != nil {
@@ -158,8 +158,7 @@ func decodeExecutionError(stored json.RawMessage) (*action_servicepb.ExecutionEr
 		unavailable := &action_servicepb.McpUnavailable{}
 		if diagnostics := document.Diagnostics; diagnostics != nil {
 			unavailable.Diagnostics = &action_servicepb.McpRequestDiagnostics{
-				ExceptionType: diagnostics.ExceptionType, ConnectionAgeSeconds: diagnostics.ConnectionAgeS,
-				RequestDurationSeconds: diagnostics.RequestDurationS,
+				ConnectionAgeSeconds: diagnostics.ConnectionAgeS, RequestDurationSeconds: diagnostics.RequestDurationS,
 			}
 		}
 		decoded.Detail = &action_servicepb.ExecutionError_McpUnavailable{McpUnavailable: unavailable}

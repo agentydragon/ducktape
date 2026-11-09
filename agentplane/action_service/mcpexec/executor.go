@@ -466,12 +466,11 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA, "backend tool schema is invalid"), nil
 	case err != nil:
 		diagnostics := &action_servicepb.McpRequestDiagnostics{
-			ExceptionType:          fmt.Sprintf("%T", err),
 			ConnectionAgeSeconds:   seconds(started.Sub(s.connectedAt)),
 			RequestDurationSeconds: seconds(time.Since(started)),
 		}
 		// The SDK's errors can carry the server's address or a credential, so their text is not logged.
-		slog.Warn("MCP execution schema check failed", "group", e.key, "diagnostics", diagnostics)
+		slog.Warn("MCP execution schema check failed", "group", e.key, "error_type", fmt.Sprintf("%T", err), "diagnostics", diagnostics)
 		e.sessionFailed(s, err)
 		return unavailable(diagnostics), nil
 	}

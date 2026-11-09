@@ -42,11 +42,11 @@ func TestStoredExecutionErrorsKeepTheirShape(t *testing.T) {
 		},
 		"an MCP group with diagnostics": {
 			`{"kind": "mcp_unavailable", "message": "test message",
-				"diagnostics": {"exception_type": "*test.Error", "connection_age_s": 1.5, "request_duration_s": 0.25}}`,
+				"diagnostics": {"connection_age_s": 1.5, "request_duration_s": 0.25}}`,
 			&action_servicepb.ExecutionError{
 				Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_UNAVAILABLE, Message: "test message",
 				Detail: &action_servicepb.ExecutionError_McpUnavailable{McpUnavailable: &action_servicepb.McpUnavailable{
-					Diagnostics: &action_servicepb.McpRequestDiagnostics{ExceptionType: "*test.Error", ConnectionAgeSeconds: 1.5, RequestDurationSeconds: 0.25},
+					Diagnostics: &action_servicepb.McpRequestDiagnostics{ConnectionAgeSeconds: 1.5, RequestDurationSeconds: 0.25},
 				}},
 			},
 		},
@@ -72,6 +72,21 @@ func TestStoredExecutionErrorsKeepTheirShape(t *testing.T) {
 			}
 			sameJSON(t, encoded, []byte(test.stored))
 		})
+	}
+}
+
+// Rows from earlier releases name the Go type of the MCP request's failure; it reads as absent.
+func TestStoredMcpExceptionTypesAreDropped(t *testing.T) {
+	decoded, err := decodeExecutionError(json.RawMessage(`{"kind": "mcp_unavailable", "message": "test message",
+		"diagnostics": {"exception_type": "*test.Error", "connection_age_s": 1.5, "request_duration_s": 0.25}}`))
+	want := &action_servicepb.ExecutionError{
+		Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_UNAVAILABLE, Message: "test message",
+		Detail: &action_servicepb.ExecutionError_McpUnavailable{McpUnavailable: &action_servicepb.McpUnavailable{
+			Diagnostics: &action_servicepb.McpRequestDiagnostics{ConnectionAgeSeconds: 1.5, RequestDurationSeconds: 0.25},
+		}},
+	}
+	if err != nil || !proto.Equal(decoded, want) {
+		t.Errorf("decoded %v, %v; want %v", decoded, err, want)
 	}
 }
 

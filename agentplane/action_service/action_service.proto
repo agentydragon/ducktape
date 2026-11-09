@@ -611,8 +611,9 @@ message McpUnavailable {
 }
 
 message McpRequestDiagnostics {
-  // The Go type of the request's failure; never its text, which can carry an address or a credential.
-  string exception_type = 1;
+  // The request failure's Go type is only logged.
+  reserved 1;
+  reserved "exception_type";
   // Since the client initialized the connection.
   double connection_age_seconds = 2;
   double request_duration_seconds = 3;
