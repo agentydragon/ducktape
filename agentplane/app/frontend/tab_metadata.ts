@@ -14,6 +14,7 @@ export function appDocumentTitle(pathname: string, settingsOpen: boolean): strin
   if (pathname === "/actions" || pathname.startsWith("/actions/")) return `Actions — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/system") return `System — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/sandboxes") return `Sandboxes — ${DEFAULT_APP_TITLE}`;
+  if (pathname === "/identities" || pathname.startsWith("/identities/")) return `Identities — ${DEFAULT_APP_TITLE}`;
   if (pathname.startsWith("/sandboxes/")) {
     const encodedName = pathname.slice("/sandboxes/".length).split("/")[0];
     let name = encodedName;

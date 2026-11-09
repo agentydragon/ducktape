@@ -147,7 +147,8 @@ export function SandboxPage({
     observation.stream.standing === "current" && observation.stream.connection.phase === "live"
       ? observation.environment
       : null;
-  const policy = usePolicyResources(sandbox?.executionAccount?.account, target?.uid);
+  const account = sandbox?.executionAccount?.account;
+  const policy = usePolicyResources(account ? { case: "subject", value: account } : undefined, target?.uid);
   const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =

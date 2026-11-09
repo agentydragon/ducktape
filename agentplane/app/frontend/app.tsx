@@ -9,6 +9,8 @@ import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ActionsAttentionBar } from "./actions/sidebar";
 import { ConnectionConsent } from "./connections/consent";
 import { Home } from "./threads/home";
+import { IdentityList } from "./identities/list";
+import { IdentityPage } from "./identities/identity_page";
 import { SandboxPage } from "./sandboxes/sandbox_page";
 import { RoutedThreadsLiveProvider } from "./threads/live";
 import { SandboxesLiveProvider } from "./sandboxes/live";
@@ -37,6 +39,24 @@ function required(value: string | undefined, name: string): string {
 function SandboxListRoute(): JSX.Element {
   const navigate = useNavigate();
   return <SandboxList onOpen={(name) => void navigate(sandboxPath(name))} />;
+}
+
+function IdentityListRoute(): JSX.Element {
+  const navigate = useNavigate();
+  return <IdentityList onOpen={(name) => void navigate(`/identities/${encodeURIComponent(name)}`)} />;
+}
+
+function IdentityRoute(): JSX.Element {
+  const name = required(useParams().name, "name");
+  const navigate = useNavigate();
+  return (
+    <IdentityPage
+      key={name}
+      name={name}
+      onBack={() => void navigate("/identities")}
+      onDeleted={() => void navigate("/identities")}
+    />
+  );
 }
 
 function ConsentRoute(): JSX.Element {
@@ -130,6 +150,8 @@ function AppRoutes(): JSX.Element {
       <Route path="/" element={<Home />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/system" element={<SystemStatus />} />
+      <Route path="/identities" element={<IdentityListRoute />} />
+      <Route path="/identities/:name" element={<IdentityRoute />} />
       <Route path="/actions" element={<ActionsPage />} />
       <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />

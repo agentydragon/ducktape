@@ -1,6 +1,6 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
+import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
@@ -107,6 +107,15 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
             onClick={() => goTo("/sandboxes")}
           >
             <IconBox size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Identities" withArrow>
+          <ActionIcon
+            variant={location.pathname.startsWith("/identities") ? "light" : "subtle"}
+            aria-label="Identities"
+            onClick={() => goTo("/identities")}
+          >
+            <IconId size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="All actions" withArrow>

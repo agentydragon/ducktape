@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { JsonValue } from "@bufbuild/protobuf";
-import { act } from "react";
+import { create, type JsonValue } from "@bufbuild/protobuf";
+import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { usePolicyResources } from "./watch";
+import { useIdentities, usePolicyResources, type BindingSelector } from "./watch";
 import type { WatchHandlers } from "../watch_stream";
+import { ServiceAccountSchema } from "../../../proto/identity_pb";
 
 const watches = vi.hoisted(() => new Map<string, WatchHandlers>());
 vi.mock("../watch_stream", () => ({
@@ -24,7 +25,15 @@ afterEach(async () => {
   watches.clear();
 });
 function Host({ subject, fence }: { subject: string; fence: string }) {
-  const result = usePolicyResources({ namespace: "agents", name: subject }, fence);
+  return (
+    <Selected
+      selector={{ case: "subject", value: create(ServiceAccountSchema, { namespace: "agents", name: subject }) }}
+      fence={fence}
+    />
+  );
+}
+function Selected({ selector, fence }: { selector: BindingSelector; fence: string }) {
+  const result = usePolicyResources(selector, fence);
   return (
     <output>
       {result.error ??
@@ -33,6 +42,18 @@ function Host({ subject, fence }: { subject: string; fence: string }) {
           : "loading")}
     </output>
   );
+}
+function Identities() {
+  const result = useIdentities();
+  return (
+    <output>{result.error ?? (result.identities ? result.identities.map((i) => i.identity?.uid).join(",") : "loading")}</output>
+  );
+}
+async function mount(node: JSX.Element): Promise<void> {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root.render(<MantineProvider>{node}</MantineProvider>));
 }
 function handler(fragment: string): WatchHandlers {
   const value = [...watches].find(([url]) => url.includes(fragment))?.[1];
@@ -90,4 +111,28 @@ it("waits for both snapshots, fences removals, and clears stale data on reconnec
     )
   );
   expect(container.querySelector("output")?.textContent).toBe("loading");
+});
+
+it.each<[BindingSelector, string]>([
+  [{ case: "identity", value: "fake-agent" }, "/upstream/policy/v1/policy-bindings:watch?identity=fake-agent"],
+  [{ case: "everyIdentity", value: true }, "/upstream/policy/v1/policy-bindings:watch?everyIdentity=true"],
+])("watches the bindings an identity selector names", async (selector, url) => {
+  await mount(<Selected selector={selector} fence="" />);
+  expect([...watches.keys()].sort()).toEqual([url, "/upstream/policy/v1/policy-sets:watch"]);
+});
+
+it("follows identities from a completed snapshot and fences removals by UID", async () => {
+  await mount(<Identities />);
+  expect([...watches.keys()]).toEqual(["/upstream/policy/v1/identities:watch"]);
+  await act(async () => {
+    start();
+    frame("identities", { snapshot: { identities: [{ identity: { namespace: "policies", name: "agent", uid: "old" } }] } });
+  });
+  expect(container.querySelector("output")?.textContent).toBe("loading");
+  await act(async () => frame("identities", { snapshotComplete: {} }));
+  expect(container.querySelector("output")?.textContent).toBe("old");
+  await act(async () => frame("identities", { removed: { namespace: "policies", name: "agent", uid: "other" } }));
+  expect(container.querySelector("output")?.textContent).toBe("old");
+  await act(async () => frame("identities", { removed: { namespace: "policies", name: "agent", uid: "old" } }));
+  expect(container.querySelector("output")?.textContent).toBe("");
 });

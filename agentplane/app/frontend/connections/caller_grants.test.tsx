@@ -38,7 +38,7 @@ async function render(): Promise<void> {
 it("watches the selected subject and displays empty grants without mutation controls", async () => {
   watch.mockReturnValue({ resources: { bindings: [], sets: [] }, error: null });
   await render();
-  expect(watch).toHaveBeenCalledWith(account, undefined);
+  expect(watch).toHaveBeenCalledWith({ case: "subject", value: account }, undefined);
   expect(container.textContent).toContain("No binding names this ServiceAccount");
   expect(container.textContent).not.toContain("Revoke");
 });

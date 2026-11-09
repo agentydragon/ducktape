@@ -17,14 +17,16 @@ import { bindingState } from "./state";
 export const BINDING_GRANT_HELP =
   "A binding grants the rules of its policy sets until it is deleted. The Policy Controller deletes expired bindings.";
 
-function provenance(binding: PolicyBinding): "git" | "sandbox" | "operator" {
+function provenance(binding: PolicyBinding): "git" | "sandbox" | "identity" | "operator" {
   if ("kustomize.toolkit.fluxcd.io/name" in binding.labels) return "git";
-  return binding.ownerReferences.some((owner) => owner.controller && owner.kind === "Sandbox") ? "sandbox" : "operator";
+  if (binding.ownerReferences.some((owner) => owner.controller && owner.kind === "Sandbox")) return "sandbox";
+  return binding.ownerReferences.some((owner) => owner.kind === "Identity") ? "identity" : "operator";
 }
-const PROVENANCE = { git: "from git", sandbox: "Sandbox", operator: "operator" } as const;
+const PROVENANCE = { git: "from git", sandbox: "Sandbox", identity: "identity's own", operator: "operator" } as const;
 const NOT_REVOCABLE = {
   git: "Applied by Flux: remove it in the repository, or the next reconcile applies it again.",
   sandbox: "Kept equal to the Sandbox's policy sets by its controller, which would recreate it.",
+  identity: "Owned by its identity, and deleted with it.",
 } as const;
 
 function targetLabel(target: Target): string {
@@ -88,10 +90,13 @@ export function BindingsTable({
   bindings,
   policySets,
   onRevoke,
+  subjectKind,
 }: {
   bindings: PolicyBinding[];
   policySets: PolicySet[];
   onRevoke: ((binding: PolicyBinding) => void) | null;
+  /** What the table's bindings name, for its empty state. */
+  subjectKind: "ServiceAccount" | "identity";
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
   const credentials = useCredentialMetadata();
@@ -122,7 +127,7 @@ export function BindingsTable({
           <Table.Tr>
             <Table.Td colSpan={columns}>
               <Text size="sm" c="dimmed">
-                No binding names this ServiceAccount.
+                No binding names this {subjectKind}.
               </Text>
             </Table.Td>
           </Table.Tr>
@@ -174,7 +179,10 @@ export function BindingsTable({
                 </Tooltip>
               </Table.Td>
               <Table.Td>
-                <Tooltip label={`${subject?.namespace}/${subject?.name}`} withArrow>
+                <Tooltip
+                  label={subject?.identity ? `identity ${subject.identity.name}` : `${subject?.namespace}/${subject?.name}`}
+                  withArrow
+                >
                   <Text size="sm" fw={600}>
                     {name}
                   </Text>
