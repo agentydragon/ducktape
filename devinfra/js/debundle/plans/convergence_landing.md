@@ -213,7 +213,7 @@ convenience. Candidates, with src files: array iteration family
 provider activation and imported constructor effects (`provider_activation.rs`,
 `imported_constructor_effects_test`); callbacks and retained factories; qualified
 module cells and provider initialization (`module_initialization` facts side);
-descriptor and native rows; class construction; saved anchors and source
+descriptor and native rows (this slice also retires the string-matched frozen-namespace recognizer, which L1b tombstones: it needs a symbol-keyed three-argument `Object.defineProperty` row, `Mutation::Integrity` admission on a non-literal operand, and a replacement coverage producer for the eight native-reentry and array-push tests that depend on it); class construction; saved anchors and source
 inventory (`analysis_inputs/saved.rs` anchors only; sidecars held). needs L2.
 
 **Wave 4: gate.**
