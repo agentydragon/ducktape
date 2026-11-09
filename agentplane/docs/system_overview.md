@@ -608,8 +608,9 @@ Kubernetes retains its destination-scoped projected token until the later impers
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
 
-Action command/build boxes and Haku UI/Anki keep their existing ServiceAccount subjects and
-Pod-bound bearer hop over verified TLS. Their sidecars alone hold credentials. The later shared
+Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
+ServiceAccount. Haku UI/Anki keep their ServiceAccount subject and Pod-bound bearer hop over
+verified TLS. Their sidecars alone hold credentials. The later shared
 identity and SVID lifecycle is independent of Sandboxes; no Identity/account cutover is included
 here. Existing Sandbox processes need recreation to read the new mode/route configuration; image
 updates alone do not replace running Pods.

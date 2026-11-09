@@ -360,6 +360,7 @@ py_library(
     deps = [
         ":egress",
         ":environment",
+        ":platform_routes",
         ":sandbox_pod",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:node_scheduling",

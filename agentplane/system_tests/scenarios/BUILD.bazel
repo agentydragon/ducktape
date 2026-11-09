@@ -123,8 +123,10 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
+        ":mcp",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
+        "//agentplane/action_service:action_service_pb2",
         "//agentplane/app/testing:client",
         "//agentplane/egress:egress_admin_pb2",
         "//agentplane/egress:resources",
@@ -142,6 +144,7 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:scripted_model",
         "//cluster/cdk8s/agentplane:namespaces",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//tenacity",

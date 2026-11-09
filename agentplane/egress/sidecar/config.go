@@ -136,7 +136,7 @@ type spiffeProxyAuth struct {
 func (spiffeProxyAuth) mode() listener.Mode           { return listener.SPIFFE }
 func (spiffeProxyAuth) requestToken() (string, error) { return "", nil }
 
-// CLEANUP(added 2026-11-09): Remove the bearer proxy-hop auth and plaintext transport once no non-Sandbox workload (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer and the proxy's `forward.auth` lists only `spiffe`.
+// CLEANUP(added 2026-11-09): Remove the bearer proxy-hop auth and plaintext transport with the proxy's bearer `forward.auth` entry; no workload projects a proxy-hop bearer since command boxes present SVIDs.
 type kubernetesBearerProxyAuth struct {
 	TokenFile string
 }

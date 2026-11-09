@@ -240,6 +240,7 @@ py_library(
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
+        "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:session_instructions",
         "//agentplane/system_tests/scenarios:storage",
