@@ -43,15 +43,19 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 - The resulting policy subject is exactly the record's subject ServiceAccount, for a Sandbox its own
   at `Sandbox.namespace/Sandbox.name`, read live for its UID. Neither a certificate subject DN nor a
   caller-supplied header selects the subject, and the proxy does not read Pods or Sandboxes for it. A
-  forwarded projected token must be bound to the record's `spec.pod`. A ServiceAccount no binding
-  names reaches no rule.
+  forwarded projected token must be bound to the record's `spec.pod`; a bound record that names no
+  Pod yet does not authenticate. A ServiceAccount no binding names reaches no rule.
+- A standing record, with no owner and no binding, authenticates its subject and proves no Pod:
+  every replica presenting its SVID is the same caller, and decisions record no source Pod. No
+  forwarded projected token can be bound to it, so the proxy drops every one unreviewed and a rule
+  needing one refuses with `credential-unavailable`. Deleting the record revokes it.
 - A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
   separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
   `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
   ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
   audience; a mismatched token is dropped and a rule needing it refuses with
   `credential-unavailable`.
-- A copied SVID proves only the live Sandbox and current runner binding named by that SVID.
+- A copied SVID proves only the live record named by that SVID and, for a bound record, its current binding.
   Each request, including one inherited through a tunnel, repeats validity and live-state checks.
 
 ## Decision
@@ -108,8 +112,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   and the API server's audit log names the proxy as the original user.
 - **Kubernetes keeps its projected workload credential.** The sidecar sends it as
   `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
-  forwarding it. TokenReview must resolve it to the Sandbox's own ServiceAccount and the Pod UID
-  recorded in its live runner binding for SVID callers. For bearer callers it must match the
+  forwarding it. TokenReview must resolve it to the record's subject and the Pod UID of its
+  `spec.pod` for SVID callers; a standing record has none, so none is kept. For bearer callers it must match the
   authenticated hop's full TokenReview principal. Both require a configured audience. A failed review drops that token;
   a rule requiring it refuses with `credential-unavailable`. The sidecar replaces caller-supplied
   copies of the header, and the workload cannot read the projection. A tunnel's inner requests

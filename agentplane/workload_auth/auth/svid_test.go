@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"net/url"
@@ -9,9 +10,12 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -46,6 +50,47 @@ func TestSVIDResolvesTheRecordsSubjectAndPod(t *testing.T) {
 				t.Fatalf("principal = %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+// A standing workload's record has no owner and no binding: it proves its subject and no Pod, and a
+// reviewed-caller method admits it without one.
+func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
+	workload, leaf := svidWorkload(t)
+	record := workload.Record
+	record.OwnerReferences, record.Spec.Binding, record.Spec.Pod = nil, nil, nil
+	if err := workload.Objects.Update(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	leaf.URIs[0] = mustURL(t, workload.Issue(t, "dddddddddddddddddddddddddddddddd"))
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := workload.Principal
+	want.PodName, want.PodUID = "", ""
+	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != want {
+		t.Fatalf("principal = %#v, %v; want %#v", got, err, want)
+	}
+
+	resolver, err := newResolver(t, api.TokenReviews()).WithListenerAuthentication(authlistener.Config{
+		ListenAddress: "test",
+		TLS:           &authlistener.TLS{CertFile: "/test/tls.crt", KeyFile: "/test/tls.key"},
+		Auth:          []authlistener.Authentication{&authlistener.SPIFFEAuth{CAFile: "/test/ca.pem"}},
+	}, svids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{
+		State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}},
+	}})
+	caller, err := resolver.ResolveReviewedCaller(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caller.Pod != nil || caller.ServiceAccount.GetUid() != want.ServiceAccountUID ||
+		caller.ServiceAccount.GetAccount().GetName() != want.Account.Name {
+		t.Fatalf("reviewed caller = %#v, want the subject and no Pod", caller)
 	}
 }
 

@@ -188,7 +188,10 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 		record.Subject = &decision.Subject{
 			Namespace: result.caller.principal.Account.Namespace, Name: result.caller.principal.Account.Name,
 		}
-		record.SourcePodUID = &result.caller.principal.PodUID
+		// A standing workload's credential proves no Pod.
+		if result.caller.principal.PodUID != "" {
+			record.SourcePodUID = &result.caller.principal.PodUID
+		}
 	}
 	switch d := result.decision.(type) {
 	case policy.Allowed:

@@ -86,11 +86,14 @@ including one inherited through a tunnel:
 5. `spec.subject` is the subject: a ServiceAccount in the record's namespace, read live for its
    UID. Identity subjects are refused until `IDENTITY_CUTOVER`.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
-   TokenReview Pod UID equals `spec.pod`.
+   TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
+   binds to it.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
 Services see the record's subject and `spec.pod` as today's `Principal`: the Sandbox's
-ServiceAccount, with the Pod as the provenance Pod.
+ServiceAccount, with the Pod as the provenance Pod. A standing workload's `Principal`, like a bound
+one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod
+proof refuses it. The egress proxy refuses a bound record with no Pod outright.
 
 TLS proves possession of the key, nothing more. Three things defend it: the Secret mounts only into
 Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation revokes its key

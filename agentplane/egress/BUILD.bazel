@@ -51,6 +51,8 @@ py_test(
         "//agentplane/egress/sidecar:egress-sidecar",
     ],
     requires_docker = True,
+    # Unsharded, devel's 20 cases already took 5m of medium's 300s (bbapi target history, 2026-11-09).
+    shard_count = 2,
     deps = [
         ":conftest",
         ":platform_routes",

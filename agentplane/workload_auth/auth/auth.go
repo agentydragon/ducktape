@@ -211,7 +211,12 @@ func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, e
 		if err != nil {
 			return ReviewedCaller{}, err
 		}
-		return ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID), Pod: &principal}, nil
+		caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
+		// A standing workload's credential proves no Pod.
+		if principal.IsPodBound() {
+			caller.Pod = &principal
+		}
+		return caller, nil
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
