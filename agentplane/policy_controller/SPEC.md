@@ -25,7 +25,10 @@ controller checks this instead. Such an object reports `KubernetesReady` `False`
 
 - A `PolicyBinding` in the controller's policy namespace grants by existing: creating one allows,
   deleting one takes that back. It names one ServiceAccount, which must live in one of
-  the controller's subject namespaces, and `PolicySet` names in its own namespace.
+  the controller's subject namespaces, or one `Identity`, and `PolicySet` names in its own
+  namespace. The controller applies no Kubernetes rule for an Identity subject
+  (`SubjectNotServiceAccount`): an identity reaches Kubernetes only by acting as an account a
+  `ServiceAccountGrant` provisions.
 - A `kubernetes_role_binding` rule binds an existing Role or ClusterRole in each namespace it names;
   `kubernetes_cluster_role_binding` binds an existing ClusterRole cluster-wide. Namespaces are named,
   never selected. Rules never define permissions of their own.
