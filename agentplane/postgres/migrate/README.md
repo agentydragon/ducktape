@@ -13,7 +13,8 @@ replayed inside `Run`; Goose transactions/history and any registered Go migratio
 the next startup resumes. Log connection failures, migration start/completion and returned errors.
 
 Each service owns embedded migration files, a stable Goose history table and a stable advisory
-lock key. Use Goose's `Provider` with its PostgreSQL session locker and disabled global registry.
+lock key, declared as a `Schema` whose `Up` builds Goose's `Provider` with its PostgreSQL session
+locker and disabled global registry.
 Every replica may initialize; the lock serializes migrators. It does not stop application writers.
 Release migration resources before starting the runtime's pools, leases, workers and listeners.
 

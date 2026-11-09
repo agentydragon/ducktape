@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
@@ -78,11 +79,10 @@ type kubeDeps struct {
 }
 
 func inClusterDeps() (kubeDeps, error) {
-	kubeConfig, err := rest.InClusterConfig()
+	kubeConfig, err := kubeclient.Config("")
 	if err != nil {
 		return kubeDeps{}, err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
 	// client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1

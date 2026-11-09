@@ -26,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
@@ -36,7 +37,6 @@ import (
 	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -99,17 +99,10 @@ func logLevel(name string) (slog.Level, error) {
 }
 
 func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
-	var base *rest.Config
-	var err error
-	if kubeconfig != "" {
-		base, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		base, err = rest.InClusterConfig()
-	}
+	base, err := kubeclient.Config(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("load Kubernetes client configuration: %w", err)
 	}
-	base.WrapTransport = observability.WrapHTTPTransport(base.WrapTransport)
 	base.ContentType, base.AcceptContentTypes = "application/json", "application/json"
 	// Every proxied request is a TokenReview; client-go's default of 5 requests per second (burst 10)
 	// would queue admissions client-side. API Priority and Fairness bounds the load on the server.

@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -42,7 +43,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -55,17 +55,10 @@ const (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeConfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeConfig, err = rest.InClusterConfig()
-	}
+	kubeConfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every read and every push is a TokenReview; client-go's default of 5 requests per second (burst 10) would
 	// queue them client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1

@@ -36,6 +36,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
@@ -49,8 +50,6 @@ import (
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const systemStatusTimeout = 5 * time.Second
@@ -87,11 +86,10 @@ func run(ctx context.Context, config Config) error {
 	}
 	defer wakeupHub.Close()
 
-	kubeConfig, err := kubernetesConfig(config.Kubeconfig)
+	kubeConfig, err := kubeclient.Config(config.Kubeconfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("load Kubernetes config: %w", err)
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	kube, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		return fmt.Errorf("create Kubernetes API clients: %w", err)
@@ -380,21 +378,6 @@ func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (strin
 
 func postgresDriverURL(value string) string {
 	return strings.Replace(value, "postgresql+asyncpg://", "postgres://", 1)
-}
-
-func kubernetesConfig(path string) (*rest.Config, error) {
-	if path != "" {
-		config, err := clientcmd.BuildConfigFromFlags("", path)
-		if err != nil {
-			return nil, fmt.Errorf("load Kubernetes config: %w", err)
-		}
-		return config, nil
-	}
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("load in-cluster Kubernetes config: %w", err)
-	}
-	return config, nil
 }
 
 func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
