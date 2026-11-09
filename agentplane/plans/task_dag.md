@@ -3222,9 +3222,10 @@ a relation test shows no holder loses a role binding on the switch.
 
 Left for the cutover to decide or do: the caller ServiceAccounts and the static Flux RoleBindings naming the `claude-ai`
 ServiceAccount stay, since the MCP edge and the Action Service still authenticate them;
-`cluster/cdk8s/test_agent_rbac.py` reads only the ServiceAccount rendering. The MCP edge's
-Connection binding waits: its settings name only `mintable_accounts` ServiceAccounts, whose tokens
-it mints, and have no identity field.
+`cluster/cdk8s/test_agent_rbac.py` reads only the ServiceAccount rendering. The MCP edge parses
+and validates a `connection_identities` setting (policy namespace and Identity names, beside
+`mintable_accounts`) that no manifest sets and nothing reads; setting it and binding Connections to
+those Identities is `IDENTITY_CUTOVER`'s.
 **Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
 renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.
 
@@ -3258,7 +3259,10 @@ a binding with no identity and a Kubernetes rule in a `PolicySet`), deletes the 
 binding subject, Kubernetes rule types in `PolicySet`,
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
-the objects of the new kinds. Running Sandboxes are replaced, not patched. Expected downtime: every
+the objects of the new kinds. The MCP edge's `connection_identities` setting is set and read here:
+stored Connections move from their bound ServiceAccount to an Identity, consent offers those
+Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with what it then mints.
+Running Sandboxes are replaced, not patched. Expected downtime: every
 running Sandbox loses egress and platform routes until its sidecar image carries the SVID hop.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox

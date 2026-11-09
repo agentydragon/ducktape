@@ -48,7 +48,11 @@ identity.
 environment variables override scalar keys, with `__` for nested keys. `database_url` is required
 and can be supplied through `AGENTPLANE_MCP_EDGE_DATABASE_URL`. `actions_target` is the internal
 Action Service gRPC endpoint. `caller_service_account_namespaces` and `mintable_accounts` take JSON
-arrays in the environment; `mintable_accounts` entries are `namespace/name`. `operator_oidc`
+arrays in the environment; `mintable_accounts` entries are `namespace/name`. The optional
+`connection_identities` object, set only in the YAML file, names the `Identity` objects a Connection
+may be bound to: `policy_namespace` holds them and `names` lists at least one. When absent, Connections
+bind only to `mintable_accounts`; when present, both keys are required. The edge validates it but
+nothing reads it yet. `operator_oidc`
 requires the issuer, audience, JWKS URI and token profile used by the app's operator tokens.
 `oauth` is an optional JSON object in the environment, using the current OAuth Secret's keys; when
 absent, the Connection API remains available and the external protocol routes are absent. The

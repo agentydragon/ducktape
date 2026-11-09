@@ -5,13 +5,26 @@ from __future__ import annotations
 from collections.abc import Set
 from typing import ClassVar
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from util.yaml_file_settings import YamlFileSettings
+
+
+class ConnectionIdentities(BaseModel):
+    """The Identities a Connection may be bound to, as `mintable_accounts` are the ServiceAccounts.
+
+    Staged for IDENTITY_CUTOVER (agentplane/plans/task_dag.md), which sets it and makes the edge bind
+    Connections to these Identities; until then the edge validates it and nothing reads it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy_namespace: str = Field(min_length=1, description="Namespace holding the Identity objects.")
+    names: Set[str] = Field(min_length=1, description="Identity names in `policy_namespace`.")
 
 
 class Settings(YamlFileSettings):
@@ -33,6 +46,9 @@ class Settings(YamlFileSettings):
     )
     caller_service_account_namespaces: Set[str] = Field(min_length=1)
     mintable_accounts: tuple[str, ...] = ()
+    connection_identities: ConnectionIdentities | None = Field(
+        default=None, description="Absent while Connections bind only to `mintable_accounts`."
+    )
     operator_oidc: OperatorOidcSettings
     oauth: OAuthSettings | None = None
     max_wait_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
