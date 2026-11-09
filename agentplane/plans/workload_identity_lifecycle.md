@@ -12,7 +12,8 @@ Pick how every workload caller gets its SVID, so the proxy's `kubernetes_bearer`
 workload bearer projections can be removed. The recommendation is one workload-identity component
 that owns issuance and resolution. Owners only ask for credentials: the Sandbox Controller for
 incarnations, the Action Service for boxes, and cdk8s for standing workloads. An owner asks by
-writing a `WorkloadCredential` object. The component mints the credential ID and the URI, requests
+writing a `WorkloadCredential` object, and Sandboxes use the same record: it replaces
+`Sandbox.status.runnerCredential` as what verifiers read. The component mints the credential ID and the URI, requests
 the cert-manager `Certificate` from one Agentplane workload CA, rotates it, and writes the status
 verifiers trust. Every verifier links its resolver, which reads only `WorkloadCredential`s and never
 a Sandbox. The component is a package hosted in the Policy Controller binary. Every alternative
@@ -21,16 +22,16 @@ which can be dispatched before the rest is accepted.
 
 ## Callers
 
-| Caller                     | Created by                                                                     | Proves its incarnation today                                                      | Policy subject today          | Its request under the recommendation                             |
-| -------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------- |
-| Sandbox Pod                | Sandbox Controller                                                             | Runtime SVID; `status.runnerCredential` binds credential ID to Pod UID            | the Sandbox's own SA          | Sandbox Controller, kind `environment-runtime`, bound to the Pod |
-| KubeVirt VM                | Sandbox Controller; the launcher relay gets the Secret after Kyverno admission | Runtime SVID; accepted VMI UID in status                                          | the Sandbox's own SA          | same, bound to the VMI                                           |
-| Firecracker guest          | Sandbox Controller; the launcher serves the Workload API over vsock            | Runtime SVID; Pod UID in status                                                   | the Sandbox's own SA          | same, bound to the launcher Pod                                  |
-| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA      | Pod-bound `agentplane-egress` bearer, TokenReview                                 | the calling Sandbox's own SA  | Action Service, kind `action-box`, subject the caller            |
-| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux          | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | cdk8s, kind `standing`                                           |
-| Anki                       | as Haku UI                                                                     | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                       |
-| Central sampler            | Flux Deployment                                                                | Its own bearer; acts by [delegation](../docs/delegated_authorization.md), no SVID | the effective caller          | out of scope; delegation names the identity                      |
-| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | None: its Deployment is at 0/0, and its dead relay config selects plaintext       | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that |
+| Caller                     | Created by                                                                     | Proves its incarnation today                                                      | Policy subject today          | Its request under the recommendation                                                             |
+| -------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| Sandbox Pod                | Sandbox Controller                                                             | Runtime SVID; `status.runnerCredential` binds credential ID to Pod UID            | the Sandbox's own SA          | a `WorkloadCredential` from the Sandbox Controller, kind `environment-runtime`, bound to the Pod |
+| KubeVirt VM                | Sandbox Controller; the launcher relay gets the Secret after Kyverno admission | Runtime SVID; accepted VMI UID in status                                          | the Sandbox's own SA          | the same record, bound to the VMI                                                                |
+| Firecracker guest          | Sandbox Controller; the launcher serves the Workload API over vsock            | Runtime SVID; Pod UID in status                                                   | the Sandbox's own SA          | the same record, bound to the launcher Pod                                                       |
+| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA      | Pod-bound `agentplane-egress` bearer, TokenReview                                 | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, kind `action-box`, subject the caller            |
+| Haku UI                    | Haku: a Deployment in `haku-state`, applied to `haku-sandbox` by Flux          | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, kind `standing`                                        |
+| Anki                       | as Haku UI                                                                     | Pod-bound bearer of SA `haku-ui`                                                  | `haku-sandbox/haku-ui`        | its own request, same subject (question 4)                                                       |
+| Central sampler            | Flux Deployment                                                                | Its own bearer; acts by [delegation](../docs/delegated_authorization.md), no SVID | the effective caller          | out of scope; delegation names the identity                                                      |
+| OpenClaw, external callers | `public_coder` cdk8s; none yet                                                 | None: its Deployment is at 0/0, and its dead relay config selects plaintext       | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                 |
 
 ## Alternatives
 
@@ -180,23 +181,34 @@ parsers are unchanged. The path never names where the subject lives. Under every
 its Secret and the workload stay in the workload cluster. Only the subject reference crosses to
 wherever `Identity` lives, resolved by name and UID through the shared reader.
 
-The resolver does an uncached `get` of `<ns>/<name>`. It accepts the request when all of these
-hold:
+**How a verifier resolves a peer.** The identity is never in the certificate. The URI names a
+record, and the record names the subject.
 
-- the request is not deleted;
-- `status.uri` equals the presented URI;
-- `status.credentialID` matches;
-- kinds that need a binding have `status.acceptedBinding` set.
+1. The TLS listener verifies the chain against the workload CA bundle and the client-auth usage,
+   and hands the resolver the verified leaf.
+2. The leaf's URI SAN must parse as `spiffe://agentplane/<kind>/<ns>/<name>/<credential-id>`.
+3. `<ns>` and `<name>` name the `WorkloadCredential`, and `<ns>` must be one of the verifier's
+   allowed namespaces.
+4. The resolver makes one uncached GET of that record. A missing or deleting record is refused.
+5. Four checks follow. `status.credentialID` must equal the URI's last segment. `status.uri` must
+   equal the whole URI. `spec.kind` must equal the kind segment. A kind that needs a binding must
+   have `status.acceptedBinding`.
+6. `spec.subject` is the subject. Until `IDENTITY_CUTOVER` it is a ServiceAccount, whose UID the
+   resolver reads. After that it is an `Identity` name and UID, which the shared policy reader must
+   find live with that UID.
+7. The caller may also offer a Pod-bound token: the Kubernetes-audience token a sidecar forwards
+   for `projectedWorkloadToken`. Its TokenReview Pod UID must then equal `status.acceptedBinding`.
 
-The subject comes from `spec`. Until the cutover the resolver returns today's `Principal`, with
-the binding as provenance Pod, so no service authorization changes.
+Each request, including one inherited through a tunnel, repeats steps 4 to 7. Until the cutover,
+the resolver returns today's `Principal`, with the binding as the provenance Pod, so no service
+authorization changes.
 
 Sandbox semantics carry over. The request is owned by the Sandbox, so it outlives finalization
-while Runtime seals history, and it goes when the Sandbox does. A VMI replacement or an identity
-change bumps `rotation`, which rotates the ID. Clearing `binding` revokes. Because
-`spec.identity` changes only while nothing runs, and the next start rotates the credential, the
-subject written at start equals the live field. This replaces the identity plan's assumption that
-verifiers read `spec.identity` from the live Sandbox.
+while Runtime seals history, and it goes when the Sandbox does. A VMI replacement bumps `rotation`, which
+rotates the ID. Clearing `binding` revokes. The Sandbox Controller copies `spec.identity` into
+`spec.subject`. Because `spec.identity` changes only while nothing runs, no request in flight sees
+two subjects. Whether that change also rotates the credential is question 8. This replaces the
+identity plan's assumption that verifiers read `spec.identity` from the live Sandbox.
 
 ### Admission
 
@@ -293,6 +305,17 @@ and 5 may land on either side.
    Recommendation: `IDENTITY_KINDS` omits the field.
 7. **Off-cluster callers.** A Secret mount does not reach them. Recommendation: design delivery when
    one exists. The request and the resolver stay as here.
+8. **Re-owning a Sandbox: rotate or keep the certificate.** The subject lives in the record, so
+   re-owning a Sandbox is a `spec.subject` change, and the certificate could stay. The identity
+   plan's [§ Changing an environment's identity](identity_and_kubernetes_accounts.md#changing-an-environments-identity)
+   rotates the credential ID on the next start instead.
+   - **Rotate.** The boundary shows in audit logs as a new SPIFFE ID, at the cost of one reissue
+     per re-own.
+   - **Keep the certificate.** Simpler, but one SPIFFE ID then spans two identities in decision
+     history and service logs.
+
+   The in-flight hazards are covered either way, because the identity changes only while nothing
+   runs. Recommendation: rotate, by bumping `rotation` with the subject change. Operator to confirm.
 
 When `WORKLOAD_AUTH_CUTOVER` lands, this content moves into `docs/workload_authentication.md` and
 the SPECs of the Policy Controller, Sandbox Controller, egress proxy and Action Service, and this
