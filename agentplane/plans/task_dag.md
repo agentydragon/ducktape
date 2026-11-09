@@ -2024,7 +2024,9 @@ the log. Verify the History Service and Electric reconnect with no data movement
 `exec` for a configured time. The Action Service stamps a last-exec time on the box at each `exec`;
 a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sandbox-lifetime)` in
 `action_service/sandbox/inventory.go`; the closed draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
-expired agent-sandbox boxes the same way.
+expired agent-sandbox boxes the same way. It also revokes a box's `WorkloadCredential` whose bound
+Pod no longer exists, so a Pod deleted outside `dispose` or garbage collection leaves no resolvable
+record.
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
