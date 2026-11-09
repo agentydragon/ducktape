@@ -58,6 +58,27 @@ CA. Both are deployed but not yet in use: no manifest sets the issuer's settings
 reads records. The record, requester and resolver are described in
 [`workload_identity`](../workload_identity/README.md).
 
+### How a verifier resolves a peer
+
+The certificate never carries the identity: its URI names a record, and the record names the
+subject. The resolver (`agentplane/workload_identity/resolver`) takes a leaf whose chain the TLS
+listener verified against the workload CA, and on every call:
+
+1. Refuses a leaf outside its validity window or without the client-auth usage.
+2. Parses the URI SAN as `spiffe://agentplane/<namespace>/<name>/<credential-id>`.
+3. Refuses a namespace outside the verifier's allowed namespaces. Namespace and name pick the
+   `WorkloadCredential`.
+4. Makes one uncached GET of that record, and refuses a missing or deleting one.
+5. Requires `status.credentialID` to equal the URI's last segment and `status.uri` the whole URI.
+   A record with a controller owner or a binding also needs `spec.binding` to equal
+   `status.acceptedBinding`, so clearing or replacing the binding revokes before the ID rotates.
+6. Reads `spec.subject`. A ServiceAccount in the record's namespace must be live; its UID is
+   returned. An `Identity` subject is refused until the identity cutover.
+7. When the caller also offered a Pod-bound token, the Pod UID TokenReview reports for it must equal
+   the accepted binding's (`Peer.RequirePod`).
+
+An API server error fails closed. Headers, metadata and request bodies never select the subject.
+
 ## TokenReview and projected credentials
 
 The central egress proxy's `forward` listener requires TLS and allows either a Runtime SVID or a

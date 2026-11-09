@@ -6,7 +6,7 @@ implementation is `WORKLOAD_AUTH_CUTOVER`. Background:
 [identities and Kubernetes accounts](identity_and_kubernetes_accounts.md) § Workload authentication,
 [workload authentication](../docs/workload_authentication.md).
 
-**Progress.** Step 1 landed (#15104, #15113, #15129). From step 2, the record, requester and
+**Progress.** Step 1 landed (#15104, #15113, #15129, #15131). From step 2, the record, requester and
 resolver (#15119) and the issuer (#15127) landed; the cutover is in progress.
 
 ## Question for review
@@ -80,11 +80,11 @@ does each owner issue for itself, or does one component issue on the owners' beh
 
 ## The step every alternative shares: a dedicated workload CA
 
-Landed in #15104, #15113 and #15129; the contract is
+Landed in #15104, #15113, #15129 and #15131; the contract is
 [workload authentication § The workload CA](../docs/workload_authentication.md#the-workload-ca).
-Runner-side client trust remains under `WORKLOAD_CA_CLIENT_TRUST`: #15131 moves the Pod and VM
-runner control listeners to the workload CA, and Firecracker's control listener stays on the
-cluster root.
+Pod and VM runners' control listeners trust the workload CA alone (#15131). Firecracker's control
+listener stays on the cluster root, tracked as `FIRECRACKER_CLIENT_TRUST` in the
+[task freezer](task_freezer.md).
 
 **Decided 2026-11-09 (operator):** no Sandboxes run during this cutover, and staging holds zero
 Sandboxes now. The `issuerRef` move therefore needs no replacement procedure. A leftover runner
@@ -186,29 +186,10 @@ The path never names where the subject lives. Under every
 its Secret and the workload stay in the workload cluster. Only the subject reference crosses to
 wherever `Identity` lives, resolved by name and UID through the shared reader.
 
-**How a verifier resolves a peer.** The identity is never in the certificate. The URI names a
-record, and the record names the subject.
-
-1. The TLS listener verifies the chain against the workload CA bundle and the client-auth usage,
-   and hands the resolver the verified leaf.
-2. The leaf's URI SAN must parse as `spiffe://agentplane/<namespace>/<name>/<credential-id>`.
-3. The namespace must be one of the verifier's allowed namespaces, and the namespace and name pick
-   the `WorkloadCredential`.
-4. The resolver makes one uncached GET of that record. A missing or deleting record is refused.
-5. `status.credentialID` must equal the URI's last segment, and `status.uri` the whole URI. A
-   record with a controller owner or a binding also needs `spec.binding` to equal
-   `status.acceptedBinding`, so clearing or replacing the binding revokes before the ID rotates.
-6. `spec.subject` is the subject. Until `IDENTITY_CUTOVER` it is a ServiceAccount, whose UID the
-   resolver reads. After that it is an `Identity` name and UID, which the shared policy reader must
-   find live with that UID. `spec.subject.identity` names an `Identity` in the policy namespace,
-   not in the record's own namespace, and the resolver reads it there. This matters for
-   `haku-sandbox` records.
-7. The caller may also offer a Pod-bound token: the Kubernetes-audience token a sidecar forwards
-   for `projectedWorkloadToken`. Its TokenReview Pod UID must then equal `status.acceptedBinding`.
-
-Each request, including one inherited through a tunnel, repeats steps 4 to 7. Until the cutover,
-the resolver returns today's `Principal`, with the binding as the provenance Pod, so no service
-authorization changes.
+**How a verifier resolves a peer** landed with the resolver (#15119) and is described in
+[workload authentication](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer).
+Verifiers adopt it at the cutover, and each request, including one inherited through a tunnel,
+resolves again.
 
 **What the binding proves.** TLS proves possession of the key, nothing more. The binding limits how
 long a leaked key stays usable; it does not fence who can use the key while it is valid. Three
@@ -360,7 +341,9 @@ reference to it. `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 
 prerequisite of that node, recorded in the DAG. In the same change, the box's owner becomes the
 caller's `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
 cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
-every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. Steps 4
+every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. The
+resolver then reads `spec.subject.identity` through the shared policy reader, live with its UID, in
+the policy namespace rather than the record's own, which matters for `haku-sandbox` records. Steps 4
 and 5 may land on either side.
 
 ## Open questions
