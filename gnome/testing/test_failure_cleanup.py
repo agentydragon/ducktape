@@ -105,5 +105,40 @@ def test_session_log_error_preserves_startup_failure(
         assert len(startup_error.__notes__) == 1
 
 
+@pytest.mark.parametrize("body_fails", [False, True])
+def test_session_always_saves_shell_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body_fails: bool) -> None:
+    monkeypatch.setenv("TEST_UNDECLARED_OUTPUTS_DIR", str(tmp_path))
+    container = MagicMock()
+    container.__enter__.return_value = container
+    container.get_wrapped_container.return_value.exec_run.return_value = _exec_result(0, stdout=b"shell diagnostics")
+    monkeypatch.setattr(session, "DockerContainer", lambda image: container)
+    monkeypatch.setattr(GnomeSession, "boot", lambda session: None)
+    monkeypatch.setattr(GnomeSession, "start", lambda session, *, environment: None)
+    monkeypatch.setattr(GnomeSession, "wait_for_paint", lambda session: None)
+
+    def run_session() -> None:
+        with session.gnome_session(
+            "test-image",
+            extension_dir=tmp_path,
+            extension="test@example.invalid",
+            fixture_dir=tmp_path,
+            fake_daemon_script=tmp_path / "fake.js",
+            screenshot_dir=tmp_path,
+            destination="test.Extension",
+            object_path="/test",
+            environment={},
+        ):
+            if body_fails:
+                raise AssertionError("test body failed")
+
+    if body_fails:
+        with pytest.raises(AssertionError, match="test body failed"):
+            run_session()
+    else:
+        run_session()
+
+    assert (tmp_path / "session.shell.log").read_bytes() == b"shell diagnostics"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -41,7 +41,6 @@ from python.runfiles import Runfiles
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
@@ -159,13 +158,6 @@ def session(
 
 
 @pytest.fixture
-def undeclared_dir() -> Path:
-    out = undeclared_outputs_dir()
-    out.mkdir(parents=True, exist_ok=True)
-    return out
-
-
-@pytest.fixture
 def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> GnomeMenuCapture:
     return GnomeMenuCapture(session, test_outputs, title="AI quota GNOME extension")
 
@@ -177,17 +169,13 @@ def _reload_fixture(session: GnomeSession, fixture_name: str) -> None:
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, capture_menu: GnomeMenuCapture) -> None:
+def test_render(session: GnomeSession, fixture_name: str, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, fixture_name)
+    geometry = session.open_menu()
     try:
-        _reload_fixture(session, fixture_name)
-        geometry = session.open_menu()
-        try:
-            capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / f"{fixture_name}.shell.log")
-        pytest.fail(f"{fixture_name}: {e}")
+        capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
+    finally:
+        session.close_menu()
 
 
 def test_claude_prepaid_balance(session: GnomeSession) -> None:
@@ -294,33 +282,29 @@ def test_reset_pending(session: GnomeSession) -> None:
     assert "Reset time passed · awaiting updated usage" in codex.status
 
 
-def test_stale_observation(session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture) -> None:
+def test_stale_observation(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "stale_observation")
+    claude = _ProviderPopup(session, "claude")
+    status = claude.status
+    panel = claude.panel
+    windows = claude.windows
+    assert "Stale · observation" in status
+    assert panel.startswith("~")
+    assert len(windows) == 1
+    assert "pace:" not in windows[0]
+
+    session.call("SetStreamStatus", "disconnected", "cached view retained")
+    disconnected_status = claude.status
+    disconnected_panel = claude.panel
+    assert "Stale · observation" in disconnected_status
+    assert disconnected_panel.startswith("~")
+    assert "cached view retained" in string_reply(session.call("GetConnectionDetails"))
+
     try:
-        _reload_fixture(session, "stale_observation")
-        claude = _ProviderPopup(session, "claude")
-        status = claude.status
-        panel = claude.panel
-        windows = claude.windows
-        assert "Stale · observation" in status
-        assert panel.startswith("~")
-        assert len(windows) == 1
-        assert "pace:" not in windows[0]
-
-        session.call("SetStreamStatus", "disconnected", "cached view retained")
-        disconnected_status = claude.status
-        disconnected_panel = claude.panel
-        assert "Stale · observation" in disconnected_status
-        assert disconnected_panel.startswith("~")
-        assert "cached view retained" in string_reply(session.call("GetConnectionDetails"))
-
-        try:
-            geometry = session.open_menu()
-            capture_menu.capture(geometry, label="stale observation")
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / "stale_observation.shell.log")
-        pytest.fail(f"stale_observation: {e}")
+        geometry = session.open_menu()
+        capture_menu.capture(geometry, label="stale observation")
+    finally:
+        session.close_menu()
 
 
 def test_paid_credits(session: GnomeSession) -> None:
@@ -333,44 +317,38 @@ def test_paid_credits(session: GnomeSession) -> None:
     assert "⚡" in codex.panel
 
 
-def test_observed_account_2026_11_04(
-    session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
-) -> None:
-    try:
-        _reload_fixture(session, "observed_account_2026_11_04")
-        claude = _ProviderPopup(session, "claude")
-        codex = _ProviderPopup(session, "codex")
-        anthropic = _ProviderPopup(session, "anthropic_platform")
-        openai = _ProviderPopup(session, "openai_platform")
-        assert len(claude.windows) == 1
-        assert len(codex.windows) == 1
-        assert "Claude — Prepaid balance:" in claude.header
-        assert "Codex — Paid credits:" in codex.header
-        assert not claude.balance
-        assert not codex.balance
-        assert json.loads(string_reply(session.call("GetPanelProviders"))) == ["claude", "codex"]
-        openai_grants = openai.grants
-        assert len(openai_grants.splitlines()) == 3
-        grants = anthropic.grants
-        assert len(grants.splitlines()) == 2
-        assert re.findall(r"expires ([^·\n]+)", grants) == ["Jul 1, 2027", "Nov 25"]
-        assert re.findall(r"expires ([^·\n]+)", openai_grants) == ["Dec 1", "Jan 1, 2027", "Feb 1, 2027"]
-        assert "scope:" not in grants
-        assert "managed-agents-onprem" in anthropic.details
+def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "observed_account_2026_11_04")
+    claude = _ProviderPopup(session, "claude")
+    codex = _ProviderPopup(session, "codex")
+    anthropic = _ProviderPopup(session, "anthropic_platform")
+    openai = _ProviderPopup(session, "openai_platform")
+    assert len(claude.windows) == 1
+    assert len(codex.windows) == 1
+    assert "Claude — Prepaid balance:" in claude.header
+    assert "Codex — Paid credits:" in codex.header
+    assert not claude.balance
+    assert not codex.balance
+    assert json.loads(string_reply(session.call("GetPanelProviders"))) == ["claude", "codex"]
+    openai_grants = openai.grants
+    assert len(openai_grants.splitlines()) == 3
+    grants = anthropic.grants
+    assert len(grants.splitlines()) == 2
+    assert re.findall(r"expires ([^·\n]+)", grants) == ["Jul 1, 2027", "Nov 25"]
+    assert re.findall(r"expires ([^·\n]+)", openai_grants) == ["Dec 1", "Jan 1, 2027", "Feb 1, 2027"]
+    assert "scope:" not in grants
+    assert "managed-agents-onprem" in anthropic.details
 
-        geometry = session.open_menu()
-        try:
-            assert geometry[2] <= 480, f"account popup exceeds compact width: {geometry}"
-            session.call("SetDetailsOpen", "anthropic_platform", "true")
-            expanded = session.open_menu()
-            assert expanded[2] <= 480, f"expanded scope widens account popup: {expanded}"
-            capture_menu.capture(expanded, label="Observed account promo details", checkpoint="promo-details")
-            session.call("SetDetailsOpen", "anthropic_platform", "false")
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / "observed-account.shell.log")
-        pytest.fail(f"Observed account: {e}")
+    geometry = session.open_menu()
+    try:
+        assert geometry[2] <= 480, f"account popup exceeds compact width: {geometry}"
+        session.call("SetDetailsOpen", "anthropic_platform", "true")
+        expanded = session.open_menu()
+        assert expanded[2] <= 480, f"expanded scope widens account popup: {expanded}"
+        capture_menu.capture(expanded, label="Observed account promo details", checkpoint="promo-details")
+        session.call("SetDetailsOpen", "anthropic_platform", "false")
+    finally:
+        session.close_menu()
 
 
 def test_anthropic_organization_headers_and_group_transitions(session: GnomeSession) -> None:
@@ -421,82 +399,66 @@ def test_anthropic_balance_error_remains_visible_under_its_header(
 
 
 def test_render_distinct_prepaid_and_quota_staleness(
-    session: GnomeSession, fixture_json_dir: Path, undeclared_dir: Path, capture_menu: GnomeMenuCapture
+    session: GnomeSession, fixture_json_dir: Path, capture_menu: GnomeMenuCapture
 ) -> None:
+    data = json.loads((fixture_json_dir / "claude_prepaid_balance_stale.json").read_text())
+    claude = next(provider for provider in data["providers"] if provider["provider"] == "claude")
+    claude["stale_since"] = "2026-01-15T11:00:00Z"
+    claude["stale_at"] = "2026-01-15T11:10:00Z"
+    claude["balances"][0]["stale_since"] = "2026-01-15T10:00:00Z"
+    fixture_path = fixture_json_dir / "claude_distinct_staleness.json"
+    fixture_path.write_text(json.dumps(data, indent=2) + "\n")
+    session.close_menu()
+    session.reload("/fixtures/claude_distinct_staleness.json")
+
+    popup = _ProviderPopup(session, "claude")
+    assert "Stale · observation 1h old" in popup.status
+    assert "Prepaid balance: $123.45 · stale 2h ago" in popup.balance
+
+    geometry = session.open_menu()
     try:
-        data = json.loads((fixture_json_dir / "claude_prepaid_balance_stale.json").read_text())
-        claude = next(provider for provider in data["providers"] if provider["provider"] == "claude")
-        claude["stale_since"] = "2026-01-15T11:00:00Z"
-        claude["stale_at"] = "2026-01-15T11:10:00Z"
-        claude["balances"][0]["stale_since"] = "2026-01-15T10:00:00Z"
-        fixture_path = fixture_json_dir / "claude_distinct_staleness.json"
-        fixture_path.write_text(json.dumps(data, indent=2) + "\n")
+        capture_menu.capture(geometry, label="Claude distinct staleness")
+    finally:
         session.close_menu()
-        session.reload("/fixtures/claude_distinct_staleness.json")
-
-        popup = _ProviderPopup(session, "claude")
-        assert "Stale · observation 1h old" in popup.status
-        assert "Prepaid balance: $123.45 · stale 2h ago" in popup.balance
-
-        geometry = session.open_menu()
-        try:
-            capture_menu.capture(geometry, label="Claude distinct staleness")
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / "claude-distinct-staleness.shell.log")
-        pytest.fail(f"Claude distinct staleness: {e}")
 
 
-def test_render_disconnected_stream(
-    session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
-) -> None:
+def test_render_disconnected_stream(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    session.close_menu()
+    session.reload("/fixtures/hot.json")
+    session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
+    session.call("SetSyncState", "958", "1019", "1000")
+    session.wait_for_paint()
+    stream_status = string_reply(session.call("GetStreamStatus")).lower()
+    assert "\n" not in stream_status
+    assert "last attempt 42s ago" in stream_status
+    assert "retry in 19s" in stream_status
+    assert "connection to quota api was lost" not in stream_status
+    assert "connection to quota api was lost" in string_reply(session.call("GetConnectionDetails")).lower()
+    session.call("SetSyncState", "958", "1019", "1001")
+    stream_status = string_reply(session.call("GetStreamStatus")).lower()
+    assert "\n" not in stream_status
+    assert "last attempt 43s ago" in stream_status
+    assert "retry in 18s" in stream_status
+    session.call("SetSyncState", "958", "1019", "1000")
+    session.wait_for_paint()
+    geometry = session.open_menu()
     try:
+        capture_menu.capture(geometry, label="stream disconnected")
+    finally:
         session.close_menu()
-        session.reload("/fixtures/hot.json")
-        session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
-        session.call("SetSyncState", "958", "1019", "1000")
-        session.wait_for_paint()
-        stream_status = string_reply(session.call("GetStreamStatus")).lower()
-        assert "\n" not in stream_status
-        assert "last attempt 42s ago" in stream_status
-        assert "retry in 19s" in stream_status
-        assert "connection to quota api was lost" not in stream_status
-        assert "connection to quota api was lost" in string_reply(session.call("GetConnectionDetails")).lower()
-        session.call("SetSyncState", "958", "1019", "1001")
-        stream_status = string_reply(session.call("GetStreamStatus")).lower()
-        assert "\n" not in stream_status
-        assert "last attempt 43s ago" in stream_status
-        assert "retry in 18s" in stream_status
-        session.call("SetSyncState", "958", "1019", "1000")
-        session.wait_for_paint()
-        geometry = session.open_menu()
-        try:
-            capture_menu.capture(geometry, label="stream disconnected")
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / "stream_disconnected.shell.log")
-        pytest.fail(f"stream disconnected: {e}")
 
 
-def test_render_disconnected_without_snapshot(
-    session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
-) -> None:
+def test_render_disconnected_without_snapshot(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, _EMPTY_FIXTURE)
+    empty_view = json.dumps({"fetched_at": "2026-10-18T12:00:00Z", "providers": []})
+    session.call("SetViewForTest", empty_view)
+    session.call("SetStreamStatus", "disconnected", "AIQuota daemon is not running")
+    session.wait_for_paint()
+    geometry = session.open_menu()
     try:
-        _reload_fixture(session, _EMPTY_FIXTURE)
-        empty_view = json.dumps({"fetched_at": "2026-10-18T12:00:00Z", "providers": []})
-        session.call("SetViewForTest", empty_view)
-        session.call("SetStreamStatus", "disconnected", "AIQuota daemon is not running")
-        session.wait_for_paint()
-        geometry = session.open_menu()
-        try:
-            capture_menu.capture(geometry, label="stream disconnected without snapshot")
-        finally:
-            session.close_menu()
-    except (TimeoutError, RuntimeError) as e:
-        session.save_log(undeclared_dir / "stream_disconnected_without_snapshot.shell.log")
-        pytest.fail(f"stream disconnected without snapshot: {e}")
+        capture_menu.capture(geometry, label="stream disconnected without snapshot")
+    finally:
+        session.close_menu()
 
 
 def _view_json(revision: int) -> str:
