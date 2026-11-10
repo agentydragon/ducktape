@@ -1,8 +1,8 @@
 """A bare-k3s Agentplane stack on one RBE action, for tests to drive.
 
 Starts k3s with kube-proxy and no Cilium, loads the Bazel-built service images, applies the composed
-manifest and yields the app's address and a token once every Deployment is Available. It fails at the
-first Deployment that does not, with the Pod states and logs of whatever did not start.
+manifest and yields the app's address and the test operator's ID token once every Deployment is Available.
+It fails at the first Deployment that does not, with the Pod states and logs of whatever did not start.
 
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
 through `/etc/hosts`: OIDC redirects name them. Dex's
@@ -24,6 +24,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -32,9 +33,9 @@ import yaml
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import certificates, process_traces, rendered_fixture
-from agentplane.system_tests.deployment.operator_tokens import OperatorTokens
+from agentplane.system_tests.deployment.operator_tokens import OperatorTokens, dex_id_token
 from agentplane.system_tests.deployment.virtualization import Virtualization, VirtualizationFactory
-from agentplane.system_tests.driver.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
+from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import baseline, pki_infrastructure
@@ -49,14 +50,8 @@ logger = logging.getLogger(__name__)
 DEPLOY_TIMEOUT_SECONDS = 480
 # Marks the `/etc/hosts` lines a stack wrote, which the next stack on a recycled runner replaces.
 HOSTS_MARKER = "# k3s-env"
-
-
-def _record_token_reviews(k3s: K3s, name: str) -> None:
-    """Keep the API server's TokenReview request counters and latency histogram. A retained node's
-    API server may have counted reviews before this stack, so readers subtract the ready snapshot."""
-    metrics = k3s.kubectl("get", "--raw", "/metrics", stdout_only=True)
-    lines = [line for line in metrics.splitlines() if 'resource="tokenreviews"' in line]
-    (undeclared_outputs_dir() / name).write_text("\n".join(lines) + "\n")
+# Outlasts the longest suite, whose `enormous` size allows 3600 s.
+OPERATOR_TOKEN_LIFETIME = timedelta(hours=1)
 
 
 @tracer.start_as_current_span("system_test.pki.fixture_ca")
@@ -107,10 +102,9 @@ class Stack:
     k3s: K3s
     cluster: Cluster
     base_url: str
+    # The test operator's ID token, which the app accepts as a bearer.
     token: str
     mcp_fixtures: McpFixtureAccess | None
-    # Signs ID tokens the app accepts as its test operator; None where the fixture pins no key.
-    operator_tokens: OperatorTokens | None
 
 
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
@@ -553,6 +547,7 @@ def running_stack(
                 setup.add_event("KubeVirt and Kyverno ready")
             _resolve_on_node(k3s, fixture)
             access = None
+            token = None
             if mcp is not None and fixture.mcp_fixtures is not None:
                 ca_bundle = work / "ca-certificates.crt"
                 ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
@@ -579,11 +574,12 @@ def running_stack(
                     operator_secret=fixture.mcp_fixtures.operator_secret,
                     mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
                 )
-            token = k3s.kubectl(
-                "-n", fixture.namespace, "create", "token", AGENT_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
-            ).strip()
+                token = dex_id_token(fixture.mcp_fixtures.operator_token_grant, ca_bundle=ca_bundle)
+            if operator_tokens is not None:
+                token = operator_tokens.mint(lifetime=OPERATOR_TOKEN_LIFETIME)
+            if token is None:
+                raise ValueError("the fixture neither pins an operator-token key nor runs Dex")
             print("memory:", run("free", "-m"))
-            _record_token_reviews(k3s, "apiserver-tokenreviews-ready.prom")
             setup.add_event("stack ready")
             if virtualization is not None:
                 cleanup.enter_context(virtualization.capture(k3s, fixture.namespace, validate_vm_shutdown))
@@ -593,16 +589,8 @@ def running_stack(
                 k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm, virtualization
             )
             persistence_output.write_text(json.dumps(persistence_evidence))
-        yield Stack(
-            k3s=k3s,
-            cluster=cluster,
-            base_url=fixture.app_origin,
-            token=token,
-            mcp_fixtures=access,
-            operator_tokens=operator_tokens,
-        )
+        yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
-            _record_token_reviews(k3s, "apiserver-tokenreviews-final.prom")
             print(k3s.report(fixture.namespace))
             if virtualization is not None:
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(

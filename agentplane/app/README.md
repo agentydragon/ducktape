@@ -317,8 +317,8 @@ as unavailable while it reconnects rather than treating its old data as current.
 ## Authentication and authorization
 
 Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` endpoints answer without
-one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
-and both are cryptographic:
+one. The separate frontend serves public static files, including `/sw.js`. There are three credentials,
+and all are cryptographic:
 
 - **An operator's OIDC session.** The mounted `app-config` YAML's `oidc` section supplies the issuer,
   public base URL, and session timing; the Deployment supplies the client ID, client secret, and
@@ -329,6 +329,13 @@ and both are cryptographic:
   settings; an app the tests build without them has no login at all.
   The Go app uses its own cookie encoding and typed pending-login records; neither needs Authlib
   session compatibility. Switching between the Python and Go images requires signing in again.
+- **An operator's OIDC ID token.** A bearer whose `iss` is the configured issuer is checked as a
+  login's ID token is: the issuer's signature, the client ID as its only audience, expiry, and a
+  `sub` and `preferred_username`. It makes the same operator caller as a session, with no session
+  row, so routes that need the login's federation tokens or logout lifetime still require the
+  cookie, and no same-origin check applies, since browsers never send it on their own. The keys come
+  from the issuer's discovery document; `oidc.static_ed25519_keys` pins keys instead, which the
+  settings allow only for an issuer under the reserved `.test` domain. The k3s system tests use that.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
   (`token_audience` in the mounted YAML, `agentplane` by default), so a token minted for anything

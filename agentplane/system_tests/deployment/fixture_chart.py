@@ -119,14 +119,16 @@ MCP_EDGE_HTTP_SERVICE = mcp_edge.http_service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
 # The fixture's own Dex clients.
-_APP_LOGIN = dex.StaticClient(id="test-app-login", name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
+APP_CLIENT_ID = "test-app-login"
+APP_CLIENT_SECRET = "test-k3s-app-client-secret"
+_APP_LOGIN = dex.StaticClient(id=APP_CLIENT_ID, name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
 _MCP_LINKAGE = dex.StaticClient(
     id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
 )
 # Fixtures without Dex: the app's OIDC issuer is this test-only one, whose key the stack pins.
 OPERATOR_TOKENS = OperatorTokenIssuer(
     issuer="https://test-operator-issuer.test",
-    audience=_APP_LOGIN.id,
+    audience=APP_CLIENT_ID,
     subject="test-operator-subject",
     username="test-operator",
 )
@@ -253,7 +255,6 @@ def environment(
             ),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
             listen_address="0.0.0.0:8080",
-            token_subjects=frozenset({f"system:serviceaccount:{NAMESPACE}:agentplane-agent"}),
             log_levels={},
             oidc=(
                 OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
@@ -709,8 +710,8 @@ def build_chart(
         chart,
         app_component.oidc_secret(NAMESPACE).name,
         {
-            "client-id": _APP_LOGIN.id,
-            "client-secret": "test-k3s-app-client-secret",
+            "client-id": APP_CLIENT_ID,
+            "client-secret": APP_CLIENT_SECRET,
             "session-secret": "test-k3s-app-session-secret",
         },
     )

@@ -16,7 +16,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
-from agentplane.system_tests.deployment.rendered_fixture import McpInputs, Models
+from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs, Models
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s.agentplane import actions
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
@@ -37,6 +37,13 @@ _MCP_EDGE_LOGIN = dex.StaticClient(
     id="test-mcp-edge-oauth",
     name="Test MCP edge OAuth",
     redirect_uri=f"{fixture_chart.MCP_EDGE_HTTP_SERVICE.url}/auth/callback",
+)
+OPERATOR_TOKEN_GRANT = DexPasswordGrant(
+    issuer=fixture_chart.DEX_ISSUER,
+    client_id=fixture_chart.APP_CLIENT_ID,
+    client_secret=fixture_chart.APP_CLIENT_SECRET,
+    username=_OPERATOR.email,
+    password=_OPERATOR_PASSWORD,
 )
 
 

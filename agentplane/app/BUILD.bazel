@@ -270,6 +270,18 @@ py_library(
 )
 
 py_test(
+    name = "test_oidc",
+    srcs = ["test_oidc.py"],
+    deps = [
+        ":oidc",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_live",
     size = "medium",
     srcs = ["test_live.py"],

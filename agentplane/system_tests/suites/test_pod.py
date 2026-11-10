@@ -1,7 +1,6 @@
 """Selectable Pod cases sharing one stack and two concurrent case slots."""
 
 from collections.abc import AsyncIterator
-from datetime import timedelta
 from functools import partial
 from typing import cast
 
@@ -9,7 +8,6 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
@@ -20,14 +18,6 @@ from util.net import Listener
 
 pytestmark = [pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
 CASE_LIMIT = 2
-
-
-@pytest.fixture(scope="session")
-def token(deployment: Stack) -> str:
-    """This suite calls the app as the fixture's test operator, with an ID token the test signs."""
-    assert deployment.operator_tokens is not None
-    # The suite's `enormous` timeout; the agent ServiceAccount token this replaces also lasts an hour.
-    return deployment.operator_tokens.mint(lifetime=timedelta(hours=1))
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

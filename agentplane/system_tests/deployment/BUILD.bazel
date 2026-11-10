@@ -325,6 +325,7 @@ py_library(
     deps = [
         ":rendered_fixture",
         "@pypi//cryptography",
+        "@pypi//httpx",
         "@pypi//pyjwt",
     ],
 )

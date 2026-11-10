@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -363,15 +364,51 @@ func TestPinnedIDTokenAuthenticatesTheOperatorWithoutACookie(t *testing.T) {
 	}
 }
 
-// BenchmarkPinnedIDTokenCaller is the bearer branch's whole per-request cost. The TokenReview
-// branch's is an API server round trip, measured in the system tests.
-func BenchmarkPinnedIDTokenCaller(b *testing.B) {
-	a, key := pinnedAuth(b)
-	r := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	r.Header.Set("Authorization", "Bearer "+signedIDToken(b, key, operatorClaims()))
-	for b.Loop() {
-		if caller, status, _ := a.caller(r); caller == nil {
-			b.Fatalf("rejected with %d", status)
+// Production's issuer has no pinned keys: the first bearer discovers them.
+func TestDiscoveredIDTokenAuthenticatesTheOperator(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var issuer string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": issuer, "authorization_endpoint": issuer + "/auth", "token_endpoint": issuer + "/token",
+				"jwks_uri": issuer + "/keys", "id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/keys":
+			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: key.Public(), KeyID: "test-key", Algorithm: "RS256", Use: "sig"}}})
+		default:
+			http.NotFound(w, r)
 		}
+	}))
+	defer server.Close()
+	issuer = server.URL
+	a, err := New(Config{
+		OIDC: &OIDCConfig{
+			Issuer: issuer, ClientID: "test-client", ClientSecret: "test-client-secret",
+			SessionSecret: "test-session-secret", PublicBaseURL: "https://agentplane.test",
+		},
+		Database: new(sql.DB), HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: jose.JSONWebKey{Key: key, KeyID: "test-key"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := operatorClaims()
+	claims["iss"] = issuer
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	r.Header.Set("Authorization", "Bearer "+raw)
+	if caller, status, _ := a.caller(r); caller == nil || *caller != (Caller{Kind: CallerOperator, Principal: "test-operator"}) {
+		t.Fatalf("caller=%+v status=%d", caller, status)
 	}
 }

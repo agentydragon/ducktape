@@ -93,6 +93,17 @@ class OperatorTokenIssuer(BaseModel):
     username: str
 
 
+class DexPasswordGrant(BaseModel):
+    """The app's Dex client and the test operator's Dex password, which the stack exchanges at Dex for the
+    operator's ID token. Test values, rendered into the fixture's Secrets as well."""
+
+    issuer: str
+    client_id: str
+    client_secret: str
+    username: str
+    password: str
+
+
 class BrowserService(BaseModel):
     """A Service the test process reaches by the names OIDC redirects carry."""
 
@@ -103,11 +114,12 @@ class BrowserService(BaseModel):
 
 class McpFixtures(BaseModel):
     """Dex and the MCP servers, as rendered: the name Dex's certificate is for, the Secret with the
-    operator's login, and the app and MCP edge names and ports, reached through port-forwards from
-    `McpInputs.app_origin` and `McpInputs.mcp_edge_origin`."""
+    operator's login, the grant for the operator's API token, and the app and MCP edge names and ports,
+    reached through port-forwards from `McpInputs.app_origin` and `McpInputs.mcp_edge_origin`."""
 
     dex_host: str
     operator_secret: str
+    operator_token_grant: DexPasswordGrant
     mcp_edge_service: str
     mcp_edge_port: int
     app_service: str
@@ -124,7 +136,7 @@ class RenderedFixture(BaseModel):
     app_origin: str
     browser_services: list[BrowserService]
     mcp_fixtures: McpFixtures | None
-    # None: the app pins no operator-token key, and callers use the agent ServiceAccount token.
+    # None: the app pins no key; in MCP fixtures Dex issues the operator's token (`operator_token_grant`).
     operator_tokens: OperatorTokenIssuer | None = None
     objects: list[dict[str, Any]]
 
