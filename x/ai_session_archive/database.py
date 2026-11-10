@@ -301,6 +301,52 @@ class FileVersionRecordRow(Base):
     )
 
 
+class FileVersionImportRow(Base):
+    """Durable progress; absence from file_versions keeps staged work invisible to readers."""
+
+    __tablename__ = "file_version_imports"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("sessions.id", ondelete="RESTRICT"), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    imported_record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    parse_issue_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_version_id: Mapped[UUID | None] = mapped_column(ForeignKey("file_versions.id", ondelete="RESTRICT"))
+    shared_prefix_record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("session_id", "sha256", name="uq_file_version_imports_session_sha256"),
+        CheckConstraint("byte_size >= 0", name="ck_file_version_imports_byte_size"),
+        CheckConstraint(
+            "imported_record_count >= 0 AND imported_record_count <= record_count",
+            name="ck_file_version_imports_progress",
+        ),
+        CheckConstraint(
+            "parse_issue_count >= 0 AND parse_issue_count <= imported_record_count",
+            name="ck_file_version_imports_issues",
+        ),
+        CheckConstraint(
+            "shared_prefix_record_count >= 0 AND shared_prefix_record_count <= imported_record_count",
+            name="ck_file_version_imports_prefix",
+        ),
+    )
+
+
+class FileVersionImportRecordRow(Base):
+    __tablename__ = "file_version_import_records"
+
+    import_id: Mapped[UUID] = mapped_column(ForeignKey("file_version_imports.id", ondelete="CASCADE"), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload_id: Mapped[UUID] = mapped_column(ForeignKey("record_payloads.id", ondelete="RESTRICT"), nullable=False)
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_file_version_import_records_ordinal"),
+        CheckConstraint("byte_offset >= 0", name="ck_file_version_import_records_offset"),
+    )
+
+
 def make_engine(dsn: str, **kwargs: Any) -> Engine:
     url = make_url(dsn)
     if url.drivername == "postgresql":

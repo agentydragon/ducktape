@@ -653,3 +653,23 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_file_batches",
+    srcs = ["test_file_batches.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":queries",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
