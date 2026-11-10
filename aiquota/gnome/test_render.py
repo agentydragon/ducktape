@@ -39,7 +39,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
+from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from gnome.test_image import gnome_shell_test
@@ -223,6 +223,28 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
     popup = _ProviderPopup(session, "claude")
     assert popup.header == "Claude — Prepaid balance: $123.45"
     assert not popup.balance
+
+
+@pytest.mark.parametrize(
+    ("usage", "displayed", "value"), [(-5, -5, 0), (0, 0, 0), (99.9, 99, 99), (100, 100, 100), (105, 105, 100)]
+)
+def test_meter_accessibility(session: GnomeSession, usage: float, displayed: int, value: int) -> None:
+    _reload_fixture(session, "binding_summary")
+    view = meter_quota_view(usage)
+    session.call("SetViewForTest", view.model_dump_json())
+    session.open_menu()
+    try:
+        meters = json.loads(string_reply(session.call("GetMeterAccessibility", "codex")))
+        assert meters[0] == {
+            "role": "level bar",
+            "name": "5h quota usage",
+            "description": f"{displayed}% used, 50% of the window elapsed. Fill is quota used; tick is time elapsed.",
+            "value": value,
+            "minimum": 0,
+            "maximum": 100,
+        }
+    finally:
+        session.close_menu()
 
 
 def test_claude_reset_grants(session: GnomeSession) -> None:

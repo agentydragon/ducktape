@@ -4,6 +4,7 @@ import Gio from "gi://Gio";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
 import Pango from "gi://Pango";
+import Atk from "gi://Atk";
 
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
@@ -328,6 +329,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
           '<method name="SetPresentationTime"><arg type="d" direction="in" name="now"/></method>' +
+          '<method name="GetMeterAccessibility"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="meters"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -402,6 +404,23 @@ const QuotaIndicator = GObject.registerClass(
               .map((row) => row._summaryLabel.get_text());
             return JSON.stringify(rows ?? []);
           },
+          GetMeterAccessibility: (provider) =>
+            JSON.stringify(
+              this._providers
+                .find(({ id }) => id === provider)
+                ?.windowRows.filter((row) => row.visible)
+                .map((row) => {
+                  const accessible = row._quotaBar.track.get_accessible();
+                  return {
+                    role: Atk.role_get_name(accessible.get_role()),
+                    name: accessible.get_name(),
+                    description: accessible.get_description(),
+                    value: accessible.accessible_value,
+                    minimum: accessible.get_minimum_value(),
+                    maximum: accessible.get_maximum_value(),
+                  };
+                }) ?? []
+            ),
           SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
             this._lastAttemptAt = lastAttemptAt;
             this._nextRetryAt = nextRetryAt;
@@ -793,11 +812,20 @@ const QuotaIndicator = GObject.registerClass(
     // the tick is time elapsed, and the shaded gap makes the pace deviation
     // visible without needing a second bar.
     _makeQuotaBar() {
-      const track = new St.Widget({ style_class: "quota-bar-track", x_expand: true });
+      const track = new St.Widget({
+        style_class: "quota-bar-track",
+        x_expand: true,
+        accessible_role: Atk.Role.LEVEL_BAR,
+      });
       const fill = new St.Widget({ style_class: "quota-bar-fill" });
       const deviation = new St.Widget({ style_class: "quota-bar-deviation" });
       const tick = new St.Widget({ style_class: "quota-bar-tick" });
-      const bar = { track, fill, deviation, tick, usageFraction: null, elapsedFraction: null };
+      const bar = { track, fill, deviation, tick, usageFraction: null, elapsedFraction: null, accessibleUsage: 0 };
+      const accessible = St.GenericAccessible.new_for_actor(track);
+      track.set_accessible(accessible);
+      accessible.connect("get-current-value", () => bar.accessibleUsage);
+      accessible.connect("get-minimum-value", () => 0);
+      accessible.connect("get-maximum-value", () => 100);
 
       track.add_child(fill);
       track.add_child(deviation);
@@ -1154,6 +1182,17 @@ const QuotaIndicator = GObject.registerClass(
       ];
       if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);
+      const bar = item._quotaBar;
+      bar.track.accessible_name = `${state.label} quota usage`;
+      const accessible = bar.track.get_accessible();
+      accessible.set_description(
+        `${state.used}% used, ${roundHalfToEven(state.elapsed * 100)}% of the window elapsed. Fill is quota used; tick is time elapsed.`
+      );
+      const accessibleUsage = Math.max(0, Math.min(100, state.used));
+      if (bar.accessibleUsage !== accessibleUsage) {
+        bar.accessibleUsage = accessibleUsage;
+        accessible.notify("accessible-value");
+      }
       this._setQuotaBar(
         item._quotaBar,
         state.usedPercent == null ? null : state.usedPercent / 100,

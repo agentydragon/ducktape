@@ -158,6 +158,31 @@ describe("QuotaBoard", () => {
     expect(status.classList.contains("aiquota-status-urgent")).toBe(false);
   });
 
+  it.each([
+    { raw: -5, displayed: -5, value: 0 },
+    { raw: 0, displayed: 0, value: 0 },
+    { raw: 99.9, displayed: 99, value: 99 },
+    { raw: 100, displayed: 100, value: 100 },
+    { raw: 105, displayed: 105, value: 100 },
+  ])("exposes displayed usage $displayed within the meter range", ({ raw, displayed, value }) => {
+    const quotas = sampleQuotas();
+    const window = quotas.providers[0]!.display_windows[0]!;
+    window.used_percent = raw;
+    window.used = displayed;
+    render(quotas);
+
+    const meter = container.querySelector('[role="meter"]');
+    expect(meter?.getAttribute("aria-valuenow")).toBe(String(value));
+    expect(meter?.getAttribute("aria-valuemin")).toBe("0");
+    expect(meter?.getAttribute("aria-valuemax")).toBe("100");
+    expect(meter?.getAttribute("aria-valuetext")).toBe(`${displayed}% used, 50% of the window elapsed`);
+    expect(meter?.getAttribute("aria-label")).toBe("5h quota usage");
+    expect(container.querySelector(".aiquota-window-used")?.textContent).toBe(`${displayed}%`);
+    expect(container.querySelector<HTMLElement>(".aiquota-meter-fill")?.style.width).toBe(
+      `${Math.max(0, Math.min(100, raw))}%`
+    );
+  });
+
   it("groups providers, renders normalized balances and grants, and keeps paid windows visible", () => {
     render(sampleQuotas());
 

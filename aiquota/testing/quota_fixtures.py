@@ -1,13 +1,13 @@
 """Shared aiquota render test fixtures, validated as production quota models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from aiquota.models import AllQuotas
-from aiquota.render.view_model import to_view
+from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.render.view_model import AllQuotasView, to_view
 
 FIXTURE_NAMES = (
     "empty",
@@ -40,6 +40,25 @@ FIXTURE_NAMES = (
 
 def load_quota_fixture(path: Path) -> AllQuotas:
     return AllQuotas.model_validate(yaml.safe_load(path.read_text()))
+
+
+def meter_quota_view(used_percent: float) -> AllQuotasView:
+    now = datetime(2026, 1, 15, 12, tzinfo=UTC)
+    quotas = AllQuotas(
+        fetched_at=now,
+        providers=[
+            ProviderQuota(
+                provider="codex",
+                last_output=ProviderFetch(
+                    fetched_at=now,
+                    result=FetchSuccess(
+                        windows=[QuotaWindow(used_percent=used_percent, reset_seconds=9000, window_seconds=18000)]
+                    ),
+                ),
+            )
+        ],
+    )
+    return to_view(quotas, now)
 
 
 def load_quota_view_fixture(path: Path, *, now: datetime | None = None) -> dict[str, Any]:

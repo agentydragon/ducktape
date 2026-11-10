@@ -12,6 +12,7 @@ import pytest_bazel
 from playwright.async_api import expect
 from python.runfiles import Runfiles
 
+from aiquota.testing.quota_fixtures import meter_quota_view
 from util.testing.frontend_visual.capture import VisualHarness, VisualPage
 from util.testing.frontend_visual.viewports import Viewport
 
@@ -230,6 +231,27 @@ async def test_system_color_preference_changes(visual: VisualHarness) -> None:
         await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "dark")
         dark_background = await card.evaluate("element => getComputedStyle(element).backgroundColor")
         assert light_background != dark_background
+
+
+async def test_meter_accessibility(visual: VisualHarness) -> None:
+    async with visual.open(
+        query={"scene": "binding_summary", "live": "1"},
+        frozen_now_ms=int(datetime.fromisoformat(_FIXTURES["binding_summary"]["fetched_at"]).timestamp() * 1000),
+    ) as view:
+        for usage, displayed, value in [(-5, -5, 0), (0, 0, 0), (99.9, 99, 99), (100, 100, 100), (105, 105, 100)]:
+            await view.page.evaluate(
+                "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+                meter_quota_view(usage).model_dump(mode="json"),
+            )
+            card = view.page.get_by_label("Codex quota", exact=True)
+            meter = card.get_by_role("meter", name="5h quota usage", exact=True)
+            await expect(meter).to_have_attribute("aria-valuenow", str(value))
+            await expect(meter).to_have_attribute("aria-valuemin", "0")
+            await expect(meter).to_have_attribute("aria-valuemax", "100")
+            await expect(meter).to_have_attribute("aria-valuetext", f"{displayed}% used, 50% of the window elapsed")
+            await expect(meter).to_have_accessible_name("5h quota usage")
+            await expect(card.locator(".aiquota-window-used").first).to_have_text(f"{displayed}%")
+        await view.capture("meter-over-quota", target=view.page.locator("#app"))
 
 
 async def test_live_subscription(visual: VisualHarness) -> None:
