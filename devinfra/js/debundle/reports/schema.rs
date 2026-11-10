@@ -949,6 +949,8 @@ pub enum ClassMembersPublicationWriter {
     NoReentryCallRetention,
     LocalOperationFallback,
     ThrowValuePublication,
+    /// A store to a local the source-summary lane reads as unknown.
+    UntrackedLocalStore,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The
