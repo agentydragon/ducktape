@@ -55,3 +55,12 @@ py_library(
         "@pypi//constructs",
     ],
 )
+
+py_library(
+    name = "virtual_machine_pool",
+    srcs = ["virtual_machine_pool.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
+    ],
+)

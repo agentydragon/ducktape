@@ -25,6 +25,36 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
+from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
+    VirtualMachinePoolSpecSelector,
+    VirtualMachinePoolSpecVirtualMachineTemplate,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplates,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpec,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecSource,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorage,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResources,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResourcesRequests,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinity,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinity,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinity,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpuFeatures,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesLimits,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesCloudInitNoCloud,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesConfigMap,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesDataVolume,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesSecret,
+)
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from python.runfiles import Runfiles
 
@@ -32,9 +62,11 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
+from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.kubevirt.virtual_machine_pool import VirtualMachinePool
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
@@ -42,6 +74,8 @@ NAME = "buildbuddy-kvm-worker"
 # Each worker registers its own executor in the pool and runs one action at a time. The first keeps the
 # original name so its VM is not recreated.
 WORKER_NAMES = (NAME, f"{NAME}-2")
+# The pool that replaces them; its VMs are named `<pool>-<index>`. Both kinds of worker carry `_WORKER_LABELS`.
+POOL_NAME = f"{NAME}s"
 NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
 _METRICS_PORT = 9090
@@ -109,6 +143,127 @@ def _other_workers_anti_affinity(name: str) -> VirtualMachineSpecTemplateSpecAff
                 ),
             )
         ]
+    )
+
+
+def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
+    """The same worker as the VMs above, over the pool's template types, with a per-VM SSD work disk."""
+    return container_disk_pool_template(
+        labels=_WORKER_LABELS,
+        image=_IMAGE,
+        # Only OVH nodes carry the SSD pool sized for this disk.
+        node_selector={"topology.kubernetes.io/region": "hil"},
+        cpu=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu(
+            cores=4,
+            model="host-passthrough",
+            features=[
+                VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpuFeatures(
+                    name=feature, policy="optional"
+                )
+                for feature in ("svm", "vmx")
+            ],
+        ),
+        resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources(
+            requests={
+                "cpu": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(
+                    Cpu.units(4).amount
+                ),
+                "memory": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(
+                    Size.gibibytes(16).as_string()
+                ),
+            },
+            limits={
+                "cpu": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesLimits.from_string(
+                    Cpu.units(4).amount
+                ),
+                "memory": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesLimits.from_string(
+                    Size.gibibytes(16).as_string()
+                ),
+            },
+        ),
+        tolerations=[
+            VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations(
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+            )
+        ],
+        affinity=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinity(
+            node_affinity=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinity(
+                required_during_scheduling_ignored_during_execution=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                    node_selector_terms=[
+                        VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                            match_expressions=[
+                                VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                    key=f"cpu-feature.node.kubevirt.io/{feature}", operator="In", values=["true"]
+                                )
+                            ]
+                        )
+                        for feature in ("svm", "vmx")
+                    ]
+                )
+            ),
+            # Keep each worker off any node that already runs another one, whichever kind it is.
+            pod_anti_affinity=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinity(
+                required_during_scheduling_ignored_during_execution=[
+                    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                        topology_key="kubernetes.io/hostname",
+                        label_selector=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
+                            match_expressions=[
+                                VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions(
+                                    key=key, operator="In", values=[value]
+                                )
+                                for key, value in _WORKER_LABELS.items()
+                            ]
+                        ),
+                    )
+                ]
+            ),
+        ),
+        ports=[],
+        disks={
+            "work": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
+                name="work",
+                data_volume=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesDataVolume(name="work"),
+            ),
+            "bbkey": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
+                name="buildbuddy-key",
+                secret=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesSecret(
+                    secret_name="buildbuddy-api-key"
+                ),
+            ),
+            "bbconfig": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
+                name="worker-config",
+                config_map=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesConfigMap(name=NAME),
+            ),
+            "cloudinit": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
+                name="cloudinit",
+                cloud_init_no_cloud=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesCloudInitNoCloud(
+                    user_data=_cloud_init()
+                ),
+            ),
+        },
+        # CDI creates one claim per VM from this template: a blank block device on the node's SSD pool.
+        # The contents rebuild, so the class's single unreplicated copy is enough.
+        data_volume_templates=[
+            VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplates(
+                metadata={"name": "work"},
+                spec=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpec(
+                    source=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecSource(blank={}),
+                    storage=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorage(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="piraeus-ssd-local",
+                        volume_mode="Block",
+                        resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResources(
+                            requests={
+                                "storage": VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResourcesRequests.from_string(
+                                    "80Gi"
+                                )
+                            }
+                        ),
+                    ),
+                ),
+            )
+        ],
+        autoattach_graphics_device=False,
     )
 
 
@@ -250,6 +405,27 @@ def chart(app: App) -> Chart:
                 EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
             ],
         )
+    # One pool member alongside the VMs above, so capacity never drops while the pool is proven.
+    VirtualMachinePool(
+        chart,
+        "pool",
+        metadata=ApiObjectMetadata(name=POOL_NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
+        selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
+        virtual_machine_template=_pool_worker_template(),
+        replicas=1,
+    )
+    NetworkPolicy(
+        chart,
+        "pool-network",
+        metadata=ApiObjectMetadata(name=POOL_NAME, namespace=NAMESPACE),
+        endpoint_selector=_WORKER_LABELS,
+        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
+        egress=[
+            cilium.dns_egress(resolves=["*"]),
+            EgressRule.to_fqdns(*_HTTPS_HOSTS),
+            EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
+        ],
+    )
     k8s.KubeService(
         chart,
         "metrics-service",
