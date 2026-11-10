@@ -167,8 +167,11 @@ A store into the record a global holds, `(x[K] ??= {})[u] = v` or through a
 binding initialized with `x[K] ??= {}`, is charged to the one global `K`
 names when `K` resolves to a string (a literal, a binding that only ever
 holds one, a concatenation of those); `x` may be a destructured parameter
-whose default is the global object. With a name the census cannot resolve
-the record may be any intrinsic and the store stays unnamed.
+whose default is the global object. An import names a key the same way when
+its exporting chunk declares it `const` with a string literal (directly or
+under `export { local as name }`); a `const` cannot be read before its
+declaration runs, so this needs no cycle verdict. With a name the census
+cannot resolve the record may be any intrinsic and the store stays unnamed.
 
 A callee summary for local functions that only allocate was not built. The
 statements it was meant for are not allocator calls: in `editor`, 160 of 172
@@ -458,9 +461,9 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 31 two-chunk programs run under Node in both
-orders (16 admitted with Node agreeing, 15 refused with Node showing the
-divergence). `tier0_allocators_stop_at_their_near_misses` lists bodies that
+`derive_fixtures.txt` holds 34 two-chunk programs run under Node in both
+orders (17 admitted with Node agreeing, 17 refused with Node showing the
+divergence); three of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
 per callee family of the large private consumer corpus with the class

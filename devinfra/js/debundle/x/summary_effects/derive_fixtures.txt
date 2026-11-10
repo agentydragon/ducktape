@@ -28,6 +28,7 @@ export const TOUCHED = { color: 'red' };
 export function recolor() { TOUCHED.color = 'blue'; }
 var require_third = __commonJS((exports) => { exports.box = function (v) { return { v }; }; exports.peek = function (o) { return o.v; }; });
 const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
+export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -215,3 +216,21 @@ import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib(
 state = 1;
 const c = wrap(() => 1);
 console.log(state + c.render());
+### commutes same: a store into the record of a global named by an imported constant string (census)
+-
+import { REGISTRY } from './dep.js'; const name = 'n';
+(globalThis[REGISTRY] ??= {})[name] = 1;
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[REGISTRY].n);
+### ordered differs: a store on the global object under an imported key that is not a literal (census)
+-
+import { SLOT } from './dep.js';
+globalThis[SLOT] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### ordered differs: a store on the global object under an imported constant naming the intrinsic used (census)
+-
+import { RENAMED } from './dep.js';
+globalThis[RENAMED] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);

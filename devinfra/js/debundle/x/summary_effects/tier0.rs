@@ -2084,7 +2084,12 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     }
     let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
     let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
-    let mut census = census(module, unresolved, &object_aliases);
+    let imported_strings = options
+        .program
+        .as_ref()
+        .map(|program| program.imported_strings(&program.chunk, module))
+        .unwrap_or_default();
+    let mut census = census(module, unresolved, &object_aliases, &imported_strings);
     if let Some(program) = &options.program {
         // A write by any chunk of the program counts.
         census.merge(program.census.clone());

@@ -570,8 +570,9 @@ fn tier0_derivation_matches_node() {
                 let units = analysis.units.len();
                 analysis.conflict(units - 3, units - 2)
             };
+            // A census fixture is decided by the program's chunks alone.
             assert!(
-                conflict(false).is_some(),
+                head.ends_with("(census)") || conflict(false).is_some(),
                 "{head}: refused without derivation"
             );
             assert_eq!(

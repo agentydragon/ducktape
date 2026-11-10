@@ -33,6 +33,9 @@ pub struct ProgramFacts {
     /// Relative or rooted import specifiers, in any chunk, that name no
     /// chunk read: each is an edge the cycle verdict does not see.
     pub unresolved_specifiers: usize,
+    /// Per chunk path, the exports that are a `const` initialized with a
+    /// string literal, and the string.
+    exported_strings: FxHashMap<PathBuf, FxHashMap<String, String>>,
     resolution: Resolution,
 }
 
@@ -52,6 +55,109 @@ impl ProgramFacts {
         let target = resolve(from, specifier, &self.resolution)?;
         self.modules.iter().position(|(path, _)| *path == target)
     }
+
+    /// The imported bindings of `module`, the chunk at `from`, that only
+    /// ever hold one string.
+    pub fn imported_strings(&self, from: &Path, module: &Module) -> FxHashMap<Id, String> {
+        imported_strings(from, module, &self.exported_strings, &self.resolution)
+    }
+}
+
+/// The exports of `module` that are a `const` initialized with a string
+/// literal. Before its declaration runs such a binding cannot be read, so a
+/// reader in any chunk sees that string.
+fn exported_strings(module: &Module) -> FxHashMap<String, String> {
+    let string = |declarator: &VarDeclarator| match (&declarator.name, declarator.init.as_deref()) {
+        (Pat::Ident(name), Some(Expr::Lit(Lit::Str(value)))) => {
+            Some((name.id.to_id(), js_ast::str_value(value)))
+        }
+        _ => None,
+    };
+    let constants = |var: &VarDecl| {
+        let decls = if var.kind == VarDeclKind::Const {
+            var.decls.as_slice()
+        } else {
+            &[]
+        };
+        decls.iter().filter_map(string).collect::<Vec<_>>()
+    };
+    let mut locals: FxHashMap<Id, String> = FxHashMap::default();
+    let mut out = FxHashMap::default();
+    for item in &module.body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => locals.extend(constants(var)),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(var),
+                ..
+            })) => {
+                for (id, value) in constants(var) {
+                    out.insert(id.0.to_string(), value.clone());
+                    locals.insert(id, value);
+                }
+            }
+            _ => {}
+        }
+    }
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+            src: None,
+            specifiers,
+            ..
+        })) = item
+        else {
+            continue;
+        };
+        for specifier in specifiers {
+            if let ExportSpecifier::Named(ExportNamedSpecifier {
+                orig: ModuleExportName::Ident(local),
+                exported,
+                ..
+            }) = specifier
+                && let Some(value) = locals.get(&local.to_id())
+            {
+                let name = match exported {
+                    None => local.sym.to_string(),
+                    Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                    Some(ModuleExportName::Str(name)) => js_ast::str_value(name),
+                };
+                out.insert(name, value.clone());
+            }
+        }
+    }
+    out
+}
+
+fn imported_strings(
+    from: &Path,
+    module: &Module,
+    exported: &FxHashMap<PathBuf, FxHashMap<String, String>>,
+    resolution: &Resolution,
+) -> FxHashMap<Id, String> {
+    let mut out = FxHashMap::default();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let Some(strings) = resolve(from, &js_ast::str_value(&import.src), resolution)
+            .and_then(|target| exported.get(&target))
+        else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let ImportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            let name = match &named.imported {
+                None => named.local.sym.to_string(),
+                Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                Some(ModuleExportName::Str(name)) => js_ast::str_value(name),
+            };
+            if let Some(value) = strings.get(&name) {
+                out.insert(named.local.to_id(), value.clone());
+            }
+        }
+    }
+    out
 }
 
 #[derive(Default)]
@@ -247,15 +353,22 @@ pub fn load(
             );
             continue;
         };
-        let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
         let mut imports = Imports::default();
         parsed.module.visit_with(&mut imports);
-        let object_aliases = prepass(&parsed.module, unresolved).object_aliases;
-        let mut written = census(&parsed.module, unresolved, &object_aliases);
-        written.locate(modules.len());
-        merged.merge(written);
         graph.insert(path.clone(), imports);
         modules.push((path, parsed));
+    }
+    let exported: FxHashMap<PathBuf, FxHashMap<String, String>> = modules
+        .iter()
+        .map(|(path, parsed)| (path.clone(), exported_strings(&parsed.module)))
+        .collect();
+    for (index, (path, parsed)) in modules.iter().enumerate() {
+        let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+        let object_aliases = prepass(&parsed.module, unresolved).object_aliases;
+        let strings = imported_strings(path, &parsed.module, &exported, &resolution);
+        let mut written = census(&parsed.module, unresolved, &object_aliases, &strings);
+        written.locate(index);
+        merged.merge(written);
     }
     anyhow::ensure!(
         graph.contains_key(&chunk),
@@ -333,6 +446,7 @@ pub fn load(
                     .is_some_and(|target| !graph.contains_key(&target))
             })
             .count(),
+        exported_strings: exported,
         resolution,
     })
 }

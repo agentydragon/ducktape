@@ -1239,16 +1239,23 @@ pub fn census(
     module: &Module,
     unresolved: SyntaxContext,
     object_aliases: &FxHashMap<Id, String>,
+    imported_strings: &FxHashMap<Id, String>,
 ) -> Census {
+    // An import that only ever holds one string names a key like a local
+    // binding that does.
+    let imported: KeyBindings = imported_strings
+        .iter()
+        .map(|(id, value)| (id.clone(), KeyValue::Named(value.clone())))
+        .collect();
     // A key binding may be built from another: read them until none is new.
-    let mut known = KeyBindings::default();
+    let mut known = imported.clone();
     let (mut params, declared, assigned, keys, local_constructors) = loop {
         let mut functions = Functions {
             unresolved,
             params: FxHashMap::default(),
             declared: FxHashMap::default(),
             assigned: FxHashSet::default(),
-            keys: KeyBindings::default(),
+            keys: imported.clone(),
             known: known.clone(),
             constructors: FxHashSet::default(),
             mentions: FxHashMap::default(),
