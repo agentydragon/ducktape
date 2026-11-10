@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -23,7 +24,7 @@ type attempted struct {
 
 // attempt runs one attempt at action as caller. Execute is attempt under worker.Hold, whose lease only the worker
 // makes, once the caller is one a box can be given.
-func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, arguments string) attempted {
+func (f fixture) attempt(t *testing.T, caller Caller, action, arguments string) attempted {
 	t.Helper()
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
@@ -33,7 +34,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 	return workloadidentitytesting.While(t, f.issuance, func() attempted {
 		outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
 			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
-			Arguments: json.RawMessage(arguments), Caller: store.ServiceAccountCaller{Account: caller},
+			Arguments: json.RawMessage(arguments),
 		}, caller)
 		return attempted{t, outcome, err}
 	})
@@ -72,7 +73,7 @@ func (a attempted) failure() string {
 func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	for _, caller := range []Account{f.caller, other} {
 		resultOf[Info](f.attempt(t, caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
 		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != caller.Name {
 			t.Errorf("%s's box runs as %q", caller.Name, pod.Spec.ServiceAccountName)
@@ -95,7 +96,7 @@ func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	if kind := f.attempt(t, f.caller, string(contract.Create), arguments).failure(); kind != "invalid_arguments" {
 		t.Errorf("kind = %q, want invalid_arguments", kind)
 	}
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	for _, caller := range []Account{f.caller, other} {
 		if boxes, err := f.inventory().List(t.Context(), caller); err != nil || len(boxes) != 0 {
 			t.Errorf("%s has boxes %v, %v", caller.Name, boxes, err)
 		}
@@ -114,10 +115,45 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.ServiceAccountCaller{Account: elsewhere},
+		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.ServiceAccountCaller{Account: store.ServiceAccount(elsewhere)},
 	}, nil)
 	if kind := (attempted{t, outcome, err}).failure(); kind != "caller_not_local" {
 		t.Errorf("kind = %q, want caller_not_local", kind)
+	}
+	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) != 0 {
+		t.Errorf("the namespace holds Pods %v, %v", pods, err)
+	}
+}
+
+// An Identity owns its boxes' records, and an owner reference cannot cross namespaces, so only a group of the policy
+// namespace gives an Identity a box. A caller of a kind this release does not know is given none.
+func TestAnIdentityOrUnknownCallerTheGroupCannotServeIsRefused(t *testing.T) {
+	f := newFixture(t, nil)
+	credentials, err := requester.New(objects, objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := NewInventory(f.binding, f.binding.Namespace+"-policy", server.Clientset, f.exec.Exec, credentials, objects)
+	for name, test := range map[string]struct {
+		inventory *Inventory
+		caller    store.Caller
+		kind      string
+	}{
+		"an Identity of another namespace": {elsewhere, store.IdentityCaller{Identity: store.Identity{Name: "test-agent", UID: uuid.NewString()}}, "caller_not_local"},
+		"an unknown caller":                {f.inventory(), store.UnknownCaller{}, "caller_unknown"},
+	} {
+		executor, err := NewExecutor(f.binding, test.inventory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
+			Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: test.caller,
+		}, nil)
+		if kind := (attempted{t, outcome, err}).failure(); kind != test.kind {
+			t.Errorf("%s: kind = %q, want %q", name, kind, test.kind)
+		}
 	}
 	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 0 {
@@ -184,7 +220,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name      string
-		caller    store.ServiceAccount
+		caller    Caller
 		action    string
 		arguments string
 		kind      string

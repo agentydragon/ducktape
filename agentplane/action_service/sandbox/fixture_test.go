@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -59,7 +57,7 @@ func TestMain(m *testing.M) {
 // fixture is a namespace holding the test template, and a caller of its own.
 type fixture struct {
 	binding  catalog.PodBinding
-	caller   store.ServiceAccount
+	caller   Account
 	exec     *recordingExec
 	issuance workloadidentitytesting.Issuance
 }
@@ -102,12 +100,12 @@ func newFixture(t *testing.T, edit func(*corev1.PodSpec)) fixture {
 }
 
 // account is a ServiceAccount of that name, created with its namespace.
-func account(t *testing.T, namespace, name string) store.ServiceAccount {
+func account(t *testing.T, namespace, name string) Account {
 	t.Helper()
 	if _, err := server.ServiceAccount(t.Context(), auth.Account{Namespace: namespace, Name: name}); err != nil {
 		t.Fatal(err)
 	}
-	return store.ServiceAccount{Namespace: namespace, Name: name}
+	return Account{Namespace: namespace, Name: name}
 }
 
 func (f fixture) inventory() *Inventory {
@@ -115,7 +113,7 @@ func (f fixture) inventory() *Inventory {
 	if err != nil {
 		panic(err) // Both are given.
 	}
-	return NewInventory(f.binding, server.Clientset, f.exec.Exec, credentials, objects)
+	return NewInventory(f.binding, f.binding.Namespace, server.Clientset, f.exec.Exec, credentials, objects)
 }
 
 // created is what Create returned, with the box's credential issued as it waited.
@@ -125,7 +123,7 @@ type created struct {
 }
 
 // create is Create, with the box's credential issued as it waits.
-func (f fixture) create(t *testing.T, inventory *Inventory, caller store.ServiceAccount, name, template string) (Info, error) {
+func (f fixture) create(t *testing.T, inventory *Inventory, caller Caller, name, template string) (Info, error) {
 	t.Helper()
 	result := workloadidentitytesting.While(t, f.issuance, func() created {
 		info, err := inventory.Create(t.Context(), caller, name, template)
@@ -168,7 +166,7 @@ func one[T any](t *testing.T, items []T, matches func(T) bool) T {
 }
 
 // record is the box's WorkloadCredential.
-func (f fixture) record(t *testing.T, caller store.ServiceAccount, name string) *workloadapi.WorkloadCredential {
+func (f fixture) record(t *testing.T, caller Caller, name string) *workloadapi.WorkloadCredential {
 	t.Helper()
 	var record workloadapi.WorkloadCredential
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: f.binding.Namespace, Name: objectName(caller, name)}, &record); err != nil {
@@ -177,7 +175,7 @@ func (f fixture) record(t *testing.T, caller store.ServiceAccount, name string) 
 	return &record
 }
 
-func (f fixture) pod(t *testing.T, caller store.ServiceAccount, name string) *corev1.Pod {
+func (f fixture) pod(t *testing.T, caller Caller, name string) *corev1.Pod {
 	t.Helper()
 	pod, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Get(t.Context(), objectName(caller, name), metav1.GetOptions{})
 	if err != nil {
@@ -187,7 +185,7 @@ func (f fixture) pod(t *testing.T, caller store.ServiceAccount, name string) *co
 }
 
 // report writes the status Kubernetes would to the caller's box of that name.
-func (f fixture) report(t *testing.T, caller store.ServiceAccount, name string, status corev1.PodStatus) {
+func (f fixture) report(t *testing.T, caller Caller, name string, status corev1.PodStatus) {
 	t.Helper()
 	pod := f.pod(t, caller, name)
 	pod.Status = status
