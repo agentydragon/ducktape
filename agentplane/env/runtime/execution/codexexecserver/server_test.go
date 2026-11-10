@@ -2,10 +2,7 @@ package codexexecserver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
+	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
@@ -25,6 +22,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
@@ -165,74 +163,112 @@ func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 	}
 }
 
+type changingCompanion struct {
+	controlpb.UnimplementedCompanionControlServer
+	mu          sync.Mutex
+	inspections int
+	fences      []string
+}
+
+func (s *changingCompanion) Inspect(context.Context, *controlpb.InspectRequest) (*controlpb.InspectResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inspections++
+	if s.inspections == 1 {
+		return &controlpb.InspectResponse{Generation: "g1", Owned: true}, nil
+	}
+	return &controlpb.InspectResponse{Generation: "g2", Owned: true}, nil
+}
+
+func (s *changingCompanion) Fence(_ context.Context, request *controlpb.FenceRequest) (*controlpb.FenceResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fences = append(s.fences, request.GetGeneration())
+	return &controlpb.FenceResponse{}, nil
+}
+
 func TestFenceContainerBindsDelayedInspectToObservedGeneration(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "companion.sock")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
-	fenceRequest := make(chan executorcontrol.Request, 1)
-	served := make(chan error, 1)
-	go func() {
-		first, err := listener.Accept()
-		if err != nil {
-			served <- err
-			return
-		}
-		_ = first.SetDeadline(time.Now().Add(3 * time.Second))
-		var inspect executorcontrol.Request
-		if err := json.NewDecoder(first).Decode(&inspect); err != nil || inspect.Operation != "inspect" {
-			served <- fmt.Errorf("initial inspect = %+v, %v", inspect, err)
-			_ = first.Close()
-			return
-		}
-		if err := json.NewEncoder(first).Encode(executorcontrol.Status{Generation: "g1", Owned: true}); err != nil {
-			served <- err
-			_ = first.Close()
-			return
-		}
-		// G1 is fenced and G2 is claimed before the delayed inspect response is acted on.
-		var fence executorcontrol.Request
-		if err := json.NewDecoder(first).Decode(&fence); err != nil {
-			served <- err
-			_ = first.Close()
-			return
-		}
-		fenceRequest <- fence
-		_ = first.Close()
-		second, err := listener.Accept()
-		if err != nil {
-			served <- err
-			return
-		}
-		defer second.Close()
-		_ = second.SetDeadline(time.Now().Add(3 * time.Second))
-		if err := json.NewDecoder(second).Decode(&inspect); err != nil || inspect.Operation != "inspect" {
-			served <- fmt.Errorf("successor inspect = %+v, %v", inspect, err)
-			return
-		}
-		if err := json.NewEncoder(second).Encode(executorcontrol.Status{Generation: "g2", Owned: true}); err != nil {
-			served <- err
-			return
-		}
-		var extra executorcontrol.Request
-		if err := json.NewDecoder(second).Decode(&extra); err != io.EOF {
-			served <- fmt.Errorf("unexpected request for successor: %+v, %v", extra, err)
-			return
-		}
-		served <- nil
-	}()
+	server := grpc.NewServer()
+	fake := &changingCompanion{}
+	controlpb.RegisterCompanionControlServer(server, fake)
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := FenceContainer(ctx, socket, "g1"); err != nil {
 		t.Fatal(err)
 	}
-	if request := <-fenceRequest; request.Operation != "fence" || request.Generation != "g1" {
-		t.Fatalf("delayed fence request = %+v, want g1", request)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.fences) != 1 || fake.fences[0] != "g1" {
+		t.Fatalf("delayed fences = %v, want only g1", fake.fences)
 	}
-	if err := <-served; err != nil {
+}
+
+type claimTestCompanion struct {
+	controlpb.UnimplementedCompanionControlServer
+	released chan struct{}
+}
+
+func (s *claimTestCompanion) Claim(_ *controlpb.ClaimRequest, stream grpc.ServerStreamingServer[controlpb.ClaimResponse]) error {
+	if err := stream.Send(&controlpb.ClaimResponse{Generation: "g1"}); err != nil {
+		return err
+	}
+	<-stream.Context().Done()
+	close(s.released)
+	return stream.Context().Err()
+}
+
+func (s *claimTestCompanion) Inspect(context.Context, *controlpb.InspectRequest) (*controlpb.InspectResponse, error) {
+	select {
+	case <-s.released:
+		return &controlpb.InspectResponse{Generation: "g2"}, nil
+	default:
+		return &controlpb.InspectResponse{Generation: "g1", Owned: true}, nil
+	}
+}
+
+func (s *claimTestCompanion) Fence(context.Context, *controlpb.FenceRequest) (*controlpb.FenceResponse, error) {
+	return &controlpb.FenceResponse{}, nil
+}
+
+func TestClaimHandshakeContextDoesNotEndEstablishedLease(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "companion.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
 		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &claimTestCompanion{released: make(chan struct{})}
+	controlpb.RegisterCompanionControlServer(server, fake)
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
+	handshake, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	instance, err := claimContainer(handshake, socket, map[string]string{"PATH": "/usr/bin"})
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-fake.released:
+		t.Fatal("canceling the handshake ended the established lease")
+	case <-time.After(100 * time.Millisecond):
+	}
+	stop, finish := context.WithTimeout(context.Background(), 3*time.Second)
+	defer finish()
+	if err := instance.Stop(stop); err != nil {
+		t.Fatalf("stop and fence claim: %v", err)
+	}
+	select {
+	case <-fake.released:
+	default:
+		t.Fatal("stop did not release the claim")
 	}
 }
 

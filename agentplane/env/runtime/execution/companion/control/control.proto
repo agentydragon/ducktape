@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package agentplane.env.runtime.execution.companion.control;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb";
+
+// Local ownership of the Pod executor. The server listens only on a Unix socket.
+service CompanionControl {
+  rpc Inspect(InspectRequest) returns (InspectResponse);
+  // The stream holds ownership until the caller cancels it or the backend is fenced.
+  rpc Claim(ClaimRequest) returns (stream ClaimResponse);
+  // Request a fence for the observed generation; Inspect proves completion.
+  rpc Fence(FenceRequest) returns (FenceResponse);
+}
+
+message InspectRequest {}
+
+message InspectResponse {
+  string generation = 1;
+  bool owned = 2;
+}
+
+message ClaimRequest {
+  map<string, string> environment = 1;
+}
+
+message ClaimResponse {
+  string generation = 1;
+}
+
+message FenceRequest {
+  string generation = 1;
+}
+
+message FenceResponse {}

@@ -1,64 +1,59 @@
 package executor
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
+	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
+	"google.golang.org/grpc"
 )
+
+type unhealthyControl struct {
+	controlpb.UnimplementedCompanionControlServer
+	behavior string
+	called   chan struct{}
+}
+
+func (s *unhealthyControl) Inspect(ctx context.Context, _ *controlpb.InspectRequest) (*controlpb.InspectResponse, error) {
+	s.called <- struct{}{}
+	if s.behavior == "stalled" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &controlpb.InspectResponse{}, nil
+}
 
 func TestHealthUnavailable(t *testing.T) {
 	for _, behavior := range []string{"absent", "malformed", "stalled"} {
 		t.Run(behavior, func(t *testing.T) {
 			socket := filepath.Join(t.TempDir(), "control.sock")
+			var called chan struct{}
 			if behavior != "absent" {
 				listener, err := net.Listen("unix", socket)
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer listener.Close()
-				release := make(chan struct{})
-				done := make(chan error, 1)
-				go func() {
-					connection, err := listener.Accept()
-					if err != nil {
-						done <- err
-						return
-					}
-					defer connection.Close()
-					var request control.Request
-					if err := json.NewDecoder(connection).Decode(&request); err != nil {
-						done <- err
-						return
-					}
-					if request.Operation != "inspect" || len(request.Environment) != 0 {
-						done <- fmt.Errorf("health sent control request %+v", request)
-						return
-					}
-					if behavior == "malformed" {
-						_, err = connection.Write([]byte("not-json\n"))
-					} else {
-						<-release
-					}
-					done <- err
-				}()
-				defer func() {
-					close(release)
-					_ = listener.Close()
-					if err := <-done; err != nil {
-						t.Error(err)
-					}
-				}()
+				server := grpc.NewServer()
+				called = make(chan struct{}, 1)
+				controlpb.RegisterCompanionControlServer(server, &unhealthyControl{behavior: behavior, called: called})
+				go func() { _ = server.Serve(listener) }()
+				defer server.Stop()
 			}
 			response := httptest.NewRecorder()
 			healthHandler(socket).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 			if response.Code != http.StatusServiceUnavailable {
 				t.Fatalf("health with %s control = %d, want 503", behavior, response.Code)
+			}
+			if called != nil {
+				select {
+				case <-called:
+				default:
+					t.Fatal("health did not call the control service")
+				}
 			}
 		})
 	}

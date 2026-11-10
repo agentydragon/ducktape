@@ -381,6 +381,8 @@ py_test(
         "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/env/runtime/execution:executor_pb2",
         "//agentplane/env/runtime/execution:executor_pb2_grpc",
+        "//agentplane/env/runtime/execution/companion/control:control_pb2",
+        "//agentplane/env/runtime/execution/companion/control:control_pb2_grpc",
         "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
