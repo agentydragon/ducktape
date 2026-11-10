@@ -19,6 +19,8 @@ used to request an explicit resume. `kubernetes_diagnostics` retains the raw San
 current-incarnation Pod projection, including the raw Pod status consumed by the frontend's
 conditions and container diagnostics. Raw Kubernetes status supplements `observed_state`; it does
 not replace its canonical fields.
+`identity_name` projects the Sandbox spec's selected Identity name, if any. It is a requested
+binding, not proof that a current or prior runtime used that Identity.
 
 A Firecracker Sandbox retains its launcher Pod and incarnation UID while RAM is checkpointed.
 `stopStage: Stopped` therefore projects `Suspended` even with an incarnation; `Suspending`
@@ -54,6 +56,16 @@ diagnostics while suspended.
 - Suspend, delete, and policy changes require a complete namespace/name/UID handle and fence writes
   on the live UID and Kubernetes resourceVersion. Delete requires reported suspension. Uncertain
   outcomes stay uncertain; callers reconcile the same intent before deciding whether to retry.
+- A manager may change or clear `spec.identity` only before first status report or while the
+  current Sandbox reports `stopStage: Stopped`; Kubernetes admission is the final stop check.
+  EnvironmentService holds Dispatcher's exclusive per-Sandbox admission lock across a read of
+  retained Sessions and the Kubernetes patch. Any retained Session placed on that exact Sandbox
+  UID whose execution Identity name or UID differs is a refusal. Dispatcher currently has no
+  terminal lifecycle fact that proves a retained Session is no longer resumable, so this may
+  refuse a historical or failed Session. CreateSession holds the shared form of that lock and
+  rechecks the live Sandbox and execution Identity after acquiring it. The selected Identity is
+  revalidated by UID during the patch, but deletion and same-name recreation after that read
+  remain a cross-resource race because the Sandbox spec stores only a name.
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for ordinary callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
 - The page request/response remains compatible with bounded pagination. Current Sandbox-owned
@@ -69,6 +81,13 @@ mutation-time checks.
 ## Snapshot reads and watches
 
 `GetEnvironment` returns the current descriptor without waiting for a condition.
+`GetEnvironmentIdentityRecord` reads the current Sandbox-owned WorkloadCredential on demand. It
+returns an Identity subject only when the credential has a matching controlling owner reference
+for the exact Sandbox UID. A missing credential, ServiceAccount subject, or unrelated owner gives
+an empty record; read failures are reported as unavailable. Credentials are revoked as workloads
+stop, and no retained series is available, so this endpoint is not historical proof. The
+Environment watches do not subscribe to WorkloadCredential changes; clients refresh this read
+explicitly to see a later credential.
 `WatchEnvironment` sends an initial `WatchEnvironmentResponse.environment` and subsequent complete
 snapshots when descriptor facts change. Changes only to `observed_at` or unprojected Kubernetes
 metadata do not emit a new snapshot. There is no readiness predicate or server-side readiness wait.

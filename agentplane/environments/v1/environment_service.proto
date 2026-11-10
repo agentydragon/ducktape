@@ -31,6 +31,11 @@ service EnvironmentService {
   rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
   }
+  // Reports only the currently retained Sandbox-owned WorkloadCredential. Prior records are
+  // revoked on stop and cannot provide a complete identity history.
+  rpc GetEnvironmentIdentityRecord(GetEnvironmentRequest) returns (EnvironmentIdentityRecord) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:identity-record"};
+  }
   // Sends the current snapshot, then updated snapshots of the exact target. Intermediate
   // states may be coalesced; reconnecting starts a fresh observation without an event cursor.
   rpc WatchEnvironment(WatchEnvironmentRequest) returns (stream WatchEnvironmentResponse) {
@@ -50,6 +55,9 @@ service EnvironmentService {
   }
   rpc SetEnvironmentIdleSuspend(SetEnvironmentIdleSuspendRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:idle-suspend" body: "*"};
+  }
+  rpc SetEnvironmentIdentity(SetEnvironmentIdentityRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:identity" body: "*"};
   }
 }
 
@@ -99,6 +107,12 @@ message SetEnvironmentIdleSuspendRequest {
   google.protobuf.Duration idle_suspend_after = 2;
 }
 
+message SetEnvironmentIdentityRequest {
+  agentplane.proto.EnvironmentTarget target = 1;
+  // Empty clears spec.identity. The Identity is resolved by name in the Sandbox namespace.
+  string identity_name = 2;
+}
+
 message ListEnvironmentsRequest {
   // Required, bounded to 1..100. Broad readers receive one page of the inventory.
   uint32 limit = 1;
@@ -130,6 +144,11 @@ message EnvironmentChunk {
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
   agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message EnvironmentIdentityRecord {
+  // Present only when the current Sandbox-owned WorkloadCredential acts as an Identity.
+  agentplane.proto.Identity identity = 1;
 }
 
 message WatchEnvironmentRequest {
@@ -257,6 +276,8 @@ message EnvironmentDescriptor {
   EnvironmentObservedState observed_state = 29;
   EnvironmentActions actions = 30;
   KubernetesDiagnostics kubernetes_diagnostics = 31;
+  // Sandbox.spec.identity's name. Empty means the Sandbox does not name an Identity.
+  optional string identity_name = 32;
 }
 
 message ResumeEnvironmentRequest {

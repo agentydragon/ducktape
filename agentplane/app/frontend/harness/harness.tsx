@@ -213,6 +213,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
         phase: SandboxPhase.RUNNING,
       },
       executionAccount: { account: { namespace: "agentplane-visual", name: "ready-sandbox" } },
+      identityName: "referenced-identity",
       configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 3600n } },
       kubernetesDiagnostics: {
         sandboxStatus: {
@@ -303,7 +304,9 @@ const SANDBOXES: EnvironmentDescriptor[] = [
       createdAt: timestampFromDate(new Date(ago(48 * HOUR))),
       operatingMode: OperatingMode.SUSPENDED,
       phase: SandboxPhase.SUSPENDED,
+      stopStage: "Stopped",
     },
+    identityName: "referenced-identity",
     executionAccount: { account: { namespace: "agentplane-visual", name: "suspended-sandbox" } },
     configuration: { wakeOnSend: false },
     kubernetesDiagnostics: {
@@ -3597,6 +3600,47 @@ function drops(url: URL): boolean {
 // A dropped stream is not answered again while its drop flag stays set, as on a network that stays
 // down; once the flag is cleared it is served afresh.
 const droppedStreams = new Set<string>();
+
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/environments\/v1\/environments\/agentplane-visual\/([^/]+):identity-record$/,
+    (match, query) => {
+      const sandbox = SANDBOXES.find((item) => item.target?.name === decodeURIComponent(match[1]));
+      if (!sandbox || sandbox.target?.uid !== query.get("target.uid"))
+        return Response.json({ code: 5, message: "environment not found" }, { status: 404 });
+      return sandbox.target.name === "ready-sandbox"
+        ? { identity: { name: "referenced-identity", uid: "identity-referenced-identity" } }
+        : {};
+    },
+  ],
+  [
+    "PATCH",
+    /^\/upstream\/environments\/v1\/environments\/agentplane-visual\/([^/]+):identity$/,
+    (match, _query, _signal, body) => {
+      const sandbox = SANDBOXES.find((item) => item.target?.name === decodeURIComponent(match[1]));
+      const request = body ? (JSON.parse(body) as { target?: { uid?: string }; identityName?: string }) : {};
+      if (!sandbox?.target || sandbox.target.uid !== request.target?.uid)
+        return Response.json({ code: 5, message: "environment not found" }, { status: 404 });
+      if (sandbox.observedState?.stopStage !== "Stopped")
+        return Response.json({ code: 9, message: "spec.identity changes only while nothing runs" }, { status: 400 });
+      if (request.identityName === "git-origin-identity") {
+        sandbox.observedState.stopStage = "";
+        publishStreams(`/upstream/environments/v1/environments/agentplane-visual/${sandbox.target.name}:watch`);
+        return Response.json({ code: 9, message: "spec.identity changes only while nothing runs" }, { status: 400 });
+      }
+      if (request.identityName === "credential-referenced-identity")
+        return Response.json(
+          { code: 9, message: "environment identity is still named by Sessions: session-001" },
+          { status: 400 }
+        );
+      sandbox.identityName = request.identityName || undefined;
+      publishStreams("/upstream/environments/v1/environments:watch");
+      publishStreams(`/upstream/environments/v1/environments/agentplane-visual/${sandbox.target.name}:watch`);
+      return {};
+    },
+  ]
+);
 
 routes.unshift([
   "GET",

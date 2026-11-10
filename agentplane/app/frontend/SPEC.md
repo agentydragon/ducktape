@@ -1,5 +1,16 @@
 # Agentplane frontend
 
+## Environment identity
+
+The Sandbox Status tab shows the currently requested `spec.identity` name. Only a Sandbox whose
+controller-reported stop stage is `Stopped` shows the identity selector and change button. Changing
+or clearing it warns that the next identity can read files earlier agents left in the same
+workspace. The app sends an exact namespace/name/UID target to EnvironmentService through its
+authenticated facade and displays its admission refusal message. The "Retained identity record"
+reads the current Sandbox-owned WorkloadCredential on demand and offers an explicit refresh. An
+empty record is not historical proof: older credentials are revoked, and the UI says this is not
+a complete history. The new-environment identity picker awaits the open creation-contract question.
+
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:

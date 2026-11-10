@@ -33,6 +33,9 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.
 		Target:        &identitypb.EnvironmentTarget{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
 		Configuration: configuration, ObservedState: observedState, KubernetesDiagnostics: diagnostics,
 	}
+	if resource.Spec.Identity != nil {
+		view.IdentityName = &resource.Spec.Identity.Name
+	}
 	observedState.Readiness = &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
 	if condition := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
 		observedState.Readiness.Reason, observedState.Readiness.Detail = condition.Reason, condition.Message

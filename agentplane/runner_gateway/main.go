@@ -32,6 +32,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -197,6 +198,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -243,6 +247,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
 		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+		IdentityChanges: store,
 	})
 	if err != nil {
 		return err

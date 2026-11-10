@@ -138,6 +138,7 @@ go_test(
         "authorization_integration_test.go",
         "delegated_identity_integration_test.go",
         "execution_identity_integration_test.go",
+        "identity_change_test.go",
         "placement_test.go",
         "store_integration_test.go",
         "store_integration_testmain_test.go",
