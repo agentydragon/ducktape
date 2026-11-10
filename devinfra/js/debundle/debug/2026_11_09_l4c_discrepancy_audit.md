@@ -307,21 +307,27 @@ per product:
 ## Rerun after Wave 3 slice 3 PR 2 (2026-11-10)
 
 `debundle_node_parity/` records only (one per fixture run), the PR head
-against its `devel` merge-base `30ebed4616`; the pattern-rule scripts were not
+against its `devel` merge-base `a7006bf26e`; the pattern-rule scripts were not
 available, so the per-owner counts above are not recomputed.
 
-| Class                               | Base | Branch |
-| ----------------------------------- | ---: | -----: |
-| Legacy accepts, effect accepts      | 1505 |   1528 |
-| Legacy accepts, effect `incomplete` |  390 |    390 |
-| Legacy refuses                      | 1195 |   1189 |
+| Legacy  | Effect status | Base | Branch |
+| ------- | ------------- | ---: | -----: |
+| accepts | accepted      | 1512 |   1535 |
+| accepts | `incomplete`  |  393 |    393 |
+| refuses | accepted      |  159 |    153 |
+| refuses | `conflict`    |  955 |    955 |
+| refuses | `incomplete`  |   81 |     81 |
 
-No existing fixture changed its legacy verdict. Two
-`imported_callback_timing_test` runs moved from `incomplete` to accepted; the
-other differences are the new `provider_summary_effect_test` cases and the six
-`export_availability_test` runs that now emit on rejection. Most S3 havoc is
-untouched: it is namespace-member and author-asserted factories, which the
-ordered lane does not substitute, and invocations of a retained result.
+Compared run by run (target, test, source output): no existing fixture
+changed its legacy verdict or its emitted order. Two changed effect status,
+both `imported_callback_timing_test`, from `incomplete` to accepted
+(`returned_wrapper_does_not_invoke_its_callback_at_creation`,
+`successive_factories_do_not_publish_callbacks_to_the_next_factory`). The
+other differences are new or renamed tests: `provider_summary_effect_test`,
+and six `export_availability_test` runs that now emit on rejection and write
+no parity record. Most S3 havoc is untouched: it is namespace-member and
+author-asserted factories, which the ordered lane does not substitute, and
+invocations of a retained result.
 
 ## Re-running
 
