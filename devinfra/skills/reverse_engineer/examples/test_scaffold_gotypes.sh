@@ -25,7 +25,10 @@ chmod +w "$TEST_TMPDIR/garbled"
 cd "$TEST_TMPDIR"
 
 echo "== dump types =="
-"$(rlocation "$GOTYPES")" garbled >types.txt 2>types.err
+if ! "$(rlocation "$GOTYPES")" garbled >types.txt 2>types.err; then
+  cat types.err >&2
+  exit 1
+fi
 cat types.err
 grep -q 'types base 0x' types.err || {
   echo "FAIL: expected gotypes to report a detected types base" >&2
