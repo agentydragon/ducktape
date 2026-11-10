@@ -1052,6 +1052,45 @@ fn exported_literals_settle_only_when_every_chunk_reads_them_by_name() {
         0
     );
     assert_eq!(settled(b"export const load = () => import('./a.js');\n"), 0);
+    // A namespace object cannot be written through: reading named members
+    // of `ns.table` keeps the literal, anything else with it does not.
+    let namespace = |uses: &str| {
+        settled(
+            format!("import * as a from './a.js';\nexport function f(k) {{ {uses} }}\n").as_bytes(),
+        )
+    };
+    assert_eq!(namespace("return [a.table.key, a.label];"), 1);
+    assert_eq!(namespace("a.table.key = 'b';"), 0);
+    assert_eq!(namespace("const t = a.table; t.key = 'b';"), 0);
+    assert_eq!(namespace("return a.table[k];"), 0);
+    assert_eq!(namespace("return a[k];"), 0);
+    assert_eq!(namespace("return Object.values(a);"), 0);
+    // The same for the namespace a dynamic import resolves to.
+    let dynamic =
+        |body: &str| settled(format!("export async function f() {{ {body} }}\n").as_bytes());
+    assert_eq!(
+        dynamic("return import('./a.js').then((m) => m.table.key);"),
+        1
+    );
+    assert_eq!(
+        dynamic("const m = await import('./a.js'); return m.table.key;"),
+        1
+    );
+    assert_eq!(
+        dynamic("const { table: t } = await import('./a.js'); return t.key;"),
+        1
+    );
+    assert_eq!(dynamic("return import('./a.js').then((m) => m);"), 0);
+    assert_eq!(dynamic("return import('./a.js').then((m) => m.table);"), 0);
+    assert_eq!(
+        dynamic("const m = await import('./a.js'); m.table.key = 'b';"),
+        0
+    );
+    assert_eq!(
+        dynamic("const { table } = await import('./a.js'); table.key = 'b';"),
+        0
+    );
+    assert_eq!(dynamic("const p = import('./a.js'); return p;"), 0);
 }
 
 /// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.

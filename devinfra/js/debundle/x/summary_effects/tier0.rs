@@ -170,6 +170,9 @@ pub struct Tier0 {
     /// Whether exported bindings were treated as reachable from the start.
     pub exports_reachable: bool,
     /// Intrinsic uses left impure because the census found a write.
+    /// The object literals of the chunk that the program does more with
+    /// than read named members, as far as derivation saw.
+    pub settled_refusals: Vec<SettledRefusalRow>,
     pub intrinsics_denied: usize,
     /// The same per family the use depends on and why the census refused.
     pub intrinsic_refusals:
@@ -2184,6 +2187,30 @@ fn declared_ids(decl: &Decl, out: &mut Vec<Id>) {
     }
 }
 
+/// An object literal that is not unchangeable program-wide.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SettledRefusalRow {
+    /// The source unit declaring it.
+    pub unit: Option<usize>,
+    pub reason: crate::derive::SettledRefusal,
+    /// How often the chunk reads a named member of it.
+    pub named_reads: usize,
+    pub exported: bool,
+}
+
+/// How often each binding is the object of a named member read.
+#[derive(Default)]
+struct NamedReads(FxHashMap<Id, usize>);
+
+impl Visit for NamedReads {
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        if let (Expr::Ident(binding), MemberProp::Ident(_)) = (&*member.obj, &member.prop) {
+            *self.0.entry(binding.to_id()).or_default() += 1;
+        }
+        member.visit_children_with(self);
+    }
+}
+
 /// How often each binding is assigned by a plain `=`, and the bindings
 /// assigned any other way.
 #[derive(Default)]
@@ -2688,6 +2715,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     > = Default::default();
     let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
     let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
+    let mut settled_refusals: Vec<SettledRefusalRow> = Vec::new();
     let mut derived = DerivedCounts {
         primitive_imports: derived_primitive_imports,
         settled_imports: settled.len(),
@@ -2759,6 +2787,21 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         let locals = found.settled_locals.iter().filter_map(binding);
         premises.settled_locals.extend(locals);
         derived.settled_locals = premises.settled_locals.len();
+        let mut reads = NamedReads::default();
+        module.visit_with(&mut reads);
+        for (id, refusal) in &found.settled_refusals {
+            let Some(binding) = binding(id) else {
+                continue;
+            };
+            settled_refusals.push(SettledRefusalRow {
+                unit: declared_by_unit
+                    .iter()
+                    .position(|declared| declared.contains(&binding)),
+                reason: *refusal,
+                named_reads: reads.0.get(id).copied().unwrap_or(0),
+                exported: exported.contains(&binding),
+            });
+        }
         for id in &found.namers {
             callee(id, PremiseKind::FunctionNamer, &mut derived.function_namers);
         }
@@ -3222,6 +3265,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         exports_reachable,
         intrinsics_denied,
         intrinsic_refusals,
+        settled_refusals,
         families_used,
         census,
     }

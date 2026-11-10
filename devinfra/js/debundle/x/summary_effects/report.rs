@@ -717,6 +717,12 @@ pub struct Tier0Report {
     /// Where: the program chunk's index in path order (`null` for this
     /// chunk) and the byte offset of the store.
     pub global_object_unnamed_store_sites: Vec<(Option<usize>, u32)>,
+    /// Object literals of the chunk that are not unchangeable program-wide,
+    /// by reason; needs `--derive` and the program.
+    pub settled_local_refusals: Vec<(crate::derive::SettledRefusal, usize)>,
+    /// Those the chunk reads named members of at least 20 times, most read
+    /// first.
+    pub settled_local_refusal_sites: Vec<crate::tier0::SettledRefusalRow>,
     /// Intrinsic uses the census refused: the family, why, and how many.
     pub intrinsic_refusals: Vec<(&'static str, crate::intrinsics::Refusal, usize)>,
     /// Each store that counts as a write of a whole global the language
@@ -1011,6 +1017,23 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .collect(),
         global_object_written_unnamed: analysis.census.all,
         global_object_unnamed_store_sites: analysis.census.all_sites.clone(),
+        settled_local_refusals: {
+            let mut counts: BTreeMap<crate::derive::SettledRefusal, usize> = BTreeMap::new();
+            for row in &analysis.settled_refusals {
+                *counts.entry(row.reason).or_default() += 1;
+            }
+            counts.into_iter().collect()
+        },
+        settled_local_refusal_sites: {
+            let mut rows: Vec<_> = analysis
+                .settled_refusals
+                .iter()
+                .filter(|row| row.named_reads >= 20)
+                .cloned()
+                .collect();
+            rows.sort_by_key(|row| std::cmp::Reverse(row.named_reads));
+            rows
+        },
         intrinsic_refusals: analysis
             .intrinsic_refusals
             .iter()

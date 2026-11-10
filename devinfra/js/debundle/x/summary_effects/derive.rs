@@ -260,6 +260,74 @@ struct Handled {
     relaxed: Option<SyntaxContext>,
     /// Such a use called a static of `Object`.
     object_statics: bool,
+    /// Bindings that hold the namespace object of a dynamically imported
+    /// chunk, by its specifier: `m` in `import("./x.js").then((m) => …)`
+    /// and in `const m = await import("./x.js")`.
+    namespaces: Vec<(Id, String)>,
+    /// Bindings destructured from such a namespace: the local, the
+    /// specifier and the export.
+    destructured: Vec<(Id, String, String)>,
+    /// The `import()` calls those account for, by position.
+    consumed: FxHashSet<u32>,
+}
+
+/// The specifier and position of `import("literal")`.
+fn dynamic_import(expr: &Expr) -> Option<(String, u32)> {
+    let mut expr = expr;
+    while let Expr::Paren(paren) = expr {
+        expr = &paren.expr;
+    }
+    match expr {
+        Expr::Call(CallExpr {
+            callee: Callee::Import(_),
+            args,
+            span,
+            ..
+        }) => match args.as_slice() {
+            [ExprOrSpread { spread: None, expr }] => match &**expr {
+                Expr::Lit(Lit::Str(specifier)) => Some((js_ast::str_value(specifier), span.lo.0)),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Why an object literal is not one the whole program only reads named
+/// members of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettledRefusal {
+    /// Some chunk loads a chunk by a specifier that is not a literal.
+    UnknownLoad,
+    /// Some chunk has a direct `eval`.
+    DirectEval,
+    /// Some import inside the program resolves to no declaration.
+    UnresolvedImport,
+    /// Some chunk loads the literal's chunk dynamically and does more with
+    /// the result than bind its namespace or destructure it.
+    ExporterLoadedWhole,
+    /// Some chunk `export *`s the literal's chunk.
+    ExporterReexportedWhole,
+    /// Some chunk uses a namespace object of the literal's chunk other than
+    /// to read named members.
+    ExporterNamespaceUsedWhole,
+    /// Some chunk uses `ns.binding` other than to read a named member.
+    UsedThroughNamespace,
+    /// The literal's own chunk mentions the binding other than to read a
+    /// named member.
+    UsedInOwnChunk,
+    /// Another chunk does, through an import.
+    UsedInAnotherChunk,
+    /// The literal has a spread, a method, an accessor or a computed key.
+    NotPlainLiteral,
+}
+
+#[derive(Default)]
+struct SettledLiterals {
+    settled: FxHashMap<(usize, Id), Vec<(String, bool)>>,
+    refused: FxHashMap<(usize, Id), SettledRefusal>,
 }
 
 /// How a chunk mentions its bindings.
@@ -321,6 +389,44 @@ impl Handled {
             }
             Expr::Member(inner) => self.inner.extend(named_member(inner)),
             _ => {}
+        }
+    }
+
+    /// Records the pattern a dynamically imported namespace is bound to;
+    /// whether the pattern says all that is done with the namespace.
+    fn bind_namespace(&mut self, pattern: &Pat, specifier: &str) -> bool {
+        match pattern {
+            Pat::Ident(name) => {
+                self.namespaces
+                    .push((name.id.to_id(), specifier.to_string()));
+                true
+            }
+            Pat::Object(object) => {
+                let mut found = Vec::new();
+                for prop in &object.props {
+                    let (export, local) = match prop {
+                        ObjectPatProp::KeyValue(KeyValuePatProp { key, value }) => {
+                            let export = match key {
+                                PropName::Ident(name) => name.sym.to_string(),
+                                PropName::Str(name) => js_ast::str_value(name),
+                                _ => return false,
+                            };
+                            let Pat::Ident(local) = &**value else {
+                                return false;
+                            };
+                            (export, local.id.to_id())
+                        }
+                        ObjectPatProp::Assign(AssignPatProp {
+                            key, value: None, ..
+                        }) => (key.sym.to_string(), key.to_id()),
+                        _ => return false,
+                    };
+                    found.push((local, specifier.to_string(), export));
+                }
+                self.destructured.extend(found);
+                true
+            }
+            _ => false,
         }
     }
 
@@ -449,7 +555,50 @@ impl Visit for Handled {
         call.visit_children_with(self);
     }
 
+    // `const m = await import("./x.js")`.
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Some(Expr::Await(awaited)) = declarator.init.as_deref()
+            && let Some((specifier, position)) = dynamic_import(&awaited.arg)
+            && self.bind_namespace(&declarator.name, &specifier)
+        {
+            self.consumed.insert(position);
+        }
+        declarator.visit_children_with(self);
+    }
+
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        // `import("./x.js").then((m) => …)`.
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) = &**callee
+            && &*method.sym == "then"
+            && let Some((specifier, position)) = dynamic_import(obj)
+            && let Some(ExprOrSpread { spread: None, expr }) = call.args.first()
+        {
+            let params: Option<Vec<&Pat>> = match &**expr {
+                Expr::Arrow(arrow) => Some(arrow.params.iter().collect()),
+                Expr::Fn(function) => Some(
+                    function
+                        .function
+                        .params
+                        .iter()
+                        .map(|param| &param.pat)
+                        .collect(),
+                ),
+                _ => None,
+            };
+            let bound = match params.as_deref() {
+                Some([]) => true,
+                Some([namespace]) => self.bind_namespace(namespace, &specifier),
+                _ => false,
+            };
+            if bound {
+                self.consumed.insert(position);
+            }
+        }
         match &call.callee {
             Callee::Expr(callee) => {
                 // `Object.keys(binding)`.
@@ -477,7 +626,11 @@ impl Visit for Handled {
                     self.load(call);
                 }
             }
-            Callee::Import(_) => self.load(call),
+            Callee::Import(_) => {
+                if !self.consumed.contains(&call.span.lo.0) {
+                    self.load(call);
+                }
+            }
             Callee::Super(_) => {}
         }
         call.visit_children_with(self);
@@ -1234,61 +1387,123 @@ impl<'a> Resolver<'a> {
 
     /// The object literals the program only ever reads named members of:
     /// declared once and never assigned by their chunk, mentioned by no
-    /// chunk in any other way, in a chunk no code holds as a whole.
-    fn settled_literals(&self) -> FxHashMap<(usize, Id), Vec<(String, bool)>> {
-        let mut settled = FxHashMap::default();
-        if self
-            .chunks
-            .iter()
-            .any(|chunk| chunk.handled.loads_unknown || chunk.handled.evals)
-        {
-            return settled;
-        }
-        // Chunks some code holds as a namespace object.
-        let mut opened: FxHashSet<usize> = FxHashSet::default();
-        let mut handled: FxHashSet<(usize, Id)> = FxHashSet::default();
+    /// chunk in any other way, in a chunk no code holds as a whole. For the
+    /// other object literals, why not.
+    fn settled_literals(&self) -> SettledLiterals {
+        let mut out = SettledLiterals::default();
+        let everywhere = if self.chunks.iter().any(|chunk| chunk.handled.loads_unknown) {
+            Some(SettledRefusal::UnknownLoad)
+        } else if self.chunks.iter().any(|chunk| chunk.handled.evals) {
+            Some(SettledRefusal::DirectEval)
+        } else {
+            None
+        };
+        // Chunks some code holds as a whole, and bindings some code handles.
+        let mut opened: FxHashMap<usize, SettledRefusal> = FxHashMap::default();
+        let mut handled: FxHashMap<(usize, Id), SettledRefusal> = FxHashMap::default();
+        let mut unresolved = false;
         for (index, chunk) in self.chunks.iter().enumerate() {
-            let namespaces = chunk
+            for specifier in &chunk.handled.loaded {
+                if let Some(provider) = self.provider(index, specifier) {
+                    opened.insert(provider, SettledRefusal::ExporterLoadedWhole);
+                }
+            }
+            for specifier in &chunk.export_all {
+                if let Some(provider) = self.provider(index, specifier) {
+                    opened.insert(provider, SettledRefusal::ExporterReexportedWhole);
+                }
+            }
+            // A namespace object cannot be written through: holding one is
+            // holding its chunk only if it is used other than to read named
+            // members, and it hands out an export only where `ns.name` is
+            // used other than as the object of a named read.
+            let imported = chunk
                 .imports
-                .values()
-                .filter(|(_, export)| export == "*")
-                .map(|(specifier, _)| specifier);
-            let whole = namespaces
-                .chain(&chunk.handled.loaded)
-                .chain(&chunk.export_all);
-            opened.extend(whole.filter_map(|specifier| self.provider(index, specifier)));
-            for binding in &chunk.handled.bindings {
-                // An import from outside the program shares none of its
-                // chunks' objects.
-                let outside = chunk
-                    .imports
-                    .get(binding)
-                    .is_some_and(|(specifier, _)| self.provider(index, specifier).is_none());
-                if outside {
+                .iter()
+                .filter(|(_, (_, export))| export == "*")
+                .map(|(id, (specifier, _))| (id, specifier));
+            let loaded = chunk
+                .handled
+                .namespaces
+                .iter()
+                .map(|(id, specifier)| (id, specifier));
+            for (namespace, specifier) in imported.chain(loaded) {
+                let Some(provider) = self.provider(index, specifier) else {
+                    continue;
+                };
+                if chunk.handled.bindings.contains(namespace) {
+                    opened.insert(provider, SettledRefusal::ExporterNamespaceUsedWhole);
                     continue;
                 }
-                match self.home(index, binding) {
+                for (base, export) in &chunk.handled.inner {
+                    if base != namespace {
+                        continue;
+                    }
+                    match self.chunks[provider].exports.get(export) {
+                        Some(Export::Local(local)) => {
+                            let key = (provider, local.clone());
+                            handled.insert(key, SettledRefusal::UsedThroughNamespace);
+                        }
+                        Some(Export::From(..)) => {
+                            opened.insert(provider, SettledRefusal::ExporterNamespaceUsedWhole);
+                        }
+                        None => {}
+                    }
+                }
+            }
+            // A binding destructured from a dynamic import stands for the
+            // export.
+            let destructured: FxHashMap<&Id, (&String, &String)> = chunk
+                .handled
+                .destructured
+                .iter()
+                .map(|(local, specifier, export)| (local, (specifier, export)))
+                .collect();
+            for binding in &chunk.handled.bindings {
+                let home = match destructured.get(binding) {
+                    Some((specifier, export)) => {
+                        let Some(provider) = self.provider(index, specifier) else {
+                            continue;
+                        };
+                        match self.chunks[provider].exports.get(*export) {
+                            Some(Export::Local(local)) => self.home(provider, local),
+                            _ => None,
+                        }
+                    }
+                    None => {
+                        // An import from outside the program shares none
+                        // of its chunks' objects.
+                        let outside = chunk.imports.get(binding).is_some_and(|(specifier, _)| {
+                            self.provider(index, specifier).is_none()
+                        });
+                        if outside {
+                            continue;
+                        }
+                        self.home(index, binding)
+                    }
+                };
+                match home {
                     Some(home) => {
-                        handled.insert(home);
+                        let reason = if home.0 == index {
+                            SettledRefusal::UsedInOwnChunk
+                        } else {
+                            SettledRefusal::UsedInAnotherChunk
+                        };
+                        handled.entry(home).or_insert(reason);
                     }
                     // An import that resolves to no declaration: nothing
                     // is known of what it shares.
-                    None => return FxHashMap::default(),
+                    None => unresolved = true,
                 }
             }
         }
+        let everywhere = everywhere.or(unresolved.then_some(SettledRefusal::UnresolvedImport));
         for (index, chunk) in self.chunks.iter().enumerate() {
-            if opened.contains(&index) {
-                continue;
-            }
             for (id, def) in &chunk.defs {
                 let Def::Value(Expr::Object(object)) = def else {
                     continue;
                 };
                 let key = (index, id.clone());
-                if handled.contains(&key) {
-                    continue;
-                }
                 let keys: Option<Vec<(String, bool)>> = object
                     .props
                     .iter()
@@ -1314,12 +1529,22 @@ impl<'a> Resolver<'a> {
                         PropOrSpread::Spread(_) => None,
                     })
                     .collect();
-                if let Some(keys) = keys {
-                    settled.insert(key, keys);
+                let refusal = everywhere
+                    .or(opened.get(&index).copied())
+                    .or(handled.get(&key).copied())
+                    .or(keys.is_none().then_some(SettledRefusal::NotPlainLiteral));
+                match (refusal, keys) {
+                    (None, Some(keys)) => {
+                        out.settled.insert(key, keys);
+                    }
+                    (Some(refusal), _) => {
+                        out.refused.insert(key, refusal);
+                    }
+                    (None, None) => unreachable!("a literal without keys is refused"),
                 }
             }
         }
-        settled
+        out
     }
 
     /// The name a helper shape gives an identifier bound outside it.
@@ -2109,6 +2334,8 @@ pub struct Derived {
     /// Bindings of this chunk holding an object literal nothing in the
     /// program handles except to read a named member, exported or not.
     pub settled_locals: Vec<Id>,
+    /// The object literals of this chunk that are not, and why.
+    pub settled_refusals: Vec<(Id, SettledRefusal)>,
     /// Imported bindings holding an object literal nothing in the program
     /// handles except to read a named member, with each key of the literal
     /// and whether its value is written as a primitive.
@@ -2174,7 +2401,7 @@ pub fn derive(
         }
     }
     if let Some(program) = program {
-        let settled = resolver.settled_literals();
+        let SettledLiterals { settled, refused } = resolver.settled_literals();
         // The program holds this chunk too, as another parse: its top-level
         // bindings correspond by name.
         let own = program
@@ -2194,6 +2421,18 @@ pub fn derive(
             .collect();
         locals.sort();
         derived.settled_locals = locals;
+        let mut refusals: Vec<(Id, SettledRefusal)> = resolver.chunks[0]
+            .defs
+            .keys()
+            .filter_map(|id| {
+                let (_, refusal) = refused
+                    .iter()
+                    .find(|((chunk, home), _)| Some(*chunk) == own && home.0 == id.0)?;
+                Some((id.clone(), *refusal))
+            })
+            .collect();
+        refusals.sort();
+        derived.settled_refusals = refusals;
         for id in &imported {
             let keys = resolver
                 .home(0, id)
