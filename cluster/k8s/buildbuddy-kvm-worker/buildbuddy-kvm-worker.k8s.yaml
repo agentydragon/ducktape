@@ -1,3 +1,22 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: buildbuddy-executor
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1110,8 +1129,9 @@ spec:
               operator: Exists
           volumes:
             - containerDisk:
-                image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4
+                image: git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker:unset
                 imagePullPolicy: IfNotPresent
+                imagePullSecret: forgejo-images-creds
               name: rootdisk
             - dataVolume:
                 name: work

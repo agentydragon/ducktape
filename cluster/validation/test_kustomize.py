@@ -143,5 +143,26 @@ def test_egress_sidecar_image_pin_reaches_launcher_relay_template(
     assert relay["image"] == f"{sidecar_image}:{sidecar_pin['newTag']}"
 
 
+def test_buildbuddy_kvm_worker_image_pin_reaches_pool_container_disk(kustomize: Path, runfiles: Runfiles) -> None:
+    source = runfiles.root() / "ducktape/cluster/k8s/buildbuddy-kvm-worker"
+    pin = next(
+        image
+        for image in yaml.safe_load((source / "image-pins/kustomization.yaml").read_text())["images"]
+        if image["name"] == "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker"
+    )
+    result = subprocess.run([kustomize, "build", source], capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr.decode()
+    pool = next(doc for doc in yaml.safe_load_all(result.stdout) if doc and doc.get("kind") == "VirtualMachinePool")
+    root_disk = next(
+        volume
+        for volume in pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["spec"]["volumes"]
+        if volume["name"] == "rootdisk"
+    )
+    assert pin["newTag"] != "unset"
+    assert root_disk["containerDisk"]["image"] == (
+        f"git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker:{pin['newTag']}"
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -3624,6 +3624,10 @@ spec:
   dependsOn:
     - name: buildbuddy-executor
       namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: monitoring-crds

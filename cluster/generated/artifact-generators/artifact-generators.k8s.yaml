@@ -35,6 +35,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/buildbuddy-kvm-worker/**"
           to: "@artifact/cluster/k8s/buildbuddy-kvm-worker/"
+        - from: "@repo/cluster/k8s/buildbuddy-kvm-worker/image-pins/**"
+          to: "@artifact/cluster/k8s/buildbuddy-kvm-worker/image-pins/"
       name: buildbuddy-kvm-worker
       originRevision: "@repo"
     - copy:

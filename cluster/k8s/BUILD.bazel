@@ -16,6 +16,17 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+filegroup(
+    name = "buildbuddy_kvm_worker_manifests",
+    srcs = [
+        "buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml",
+        "buildbuddy-kvm-worker/image-pins/kustomization.yaml",
+        "buildbuddy-kvm-worker/image-pins/kustomizeconfig",
+        "buildbuddy-kvm-worker/kustomization.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Focused tests inline these direct-file inputs in their data lists.
 exports_files(
     [

@@ -208,6 +208,11 @@ spec:
       name: aw-server
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'buildbuddy-kvm-worker'
+      kind: ImageRepository
+      name: buildbuddy-kvm-worker
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'claude-session-sync'
       kind: ImageRepository
       name: claude-session-sync

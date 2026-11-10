@@ -1,0 +1,4 @@
+# Kustomize transformer configuration for VirtualMachinePool's nested containerDisk image.
+images:
+  - path: spec/virtualMachineTemplate/spec/template/spec/volumes[]/containerDisk/image
+    kind: VirtualMachinePool

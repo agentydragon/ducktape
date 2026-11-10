@@ -120,6 +120,46 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
+    (root_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "rootdisk"]
+    assert root_volume["containerDisk"]["image"] == "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker:unset"
+    assert root_volume["containerDisk"]["imagePullSecret"] == "forgejo-images-creds"
+    pull_secret = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ExternalSecret"
+        and doc["metadata"].get("namespace") == "buildbuddy-executor"
+        and doc["metadata"].get("name") == "forgejo-images-creds"
+    )
+    assert pull_secret["spec"]["secretStoreRef"]["name"] == "kubernetes-forgejo-images-secret-store"
+    dependencies = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "kustomize.toolkit.fluxcd.io/v1"
+        and doc.get("kind") == "Kustomization"
+        and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )["spec"]["dependsOn"]
+    assert {item["name"] for item in dependencies} >= {"external-secrets-config", "forgejo-images"}
+    image_policy = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ImagePolicy" and doc["metadata"].get("name") == "buildbuddy-kvm-worker"
+    )
+    image_repository = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ImageRepository" and doc["metadata"].get("name") == "buildbuddy-kvm-worker"
+    )
+    assert image_policy["spec"]["imageRepositoryRef"]["name"] == "buildbuddy-kvm-worker"
+    assert image_repository["spec"]["image"] == "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker"
+    assert image_repository["spec"]["secretRef"]["name"] == "forgejo-images-creds"
+    secret_store = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ClusterSecretStore"
+        and doc["metadata"].get("name") == "kubernetes-forgejo-images-secret-store"
+    )
+    allowed_namespaces = set(secret_store["spec"]["conditions"][0]["namespaces"])
+    assert "buildbuddy-executor" in allowed_namespaces
     # The egress fence selects pool members by the shared worker label.
     fence = next(
         doc

@@ -646,7 +646,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
-    external_secrets_config.external_secrets_config(
+    external_secrets_config_kustomization = external_secrets_config.external_secrets_config(
         flux_chart,
         write_directory(root, external_secrets_config_artifact, external_secrets_config.chart),
         external_secrets_operator_kustomization,
@@ -1523,11 +1523,15 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    buildbuddy_kvm_worker_artifact = artifact(buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR)
+    buildbuddy_kvm_worker_artifact = artifact(
+        buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR, buildbuddy_kvm_worker.PINS_DIR
+    )
     buildbuddy_kvm_worker_kustomization = buildbuddy_kvm_worker.buildbuddy_kvm_worker(
         flux_chart,
-        write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart),
+        write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart, components=["./image-pins"]),
         buildbuddy_executor_kustomization,
+        external_secrets_config_kustomization,
+        forgejo_images_kustomization,
         kubevirt_kustomization,
         monitoring_crds_kustomization,
         piraeus_cluster_kustomization,

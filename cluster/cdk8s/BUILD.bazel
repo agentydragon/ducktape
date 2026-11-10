@@ -82,6 +82,7 @@ py_library(
         ":flux",
         ":manifest_roots",
         ":piraeus",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/kubevirt:virtual_machine_pool",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/oci_cache:zot",
