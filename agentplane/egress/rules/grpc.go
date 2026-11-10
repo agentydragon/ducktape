@@ -11,12 +11,12 @@ import (
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // Service projects the admitted caller's effective egress rules.
@@ -27,28 +27,40 @@ type Service struct {
 
 func NewService(index *policy.Index) *Service { return &Service{index: index} }
 
+// GetRules must be admitted by auth.AnySubject: an Identity caller is read from its admission.
 func (s *Service) GetRules(ctx context.Context, _ *egressrulespb.GetRulesRequest) (*egressrulespb.GetRulesResponse, error) {
-	principal, err := auth.Caller(ctx)
+	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	subject := policyapi.ServiceAccountRef{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
-	response, err := responseOf(subject, s.index.ListEffectivePolicies(reader.ServiceAccount(subject)))
-	if err != nil {
+	var subject reader.Subject
+	response := &egressrulespb.GetRulesResponse{}
+	if admitted, ok := admission.(auth.IdentityAdmission); ok {
+		identity := admitted.Caller.Identity
+		subject = reader.Identity{Name: identity.Name, UID: types.UID(identity.UID)}
+		response.Caller = &egressrulespb.GetRulesResponse_Identity{Identity: &egressrulespb.IdentitySubject{Name: identity.Name}}
+	} else {
+		principal, err := auth.Caller(ctx)
+		if err != nil {
+			return nil, err
+		}
+		subject = reader.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
+		response.Caller = &egressrulespb.GetRulesResponse_Subject{
+			Subject: &identitypb.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
+		}
+	}
+	if response.Policies, err = policiesOf(s.index.ListEffectivePolicies(subject)); err != nil {
 		slog.Error("egress rules not presentable", "error", err)
 		return nil, status.Error(codes.Internal, "egress rules not presentable")
 	}
 	return response, nil
 }
 
-// responseOf is everything subject may reach, as the proxy would decide it right now. It is built field
-// by field from policy.EffectivePolicy and never from a resource object, so a field added to an
+// policiesOf is everything the caller may reach, as the proxy would decide it right now. It is built
+// field by field from policy.EffectivePolicy and never from a resource object, so a field added to an
 // EgressCredential, a second source say, reaches a sandbox only when someone writes it in here.
-func responseOf(subject policyapi.ServiceAccountRef, policies []policy.EffectivePolicy) (*egressrulespb.GetRulesResponse, error) {
-	response := &egressrulespb.GetRulesResponse{
-		Subject:  &identitypb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
-		Policies: make([]*egressrulespb.Policy, len(policies)),
-	}
+func policiesOf(policies []policy.EffectivePolicy) ([]*egressrulespb.Policy, error) {
+	out := make([]*egressrulespb.Policy, len(policies))
 	for i, effective := range policies {
 		granted := &egressrulespb.Policy{Name: effective.Name, Rules: make([]*egressrulespb.Rule, len(effective.Rules))}
 		for j, rule := range effective.Rules {
@@ -57,9 +69,9 @@ func responseOf(subject policyapi.ServiceAccountRef, policies []policy.Effective
 				return nil, err
 			}
 		}
-		response.Policies[i] = granted
+		out[i] = granted
 	}
-	return response, nil
+	return out, nil
 }
 
 func ruleOf(effective policy.EffectiveRule) (*egressrulespb.Rule, error) {
