@@ -169,6 +169,17 @@ place.
    whichever direction is chosen.
 10. **Accounts per preset or per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per role set is finer-grained, but an agent then needs a different token per command.
+11. **Who creates the Identity a launched Sandbox runs as.** Blocks `SANDBOX_IDENTITY_SPEC`'s switch,
+    which deletes `Sandbox.spec.policySets`: today every launch path names PolicySets and the Sandbox
+    Controller binds the Sandbox's own ServiceAccount to them, and nothing creates an `Identity`. The
+    paths are the app's launch form (`CreateEnvironment`), the Action Service's `LaunchSandbox`
+    (also `CreateEnvironment`) and the system-test driver. One option: `CreateEnvironment` mints an
+    Identity per environment unless the request names one, and binds the launch sets to it. It keeps
+    Sandbox-first launches working, but the Identity is never owned by the environment, so deleting
+    the environment leaks it until someone deletes it (the app's unreferenced filter shows it).
+    The operator wants to settle how this looks for central-sampler Sessions, which name an Identity
+    at `CreateSession`, versus Sessions inside Sandboxes, whose environment holds the identity; it
+    meets question 7.
 
 ## Exit
 

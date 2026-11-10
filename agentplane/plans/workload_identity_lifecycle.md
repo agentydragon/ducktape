@@ -95,7 +95,9 @@ tombstones it. `kubernetes_bearer` stays on service listeners for backend caller
 subject, and makes its controller, the calling Sandbox, the record's owner, which owns the box.
 `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical prerequisite of that
 node, recorded in the DAG. A Sandbox caller's boxes already hang off the Sandbox, not the account;
-in the same change, a caller with no Sandbox has its records owned by its `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
+with `SERVICES_IDENTITY_PRINCIPAL`, which gives the Action Service its caller as an Identity, a box
+names that Identity as its subject and runs on the default ServiceAccount, and a caller with no
+Sandbox has its records owned by its `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
 cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
 every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. The
 resolver then reads `spec.subject.identity` through the shared policy reader, live with its UID, in
