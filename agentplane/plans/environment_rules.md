@@ -73,15 +73,15 @@ until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
 
 ## Operations
 
-| Operation        | Allows                                                                                                         | Where it lands                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `read`           | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord`  | EnvironmentService (implemented RPCs)                                                            |
-| `resume`         | `ResumeEnvironment` of an idle-suspended target                                                                | EnvironmentService → lifecycle manager (implemented RPC)                                         |
-| `wake`           | the automatic wake for work the caller queued on a target not bound to its Identity                            | Dispatcher delivery → lifecycle manager `RequestWake` (implemented path)                         |
-| `suspend`        | `SuspendEnvironment`                                                                                           | EnvironmentService (implemented RPC)                                                             |
-| `delete`         | `DeleteEnvironment`                                                                                            | EnvironmentService (implemented RPC)                                                             |
-| `rebind`         | `SetEnvironmentIdentity` on a stopped target                                                                   | EnvironmentService (implemented RPC, managers only today)                                        |
-| `create_session` | `CreateSession` placed on a target; `AttachEnvironment` of it; with `boundIdentity: I`, a Session running as I | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
+| Operation        | Allows                                                                                                                                | Where it lands                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `read`           | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord`                         | EnvironmentService (implemented RPCs)                                                            |
+| `resume`         | `ResumeEnvironment` of an idle-suspended target                                                                                       | EnvironmentService → lifecycle manager (implemented RPC)                                         |
+| `wake`           | the automatic wake for work the caller queued on a target not bound to its Identity                                                   | Dispatcher delivery → lifecycle manager `RequestWake` (implemented path)                         |
+| `suspend`        | `SuspendEnvironment`                                                                                                                  | EnvironmentService (implemented RPC)                                                             |
+| `delete`         | `DeleteEnvironment`                                                                                                                   | EnvironmentService (implemented RPC)                                                             |
+| `rebind`         | `SetEnvironmentIdentity` on a stopped target                                                                                          | EnvironmentService (implemented RPC, managers only today)                                        |
+| `create_session` | Dispatcher `CreateSession` whose placement names a target; `AttachEnvironment` of it; with `boundIdentity: I`, a Session running as I | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
 
 Rules for the operations:
 
@@ -105,6 +105,12 @@ Rules for the operations:
   while a retained Session on that Sandbox UID names another Identity, applies first.
 - **Settings stay with roles.** `SetEnvironmentWakeOnSend` and `SetEnvironmentIdleSuspend` change the
   target's own policy and stay with the configured managers; no operation grants them.
+- **`create_session` is checked once, at Dispatcher.** Dispatcher owns which Sessions exist: it
+  admits the logical Session, takes commands for it, and later materializes it by calling the
+  Environment Runtime's or the sampler's `CreateSession`. Those calls come from Dispatcher, a
+  platform component, and evaluate no rule. TODO (operator, 2026-11-10): rename the runtime-side
+  `CreateSession` (`env/runtime/control/environment_runtime.proto`) to say it starts a native
+  Session that Dispatcher already admitted, so it does not read as a second authority.
 
 ## Evaluation points
 
