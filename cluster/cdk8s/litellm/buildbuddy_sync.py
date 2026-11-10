@@ -25,8 +25,9 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         auto_apply=False,
         store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
     )
-    # Approve only the reviewed module revision; the controller replans on approval.
-    writer.add_json_patch(JsonPatch.add("/spec/approvePlan", "plan-latest-62a5ac5453"))
+    # The writer was forgotten without destroying the remote secret; keep the
+    # remaining Terraform machinery suspended until its later removal.
+    writer.add_json_patch(JsonPatch.add("/spec/suspend", True))
     return chart
 
 
@@ -39,5 +40,5 @@ def resources(
         directory,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller, crossplane_keys),
-        description="Forget Terraform's ownership of the BuildBuddy live-test secret without destroying it.",
+        description="Keep the retired BuildBuddy Terraform sync suspended until its later removal.",
     )

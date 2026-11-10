@@ -93,7 +93,6 @@ kind: Secret
 metadata:
   annotations:
     crossplane.io/external-name: OPENAI_API_KEY
-    crossplane.io/paused: "true"
   name: live-tests
   namespace: litellm
 spec:

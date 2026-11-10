@@ -1055,11 +1055,11 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_buildbuddy_secret_stays_paused_while_terraform_forgets_it(
+def test_buildbuddy_secret_is_managed_by_crossplane_with_terraform_suspended(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
-    staged = next(
+    secret = next(
         doc
         for doc in documents
         if doc.get("apiVersion") == "buildbuddy.m.allegedly.works/v1alpha1" and doc.get("kind") == "Secret"
@@ -1072,7 +1072,7 @@ def test_buildbuddy_secret_stays_paused_while_terraform_forgets_it(
         and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
     )
     assert terraform["metadata"]["namespace"] == "flux-system"
-    assert not terraform["spec"].get("planOnly", False)
-    assert terraform["spec"]["approvePlan"] == "plan-latest-62a5ac5453"
-    assert staged["metadata"]["annotations"]["crossplane.io/paused"] == "true"
-    assert "Delete" not in staged["spec"]["managementPolicies"]
+    assert terraform["spec"]["suspend"] is True
+    assert "approvePlan" not in terraform["spec"]
+    assert "crossplane.io/paused" not in secret["metadata"]["annotations"]
+    assert secret["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
