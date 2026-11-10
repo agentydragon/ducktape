@@ -1348,9 +1348,6 @@ pub(super) struct Callable {
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
     pub(super) undefined_before_assignment: BTreeSet<Id>,
-    /// Bindings a `for`-`in`/`of` head of this callable writes. The loop's
-    /// values are in no `local_assignments` entry.
-    pub(super) head_bindings: BTreeSet<Id>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
     pub(super) self_binding: Option<Id>,
@@ -1373,32 +1370,6 @@ pub(super) struct Callable {
     pub(super) opaque: bool,
     pub(super) generator: bool,
     pub(super) may_fall_through: bool,
-}
-
-impl Callable {
-    /// The bindings this callable's own scope declares, parameters included.
-    pub(super) fn own_bindings(&self) -> BTreeSet<&Id> {
-        self.declared_locals
-            .iter()
-            .chain(&self.pattern_locals)
-            .chain(&self.hoisted_vars)
-            .chain(self.lexical_declarations.keys())
-            .chain(self.local_functions.keys())
-            .chain(&self.self_binding)
-            .chain(self.params.iter().flat_map(|parameter| &parameter.bindings))
-            .collect()
-    }
-
-    /// Assignments and loop-head writes of this callable to bindings an
-    /// enclosing scope declares; a head write has no value expression.
-    pub(super) fn captured_writes(&self) -> impl Iterator<Item = (&Id, Option<&ValueExpr>)> {
-        let own = self.own_bindings();
-        self.local_assignments
-            .iter()
-            .map(|(binding, value)| (binding, Some(value)))
-            .chain(self.head_bindings.iter().map(|binding| (binding, None)))
-            .filter(move |(binding, _)| !own.contains(binding))
-    }
 }
 
 #[derive(Clone, Default)]
@@ -1626,7 +1597,6 @@ impl Default for Callable {
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
             undefined_before_assignment: BTreeSet::new(),
-            head_bindings: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
             self_binding: None,
@@ -13097,13 +13067,6 @@ impl Visit for ExecutionIndex {
                 }
             }
             _ => {}
-        }
-        if let Some(key) = self.current {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .head_bindings
-                .extend(assignments.iter().map(|(binding, _)| binding.clone()));
         }
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);

@@ -706,9 +706,6 @@ const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
 // Count actual expansions, including those whose changing prefix state defeats
 // memoization. A cache-size limit alone does not bound a branching call tree.
 pub(super) const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
-/// Rounds of the source-summary lane's binding-flow fixpoint. Each round
-/// only grows the environment; most bodies settle in the second.
-const MAX_BINDING_FLOW_ROUNDS: usize = 8;
 // Giving every callback the entire pool as an argument creates a quadratic
 // value cross product, even without recursion. Summarize large pools before
 // manufacturing capture snapshots that retain that cross product.
@@ -827,12 +824,6 @@ pub(super) struct ExecutionInputs<'source> {
     reentry_default: bool,
     pub(super) call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
-    /// Per binding, the assignments of callables other than its declaring
-    /// one; the declaring callable's source-summary lane evaluates them.
-    nested_assignments: BTreeMap<Id, Vec<ValueExpr>>,
-    /// Bindings a `for`-`in`/`of` head of another callable than the
-    /// declaring one writes.
-    nested_head_bindings: BTreeSet<Id>,
     pub(super) captured_local_bindings: FxHashSet<Id>,
     pub(super) var_bindings: BTreeSet<Id>,
     changed_member_roots: BTreeSet<Id>,
@@ -10122,82 +10113,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         frame
     }
 
-    /// The source-summary lane flattens control flow, so its value for a
-    /// local must be a superset of every value the binding can hold at any
-    /// reachable read in any execution of the callable. Its flows are the
-    /// callable's own assignments and every nested callable's assignments
-    /// to its locals (a closure may run between any two of them), evaluated
-    /// to a fixpoint: a read may follow any assignment through a loop, and a
-    /// closure evaluated again captures the grown environment. Kept out of
-    /// line for `invoke`'s frame size. False when the round bound is reached
-    /// first: the environment is then not a superset.
-    #[inline(never)]
-    fn evaluate_binding_flows(&mut self, callable: &Callable, env: &mut Context) -> bool {
-        let own = callable.own_bindings();
-        for id in &own {
-            if callable.head_bindings.contains(*id)
-                || self.inputs.nested_head_bindings.contains(*id)
-            {
-                // The whole-chunk flow does not model a loop's values; keep
-                // its values for their capabilities and add unknown.
-                let possible = env.entry((*id).clone()).or_default();
-                possible.extend(from_flow(self.inputs.flow.values_of_binding(id)));
-                possible.extend(unknown());
-            }
-        }
-        let nested: Vec<(&Id, &ValueExpr)> = own
-            .iter()
-            .flat_map(|id| {
-                self.inputs
-                    .nested_assignments
-                    .get(*id)
-                    .into_iter()
-                    .flatten()
-                    .map(move |value| (*id, value))
-            })
-            .collect();
-        for _ in 0..MAX_BINDING_FLOW_ROUNDS {
-            let mut changed = false;
-            for (id, value) in callable
-                .local_assignments
-                .iter()
-                .map(|(id, value)| (id, value))
-                .chain(nested.iter().copied())
-            {
-                let values = self.evaluate(value, env, env);
-                // A chunk binding read later in this prefix must see the assigned
-                // callable, not only the opaque value `apply_rebind_effects` adds:
-                // calling that opaque value cannot reach an unescaped closure.
-                // Like a top-level owner, publish possible values before the body's
-                // calls; a lexical binding still in TDZ throws instead of storing.
-                if self.inputs.top_bindings.contains(id)
-                    && (self.inputs.var_bindings.contains(id)
-                        || self.state.world.module.initialized_bindings.contains(id))
-                {
-                    let possible = self
-                        .state
-                        .world_mut()
-                        .module
-                        .prefix_values
-                        .entry_or_default(id);
-                    let before = possible.len();
-                    possible.extend(values.iter().cloned());
-                    if possible.len() != before {
-                        self.state.world_mut().revision.bump_prefix();
-                    }
-                }
-                let possible = env.entry(id.clone()).or_default();
-                let before = possible.len();
-                possible.extend(values);
-                changed |= possible.len() != before;
-            }
-            if !changed {
-                return true;
-            }
-        }
-        false
-    }
-
     pub(super) fn invoke(
         &mut self,
         key: u32,
@@ -10601,7 +10516,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         seed_undefined_before_assignment(&mut env, &callable.undefined_before_assignment);
-        let flows_converged = self.evaluate_binding_flows(callable, &mut env);
+        for (id, value) in &callable.local_assignments {
+            let values = self.evaluate(value, &env, &env);
+            // A chunk binding read later in this prefix must see the assigned
+            // callable, not only the opaque value `apply_rebind_effects` adds:
+            // calling that opaque value cannot reach an unescaped closure.
+            // Like a top-level owner, publish possible values before the body's
+            // calls; a lexical binding still in TDZ throws instead of storing.
+            if self.inputs.top_bindings.contains(id)
+                && (self.inputs.var_bindings.contains(id)
+                    || self.state.world.module.initialized_bindings.contains(id))
+            {
+                let possible = self
+                    .state
+                    .world_mut()
+                    .module
+                    .prefix_values
+                    .entry_or_default(id);
+                let before = possible.len();
+                possible.extend(values.iter().cloned());
+                if possible.len() != before {
+                    self.state.world_mut().revision.bump_prefix();
+                }
+            }
+            env.entry(id.clone()).or_default().extend(values);
+        }
         let mut outcome = Outcome {
             complete: true,
             ..Outcome::default()
@@ -10622,7 +10561,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return outcome;
         }
         outcome.body_invoked = true;
-        if callable.opaque || !flows_converged {
+        if callable.opaque {
             outcome.unsupported(
                 ExecutionOperation::OpaqueExecution,
                 callable.owner,
@@ -12597,22 +12536,6 @@ pub(crate) fn annotate_synchronous_calls(
             .callables
             .values()
             .flat_map(|callable| callable.rebinds.iter().cloned())
-            .collect(),
-        nested_assignments: index
-            .callables
-            .values()
-            .flat_map(Callable::captured_writes)
-            .filter_map(|(binding, value)| Some((binding.clone(), value?.clone())))
-            .fold(BTreeMap::new(), |mut nested, (binding, value)| {
-                nested.entry(binding).or_insert_with(Vec::new).push(value);
-                nested
-            }),
-        nested_head_bindings: index
-            .callables
-            .values()
-            .flat_map(Callable::captured_writes)
-            .filter(|(_, value)| value.is_none())
-            .map(|(binding, _)| binding.clone())
             .collect(),
         captured_local_bindings: captured_local_bindings(&index),
         var_bindings,
