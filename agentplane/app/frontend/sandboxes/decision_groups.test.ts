@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { Decision_Outcome, type Decision } from "../../../egress/egress_admin_pb";
+import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/egress_admin_pb";
 import { decisionFixture } from "./decision_fixture";
-import { decisionAt, decisionOutcome, groupDecisions } from "./decision_groups";
+import { decisionAt, decisionOutcome, decisionReason, groupDecisions } from "./decision_groups";
 
 function decision(at: string, overrides: Omit<Partial<Decision>, "at"> = {}): Decision {
   return decisionFixture({
@@ -31,7 +31,11 @@ it("groups interleaved requests that were decided the same way, newest member fi
 
 it("keeps a refusal apart from an admission of the same destination, and lists it first", () => {
   const groups = groupDecisions([
-    decision("2026-01-01T00:00:01Z", { outcome: Decision_Outcome.DENY, policy: undefined, reason: "no-rule" }),
+    decision("2026-01-01T00:00:01Z", {
+      outcome: Decision_Outcome.DENY,
+      policy: undefined,
+      reason: Decision_Reason.NO_RULE,
+    }),
     decision("2026-01-01T00:00:02Z"),
   ]);
 
@@ -68,9 +72,17 @@ it("keeps an empty log empty and keeps an unspecified outcome distinct", () => {
     decision("2026-01-01T00:00:01Z", {
       outcome: Decision_Outcome.UNSPECIFIED,
       policy: undefined,
-      reason: "unknown-outcome",
+      reason: Decision_Reason.UNKNOWN,
     }),
   ]);
   expect(decisionOutcome(group.members[0])).toBe("unknown");
-  expect(group.why).toBe("unknown-outcome");
+  expect(group.why).toBe("unknown");
+});
+
+it("spells a refusal as the proxy's header does, and one the proxy could not name as unknown", () => {
+  const refused = (reason: Decision_Reason) =>
+    decision("2026-01-01T00:00:01Z", { outcome: Decision_Outcome.DENY, policy: undefined, reason });
+
+  expect(decisionReason(refused(Decision_Reason.PLACEHOLDER_UNRESOLVED))).toBe("placeholder-unresolved");
+  expect(decisionReason(refused(Decision_Reason.UNKNOWN))).toBe("unknown");
 });
