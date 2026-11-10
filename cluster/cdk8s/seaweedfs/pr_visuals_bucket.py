@@ -1,5 +1,4 @@
-"""The anonymously readable `pr-visuals` bucket in `flux-system` and its writer identity and
-credentials."""
+"""The PR-visuals buckets in `flux-system` and their shared writer identity and credentials."""
 
 from __future__ import annotations
 
@@ -13,6 +12,7 @@ from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "pr-visuals"
+RECORD_CACHE_BUCKET = "pr-visuals-record-cache"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/pr-visuals-bucket"
 _CHART = "pr-visuals-bucket"
 # TODO: move the Bucket, S3Credentials and S3Identity into a dedicated `pr-visuals` namespace.
@@ -37,6 +37,14 @@ def chart(app: App) -> Chart:
             BucketSpecAccess(user="anonymous", actions=[BucketSpecAccessActions.READ]),
         ],
         adopt_existing=True,
+    )
+    s3.bucket(
+        chart,
+        "record-cache-bucket",
+        name=RECORD_CACHE_BUCKET,
+        namespace=_TENANT,
+        access=[BucketAccess.read_write(_WRITER)],
+        adopt_existing=False,
     )
     writer = s3.identity(chart, "writer", name=_WRITER, namespace=_TENANT)
     s3.credentials(

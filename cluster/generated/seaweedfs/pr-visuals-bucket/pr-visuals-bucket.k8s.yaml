@@ -22,6 +22,25 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: pr-visuals-record-cache
+  namespace: flux-system
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: pr-visuals-writer
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: pr-visuals-record-cache
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: pr-visuals-writer

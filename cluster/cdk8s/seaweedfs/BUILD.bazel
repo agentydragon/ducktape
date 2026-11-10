@@ -232,6 +232,20 @@ py_test(
 )
 
 py_test(
+    name = "test_pr_visuals_bucket",
+    srcs = ["test_pr_visuals_bucket.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":pr_visuals_bucket",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_cluster",
     srcs = ["test_cluster.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
