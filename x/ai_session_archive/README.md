@@ -37,6 +37,9 @@ Before the first import, initialize an empty index database with the versioned m
 DATABASE_URL='postgresql+psycopg://…' bb run //x/ai_session_archive:migrate_database_bin
 ```
 
+The importer binary also accepts `--migrate-database` to run the same migration history without
+Restic credentials. This lets a deployment use a migrator from the same image as the importer.
+
 The migration runner applies the schema and uses a PostgreSQL advisory lock to serialize concurrent runs. Run it before starting the importer or API; those processes do not create tables. Later migrations upgrade existing indexes in place. Session-kind migration leaves unclassified rows nullable until the importer projects their first captured record, and refreshes missing Codex kinds from the latest completed metadata snapshot without reimporting transcript history.
 
 Claude JSONL under `projects/` is indexed, including nested `subagents/`; Codex JSONL under `sessions/` and `archived_sessions/` is indexed. Other `.jsonl` files are recorded as unclassified inventory rows and are not presented as conversations. Claude subagent parent paths are exposed as `parent_session_id` with `parent_link_kind="claude_path_inferred"`; `identity_inferred` marks a parent placeholder until its own transcript is captured. Codex `session_meta.payload.parent_thread_id` creates a `parent_session_id` link only when it matches exactly one captured Codex session's native metadata ID on the same machine. Native identity is read only from `session_meta.payload.id`. Conflicting native or parent IDs are exposed as candidate lists and conflict flags; such links are marked inconsistent rather than guessed. Claude subagent `sessionId` can refer to the root session, so Claude identity remains path-based. Physical files with duplicate native IDs remain separate sessions and make parent resolution ambiguous.
