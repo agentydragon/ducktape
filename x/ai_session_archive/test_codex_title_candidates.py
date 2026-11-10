@@ -135,6 +135,14 @@ def test_bounded_backfill_and_steady_import_use_compact_candidates(legacy_factor
         assert not state.complete
         assert state.snapshot_id == f"{4099:064x}"
         assert not state.latest_snapshot_seeded
+    assert not backfill_codex_title_candidates_batch(legacy_factory, "host")
+    assert not backfill_codex_title_candidates_batch(legacy_factory, "host")
+    with legacy_factory() as db:
+        state = db.get(CodexTitleBackfillRow, "host")
+        assert state is not None
+        assert state.latest_snapshot_seeded
+        assert not state.complete
+        assert state.snapshot_id == f"{1999:064x}"
     # Resume through the public import path after an interrupted bootstrap.
     ingestor = _ingestor(legacy_factory)
     with patch.object(ingestor._source.restic, "list_snapshots", return_value=[]):
