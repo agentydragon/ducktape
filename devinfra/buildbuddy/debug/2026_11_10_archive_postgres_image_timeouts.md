@@ -1,0 +1,87 @@
+# Archive PostgreSQL image-load timeouts on RBE
+
+Inspected source: PR #15300 head `42e4d5046942e614e080a44f7a6574fc97b6dcc2` and
+current `devel` `5d7f024455f0ff84a43c382acac6930bf734e95f`. The archive test and
+fixture files below were identical at both revisions. No test timeout or size was
+changed, and no code fix is supported by this evidence.
+
+## CI failure and exact-label history
+
+GitHub [run 42892897908, attempt 2](https://github.com/agentydragon/ducktape/actions/runs/42892897908/attempts/2)
+tested PR head `42e4d504`; its [BuildBuddy invocation](https://app.buildbuddy.io/invocation/de796e9e-9efb-5bab-b540-c7f56df5baa0)
+reported four 60-second timeouts in PostgreSQL-backed archive tests:
+
+| Target                                                | Last flushed setup step                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `//x/ai_session_archive:test_initial_import`          | Postgres image load began at 21:02:26.179 UTC and was still in progress when the action ended at 21:03:00.197.                  |
+| `//x/ai_session_archive:test_claude_title_projection` | Postgres image load took 31.6 s; `container.start()` began at 21:02:46.713 and did not reach readiness before the action ended. |
+| `//x/ai_session_archive:test_codex_title_rename`      | Postgres image load began at 21:02:28.010 UTC and was still in progress when the action ended at 21:02:53.739.                  |
+| `//x/ai_session_archive:test_codex_title_retry`       | Postgres image load began at 21:02:17.276 UTC and was still in progress when the action ended at 21:02:51.367.                  |
+
+These actions did not reach their test bodies. `test_browser`, the Grafana
+container test and the Agentplane system-test suite passed in that invocation.
+
+`bbapi target history` with the canonical repository URL and a 720-hour window
+returned no rows for these four exact labels. The pre-RC full run at
+`6472c00d08c37beeb5c7b9ea1a00f9239ea2226e` did not show a new test result for
+these labels, so it does not establish an uncached pass.
+An older run had `test_codex_title_rename` pass in 54 s, but that different
+revision does not establish the current cold-start behavior.
+
+## Controlled exact-head run
+
+Ran all four targets sequentially with `--jobs=1`, `--nocache_test_results`,
+streamed pytest output and the CI RBE image in
+[invocation `d4838c38`](https://app.buildbuddy.io/invocation/d4838c38-035f-43ce-ac42-9c50d2a9b1b4).
+Each test action ran on a different worker, so the per-tag `flock` in
+[`oci.py`](../../oci/oci.py) could not share a Docker image across these actions.
+The lock and loaded-image marker are machine-local; they only avoid duplicate
+loads on the same worker.
+
+The controlled run reproduced the setup failure in three targets. For
+`test_initial_import`, Ryuk loaded in 1.2 s, Postgres image import took 38.1 s,
+then `container.start()` began about 7 s before the 60-second action deadline;
+no ready message was flushed. `test_claude_title_projection` and
+`test_codex_title_rename` also timed out before Postgres image loading finished.
+`test_codex_title_retry` passed in 51.7 s: its separate worker imported Postgres
+in 17.0 s and started it in 3.6 s; pytest reported 42.9 s including fixture
+setup. This pass shows substantial worker-to-worker variation, not that the
+other cold starts are healthy.
+
+The fixture in [`postgres_fixtures.py`](../../../util/testing/postgres_fixtures.py)
+loads pinned Ryuk and Postgres layouts before calling `PostgresContainer.start()`.
+The flushed log identifies active image import on the timed-out actions. On the
+initial-import action, the deadline also left only a few seconds to observe
+container startup, so these logs do not isolate the remaining startup time from
+the import time. They support cold image loading as a direct contributor, not a
+complete explanation for every worker's delay.
+
+## Grouping probe and limits
+
+To test whether removing repeated cold imports would fit the existing deadline,
+a temporary BUILD-only probe grouped the three timed-out test targets into one
+`py_test` with the original source files. The RBE action
+[collected all four pytest cases](https://app.buildbuddy.io/invocation/c71f50e9-ad97-4e1c-ae04-f19c08498d9f)
+but timed out at 60.4 s after both Claude projection cases passed and Codex
+rename started; initial import was not reached. That worker imported Postgres
+in 13.2 s and reached readiness in 4.7 s. The grouped action therefore failed
+even with a comparatively fast cold setup. The four test functions retain
+per-test database isolation, but the combined action does not fit the existing
+small-test deadline in this probe. The BUILD experiment was discarded; this is
+not a proposed change.
+
+The same CI attempt also had separate unresolved failures in
+`//agentplane/system_tests/vm:test_tcg_vmi_shutdown_policy` and
+`//agentplane/app/frontend:visual_policies`; this investigation does not diagnose
+or resolve them.
+
+## Conclusion
+
+The repeatable evidence is that cold RBE actions repeatedly import the same
+Postgres image, and some workers spend most of the 60-second test window in
+image loading or container startup. Grouping all three failing targets removes
+two image loads but then runs too many cases within the existing deadline. The
+observations do not justify a timeout/size increase, a different image loader,
+or changing the fixture lifecycle. A future code change needs a measured way to
+reduce the per-worker import/startup cost while retaining each case and its
+Postgres isolation. The VM and visual-shard timeouts need separate diagnoses.
