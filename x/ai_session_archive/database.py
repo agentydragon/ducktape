@@ -29,6 +29,13 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from util.db_url import render_postgresql_url
+from x.ai_session_archive.statuses import (
+    CodexMetadataStatus,
+    SnapshotCaptureStatus,
+    SnapshotFileStatus,
+    SnapshotInventoryStatus,
+    SnapshotProcessingStatus,
+)
 
 
 class Base(DeclarativeBase):
@@ -55,13 +62,13 @@ class ResticSnapshotRow(Base):
     tree_id: Mapped[str | None] = mapped_column(String(64))
     paths: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     comparison_snapshot_id: Mapped[str | None] = mapped_column(String(64))
-    inventory_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    inventory_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotInventoryStatus.PENDING)
     inventory_error: Mapped[str | None] = mapped_column(String)
-    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    codex_metadata_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotProcessingStatus.PENDING)
+    codex_metadata_status: Mapped[str] = mapped_column(String(20), nullable=False, default=CodexMetadataStatus.PENDING)
     codex_metadata_error: Mapped[str | None] = mapped_column(String)
     # Restic snapshot metadata does not establish whether the workstation capture skipped unreadable files.
-    capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
+    capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotCaptureStatus.UNKNOWN)
     __table_args__ = (
         CheckConstraint(
             "inventory_status IN ('pending', 'complete', 'failed')", name="ck_restic_snapshots_inventory_status"
@@ -227,7 +234,7 @@ class SnapshotFileRow(Base):
     file_type: Mapped[str] = mapped_column(String(30), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotFileStatus.PENDING)
     file_version_id: Mapped[UUID | None] = mapped_column(ForeignKey("file_versions.id", ondelete="RESTRICT"))
     error: Mapped[str | None] = mapped_column(String)
     __table_args__ = (
