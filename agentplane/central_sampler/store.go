@@ -442,7 +442,7 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			return err
 		}
 		if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
-			ExecutionProgress: &eventpb.ExecutionProgress{OperationId: opened.ID, Kind: "session", Phase: "opened", PayloadJson: "{}"},
+			ExecutionProgress: &eventpb.ExecutionProgress{OperationId: opened.ID, Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: eventpb.ExecutionProgress_PHASE_OPENED},
 		}}); err != nil {
 			return err
 		}
@@ -595,7 +595,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET code_session_epoch=code_session_epoch+1,code_host_instance=NULL WHERE id=$1`, conversation.ID); err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), "code_host_loss", "committed", map[string]any{
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_CODE_HOST_LOSS, eventpb.ExecutionProgress_PHASE_COMMITTED, map[string]any{
 				"previous_instance": previous.String, "next_instance": instanceID, "javascript_state_reset": true, "automatic_replay": false,
 			}); err != nil {
 				return err
@@ -772,7 +772,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return protocol.ErrPrecondition
 			}
 			sources, err := s.recordEvidenceWithSources(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
-				session, intent.id, string(intent.kind), "abandoned", abandonedIntent)
+				session, intent.id, intent.kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandonedIntent)
 			if err != nil {
 				return err
 			}
@@ -868,7 +868,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			recoveryEvidence["replacement_incarnation_uid"] = replacementIncarnationUID
 		}
 		if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID}, conversation, session,
-			uuid.NewString(), "recovery", "committed", recoveryEvidence); err != nil {
+			uuid.NewString(), eventpb.ExecutionProgress_KIND_RECOVERY, eventpb.ExecutionProgress_PHASE_COMMITTED, recoveryEvidence); err != nil {
 			return err
 		}
 		session.Blocked = false
@@ -1431,7 +1431,7 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, string(kind), "dispatch", request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
 	})
 	return id, err
 }
@@ -1475,7 +1475,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", result); err != nil {
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result); err != nil {
 			return err
 		}
 		if err := appendResult(conversation); err != nil {
@@ -1535,7 +1535,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "rejected", result); err != nil {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 				return err
 			}
 			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
@@ -1563,7 +1563,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "rejected", result); err != nil {
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 			return err
 		}
 		return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
@@ -1618,7 +1618,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, string(IntentCompaction), "dispatch", request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request)
 	})
 	return id, err
 }
@@ -1650,7 +1650,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", audit)
+		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, audit)
 		if err != nil {
 			return err
 		}
@@ -1704,7 +1704,7 @@ func (s *Store) completeCompactionCommand(ctx context.Context, tx *sql.Tx, sessi
 	if _, err := appendEvent(ctx, tx, session, &eventpb.Event{
 		SourceSequences: sources,
 		Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
-			OperationId: command.ID, Kind: "command", Phase: "completed", PayloadJson: "{}",
+			OperationId: command.ID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_COMPLETED,
 		}},
 	}); err != nil {
 		return err
@@ -1743,7 +1743,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, string(kind), "dispatch", request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, kind.progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
 	})
 	return id, err
 }
@@ -1772,7 +1772,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", result)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result)
 	})
 }
 
@@ -1902,7 +1902,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 			return err
 		}
 		session.Configuration = wire
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), "executor", "incarnation_changed", map[string]any{
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_EXECUTOR, eventpb.ExecutionProgress_PHASE_INCARNATION_CHANGED, map[string]any{
 			"sandbox_uid": sandboxUID, "previous_incarnation_uid": previousUID, "replacement_incarnation_uid": replacementUID,
 			"remote_outcome": NestedUnknown, "automatic_replay": false,
 		}); err != nil {
@@ -1955,7 +1955,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, "process", "abandoned", map[string]any{
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
 			"remote_outcome": outcome, "automatic_replay": false, "executor_session_id": sessionID,
 			"previous_status": process.Status, "after_seq": process.AfterSequence, "exit_code": process.ExitCode,
 			"buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
@@ -2030,7 +2030,7 @@ func (s *Store) PreparedWorkspace(ctx context.Context, owner Owner, sessionID st
 			return err
 		}
 		session.WorkspacePrepared = true
-		if err := appendProgress(ctx, tx, session, sessionID, "workspace", "prepared", "{}"); err != nil {
+		if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_WORKSPACE, Phase: eventpb.ExecutionProgress_PHASE_PREPARED}); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -2148,10 +2148,8 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 	return persistSession(ctx, tx, session)
 }
 
-func appendProgress(ctx context.Context, tx *sql.Tx, session *Session, operationID, kind, phase, payload string) error {
-	_, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
-		ExecutionProgress: &eventpb.ExecutionProgress{OperationId: operationID, Kind: kind, Phase: phase, PayloadJson: payload},
-	}})
+func appendProgress(ctx context.Context, tx *sql.Tx, session *Session, progress *eventpb.ExecutionProgress) error {
+	_, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: progress}})
 	return err
 }
 
@@ -2553,7 +2551,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 				return err
 			}
 			session.ActiveTurn = nil
-		} else if err := appendProgress(ctx, tx, session, commandID, "command", "completed", "{}"); err != nil {
+		} else if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: commandID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_COMPLETED}); err != nil {
 			return err
 		}
 		if session.Blocked {
@@ -2745,15 +2743,14 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 		}
 	}
 	conversation.Stopped = true
-	payload, err := json.Marshal(map[string]string{"reason": reason})
-	if err != nil {
-		return err
-	}
-	phase := "failed"
+	phase := eventpb.ExecutionProgress_PHASE_FAILED
 	if session.Blocked {
-		phase = "blocked"
+		phase = eventpb.ExecutionProgress_PHASE_BLOCKED
 	}
-	if err := appendProgress(ctx, tx, session, session.ID, "session", phase, string(payload)); err != nil {
+	if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+		OperationId: session.ID, Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: phase,
+		Detail: &eventpb.ExecutionProgress_SessionStopped_{SessionStopped: &eventpb.ExecutionProgress_SessionStopped{Reason: reason}},
+	}); err != nil {
 		return err
 	}
 	if session.ActiveTurn != nil {
@@ -2924,7 +2921,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", string(status), payload)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
 	})
 }
 
@@ -2980,7 +2977,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", "abandoned", map[string]any{
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
 			"after_seq": afterSequence, "exit_code": process.ExitCode, "remote_outcome": remoteOutcome,
 			"automatic_replay": false, "buffered_bytes": len(buffered), "omitted_bytes": omitted,
 			"executor_session_id": executorSessionID,
@@ -3029,7 +3026,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.totalBytes()}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", string(status), payload)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
 	})
 }
 
@@ -3051,7 +3048,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, cellID, "cell", string(status), map[string]any{})
+		return s.recordEvidence(ctx, tx, owner, conversation, session, cellID, eventpb.ExecutionProgress_KIND_CELL, cellPhase(status), map[string]any{})
 	})
 }
 
@@ -3263,7 +3260,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 		if err := updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, requestIDs[0], "interrupt", "result", result)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, requestIDs[0], eventpb.ExecutionProgress_KIND_INTERRUPT, eventpb.ExecutionProgress_PHASE_RESULT, result)
 	})
 }
 

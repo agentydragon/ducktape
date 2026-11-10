@@ -13,6 +13,7 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -446,7 +447,11 @@ func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionI
 			payload["payload_bytes"] = len(frame.Payload)
 			delete(payload, "payload")
 		}
-		if err := e.store.ProtocolEvent(ctx, e.owner, operationID, "executor", frame.Direction, payload); err != nil {
+		phase, err := nativeFramePhase(frame.Direction)
+		if err != nil {
+			return err
+		}
+		if err := e.store.ProtocolEvent(ctx, e.owner, operationID, eventpb.ExecutionProgress_KIND_EXECUTOR, phase, payload); err != nil {
 			return err
 		}
 	}
