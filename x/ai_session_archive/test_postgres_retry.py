@@ -60,7 +60,8 @@ def test_postgres_file_transaction_rolls_back_and_retries(tmp_path: Path, postgr
     assert failed_report.snapshots_incomplete == 1
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
-        assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 0
+        # The completed staging batch survives a failed publication transaction.
+        assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 1
 
     with postgres_engine.begin() as connection:
         connection.exec_driver_sql("DROP TRIGGER reject_archive_record_insert ON file_version_records")
