@@ -226,19 +226,22 @@ to one exact source/spec pair and held to the interactive budget in
 ### Encountered tooling friction
 
 - **F5 — Decide the remaining premise kinds from provenance.**
-  <docs/premise_provenance.md> lists where each premise is consumed and
-  whether every read records its use; `reentry_free_operations` and
-  `trusted_dataflow_summaries` are complete and linted. Complete recording
-  outside the interpreter's hot paths, one kind per change, then lint it the
-  same way (never consumed → `inferable`, consumed → probe): the `node_global`
-  alias, the `heap_contents` / `at_init_fallback` native-input exits, the
-  loader keys, and, for `purity: pure` hints read by name, a per-statement use
-  list written at each classifier arm (never a `ProofDependencies` field);
-  unread hints are already linted. The hot-path kinds
-  (`reentry_free_builtin_modules` / `_bun_modules` static closure,
-  `initializer_call_effect_inputs`, `deferred_global_publications`,
-  `initializer_purity`, `no_reentry_*`) stay probe-only until the
-  `callback_values` performance work lands.
+  <docs/premise_provenance.md> lists where each premise is consumed, whether
+  every read records its use, and what the default `spec lint` decides. Paused
+  behind the architecture convergence; resume one kind per change, outside
+  `facts/sync_effects/`, linting each the same way (never consumed →
+  `inferable`, consumed → probe):
+  - a per-statement use list written at each classifier arm for read
+    `purity: pure` hints and `pure_new` / `pure_members` (never a
+    `ProofDependencies` field); unread `purity: pure` hints are already linted;
+  - `predefined_globals`: three blockers and a structural alternative in
+    <docs/premise_provenance.md#predefined_globals>;
+  - per-chunk or parallel `--probe-analysis` runs, to bound probe cost on
+    large inputs;
+  - the hot-path kinds (`reentry_free_builtin_modules` / `_bun_modules` static
+    closure, `initializer_call_effect_inputs`, `deferred_global_publications`,
+    `initializer_purity`, `no_reentry_*`), probe-only until the
+    `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was
