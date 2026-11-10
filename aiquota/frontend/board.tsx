@@ -133,7 +133,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       </header>
 
       {errorSummary !== null && errorDetail !== null && <ErrorDetails summary="Error details" detail={errorDetail} />}
-      {status && <p className="aiquota-status-row">{status}</p>}
+      {status && (
+        <p className={`aiquota-status-row${!isStale && !resetPending ? " aiquota-status-urgent" : ""}`}>{status}</p>
+      )}
       {(balances.length > 0 || grants.length > 0) && <Readings balances={balances} grants={grants} now={now} />}
       {quota.resetCredits !== null && (
         <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} showSummary={showResetSummary} />

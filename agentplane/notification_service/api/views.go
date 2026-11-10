@@ -338,10 +338,14 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 			},
 		}}, nil
 	case model.MessageEvent:
-		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: &notificationspb.MessageEvent{
+		message := &notificationspb.MessageEvent{
 			MessageId: event.MessageID.String(),
 			Sender:    &identitypb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
-		}}}, nil
+		}
+		if event.SenderIdentity != nil {
+			message.SenderIdentity = &identitypb.Identity{Name: event.SenderIdentity.Name, Uid: event.SenderIdentity.UID}
+		}
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: message}}, nil
 	default:
 		return nil, fmt.Errorf("stored event identity %T is unknown", event)
 	}

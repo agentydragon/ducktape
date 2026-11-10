@@ -157,6 +157,10 @@
   color: #f5c211;
 }
 
+.quota-popup-status-urgent {
+  color: #ff8386;
+}
+
 .quota-stream-status {
   color: #f5c211;
   font-size: 0.9em;

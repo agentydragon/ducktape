@@ -176,12 +176,14 @@ func (identityActions) ListActionRequestEvents(context.Context, *actionpb.ListAc
 	return &actionpb.ListActionRequestEventsResponse{}, nil
 }
 
-// One in-Sandbox agent messages another's Session as Identities: a binding naming the sender's Identity
-// grants the send, the message lands in the inbox the recipient Session's Identity owns, only the sender
-// follows it, and the recipient subscribes its Session to an Action request its Identity submitted.
+// In-Sandbox agents message a Session as Identities: a Session of the sender's own Identity takes the message
+// with no binding, another Identity's needs a binding naming the sender's Identity, the message lands in the
+// inbox the recipient Session's Identity owns naming the sending Identity, only the sender follows it, and the
+// recipient subscribes its Session to an Action request its Identity submitted.
 func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 	recipient := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-recipient-"+uuid.NewString()[:8], testNamespace)
 	sender := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-sender-"+uuid.NewString()[:8], testNamespace)
+	stranger := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-stranger-"+uuid.NewString()[:8], testNamespace)
 	recipient.Sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: recipient.Identity.Name}
 	if err := recipient.Objects.Update(t.Context(), recipient.Sandbox); err != nil {
 		t.Fatal(err)
@@ -244,13 +246,18 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 		t.Cleanup(func() { conn.Close() })
 		return notificationspb.NewNotificationsClient(conn)
 	}
-	senderClient, recipientClient := connect(sender.Workload), connect(recipient.Workload)
+	senderClient, recipientClient, strangerClient := connect(sender.Workload), connect(recipient.Workload), connect(stranger.Workload)
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	message := &notificationspb.SendMessageRequest{SessionId: testSession, IdempotencyKey: "review", Body: "Please review the change."}
 
-	if _, err := recipientClient.SendMessage(ctx, message); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("an Identity no binding names sent: %v", err)
+	if _, err := strangerClient.SendMessage(ctx, message); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("an Identity no binding names sent to another Identity's Session: %v", err)
+	}
+	// The recipient's own Identity sends to its Session with no binding: no binding names it.
+	own, err := recipientClient.SendMessage(ctx, &notificationspb.SendMessageRequest{SessionId: testSession, IdempotencyKey: "note", Body: "Note to self."})
+	if err != nil {
+		t.Fatalf("a send between Sessions of one Identity: %v", err)
 	}
 	sent, err := senderClient.SendMessage(ctx, message)
 	if err != nil {
@@ -263,8 +270,25 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 		t.Fatalf("the recipient follows the sender's message: %v", err)
 	}
 	read, err := recipientClient.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || len(read.GetEntries()) != 1 || read.GetEntries()[0].GetEvent().GetMessage().GetMessageId() != sent.GetMessage().GetId() {
-		t.Fatalf("the recipient Identity's inbox = %v, %v; want the message", read, err)
+	if err != nil || len(read.GetEntries()) != 2 {
+		t.Fatalf("the recipient Identity's inbox = %v, %v; want both messages", read, err)
+	}
+	for _, entry := range read.GetEntries() {
+		got := entry.GetEvent().GetMessage()
+		from := sender
+		if got.GetMessageId() == own.GetMessage().GetId() {
+			from = recipient
+		} else if got.GetMessageId() != sent.GetMessage().GetId() {
+			t.Fatalf("inbox entry %v names neither message", entry)
+		}
+		want := &notificationspb.MessageEvent{
+			MessageId:      got.GetMessageId(),
+			Sender:         &identitypb.ServiceAccount{Namespace: testNamespace, Name: from.Sandbox.Name},
+			SenderIdentity: &identitypb.Identity{Name: from.Identity.Name, Uid: string(from.Identity.UID)},
+		}
+		if !proto.Equal(got, want) {
+			t.Fatalf("the recipient sees the message as from %v, want %v", got, want)
+		}
 	}
 	if listed, err := senderClient.ListInboxes(ctx, &notificationspb.ListInboxesRequest{}); err != nil || len(listed.GetInboxes()) != 0 {
 		t.Fatalf("the sender sees inboxes %v, %v; want none", listed, err)
