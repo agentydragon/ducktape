@@ -23,6 +23,8 @@ import (
 // of a deleted record or a replaced credential ID.
 type SVIDResolver struct {
 	records *resolver.Resolver
+	// identitySubjectsOnly refuses a record naming a ServiceAccount.
+	identitySubjectsOnly bool
 }
 
 func NewSVIDResolver(objects client.Reader, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
@@ -31,6 +33,13 @@ func NewSVIDResolver(objects client.Reader, namespaces []string, identities *res
 		return nil, err
 	}
 	return &SVIDResolver{records: records}, nil
+}
+
+// IdentitySubjectsOnly is this resolver refusing every record that names a ServiceAccount, for a
+// listener whose ServiceAccount callers present only bearers: certificates there admit Identity
+// subjects and nothing else.
+func (r *SVIDResolver) IdentitySubjectsOnly() *SVIDResolver {
+	return &SVIDResolver{records: r.records, identitySubjectsOnly: true}
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
@@ -89,6 +98,9 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 	}
 	switch subject := resolved.Subject.(type) {
 	case resolver.ServiceAccount:
+		if r.identitySubjectsOnly {
+			return nil, ErrInvalidBearer
+		}
 		return Principal{
 			Account:           Account{Namespace: subject.Namespace, Name: subject.Name},
 			ServiceAccountUID: string(subject.UID),

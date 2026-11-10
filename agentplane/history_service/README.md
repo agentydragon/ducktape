@@ -54,8 +54,8 @@ The runner-ingress projected-token audience is absent from Sandbox templates and
 
 `rpc` configures the shared native gRPC listener, its server TLS files and explicit authentication modes.
 With SPIFFE enabled, `Push` admits Sandbox SVIDs and configured sampler bearer accounts; bearer-only
-listeners retain namespace-scoped writer admission. Reads require their existing bearer audience and
-resource authorization. Presenting a certificate together with bearer or delegation metadata is refused.
+listeners retain namespace-scoped writer admission. A ServiceAccount reads only with a bearer of the read
+audience, never with an SVID. Presenting a certificate together with bearer or delegation metadata is refused.
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`.
 
@@ -64,7 +64,8 @@ names an Identity in that namespace (absent, such a writer is refused). The reco
 `ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
 incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
 same Identity running another Sandbox, or a ServiceAccount writer is refused, and an Identity writer
-cannot take a ServiceAccount-bound Session. An Identity runner's announced `execution_identity` must
+cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID naming an Identity
+and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
 be its own Identity, and its `execution_principal`, when present, the ServiceAccount its Sandbox
 controls. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
 replica predating Identity writers cannot bind a ServiceAccount over one. Entries commit through
@@ -171,7 +172,7 @@ controller owner remain without a UID.
 
 An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits only ServiceAccount bearers today, so no caller reads by Identity yet. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits an Identity SVID (with `policy_namespace` set) and scopes it to that Identity incarnation. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
 ## Delta settlement
 

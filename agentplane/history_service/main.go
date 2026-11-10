@@ -139,15 +139,13 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	if err != nil {
 		return err
 	}
-	// Reads remain bearer-only even when the shared transport also admits Sandbox certificates.
-	readerAuth, err = readerAuth.WithListenerAuthentication(listener.Config{
+	// A ServiceAccount reads with a bearer only, even when the shared transport also admits Sandbox
+	// certificates; a certificate reads only as the Identity it names.
+	readerListener := listener.Config{
 		ListenAddress: c.RPC.ListenAddress, TLS: c.RPC.TLS,
 		Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience}}},
-	}, nil)
-	if err != nil {
-		return err
 	}
-	var svids *auth.SVIDResolver
+	var svids, readerSVIDs *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
 		base, err := kubernetesConfig(c)
 		if err != nil {
@@ -161,6 +159,16 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
+		readerSVIDs = svids.IdentitySubjectsOnly()
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				readerListener.Auth = append(readerListener.Auth, spiffe)
+			}
+		}
+	}
+	readerAuth, err = readerAuth.WithListenerAuthentication(readerListener, readerSVIDs)
+	if err != nil {
+		return err
 	}
 	writerAuth, err = writerAuth.WithListenerAuthentication(c.RPC, svids)
 	if err != nil {
