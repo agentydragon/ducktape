@@ -101,10 +101,12 @@ type Methods map[string]Rule
 
 // WithDelegation returns a copy of m that admits delegation only for the named full RPC methods.
 // Every method must already have an authenticated direct Rule; delegations preserve that direct mode.
+// identities is nil for a receiver that resolves no Identity (see AllowDelegationFrom).
 func (m Methods) WithDelegation(
 	methodNames []string,
 	delegators []Delegator,
 	serviceAccounts ServiceAccountUIDReader,
+	identities IdentityUIDReader,
 ) (Methods, error) {
 	methods := make(Methods, len(m))
 	maps.Copy(methods, m)
@@ -118,7 +120,7 @@ func (m Methods) WithDelegation(
 		if !ok {
 			return nil, fmt.Errorf("delegated method %q is not served", method)
 		}
-		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts)
+		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts, identities)
 		if err != nil {
 			return nil, fmt.Errorf("delegated method %q: %w", method, err)
 		}
@@ -185,6 +187,10 @@ func sameAdmission(a, b Admission) bool {
 	case DelegatedAdmission:
 		second, ok := b.(DelegatedAdmission)
 		return ok && first.Actor == second.Actor && sameServiceAccountIdentity(first.EffectiveCaller, second.EffectiveCaller) &&
+			proto.Equal(first.Provenance, second.Provenance)
+	case DelegatedIdentityAdmission:
+		second, ok := b.(DelegatedIdentityAdmission)
+		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
 			proto.Equal(first.Provenance, second.Provenance)
 	case IdentityAdmission:
 		second, ok := b.(IdentityAdmission)

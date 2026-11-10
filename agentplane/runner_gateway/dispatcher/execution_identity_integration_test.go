@@ -245,7 +245,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
 		testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID), otherSpec, nil, nil,
 		SessionExecution{Principal: serviceAccountIdentityFor(other.Principal.Account, other.Principal.ServiceAccountUID), Identity: otherIdentity},
-		IdentityCaller{Identity: otherIdentity}); err != nil {
+		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed another Identity's Session: %v", err)
 	}
 	accountSession := uuid.NewString()

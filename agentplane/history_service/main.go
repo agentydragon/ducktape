@@ -30,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -42,9 +43,11 @@ import (
 	"google.golang.org/grpc/keepalive"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -65,6 +68,23 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	// queue them client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
 	return kubeConfig, nil
+}
+
+// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for delegated Identity callers.
+func kubernetesIdentityUIDs(c config) (auth.IdentityUIDReader, error) {
+	kubeConfig, err := kubernetesConfig(c)
+	if err != nil {
+		return nil, err
+	}
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
 }
 
 // readOnly is the database URL with sessions that refuse writes, so the read API cannot write.
@@ -212,7 +232,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := api.Methods(readerAuth)
 	if c.Delegation != nil {
-		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		delegator := auth.Delegator{
+			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+		}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
 			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) {
@@ -223,7 +245,13 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, c.Delegation.Methods)
+		var identityReader auth.IdentityUIDReader
+		if c.PolicyNamespace != "" {
+			if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
+				return err
+			}
+		}
+		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, identityReader, c.Delegation.Methods)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
 		}

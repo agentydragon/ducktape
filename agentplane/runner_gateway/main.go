@@ -350,7 +350,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatcherAuth))
 	if c.Delegation != nil {
-		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		delegator := auth.Delegator{
+			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+		}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
 			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) {
@@ -361,7 +363,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader)
+		var identityReader auth.IdentityUIDReader
+		if c.PolicyNamespace != "" {
+			if identityReader, err = auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace); err != nil {
+				return err
+			}
+		}
+		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader, identityReader)
 		if err != nil {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}

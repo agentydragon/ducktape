@@ -54,7 +54,10 @@ type config struct {
 type delegationConfig struct {
 	Actor            auth.Account `mapstructure:"actor"`
 	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
-	Methods          []string     `mapstructure:"methods"`
+	// IdentityCallers lets the actor assert Identities in policy_namespace, a grant separate from
+	// caller_namespaces. It requires policy_namespace.
+	IdentityCallers bool     `mapstructure:"identity_callers"`
+	Methods         []string `mapstructure:"methods"`
 }
 
 // ingressConfig is the runner journal's authorization and storage policy. Its RPC shares the service listener.
@@ -117,8 +120,11 @@ func (c *config) validate() error {
 		return errors.New("reader_accounts must list at least one ServiceAccount")
 	}
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, caller namespaces and methods")
+		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
+	}
+	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
+		return errors.New("delegation.identity_callers requires policy_namespace")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)

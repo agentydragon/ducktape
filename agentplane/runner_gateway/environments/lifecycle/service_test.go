@@ -168,6 +168,7 @@ func newHarness(t *testing.T, object client.WithWatch, operatorCallers []auth.Ac
 				return "", false, nil
 			}
 		}),
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -245,9 +246,9 @@ func directContext(t *testing.T, token string) context.Context {
 func delegatedContext(t *testing.T, effectiveUID string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: executionAccount.Namespace, Name: executionAccount.Name}, Uid: effectiveUID,
-		},
+		}},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
