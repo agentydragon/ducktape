@@ -490,21 +490,6 @@ impl EffectCoverageFragment {
         fragment
     }
 
-    /// An executed lexical operation whose global, heap, and host effects
-    /// remain outside this receipt family. Keeping those domains Unknown is
-    /// deliberate: this proof can seal binding-effect coverage only.
-    pub(super) fn lexical_operation() -> Self {
-        Self {
-            lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(Box::default()),
-                rebinds: DomainCoverage::Covered(Box::default()),
-                calls: BTreeMap::new(),
-            })),
-            completion: Completion::Normal(()),
-            ..Self::default()
-        }
-    }
-
     /// Proof prerequisites for a successfully consumed own-data selection.
     /// Unknown lexical coverage never becomes positive through dependencies.
     pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {

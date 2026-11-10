@@ -54,11 +54,8 @@ the family when every leaf has completed; the contract is in
   ran. The filter (`roots/operands.rs`, `root_array_iteration`) is cheap and
   has no side effects. The cost is a second execution of every refused
   attempt: in the e2e suite about 123 iteration roots attempt and about 105
-  of them rewind, most in `intrinsic_array_iteration_test`. A root over
-  record elements does not seal yet even when every read is covered: an
-  own-data read leaves the owner's initialization domains unknown
-  (`EffectCoverageFragment::lexical_operation`), so row 13 has nothing to
-  seal until it does (§ Forks and joins, field reads).
+  of them rewind, most in `intrinsic_array_iteration_test`. Roots over
+  record elements are row 13.
 
   Separately, an array literal inside a callback loses its writability
   witness on the callback's second invocation (the allocation site is pooled),
@@ -66,9 +63,6 @@ the family when every leaf has completed; the contract is in
   root rewinds (`effect_tv_array_iteration_test`,
   `unsealed_iteration_roots_rewind_to_the_flat_lane`).
 
-- **Field reads under a fork.** An own-data read leaves the initialization
-  domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
-  a record field forks but its owner is not initialization-covered.
 - **Other fork producers**: optional calls and member access, `if` regions.
   They reuse `LocalSuspension::Fork` and the same join.
 - **The receiver-flow join** in `execution_index.rs` stays a separate

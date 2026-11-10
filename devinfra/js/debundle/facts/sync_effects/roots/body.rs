@@ -1,16 +1,18 @@
 //! The owner body: the ordered initializer through the kernel, or the
 //! flattened call lane, then the owner's fallback and settlement. An
 //! attempted initializer runs through the kernel first and falls back to the
-//! flattened lane, rewound, unless that execution seals the owner.
+//! flattened lane, rewound, unless that execution seals the owner; so does
+//! an admitted root expression statement.
 
 use super::super::effect_coverage::RootInitializerIdentity;
 use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
 use super::super::local_operations::LocalBody;
-use super::super::value_model::{Context, ValueExpr};
+use super::super::value_model::{Context, ValueExpr, Values};
 use super::operands::RootOperands;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionOperation};
+use crate::facts::OwnerInitializationCoverageRefusalReason;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::DUMMY_SP;
@@ -38,6 +40,22 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
         // The flat lane runs the owner as if the attempt never ran.
         executor.rewind_root_attempt(checkpoint);
     }
+    if let Some(body) = root.ordered_statement.take() {
+        let checkpoint = executor.checkpoint_root_attempt();
+        let outcome = execute_statement(executor, root.owner, body);
+        if seals_statement(executor, &outcome) {
+            root.ordered_statement = Some(body);
+            return settle(executor, root, outcome);
+        }
+        // CLEANUP(added 2026-11-09): delete the rewind and this flat-lane
+        //   rerun at L4e, with the initializer attempt's above. The legacy gate
+        //   reads the flat lane's `LegacyExecution`; once it is gone the
+        //   kernel's `store_field` execution (`execute_statement`, its open
+        //   ledger) is the owner's outcome.
+        executor.rewind_root_attempt(checkpoint);
+        root.initialization_coverage_refusal =
+            Some(OwnerInitializationCoverageRefusalReason::UnprovedStatementOperation);
+    }
     let outcome = match root.ordered_initializer {
         Some(body) => execute_ordered(executor, root.owner, root.assignments, body),
         None => execute_flat(executor, root),
@@ -64,9 +82,40 @@ fn execute_ordered(
         LocalActivation::RootInitializer(RootInitializerIdentity {
             owner,
             binding: binding.clone(),
-            initializer_span: body.initializer_span(),
+            initializer_span: body.root_span(),
         }),
     )
+}
+
+/// An admitted root expression statement; its completion value is discarded.
+fn execute_statement(
+    executor: &mut Executor<'_, '_>,
+    owner: SourceUnitOrdinal,
+    body: &LocalBody,
+) -> Outcome {
+    let mut outcome = executor.execute_local_body(
+        body,
+        Context::new(),
+        None,
+        owner,
+        LocalActivation::RootStatement,
+    );
+    outcome.returns = Values::new();
+    outcome.return_selection = None;
+    outcome
+}
+
+/// Whether an attempted statement execution seals its owner: as for an
+/// initializer, but a statement has no binding and so no lexical receipt.
+fn seals_statement(executor: &Executor<'_, '_>, outcome: &Outcome) -> bool {
+    outcome.complete
+        && !outcome.unknown_call
+        && !executor.state.fallback_outcome.unknown_call
+        && outcome.effects.precision_losses.is_empty()
+        && outcome.effects.uninitialized_reads.is_empty()
+        && outcome.effects.fallback_only.reads.is_empty()
+        && outcome.effects.fallback_only.rebinds.is_empty()
+        && outcome.effect_coverage.normal_dependencies().is_some()
 }
 
 /// Whether an attempted execution seals its owner. The ledger is the
