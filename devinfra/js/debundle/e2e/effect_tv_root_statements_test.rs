@@ -112,6 +112,40 @@ fn a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
     }
 }
 
+/// The same swap with a direct member read as the reader, whichever lane
+/// executes it: the legacy gate keeps the reader before the sealed store
+/// under either policy, and the moved program prints the new value.
+#[test]
+fn a_store_moved_before_a_direct_reader_of_its_slot_is_refused() {
+    let source = "const record = { value: 0 };\nconst before = record.value;\nrecord.value = 1;\nconsole.log(before, record.value);\nexport { before };\n";
+    for (local, opts) in under_both_policies(|| {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "record",
+                    &[Member::new("record")],
+                    &["record.value = 1;"],
+                ),
+                logical_module("reader", &[Member::new("before")]),
+            ],
+        )
+    }) {
+        let rejected = run_emit_on_rejection_fixture(opts);
+        let effects = rejected.effect_translation_validation();
+        assert_eq!(
+            effects["legacy_gate_accepts"], false,
+            "local={local}: {effects:#}"
+        );
+        assert_ne!(
+            effects["decision"]["status"], "accepted",
+            "local={local}: {effects:#}"
+        );
+        assert_node_output(&source_path(&rejected), "0 1\n", "");
+        assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    }
+}
+
 /// A native descriptor projection reads every projected value slot: moving
 /// the store ahead of it is a covered `own_property` conflict, and the moved
 /// program copies the new value.
