@@ -453,7 +453,7 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
 }
 
 #[test]
-fn imported_primitive_return_relocates_without_local_operation_authority() {
+fn imported_primitive_return_relocates_with_an_operation_receipt() {
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { literal, make } from './peer.js';\nconst first = make(1);\nconst result = literal();\nconsole.log(first.input, result);\n",
@@ -467,11 +467,11 @@ fn imported_primitive_return_relocates_without_local_operation_authority() {
     );
     assert_preserved_entry_output(&fixture, "1 3\n");
     assert_effect_verdict_accepts(&fixture, "summarized primitive return");
-    // The summary covers the call's effects; it is not a receipt for the
-    // root's lexical binding effects.
+    // The substituted call is the root's one call edge, so the root seals
+    // its lexical binding effects.
     let execution = binding_execution_report(&fixture, "result");
     assert_eq!(
-        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
         "{execution:#}"
     );
 }

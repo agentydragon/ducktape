@@ -90,6 +90,10 @@ pub enum OwnerInitializationCoverageRefusalReason {
     UnsupportedInitializer,
     OwnerBindingMismatch,
     InitializerResultUnproved,
+    /// The owner's execution created a callback that captures a live
+    /// activation cell; a call that receives it has no effect receipt until
+    /// call-effect coverage follows live captures.
+    CallbackCapturesLiveCell,
     UnknownCall,
     PrecisionLoss,
     UninitializedRead,

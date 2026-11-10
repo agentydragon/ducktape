@@ -43,6 +43,10 @@ pub(super) struct RootOperands<'source> {
     /// Roots this owner added while no opaque call consumed them; a fully
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
+    /// The owner's one call is a substituted retaining factory whose result
+    /// is its private carrier: the callback is reached only through the
+    /// result binding, so the owner is no reachability root of its own.
+    pub(super) private_factory_result: bool,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
     /// An initializer the body phase runs through the kernel and keeps as
     /// `ordered_initializer` only if that execution seals the owner; taken by
@@ -237,6 +241,10 @@ pub(super) fn prepare<'source>(
         &private_constructor_result_owners,
         closed_result.as_ref(),
     );
+    // The proof is the flattened lane's; the ordered lane relies on it only
+    // for the call it substitutes.
+    let private_factory_result = closed_result.is_some()
+        && matches!(calls.as_slice(), [call] if executor.retaining_factory_summary(call).is_some());
     if let Some(proof) = closed_result {
         executor.record_callback_factory_use_fact(proof.proof_use);
     }
@@ -333,6 +341,27 @@ pub(super) fn prepare<'source>(
                         .is_some()
             })
     };
+    // Every call of the root is a local call or a direct call of an import
+    // the ordered lane replaces by its derived summary, with at least one of
+    // the latter. A substituted call runs no provider or application code.
+    let summarized_root_calls = {
+        let summarized = |call: &Call| {
+            call.kind == CallKind::Call
+                && !call.has_spread
+                && (executor
+                    .foreign_call_summary(call.kind, &call.callee)
+                    .is_some()
+                    || executor.retaining_factory_summary(call).is_some())
+        };
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New));
+        calls.clone().any(summarized)
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && (summarized(call) || executor.ordered_root_call_is_local(call))
+            })
+    };
     let root_construction = index
         .ordered_initializers
         .get(&owner)
@@ -414,9 +443,10 @@ pub(super) fn prepare<'source>(
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
         });
-    // Every other initializer whose root calls are all local (a call with
-    // arguments, an IIFE, a call inside a comma) or whose one call is an
-    // array iteration row. The body phase runs it
+    // Every other initializer whose root calls are all local, or local and
+    // summarized imports (a call with arguments, an IIFE, a call inside a
+    // comma, a retaining factory call), or whose one call is an array
+    // iteration row. The body phase runs it
     // through the kernel and keeps that execution only if it seals the owner.
     let attempted_initializer =
         (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
@@ -425,7 +455,9 @@ pub(super) fn prepare<'source>(
             .filter(admitted_body)
             .filter(|_| {
                 calls.iter().any(|call| call.kind == CallKind::Call)
-                    && (executor.ordered_root_calls_are_local(calls) || root_array_iteration)
+                    && (executor.ordered_root_calls_are_local(calls)
+                        || summarized_root_calls
+                        || root_array_iteration)
             })
             .and_then(|body| {
                 Some((
@@ -462,6 +494,7 @@ pub(super) fn prepare<'source>(
         prevalidated_metadata,
         certified_deferred_write,
         provisional_roots,
+        private_factory_result,
         ordered_initializer,
         attempted_initializer,
         effect_initializer_source,
@@ -544,4 +577,62 @@ fn ordered_effect_source<'source>(
     source
         .matches(owner, binding, span)
         .then_some((source, binding, span))
+}
+
+impl Executor<'_, '_> {
+    /// Native and imported calls whose proofs still project source operands
+    /// retain their established whole-owner path. This chooses a source
+    /// family before execution; the ordered call transfer still checks each
+    /// actual target and never retries a failed invocation.
+    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+        calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .all(|call| self.ordered_root_call_is_local(call))
+    }
+
+    fn ordered_root_call_is_local(&self, call: &Call) -> bool {
+        let (targets, member) = match &call.callee {
+            ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
+                Some(Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    *key,
+                ))])),
+                false,
+            ),
+            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
+                self.state.world.module.prefix_values.get(binding).cloned(),
+                false,
+            ),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                    return false;
+                };
+                if !self.initialized_local_binding(receiver) {
+                    return false;
+                }
+                let targets = self
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(receiver)
+                    .and_then(|values| {
+                        self.present_own_data_read(values, property)
+                            .map(|read| read.values)
+                    });
+                (targets, true)
+            }
+            _ => return false,
+        };
+        let Some(targets) = targets else {
+            return false;
+        };
+        let Some((key, callable)) = self.local_call_target(&targets) else {
+            return false;
+        };
+        !callable.generator
+            && !self.inputs.index.async_callables.contains(&key)
+            && (!member || self.method_receiver_is_unused(&targets))
+    }
 }

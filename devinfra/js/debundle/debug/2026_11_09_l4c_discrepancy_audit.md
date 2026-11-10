@@ -304,6 +304,31 @@ per product:
   Canonical guards (`typeof X<"u"&&…`) show up in Claude Web and Tana
   Desktop examples.
 
+## Rerun after Wave 3 slice 3 PR 2 (2026-11-10)
+
+`debundle_node_parity/` records only (one per fixture run), the PR head
+against its `devel` merge-base `a7006bf26e`; the pattern-rule scripts were not
+available, so the per-owner counts above are not recomputed.
+
+| Legacy  | Effect status | Base | Branch |
+| ------- | ------------- | ---: | -----: |
+| accepts | accepted      | 1512 |   1535 |
+| accepts | `incomplete`  |  393 |    394 |
+| refuses | accepted      |  159 |    153 |
+| refuses | `conflict`    |  955 |    955 |
+| refuses | `incomplete`  |   81 |     81 |
+
+Compared run by run (target, test, source output): no existing fixture
+changed its legacy verdict or its emitted order. Two changed effect status,
+both `imported_callback_timing_test`, from `incomplete` to accepted
+(`returned_wrapper_does_not_invoke_its_callback_at_creation`,
+`successive_factories_do_not_publish_callbacks_to_the_next_factory`). The
+other differences are new or renamed tests: `provider_summary_effect_test`,
+and six `export_availability_test` runs that now emit on rejection and write
+no parity record. Most S3 havoc is untouched: it is namespace-member and
+author-asserted factories, which the ordered lane does not substitute, and
+invocations of a retained result.
+
 ## Re-running
 
 The scripts are heuristic one-offs, kept outside the repository at
