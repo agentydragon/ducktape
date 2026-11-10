@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -182,7 +183,7 @@ func decide(index *policy.Index, credential string) policy.Decision {
 	if credential != "" {
 		headers.Set("Authorization", "Bearer "+resources.Placeholder(credential))
 	}
-	return index.Evaluate(subject, policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers}, nil)
+	return index.Evaluate(reader.ServiceAccount(subject), policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers}, nil)
 }
 
 func substituted(value string) []presentation.HeaderRewrite {

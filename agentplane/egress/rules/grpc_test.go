@@ -33,7 +33,7 @@ func serveGRPC(t *testing.T, reviews auth.TokenReviews, index *policy.Index) egr
 	}
 	service := NewService(index)
 	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer(auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnyAccount(resolver)}.ServerOptions(0)...)
+	server := grpc.NewServer(auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(resolver)}.ServerOptions(0)...)
 	egressrulespb.RegisterEgressRulesServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -63,7 +63,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	}
 
 	want := &egressrulespb.GetRulesResponse{
-		Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "sb"},
+		Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "sb"}},
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
@@ -158,7 +158,7 @@ func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &egressrulespb.GetRulesResponse{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "nobody"}}
+	want := &egressrulespb.GetRulesResponse{Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "nobody"}}}
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}

@@ -221,10 +221,13 @@ func rulesText(raw json.RawMessage) (string, error) {
 		Values []string `json:"values"`
 	}
 	rules, err := decode[struct {
-		Subject struct {
+		Subject *struct {
 			Namespace string `json:"namespace"`
 			Name      string `json:"name"`
 		} `json:"subject"`
+		Identity *struct {
+			Name string `json:"name"`
+		} `json:"identity"`
 		Policies []struct {
 			Name  string `json:"name"`
 			Rules []struct {
@@ -249,7 +252,16 @@ func rulesText(raw json.RawMessage) (string, error) {
 		}
 		return strings.Join(values.Values, ",")
 	}
-	lines := []string{fmt.Sprintf("subject %s/%s", rules.Subject.Namespace, rules.Subject.Name)}
+	var caller string
+	switch {
+	case rules.Subject != nil:
+		caller = fmt.Sprintf("subject %s/%s", rules.Subject.Namespace, rules.Subject.Name)
+	case rules.Identity != nil:
+		caller = "identity " + rules.Identity.Name
+	default:
+		return "", invalidResponse("rules name no caller")
+	}
+	lines := []string{caller}
 	for _, policy := range rules.Policies {
 		for _, rule := range policy.Rules {
 			line := fields(policy.Name, strings.Join(rule.Hosts, ","), orAny(rule.Methods), orAny(rule.Paths))

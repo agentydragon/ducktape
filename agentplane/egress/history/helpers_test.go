@@ -25,7 +25,7 @@ func testRecord(at time.Time) decision.Record {
 	return decision.Record{
 		EventID: uuid.New(), At: at, ProducerID: uuid.New(), ConnectionID: "test-connection",
 		Phase: decision.HTTPRequest, Method: "GET", Host: "example.test", Port: 443, Outcome: decision.Allow,
-		Subject: &decision.Subject{Namespace: "test-namespace", Name: "test-workload"},
+		Subject: decision.ServiceAccount{Namespace: "test-namespace", Name: "test-workload"},
 	}
 }
 
