@@ -1138,13 +1138,13 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 _REPLICA_USER, NAMESPACE
             )
             second_path.sever()
-            await second.health(serving=False)
+            await second.process.health(serving=False)
             before = len(upstream.requests)
             await get(second, second_tls, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
             await revoke_binding(second_api)
             await grant_replica(second_api, NAMESPACE)
-            await second.health(serving=True)
+            await second.process.health(serving=True)
             await get(second, second_tls, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
@@ -1172,8 +1172,8 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egres
 
         pending = asyncio.create_task(slow_status())
         await asyncio.wait_for(upstream.slow_started.wait(), 10)
-        egress.replica.terminate()
-        await egress.replica.health(serving=False)
+        egress.replica.process.terminate()
+        await egress.replica.process.health(serving=False)
         # Readiness turns NOT_SERVING before the proxy listener finishes shutting down.
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
             with attempt:
