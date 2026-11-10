@@ -321,6 +321,7 @@ function WindowRow({
       </div>
       <Meter
         usedPercent={window.used_percent}
+        displayedPercent={window.used}
         elapsed={window.elapsed}
         tint={tint}
         label={`${window.label}: ${window.used}% used, ${roundHalfToEven(window.elapsed * 100)}% of the window elapsed`}
@@ -342,11 +343,13 @@ function WindowRow({
 
 function Meter({
   usedPercent,
+  displayedPercent,
   elapsed,
   tint,
   label,
 }: {
   usedPercent: number;
+  displayedPercent: number;
   elapsed: number;
   tint: Tint;
   label: string;
@@ -358,7 +361,8 @@ function Meter({
       className={`aiquota-meter aiquota-tint-${tint}`}
       role="meter"
       aria-label={label}
-      aria-valuenow={roundHalfToEven(usedPercent)}
+      aria-valuenow={Math.max(0, Math.min(100, displayedPercent))}
+      aria-valuetext={`${displayedPercent}% used, ${roundHalfToEven(elapsed * 100)}% of the window elapsed`}
       aria-valuemin={0}
       aria-valuemax={100}
     >

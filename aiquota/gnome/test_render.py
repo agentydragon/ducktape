@@ -225,6 +225,33 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
     assert not popup.balance
 
 
+@pytest.mark.parametrize(
+    ("usage", "displayed", "value"), [(-5, -5, 0), (0, 0, 0), (99.9, 99, 99), (100, 100, 100), (105, 105, 100)]
+)
+def test_meter_accessibility(
+    session: GnomeSession, fixture_json_dir: Path, usage: float, displayed: int, value: int
+) -> None:
+    _reload_fixture(session, "binding_summary")
+    data = json.loads((fixture_json_dir / "binding_summary.json").read_text())
+    provider = next(item for item in data["providers"] if item["provider"] == "codex")
+    window = provider["display_windows"][0]
+    window.update(used_percent=usage, used=displayed, elapsed=0.5)
+    session.call("SetViewForTest", json.dumps(data))
+    session.open_menu()
+    try:
+        meters = json.loads(string_reply(session.call("GetMeterAccessibility", "codex")))
+        assert meters[0] == {
+            "role": "level bar",
+            "name": f"{window['label']}: {displayed}% used, 50% of the window elapsed",
+            "description": "Fill is quota used; tick is time elapsed.",
+            "value": value,
+            "minimum": 0,
+            "maximum": 100,
+        }
+    finally:
+        session.close_menu()
+
+
 def test_claude_reset_grants(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_reset_grants")
     grants = _ProviderPopup(session, "claude").grants

@@ -3,6 +3,7 @@
 import json
 import os
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from datetime import datetime
 from typing import Literal
 
@@ -230,6 +231,33 @@ async def test_system_color_preference_changes(visual: VisualHarness) -> None:
         await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "dark")
         dark_background = await card.evaluate("element => getComputedStyle(element).backgroundColor")
         assert light_background != dark_background
+
+
+async def test_meter_accessibility(visual: VisualHarness) -> None:
+    async with visual.open(
+        query={"scene": "binding_summary", "live": "1"},
+        frozen_now_ms=int(datetime.fromisoformat(_FIXTURES["binding_summary"]["fetched_at"]).timestamp() * 1000),
+    ) as view:
+        data = deepcopy(_FIXTURES["binding_summary"])
+        provider = next(item for item in data["providers"] if item["provider"] == "codex")
+        window = provider["display_windows"][0]
+        for usage, displayed, value in [(-5, -5, 0), (0, 0, 0), (99.9, 99, 99), (100, 100, 100), (105, 105, 100)]:
+            window.update(used_percent=usage, used=displayed, elapsed=0.5)
+            await view.page.evaluate(
+                "data => window.dispatchEvent(new MessageEvent('quota-fixture-view', {data: JSON.stringify(data)}))",
+                data,
+            )
+            card = view.page.get_by_label("Codex quota", exact=True)
+            meter = card.get_by_role("meter").first
+            await expect(meter).to_have_attribute("aria-valuenow", str(value))
+            await expect(meter).to_have_attribute("aria-valuemin", "0")
+            await expect(meter).to_have_attribute("aria-valuemax", "100")
+            await expect(meter).to_have_attribute("aria-valuetext", f"{displayed}% used, 50% of the window elapsed")
+            await expect(meter).to_have_accessible_name(
+                f"{window['label']}: {displayed}% used, 50% of the window elapsed"
+            )
+            await expect(card.locator(".aiquota-window-used").first).to_have_text(f"{displayed}%")
+        await view.capture("meter-over-quota", target=view.page.locator("#app"))
 
 
 async def test_live_subscription(visual: VisualHarness) -> None:
