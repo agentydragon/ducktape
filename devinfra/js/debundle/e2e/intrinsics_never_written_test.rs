@@ -73,6 +73,37 @@ fn named_families_stay_intact_and_overrides_are_listed() {
     }
 }
 
+/// The `Object.fromEntries(entries.map(...))` proof reads the census like
+/// any native guard: the premise that kept its slots intact is a recorded use
+/// (regression: this proof dropped the census dependencies, so the premise's
+/// consumption went unrecorded).
+#[test]
+fn mapped_from_entries_proof_records_the_premise() {
+    let source = source(
+        "const entries = [{ name: \"read\", value: 1 }];\nconst registry = Object.fromEntries(entries.map(entry => [entry.name, entry]));\n",
+    );
+    let fixture = run_fixture(opts(
+        &source,
+        &["install", "entries", "registry"],
+        Some("all"),
+    ));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    let graph = fixture.dependency_graph();
+    let node_id = source_unit_for_binding(&graph, "registry");
+    let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+    let report = serde_json::to_value(node).unwrap();
+    assert!(
+        report["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses
+                .iter()
+                .any(|entry| entry["guard"] == "mapped_from_entries"
+                    && entry["program_premises"]
+                        == serde_json::json!(["intrinsics_never_written"]))),
+        "{report}"
+    );
+}
+
 #[test]
 fn without_the_premise_or_naming_another_family_map_stays_unknown() {
     let source = source("");

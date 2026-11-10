@@ -7,25 +7,6 @@ metadata:
   name: haku-egress-proxy
 spec: {}
 ---
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: forgejo-images-creds
-  namespace: haku-egress-proxy
-spec:
-  dataFrom:
-    - extract:
-        key: forgejo-images-creds
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-forgejo-images-secret-store
-  target:
-    name: forgejo-images-creds
-    template:
-      mergePolicy: Merge
-      type: kubernetes.io/dockerconfigjson
----
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -238,6 +219,8 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: haku-sandbox-force-proxy-egress
 spec:
   egress:

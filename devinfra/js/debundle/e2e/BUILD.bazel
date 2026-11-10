@@ -192,6 +192,13 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "foreign_cell_read_order_test",
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
     name = "provider_summary_effect_test",
     deps = [
         ":graph_support",

@@ -78,9 +78,7 @@ def _external_secrets(chart: Chart) -> None:
     # tf/gitops/haku-state's `haku` account: its git credentials, which Reflector mirrors on to
     # the other haku-state git consumers, and the pull secret for Haku's own UI image.
     reader = secret_copy.reader(chart, NAMESPACE)
-    secret_copy.secret_copy(
-        chart, "haku-forgejo-git", reader=reader, mirror_namespaces=["haku-egress-proxy", "flux-system"]
-    )
+    secret_copy.secret_copy(chart, "haku-forgejo-git", reader=reader, mirror_namespaces=["flux-system"])
     secret_copy.secret_copy(
         chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"
     )
@@ -97,11 +95,7 @@ def chart(app: App) -> Chart:
 
 
 def haku_workspaces(
-    chart: Chart,
-    directory: RenderedDirectory,
-    haku_rbac: Kustomization,
-    haku_egress_proxy: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, directory: RenderedDirectory, haku_rbac: Kustomization, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
@@ -112,7 +106,6 @@ def haku_workspaces(
         depends_on=flux_kustomization_depends_on_many(
             # Namespace and mirrored-secret destinations
             haku_rbac,
-            haku_egress_proxy,
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
             external_secrets_operator,
         ),

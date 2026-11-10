@@ -4328,13 +4328,10 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
   dependsOn:
     - name: cert-manager
       namespace: ducktape-flux
     - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/haku-egress-proxy
@@ -4469,8 +4466,6 @@ metadata:
 spec:
   dependsOn:
     - name: haku-rbac
-      namespace: ducktape-flux
-    - name: haku-egress-proxy
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux

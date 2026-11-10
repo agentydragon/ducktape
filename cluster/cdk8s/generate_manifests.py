@@ -1850,12 +1850,8 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
-    haku_egress_proxy_kustomization = haku_egress_proxy.haku_egress_proxy(
-        flux_chart,
-        haku_egress_proxy_artifact,
-        cert_manager_kustomization,
-        cert_manager_trust_kustomization,
-        external_secrets_operator_kustomization,
+    haku_egress_proxy.haku_egress_proxy(
+        flux_chart, haku_egress_proxy_artifact, cert_manager_kustomization, cert_manager_trust_kustomization
     )
     haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
     haku_ui_image_webhook.haku_ui_image_webhook(
@@ -1906,7 +1902,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart),
         haku_rbac_kustomization,
-        haku_egress_proxy_kustomization,
         external_secrets_operator_kustomization,
     )
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
