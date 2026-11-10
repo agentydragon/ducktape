@@ -211,25 +211,71 @@ async def _wait_for_turn_status(
             events.cancel()
 
 
-async def _started_gateway_roll_process(deployed: CentralStack, session_id: str) -> tuple[int, str]:
+async def _started_gateway_roll_process(deployed: CentralStack, session_id: str) -> tuple[int, str, str]:
     stream = deployed.sampler.FollowEvents(
         sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
     )
     cursor = 0
     process_ids = []
+    initialize_intents: set[str] = set()
+    native_session_ids = []
     async for frame in stream:
         cursor = frame.entry.cursor
         event = frame.entry.event
         if not event.HasField("boundary_record"):
             continue
         boundary = event.boundary_record
-        if boundary.boundary != "executor" or boundary.direction != "dispatch" or boundary.fragment_count != 1:
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
             continue
         payload = json.loads(boundary.payload)
-        if payload.get("method") == "process/start" and "gateway-roll-marker" in json.dumps(payload.get("params")):
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            initialize_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in initialize_intents
+            and payload.get("outcome") == "completed"
+        ):
+            native_session_ids.append(payload["execution_session_id"])
+        elif (
+            boundary.direction == "dispatch"
+            and payload.get("method") == "process/start"
+            and "gateway-roll-marker" in json.dumps(payload.get("params"))
+        ):
             process_ids.append(payload["params"]["processId"])
     (process_id,) = process_ids
-    return cursor, process_id
+    assert native_session_ids, "the original native executor session was not journaled"
+    return cursor, process_id, native_session_ids[-1]
+
+
+async def _assert_original_native_session_resumed(
+    deployed: CentralStack, session_id: str, after_cursor: int, native_session_id: str
+) -> None:
+    """Require a successful resume of the original native session after Gateway recovery."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
+    )
+    resumed_intents: set[str] = set()
+    async for frame in stream:
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            if payload.get("resume_session_id") == native_session_id:
+                resumed_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in resumed_intents
+            and payload.get("outcome") == "completed"
+            and payload.get("execution_session_id") == native_session_id
+        ):
+            return
+    pytest.fail(f"original native executor session {native_session_id} was not successfully resumed")
 
 
 async def _wait_for_executor_dispatch_after(
@@ -512,7 +558,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _wait_for_execution_progress(
             deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
         )
-        cursor, process_id = await _started_gateway_roll_process(deployed, session_id)
+        cursor, process_id, native_session_id = await _started_gateway_roll_process(deployed, session_id)
         read_cell = (
             'const handle = load("gateway-roll-handle");\n'
             "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
@@ -536,6 +582,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         assert "Script completed" in read_text, read_text
         assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
         assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
+        await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
         await model.reply(request, ShellCall("verify-once", "cat gateway-roll-marker"))
         request = await asyncio.wait_for(model.request(), timeout=30)
         (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-once"]
@@ -588,6 +635,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
                     "old_gateway_uid": old_gateway_uid,
                     "new_gateway_uid": new_gateway_uid,
                     "original_process_id": process_id,
+                    "original_native_session_id": native_session_id,
                     "in_flight_read_intent": read_intent,
                     "outage_seconds": outage_seconds,
                     "read_output": read_text,
