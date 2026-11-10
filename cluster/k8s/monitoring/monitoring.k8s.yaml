@@ -192,6 +192,26 @@ spec:
           spec:
             resources:
               - groupVersionKind:
+                  group: pool.kubevirt.io
+                  kind: VirtualMachinePool
+                  version: v1beta1
+                labelsFromPath:
+                  name:
+                    - metadata
+                    - name
+                  namespace:
+                    - metadata
+                    - namespace
+                metrics:
+                  - each:
+                      gauge:
+                        path:
+                          - spec
+                          - replicas
+                      type: Gauge
+                    help: Desired number of virtual machines in the pool.
+                    name: kubevirt_vmpool_desired_replicas
+              - groupVersionKind:
                   group: kustomize.toolkit.fluxcd.io
                   kind: Kustomization
                   version: v1
@@ -399,6 +419,13 @@ spec:
               - volsync.backube
             resources:
               - replicationsources
+            verbs:
+              - list
+              - watch
+          - apiGroups:
+              - pool.kubevirt.io
+            resources:
+              - virtualmachinepools
             verbs:
               - list
               - watch

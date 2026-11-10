@@ -95,7 +95,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert {"name": "server-type", "value": "buildbuddy-executor"} in probe["httpHeaders"]
     (work,) = template["spec"]["dataVolumeTemplates"]
     storage = work["spec"]["storage"]
-    assert storage["storageClassName"] == "piraeus-ssd-local"
+    assert storage["storageClassName"] == "piraeus-ssd-local-delete"
     assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]

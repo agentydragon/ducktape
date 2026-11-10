@@ -1027,7 +1027,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
-    monitoring_stack.monitoring_stack(
+    monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
@@ -1082,7 +1082,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
-    mimir.mimir(
+    monitoring_mimir_kustomization = mimir.mimir(
         flux_chart,
         write_directory(root, monitoring_mimir_artifact, mimir.chart),
         monitoring_crds_kustomization,
@@ -1522,12 +1522,24 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     buildbuddy_kvm_worker_artifact = artifact(buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR)
-    buildbuddy_kvm_worker.buildbuddy_kvm_worker(
+    buildbuddy_kvm_worker_kustomization = buildbuddy_kvm_worker.buildbuddy_kvm_worker(
         flux_chart,
         write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart),
         buildbuddy_executor_kustomization,
         kubevirt_kustomization,
         monitoring_crds_kustomization,
+        piraeus_cluster_kustomization,
+    )
+    buildbuddy_kvm_autoscaler_artifact = artifact(
+        buildbuddy_kvm_worker.AUTOSCALER_NAME, buildbuddy_kvm_worker.AUTOSCALER_OUTPUT_DIR
+    )
+    buildbuddy_kvm_worker.autoscaler(
+        flux_chart,
+        write_directory(root, buildbuddy_kvm_autoscaler_artifact, buildbuddy_kvm_worker.autoscaler_chart),
+        buildbuddy_kvm_worker_kustomization,
+        keda_kustomization,
+        monitoring_stack_kustomization,
+        monitoring_mimir_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
     cpap_sync.cpap_sync(
@@ -2006,6 +2018,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_stack_artifact,
             buildbuddy_executor_artifact,
             buildbuddy_kvm_worker_artifact,
+            buildbuddy_kvm_autoscaler_artifact,
             ntfy_artifact,
             claude_rbac_artifact,
             authentik_artifact,

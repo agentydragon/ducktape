@@ -3628,6 +3628,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/buildbuddy-kvm-worker
   prune: true
@@ -3638,6 +3640,31 @@ spec:
     namespace: ducktape-flux
   suspend: false
   timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: buildbuddy-kvm-worker-autoscaler
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: buildbuddy-kvm-worker
+      namespace: ducktape-flux
+    - name: keda
+      namespace: ducktape-flux
+    - name: monitoring-stack
+      namespace: ducktape-flux
+    - name: mimir
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/buildbuddy-kvm-worker-autoscaler
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: buildbuddy-kvm-worker-autoscaler
+    namespace: ducktape-flux
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

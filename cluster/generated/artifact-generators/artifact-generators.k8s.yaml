@@ -38,6 +38,11 @@ spec:
       name: buildbuddy-kvm-worker
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/buildbuddy-kvm-worker-autoscaler/**"
+          to: "@artifact/cluster/generated/buildbuddy-kvm-worker-autoscaler/"
+      name: buildbuddy-kvm-worker-autoscaler
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy

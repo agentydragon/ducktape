@@ -330,6 +330,7 @@ def _values() -> dict[str, object]:
                         ("source.toolkit.fluxcd.io", "gitrepositories"),
                         ("agentplane.allegedly.works", "policybindings"),
                         ("volsync.backube", "replicationsources"),
+                        ("pool.kubevirt.io", "virtualmachinepools"),
                     )
                 ]
             },
@@ -339,6 +340,24 @@ def _values() -> dict[str, object]:
                     "kind": "CustomResourceStateMetrics",
                     "spec": {
                         "resources": [
+                            {
+                                "groupVersionKind": {
+                                    "group": "pool.kubevirt.io",
+                                    "version": "v1beta1",
+                                    "kind": "VirtualMachinePool",
+                                },
+                                "labelsFromPath": {
+                                    "namespace": ["metadata", "namespace"],
+                                    "name": ["metadata", "name"],
+                                },
+                                "metrics": [
+                                    {
+                                        "name": "kubevirt_vmpool_desired_replicas",
+                                        "help": "Desired number of virtual machines in the pool.",
+                                        "each": {"type": "Gauge", "gauge": {"path": ["spec", "replicas"]}},
+                                    }
+                                ],
+                            },
                             _flux_state_metrics("kustomize.toolkit.fluxcd.io", "v1", "Kustomization", "kustomization"),
                             _flux_state_metrics("helm.toolkit.fluxcd.io", "v2", "HelmRelease", "helmrelease"),
                             _flux_state_metrics(
