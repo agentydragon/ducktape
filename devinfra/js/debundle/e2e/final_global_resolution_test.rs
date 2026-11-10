@@ -1,6 +1,6 @@
 //! `global_resolution.json`: every identifier the prepared parse left unbound
-//! must still resolve to no binding in the final emitted files. Report-only;
-//! the legacy gate keeps acceptance authority.
+//! must still resolve to no binding in the final emitted files. A proven
+//! capture is rejected; other incomplete findings remain diagnostic.
 
 use debundle_e2e_support::*;
 use serde_json::Value;

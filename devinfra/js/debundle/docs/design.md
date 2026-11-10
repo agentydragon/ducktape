@@ -3550,7 +3550,8 @@ validation, and writing:
   and preload targets, bootstrap, rewritten HTML, and asset destinations before
   final acceptance, including in dry runs.
 - **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
-  partial-swap consumers, duplicate public exports, and unresolved claims. Return
+  partial-swap consumers, duplicate public exports, unresolved claims, and
+  source globals captured by emitted bindings. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement
   assignment realizability and input-space vendor checks.
 - **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets and
