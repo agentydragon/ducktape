@@ -77,6 +77,9 @@ pub(crate) enum Effect {
     /// Leaves straight-line synchronous evaluation, or is syntax the transfer
     /// does not model.
     Havoc(HavocCause),
+    /// Reads a cell of another chunk that code outside the reading chunk's
+    /// dependency graph can change (`purity/order_dependent_reads.rs`).
+    ObservesForeignCell,
 }
 
 /// Where a coercion or protocol step happens.
