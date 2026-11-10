@@ -38,7 +38,7 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
-use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, PurityHintOwner};
+use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
@@ -527,6 +527,10 @@ pub(super) fn finish_logical_chunk(
                 )
                 .collect(),
                 consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+                loader_key_uses: export_reentry_reports
+                    .values()
+                    .map(|report| loader_key_uses(&report.loader))
+                    .fold(LoaderKeyUses::default(), LoaderKeyUses::join),
             },
         )?;
     }
@@ -1258,6 +1262,31 @@ fn spec_lint_findings(
             LintFinding::redundant_purity_hint(chunk_id, hint, purity_owner(&hint.binding_name))
         }))
         .collect()
+}
+
+/// The loader keys one target's loader closure consumed. A closure whose only
+/// failure is reach-back still sets a `reentry_through` policy, but records
+/// nothing (it assumes its dependencies only when closed).
+fn loader_key_uses(
+    loader: &staged_analysis::loader_surface::ExportReentryLoaderDerivation,
+) -> LoaderKeyUses {
+    use staged_analysis::loader_surface::ExportReentryLoaderDerivation;
+    match loader {
+        ExportReentryLoaderDerivation::LoaderClosure {
+            reentry_through: Some(_),
+            ..
+        } => LoaderKeyUses::Unattributed,
+        ExportReentryLoaderDerivation::LoaderClosure {
+            host_keys,
+            premise_keys,
+            ..
+        } => LoaderKeyUses::Recorded {
+            host_keys: host_keys.clone(),
+            premise_keys: premise_keys.clone(),
+        },
+        ExportReentryLoaderDerivation::NoSynchronousLoader
+        | ExportReentryLoaderDerivation::NoHostLoaderSites => LoaderKeyUses::default(),
+    }
 }
 
 /// The chunk's `selector_diagnostics.json`, where `spec validate` collects

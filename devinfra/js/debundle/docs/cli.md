@@ -788,7 +788,8 @@ To list annotations the engine may already infer, run `debundle spec lint`
 with the same inputs as `spec validate`. It costs one validate pass, whatever
 the number of annotations: each finding's signal comes from that pass. JSON
 gives `findings[]` (typed per [SPEC](../SPEC.md#spec-lint)) and
-`unlinted_chunks`; text prints one `warning[inferable_annotation]:` line per
+`unlinted_chunks`, plus `pass_error` when the pass failed after linting
+(text prints it as a `note:` line); text prints one `warning[inferable_annotation]:` line per
 `inferable` finding and a `note[...]` line per `inconclusive` one, naming the
 module/member or spec location. It exits 0 whenever the pass produced reports.
 `host_behavior.reentry_free_operations` entries are decided from recorded uses

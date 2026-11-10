@@ -185,3 +185,39 @@ fn lint_reports_nothing_for_consumed_annotations() {
     );
     assert_eq!(lint(opts), Vec::new());
 }
+
+/// A pass that fails after linting (here the gate rejects a `sequenced`-only
+/// cycle) still reports its findings, and names its failure.
+#[test]
+fn lint_reports_the_pass_failure_beside_its_findings() {
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "probes/outer",
+                    &[
+                        Member::new("trace"),
+                        Member::new("alpha"),
+                        Member::new("gamma"),
+                    ],
+                    &[RECORD_INSTALL],
+                ),
+                logical_module("probes/inner", &[Member::new("beta")]),
+                logical_module("helpers/math", &[Member::new("seven")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_admission_overrides(&["a1_eval"]),
+    );
+    let report = spec_lint_json(&fixture.spec_path, &[]);
+    assert!(report["pass_error"].is_string(), "{report:#}");
+    let findings: Vec<LintFinding> = serde_json::from_value(report["findings"].clone()).unwrap();
+    assert!(
+        findings.iter().any(|finding| matches!(
+            finding.annotation,
+            LintedAnnotation::AdmissionOverride { .. }
+        )),
+        "{report:#}"
+    );
+}
