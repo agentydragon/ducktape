@@ -6015,6 +6015,9 @@ pub(super) struct ExecutionIndex {
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
     pub(super) top_const_bindings: BTreeSet<Id>,
+    /// Every binding read or written anywhere inside a callable body,
+    /// including after an `await` (unlike `CallableFacts::{reads,rebinds}`).
+    pub(super) captured_bindings: BTreeSet<Id>,
     pub(super) other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     pub(super) plain_data_objects: BTreeSet<u32>,
@@ -6247,6 +6250,7 @@ impl Default for ExecutionIndex {
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
+            captured_bindings: BTreeSet::new(),
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
@@ -11611,6 +11615,9 @@ impl ExecutionIndex {
 impl binding_targets::TargetAccessRecorder for ExecutionIndex {
     fn record_binding_write(&mut self, id: &Id) {
         self.binding_target_writes.insert(id.clone());
+        if self.current.is_some() {
+            self.captured_bindings.insert(id.clone());
+        }
         if !self.past_await
             && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
             && !callable.created_after_parent_await
@@ -12621,6 +12628,9 @@ impl Visit for ExecutionIndex {
         let id = ident.to_id();
         if self.class_ids.contains(&id) && self.safe_class_target.as_ref() != Some(&id) {
             self.other_class_uses.insert(id);
+        }
+        if self.current.is_some() {
+            self.captured_bindings.insert(ident.to_id());
         }
         if !self.past_await
             && let Some(key) = self.current
