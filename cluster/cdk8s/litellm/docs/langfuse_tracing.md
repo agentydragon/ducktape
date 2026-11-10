@@ -69,7 +69,9 @@ added.
     the model-call span. In late October that was 3387 of 3391 traces with input.
   - Before 2026-10-24, the v1 exporter's parent `litellm_request` spans also carry the request
     as `llm.invocation_parameters` in `metadata.attributes` (71 GiB raw in August, beside 45 GiB
-    of input). It is the only copy of those calls' tool definitions, so it stays.
+    of input). A bounded sample also found the same tool definitions in `model_parameters`,
+    duplicated into `events_core`; see [the investigation](../../../debug/langfuse_tool_parameters/README.md).
+    Broader coverage and consumer equivalence are unproven, so preserve both representations.
   - The same exporter's `raw_gen_ai_request` child spans repeated the request three more times
     (131 GiB raw metadata in August). They were deleted from `events_full`/`events_core` on
     2026-11-09 with `ALTER TABLE … DELETE WHERE name = 'raw_gen_ai_request'`.

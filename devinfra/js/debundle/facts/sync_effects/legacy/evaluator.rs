@@ -123,6 +123,9 @@ impl Executor<'_, '_> {
                 self.closure_captures(*key, captures),
             )]),
             ValueExpr::Alloc(kind, site) => {
+                if *kind == Kind::Class {
+                    self.escape_class_captures(*site, env, captures);
+                }
                 Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
             }
             ValueExpr::ObjectLiteral(key, properties) => {

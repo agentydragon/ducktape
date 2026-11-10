@@ -19,10 +19,9 @@ in the cluster downloads nothing.
 
 `devinfra/ci/image_targets.json` publishes it to `ghcr.io/agentydragon/tf-runner` (GHCR, not
 Forgejo: the runner provisions Forgejo's registry credentials, so it cannot depend on them).
-For the staged upstream source migration, the HelmRelease's `runner.image` in
-`cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml` stays pinned until the
-corresponding controller and runner images have both been published. Switch them together as
-described in <../../third_party/tofu_controller/README.md>.
+The HelmRelease's `runner.image` in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`
+is pinned beside the controller image. Update the pair together as described in
+<../../third_party/tofu_controller/README.md>.
 
 The GHCR packages must be public (<../docs/container-images.md>) so a fresh cluster can pull
 both images before its Forgejo registry credentials exist.

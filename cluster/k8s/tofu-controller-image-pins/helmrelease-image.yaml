@@ -1,7 +1,5 @@
-# Keep both current images pinned while CI publishes the matching controller and runner built
-# from the new upstream source. Their gRPC protocol changed, so independent image-policy updates
-# could deploy an incompatible pair. After both new images are published, switch both values in
-# one HelmRelease update; see third_party/tofu_controller/README.md.
+# The controller and runner must use matching gRPC protocols. Update both pins together after
+# draining reconciliations and old runner pods; see third_party/tofu_controller/README.md.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -11,8 +9,8 @@ spec:
   values:
     image:
       repository: ghcr.io/agentydragon/tofu-controller
-      tag: devel-20261110095747-5ba4944
+      tag: devel-20261110193837-de33b2a
     runner:
       image:
         repository: ghcr.io/agentydragon/tf-runner
-        tag: devel-20261110095440-5ba4944
+        tag: devel-20261110192912-de33b2a

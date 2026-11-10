@@ -871,6 +871,10 @@ pub(super) struct ExecutionInputs<'source> {
     /// a callable nested in them (an arrow's `arguments` is its enclosing
     /// function's). Over-approximates for a nested function's own.
     reads_arguments: BTreeSet<u32>,
+    /// Per class, the enclosing scope's bindings its members read. A class
+    /// value carries no captured context, so a member (a constructor's
+    /// `super(...)` operands) reads them as unknown later.
+    pub(super) class_captured_reads: BTreeMap<u32, BTreeSet<Id>>,
     /// Locals a source-summary lane reads as unknown in addition to its own
     /// assignments: another callable writes them, or an assignment reads
     /// them before a later one assigns them.
@@ -10231,10 +10235,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// A class value created now: its members read the enclosing scope's
+    /// bindings as unknown later, so publish what those hold here. A local
+    /// binding as the heritage (`class extends h`) is the base a later
+    /// construction runs on unknown arguments; publish it too.
+    pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
+        let heritage = self
+            .inputs
+            .index
+            .class_values
+            .get(&class)
+            .and_then(|facts| match &facts.super_class {
+                Some(ValueExpr::Binding(binding)) => Some(binding),
+                _ => None,
+            });
+        let values: Values = self
+            .inputs
+            .class_captured_reads
+            .get(&class)
+            .into_iter()
+            .flatten()
+            .chain(heritage)
+            .filter(|binding| !self.inputs.top_bindings.contains(*binding))
+            .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
+            .flatten()
+            .cloned()
+            .collect();
+        if !values.is_empty() {
+            self.escape_untracked_values(&values);
+        }
+    }
+
     /// Values flowing where a later read sees only unknown. Unknown reaches
     /// only published callbacks, so a value may leave a tracked set only once
     /// what it can reach is published.
-    fn escape_untracked_values(&mut self, values: &Values) {
+    pub(super) fn escape_untracked_values(&mut self, values: &Values) {
         self.publish_values(
             values,
             ClassMembersPublicationWriter::UntrackedLocalStore,
@@ -12999,6 +13034,20 @@ pub(crate) fn annotate_synchronous_calls(
                 })
             })
             .map(|(key, _)| *key)
+            .collect(),
+        class_captured_reads: index
+            .class_spans
+            .iter()
+            .map(|(class, span)| {
+                let reads = index
+                    .callable_spans
+                    .iter()
+                    .filter(|(_, callable)| span.lo <= callable.lo && callable.hi <= span.hi)
+                    .filter_map(|(key, _)| index.callables.get(key))
+                    .flat_map(|callable| callable.captured_reads().into_iter().cloned())
+                    .collect();
+                (*class, reads)
+            })
             .collect(),
         mutable_captures: index
             .callables
