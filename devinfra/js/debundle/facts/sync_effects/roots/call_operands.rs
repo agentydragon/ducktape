@@ -71,21 +71,44 @@ impl Executor<'_, '_> {
         {
             return None;
         }
-        let ValueExpr::Binding(binding) = &call.callee else {
-            return None;
-        };
-        for kind in [
-            CallbackFactoryUseKind::CallTiming,
-            CallbackFactoryUseKind::ReturnShape,
-        ] {
-            self.record_callback_factory_use(binding, kind, call.owner, call.span);
-        }
         self.record_foreign_call_use(&summary);
+        Some(self.retained_factory_carrier(call, true, callback))
+    }
+
+    /// The audited carrier of the one callback a factory call retains. With
+    /// `records_evidence` the call's callback-factory evidence is reported as
+    /// used for its timing and its return shape.
+    pub(in crate::facts::sync_effects) fn retained_factory_carrier(
+        &mut self,
+        call: &Call,
+        records_evidence: bool,
+        callback: &Values,
+    ) -> Values {
+        if records_evidence && let ValueExpr::Binding(binding) = &call.callee {
+            for kind in [
+                CallbackFactoryUseKind::CallTiming,
+                CallbackFactoryUseKind::ReturnShape,
+            ] {
+                self.record_callback_factory_use(binding, kind, call.owner, call.span);
+            }
+        }
         let callbacks = self.callback_values(callback);
-        Some(Values::from([self.audited_retained_result(
-            RetainedResultKind::Factory,
-            callbacks,
-        )]))
+        Values::from([self.audited_retained_result(RetainedResultKind::Factory, callbacks)])
+    }
+
+    /// Every call of `binding` among `calls` is one the ordered lane
+    /// substitutes, so a body that reads the factory import only to call it
+    /// gets no worse an outcome on the kernel than on the flattened lane.
+    pub(in crate::facts::sync_effects) fn substitutes_factory_calls(
+        &self,
+        calls: &[Call],
+        binding: &swc_ecma_ast::Id,
+    ) -> bool {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(&call.callee, ValueExpr::Binding(callee) if callee == binding))
+            .peekable();
+        calls.peek().is_some() && calls.all(|call| self.retaining_factory_summary(call).is_some())
     }
 
     pub(in crate::facts::sync_effects) fn execute_supplied_call(

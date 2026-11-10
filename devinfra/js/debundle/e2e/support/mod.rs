@@ -440,13 +440,14 @@ pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 /// The xfail form of a positive the gate still refuses: the split is valid
 /// (the tree emitted on rejection prints `expected_stdout`, the source's
 /// output) but not provable yet, and today's refusal is the typed candidate
-/// status `pending`. Once the gate accepts the split this fails so the caller
+/// status `pending`, returned with the assessment for the caller's own typed
+/// reason. Once the gate accepts the split this fails so the caller
 /// is converted to a positive.
 pub fn assert_pending_split_preserves_output(
     opts: FixtureOpts<'_>,
     pending: &str,
     expected_stdout: &str,
-) {
+) -> Value {
     let rejected = run_rejection_fixture_with_options(
         opts,
         &["--emit-on-rejection"],
@@ -458,6 +459,7 @@ pub fn assert_pending_split_preserves_output(
     let assessment = rejected.candidate_relocation_assessment();
     assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
     assert_eq!(assessment["status"], pending, "{assessment:#}");
+    assessment
 }
 
 /// `debundle run --emit-on-rejection` over a spec that fails for more than

@@ -10304,11 +10304,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
                             || self.inputs.index.foreign_call_imports.contains_key(binding)
-                            || self
-                                .inputs
-                                .index
-                                .callback_factory_call_summaries
-                                .contains_key(binding)
+                            || self.substitutes_factory_calls(&callable.calls, binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10411,11 +10407,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
                     || self.inputs.index.foreign_call_imports.contains_key(binding)
-                    || self
-                        .inputs
-                        .index
-                        .callback_factory_call_summaries
-                        .contains_key(binding)
+                    || self.substitutes_factory_calls(&callable.calls, binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(
@@ -11028,20 +11020,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if actual == source
             )))
         {
-            if targets.contains(&AbstractValue::CallbackFactory)
-                && let ValueExpr::Binding(binding) = &call.callee
-            {
-                for kind in [
-                    CallbackFactoryUseKind::CallTiming,
-                    CallbackFactoryUseKind::ReturnShape,
-                ] {
-                    self.record_callback_factory_use(binding, kind, call.owner, call.span);
-                }
-            }
-            let callbacks = self.callback_values(&args[0]);
-            return CallTransfer::Values(Values::from([
-                self.audited_retained_result(RetainedResultKind::Factory, callbacks)
-            ]));
+            let records_evidence = targets.contains(&AbstractValue::CallbackFactory);
+            return CallTransfer::Values(self.retained_factory_carrier(
+                call,
+                records_evidence,
+                &args[0],
+            ));
         }
         if needs_value {
             // Publication can change properties and captured state, but cannot

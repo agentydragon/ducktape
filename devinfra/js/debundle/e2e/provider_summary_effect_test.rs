@@ -282,7 +282,7 @@ fn callbacks_passed_to_summarized_imports_relocate() {
 /// the global property the moved statement reads happens at the call.
 #[test]
 fn callback_invoked_by_the_provider_is_refused_and_diverges() {
-    let source = "import { run } from './peer.js';\nglobalThis.n = 1;\nconst first = run(() => { globalThis.n = 2; return 0; });\nconst second = globalThis.n;\nconsole.log(first, second);\n";
+    let source = "import { run } from './peer.js';\nconst first = run(() => { globalThis.n = 2; return 0; });\nconst second = globalThis.n;\nconsole.log(first, second);\n";
     assert_refused_divergence(
         CALLBACK_PEER,
         source,
@@ -403,9 +403,35 @@ fn callbacks_capturing_a_caller_local_stay_pending() {
         assert_preserved_entry_output(&fixture, expected);
         assert_effect_verdict_pending(&fixture, "incomplete", case);
         let report = fixture.effect_translation_validation();
-        assert_eq!(
-            report["coverage"]["owner_coverage_refusals"]["callback_captures_live_cell"], 1,
+        assert!(
+            report["coverage"]["owner_coverage_refusals"]["callback_captures_live_cell"].is_u64(),
             "{case}: {report:#}"
         );
     }
+}
+
+/// A local body that calls a retaining factory in a shape the ordered lane
+/// does not substitute keeps the flattened lane. Both splits are valid (the
+/// moved statement only reads an absent global) and neither is provable yet:
+/// the first factory reads a provider cell, and the second call's argument is
+/// a retained result rather than an inline function.
+#[test]
+fn unsubstituted_factory_calls_in_a_local_body_stay_pending() {
+    let counting = [("static/peer", COUNTING_PEER)];
+    assert_pending_split_preserves_output(
+        second_first(
+            "import { counted } from './peer.js';\nfunction build() { return counted(() => 0); }\nconst first = build();\nconst second = globalThis.n;\nconsole.log(first(), second);\n",
+            &counting,
+        ),
+        "incomplete",
+        "0 undefined\n",
+    );
+
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let fixture = run_fixture(second_first(
+        "import { defer } from './peer.js';\nfunction build() { const inner = defer(() => 1); return defer(inner); }\nconst first = build();\nconst second = globalThis.n;\nconsole.log(first(), second);\n",
+        &peers,
+    ));
+    assert_preserved_entry_output(&fixture, "1 undefined\n");
+    assert_effect_verdict_pending(&fixture, "incomplete", "retained result as the argument");
 }

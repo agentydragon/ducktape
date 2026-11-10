@@ -221,16 +221,6 @@ fn settle(
         ref mut global_object_aliases,
         ..
     } = *root;
-    if ordered_initializer.is_some()
-        && private_factory_result
-        && outcome.complete
-        && !outcome.unknown_call
-    {
-        // The kernel records the root as executed. This root ran only the
-        // substituted factory call, which retains the callback in its
-        // private result, so the owner exposes nothing by itself.
-        outcome.executed_owners.remove(&fact.ordinal);
-    }
     // Keep the selected result in this owner until publication.
     let ordered_initializer_result = ordered_initializer.map(|_| SelectedValue {
         values: std::mem::take(&mut outcome.returns),
@@ -253,6 +243,16 @@ fn settle(
         outcome.executed_owners.extend(fallback.executed_owners);
         outcome.unknown_call = true;
         outcome.inherit_completeness(false, fallback.effects.precision_losses);
+    }
+    if ordered_initializer.is_some()
+        && private_factory_result
+        && outcome.complete
+        && !outcome.unknown_call
+    {
+        // The kernel records the root as executed. This root ran only the
+        // substituted factory call, which retains the callback in its
+        // private result, so the owner exposes nothing by itself.
+        outcome.executed_owners.remove(&fact.ordinal);
     }
     if index.opaque_top.contains(&fact.ordinal) {
         outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);

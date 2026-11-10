@@ -14,6 +14,20 @@ fn options<'a>(providers: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
     .with_unassigned_mode(unassigned_mode_inline())
 }
 
+/// The xfail form for a split the effect verdict already accepts and only the
+/// legacy gate's ordering veto refuses.
+fn assert_legacy_ordering_veto(opts: FixtureOpts<'_>, expected_stdout: &str) {
+    let assessment = assert_pending_split_preserves_output(
+        opts,
+        "accepted_within_checked_scope",
+        expected_stdout,
+    );
+    assert_eq!(
+        assessment["legacy_gate_ordering_veto"], true,
+        "{assessment:#}"
+    );
+}
+
 #[test]
 fn hoisted_provider_control() {
     let fixture = run_fixture(options(&[(
@@ -58,7 +72,7 @@ fn unproved_provider_initializers_stay_pending() {
         "export { factory } from './leaf.js';",
         "const api = { factory(callback) { return { invoke: callback }; } }; export const factory = api.factory;",
     ] {
-        assert_pending_split_preserves_output(
+        assert_legacy_ordering_veto(
             options(&[
                 ("static/peer", provider),
                 (
@@ -66,7 +80,6 @@ fn unproved_provider_initializers_stay_pending() {
                     "export const factory = callback => ({ invoke: callback });",
                 ),
             ]),
-            "accepted_within_checked_scope",
             "42\n",
         );
     }
@@ -75,7 +88,7 @@ fn unproved_provider_initializers_stay_pending() {
 /// A valid split waiting on namespace-member imports of a provider factory.
 #[test]
 fn namespace_import_of_a_factory_stays_pending() {
-    assert_pending_split_preserves_output(
+    assert_legacy_ordering_veto(
         FixtureOpts::new(
             "import * as api from './peer.js'; const wrapped = api.factory(() => later); const later = 42; console.log(wrapped.invoke());",
             vec![
@@ -85,7 +98,6 @@ fn namespace_import_of_a_factory_stays_pending() {
         )
         .with_extra_chunks(&[("static/peer", "export const factory = callback => ({ invoke: callback });")])
         .with_unassigned_mode(unassigned_mode_inline()),
-        "accepted_within_checked_scope",
         "42\n",
     );
 }
