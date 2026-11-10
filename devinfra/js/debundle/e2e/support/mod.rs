@@ -437,6 +437,16 @@ pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
 }
 
+/// The xfail form of a positive the gate still refuses: the split is valid
+/// (the tree emitted on rejection prints `expected_stdout`, the source's
+/// output) but not provable yet. Once the gate accepts it, the run no longer
+/// exits with the gate-rejected status and this fails: convert the caller to
+/// a positive.
+pub fn assert_pending_split_preserves_output(opts: FixtureOpts<'_>, expected_stdout: &str) {
+    let rejected = run_emit_on_rejection_fixture(opts);
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+}
+
 /// `debundle run --emit-on-rejection` over a spec that fails for more than
 /// the gate's rejection: the run exits 1 like any other refusal.
 pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {

@@ -10301,8 +10301,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         //   store to a module binding that records the rebind
         //   (`Unproved::CaptureStore` summarizes the remainder today).
         // - free reads outside module, summarized-import, imported-primitive
-        //   and intact-native bindings: global-object and callback-factory
-        //   import reads with their global-cell provenance.
+        //   and intact-native bindings: global-object reads, and reads of a
+        //   callback-factory import that has no derived summary, with their
+        //   global-cell provenance.
         // - `established_writes`: member-write proofs (fresh local records,
         //   borrowed parameters, array iteration) in the kernel's own-data
         //   store.
