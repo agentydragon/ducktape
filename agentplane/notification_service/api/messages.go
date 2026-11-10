@@ -75,6 +75,8 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, err
 	}
+	// TODO(SESSION_IDENTITY_AUTHZ): decide sends by the target Session's Identity and the bindings
+	// naming it, not by the Sandbox hosting it (agentplane/plans/task_dag.md).
 	if !s.policy.PermitsSend(policyapi.ServiceAccountRef(sender), view.Resource) {
 		return nil, errSendDenied
 	}

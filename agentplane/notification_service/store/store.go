@@ -37,6 +37,9 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
+// TODO(SESSION_IDENTITY_AUTHZ): decide inbox ownership by the Session's Identity and its bindings,
+// not by the Sandbox incarnation the inbox was opened for (agentplane/plans/task_dag.md).
+//
 // Owner is who may read and manage an inbox: an AccountOwner or an IdentityOwner. Each pins the
 // subject incarnation and the Sandbox incarnation the inbox was opened for, so recreating either
 // resource does not transfer ownership.
