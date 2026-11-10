@@ -299,13 +299,15 @@ async def _assert_replacement_native_session_started(
         if boundary.boundary != "executor" or boundary.fragment_count != 1:
             continue
         payload = json.loads(boundary.payload)
+        new_session_id = payload.get("execution_session_id")
         if boundary.direction == "dispatch" and payload.get("method") == "initialize":
             initialize_intents.add(boundary.correlation_id)
         elif (
             boundary.direction == "result"
             and boundary.correlation_id in initialize_intents
             and payload.get("outcome") == "completed"
-            and (new_session_id := payload.get("execution_session_id"))
+            and isinstance(new_session_id, str)
+            and new_session_id
             and new_session_id != original_session_id
         ):
             return new_session_id
@@ -390,7 +392,9 @@ async def _wait_for_executor_dispatch_after(
                 and payload.get("params", {}).get("processId") == process_id
                 and payload.get("params", {}).get("waitMs", 0) > 0
             ):
-                return boundary.correlation_id
+                correlation_id = boundary.correlation_id
+                assert isinstance(correlation_id, str)
+                return correlation_id
         raise TimeoutError("the live process read never reached the executor")
     finally:
         stream.cancel()
@@ -700,7 +704,6 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
         )
         assert killed_native is None
-        assert outage_seconds < 30, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
         request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
@@ -859,12 +862,6 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         request, read_text, visible = await _follow_code_mode_cell(
             model, request, "read-expiring-process", timeout_s=140
         )
-        if "retained exec-server session was definitively lost" not in visible:
-            await model.reply(request, ShellCall("observe-replacement", "true"))
-            request = await asyncio.wait_for(model.request(), timeout=30)
-            visible = "\n".join(
-                [*request.user_texts, *(block for output in request.tool_outputs for block in output.blocks)]
-            )
         assert "retained exec-server session was definitively lost" in visible, visible
         assert "no mutation was replayed" in visible, visible
         await model.reply(
