@@ -404,12 +404,6 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
             &["items", "result"][..],
             format!("7 {}\n", (0..300).map(|index| index.to_string()).collect::<Vec<_>>().join(",")),
         ),
-        (
-            "let later = 0;\nconst items = [{ size: 1, executor: () => later }, { size: 2, executor: () => later }];".to_owned(),
-            "items.reduce((total, entry) => total + entry.size, 0)",
-            &["later", "items", "result"][..],
-            "7 3\n".to_owned(),
-        ),
     ] {
         let source = format!(
             "{declarations}\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, String(result));\n"
@@ -424,14 +418,11 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
     }
 }
 
-/// A root over records whose fields the callback only reads is admitted: the
-/// row checks each record settled and source-shaped before its first callback,
-/// and the callback reads them at the current prefix, so the root's binding
-/// effects get the row's receipt. The relocation itself stays pending: an
-/// own-data read leaves the owner's initialization domains unknown
-/// (`EffectCoverageFragment::lexical_operation`).
+/// The same record roots beside a later bare assignment (`later = 42;`):
+/// the root seals, but the assignment's anonymous-statement owner is not
+/// covered yet (Wave 3 row 9 left), so the relocation stays pending.
 #[test]
-fn record_element_roots_get_receipts_pending_initialization_coverage() {
+fn record_element_roots_beside_a_bare_assignment_stay_pending() {
     for (initializer, member, expected) in [
         (
             "entries.reduce((total, entry) => total + entry.size, 0)",
@@ -480,35 +471,76 @@ fn an_element_getter_field_keeps_its_root_on_the_flat_lane() {
     );
 }
 
-/// Valid splits whose roots are not admitted, so they keep the flat lane.
-/// A store through another name (`item.size = 2` while reading
-/// `entry.size`) or a field holding a closure could reach state the row did
-/// not check, and admission is decided before any callback runs.
+/// A root over records the callback reads seals once the read closes its
+/// domains: the row proves each record settled and source-shaped before the
+/// first callback, and the callback reads it at the current prefix. A field
+/// holding a closure is read like any data field; the closure is retained in
+/// the result, not invoked.
 #[test]
-fn record_roots_with_stores_or_object_fields_keep_the_flat_lane() {
-    for (declarations, members, initializer, expected) in [
+fn record_element_roots_seal_across_an_independent_inversion() {
+    for (initializer, member, printed, expected) in [
         (
-            "const item = { size: 1 };\nconst entries = [item];",
-            &["item", "entries", "result"][..],
-            "entries.map((entry) => { item.size = 2; return entry.size; })",
-            "7 2\n",
+            "items.reduce((total, entry) => total + entry.size, 0)",
+            "reduce",
+            "String(result)",
+            "7 3\n",
         ),
         (
-            "let later = 0;\nconst entries = [{ size: 1, executor: () => later }];",
-            &["later", "entries", "result"][..],
-            "entries.map((entry) => entry.executor)",
-            "7 0\n",
+            "items.map((entry) => entry.size * 2)",
+            "map",
+            "String(result)",
+            "7 2,4\n",
+        ),
+        (
+            "items.map((entry) => (entry.size > 1 ? entry.size : 0))",
+            "map",
+            "String(result)",
+            "7 0,2\n",
+        ),
+        (
+            "items.map((entry) => entry.executor)",
+            "map",
+            "result.map((executor) => executor()).join(',')",
+            "7 0,0\n",
         ),
     ] {
         let source = format!(
-            "{declarations}\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, typeof result[0] === 'function' ? result[0]() : result.join(','));\n"
+            "let later = 0;\nconst items = [{{ size: 1, executor: () => later }}, {{ size: 2, executor: () => later }}];\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, {printed});\n"
         );
-        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
         let fixture = run_fixture(FixtureOpts::new(
             &source,
-            vec![logical_module("run", &members)],
+            vec![logical_module(
+                "run",
+                &[
+                    Member::new("later"),
+                    Member::new("items"),
+                    Member::new("result"),
+                ],
+            )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_commuting_relocation(&fixture, initializer);
     }
+}
+
+/// A store through another name (`item.size = 2` while reading
+/// `entry.size`) is not one the row can seal: the attempt rewinds and the
+/// split stays a legacy acceptance with Node parity.
+#[test]
+fn a_record_root_with_an_aliased_store_rewinds() {
+    let source = "const item = { size: 1 };\nconst entries = [item];\nconst independent = 7;\nconst result = entries.map((entry) => { item.size = 2; return entry.size; });\nconsole.log(independent, result.join(','));\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "run",
+            &[
+                Member::new("item"),
+                Member::new("entries"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 2\n");
+    assert_effect_verdict_pending(&fixture, "incomplete", "aliased store");
 }

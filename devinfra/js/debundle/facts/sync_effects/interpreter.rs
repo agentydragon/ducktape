@@ -1503,6 +1503,7 @@ impl Executor<'_, '_> {
             checking_record_factory_contract: _,
             prior_effect_owners: _,
             array_iteration_depth: _,
+            iteration_element_records: _,
             invocation_depth: _,
             active: _,
             assumption: _,
