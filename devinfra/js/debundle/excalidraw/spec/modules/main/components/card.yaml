@@ -1,0 +1,8 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        Card = ({ children: ANYTHING, color: ANYTHING }) =>
+          ANYTHING("div", { className: "Card", ANYTHING }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - Card

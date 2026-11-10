@@ -280,11 +280,6 @@ spec:
       name: grafana-instance
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy/"
-      name: haku-egress-proxy
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/haku/rbac/**"
           to: "@artifact/cluster/generated/haku/rbac/"
       name: haku-rbac

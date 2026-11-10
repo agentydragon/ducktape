@@ -782,16 +782,17 @@ pub fn build_chunk_manifest_from_analysis(
     source_path: &str,
     analysis: &ProgramAnalysis,
 ) -> ChunkAnalysisReport {
+    let declared_names: HashSet<&String> = analysis
+        .declarations
+        .iter()
+        .flat_map(|declaration| &declaration.names)
+        .collect();
     let unresolved_exports = analysis
         .export_aliases
         .iter()
         .filter(|alias| {
             alias.local.as_ref().is_some_and(|local| {
-                !analysis
-                    .declarations
-                    .iter()
-                    .any(|declaration| declaration.names.contains(local))
-                    && !analysis.import_local_names.contains(local)
+                !declared_names.contains(local) && !analysis.import_local_names.contains(local)
             })
         })
         .cloned()

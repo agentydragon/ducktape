@@ -126,9 +126,6 @@ descending order of "that can't be right":
 - [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
 - [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
       API server.
-- [ ] `haku-egress-proxy` mitmproxy — 1Gi → 3Gi, VPA saw 1.15Gi. Second time it
-      has outgrown its limit; the existing comment claims the working set stays
-      bounded under `stream_large_bodies`, and it evidently does not.
 - [ ] `grocy-{sf,vallejo}` valkey — 128Mi → 384Mi, VPA saw 256Mi. Check the
       eviction policy; this is a cache with apparently unbounded key growth.
 - [ ] `website` nginx — 64Mi → 192Mi, VPA saw 100Mi to serve static files.
@@ -353,11 +350,12 @@ would hand a hostile author only a credential they could already obtain.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
       it having nothing worth reading; that assumption is the tripwire.
 
-## Egress fences: known gaps
+## Haku egress: known gaps
 
-The fence in `cluster/cdk8s/egress_fences.py` (`haku_cloud_api`, the only one left) bounds the host
-set the Haku proxy pods may reach on the public internet, and nothing else. Known wrong or
-unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/security.md`):
+`haku-sandbox` and `haku-ci` reach the public internet only through Agentplane egress, as the
+standing accounts their sidecars or the haku-ci relay present; the force-proxy CCNPs
+(`haku/namespace.py`, `haku_ci/runner.py`) bound everything else to the cluster. Known wrong or
+unverified around it (operator-facing summary: `haku/docs/security.md`):
 
 - [ ] (Maybe later.) AnkiWeb sync has been off since the credentials moved to external-creds
       (2026-09-21, #7581). `ankiweb-credentials` exists only in `ducktape-flux` (its source), approved
@@ -369,13 +367,9 @@ unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/secur
       Before turning it on, know that the worker's first pass after boot does an automatic full upload
       when AnkiWeb's side is empty, so the collection is pushed to the dedicated AnkiWeb account
       straight away. Also consider dropping `optional: true` so a missing Secret is loud.
-- [ ] Converge on one proxy. mitmproxy has no credential placeholders, so its clients send real
-      unredacted tokens upstream where Agentplane egress substitutes a placeholder in a trusted
-      pod (Iron, the earlier candidate, was retired 2026-10-21). Blocked on an Agentplane
-      equivalent of `--set stream_large_bodies=1m` (dind image layers were buffered whole into
-      memory and OOM-killed the pod).
-- [ ] Enforce at two layers. The mitmproxy fence confines only via Cilium `toFQDNs` —
-      the container has no allowlist.
+- [ ] Enforce at two layers. Agentplane egress enforces each account's host rules at L7, but its
+      Pods have open 80/443 (`cilium.open_internet_egress` in `agentplane/egress.py`), so a proxy
+      bug is not backstopped at L3/L4.
 - [ ] Route cluster-internal traffic through the proxies too. The haku-ci runner
       (`_PROXY_ENV` in `cluster/cdk8s/haku_ci/runner.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
@@ -384,12 +378,8 @@ unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/secur
 - [ ] Allowlist DNS for the **sandboxes**, where the exfil channel actually is. Verified
       in-cluster 2026-08-04: the force-proxy CCNPs admit sandbox pods to kube-dns with a
       plain L4 rule and no `rules.dns`, so Cilium does not proxy their queries and they
-      resolve anything (a probe pod in `haku-sandbox` resolved `example.com` while the
-      same name 502'd through the proxy). The fix belongs in the force-proxy CCNPs.
-- [ ] Record traffic, including rejections. The proxies filter and substitute
-      credentials but keep no request log, so a blocked request is invisible after the
-      fact — and rejections are how a fence being too tight, or an agent trying
-      somewhere it should not, becomes observable at all.
+      resolve anything (a probe pod in `haku-sandbox` resolved `example.com`, which no proxy
+      rule admits). The fix belongs in the force-proxy CCNPs.
 - [ ] Verify which pod is routed through which proxy. The force-proxy
       `CiliumClusterwideNetworkPolicy` selectors are unverified, and one that matches
       nothing bypasses the fence entirely.

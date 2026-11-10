@@ -1,1 +1,23 @@
-vendor_marks: []
+vendor_marks:
+  # `app/vendor/` entry chunks: each re-exports its package's default.
+  - level: swap
+    chunk_path: vendor/clsx.js
+    identity: clsx-entry
+    package: clsx
+    version: 1.1.1
+    subpath: dist/clsx.m.js
+  - level: swap
+    chunk_path: vendor/roughjs.js
+    identity: roughjs-entry
+    package: roughjs
+    version: 4.6.4
+    subpath: bin/rough.js
+  # The shared clsx chunk the editor and `main` import; `a` is its minified
+  # export name for clsx's default (README.md § Bumping the pin).
+  - level: partial_swap
+    chunk_path: vendor/clsx_lib.js
+    identity: clsx-shared
+    packages:
+      clsx: { version: 1.1.1, subpath: dist/clsx.m.js }
+    symbols:
+      a: { package: clsx, kind: default }

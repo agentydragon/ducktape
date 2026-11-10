@@ -52,11 +52,11 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** The Excalidraw corpus and its accepted residual
-   baseline landed (<excalidraw/README.md>). Remaining per
-   <plans/excalidraw_live_smoke.md>: a realistic spec (vendor swap marks,
-   source-anchored modules, renames), the live-browser smoke covering bundled
-   vendor singleton/importmap behavior, and the public canonical-spec check.
+3. **Public browser smoke.** The Excalidraw corpus, its accepted spec and its
+   browser smoke landed (<excalidraw/README.md>); the smoke loads swapped
+   packages through an import map. Remaining per
+   <plans/excalidraw_live_smoke.md>: lazy-chunk coverage and the public
+   canonical-spec check.
    Node probes already run; browser loading is the missing contract, not a
    missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
@@ -294,6 +294,23 @@ closure`, conflating unresolved host requests, missing captured chunks,
   pins, structural members, imports, anonymous claims, repeated declarations
   and path-case aliases; accepted rows must reconcile with `modules.json`,
   while unresolved statuses never infer identity by spelling.
+
+- **Vendor swaps on a production esbuild corpus (Excalidraw).** Observed while
+  authoring <excalidraw/spec/vendor_marks.yaml>:
+  - A `partial_swap` package whose subpath is JSON (`open-color.json`) fails
+    `DebundleProjectAnalysis` with the bare parser error
+    `failed to parse <path>: ExpectedSemiForExprStmt`, naming neither the mark
+    nor the package. Reject non-JS subpaths at spec validation with the mark's
+    identity, or support JSON defaults as `swap` does.
+  - A `partial_swap` package has one subpath, so a chunk exporting values from
+    several entry files of one package (roughjs `bin/rough.js`,
+    `bin/generator.js`, `bin/math.js`) cannot be swapped. Next action: decide
+    whether a symbol may name its own subpath.
+  - `chunk_renames` selectors accept only `binding` names, so renaming a
+    residual binding requires a minified-name pin; the corpus renames through
+    module members instead.
+  - `(e => e)({...})`, an immediately invoked local identity arrow, is an
+    `unknown_call` initializer, which put `APP_STATE_STORAGE_CONF` on the side-effect chain.
 
 ### Pipeline performance and architecture cleanup
 

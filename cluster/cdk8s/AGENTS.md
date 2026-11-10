@@ -103,7 +103,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   node). Find how the tree already does it before writing a helper; a second shape for the
   same job is a review finding even if both work.
 - **One helper per repeated shape**: cluster facts in `cilium.py` (`egress_via_gateway`,
-  `dns_egress`, `fqdn_fence`, ...), generic shapes in `providers/cilium/network_policy.py`
+  `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
   `node_scheduling.py`, `pod_policy.py`,
   `api_resource.custom_resource`. Parameterize only variation call sites actually have.

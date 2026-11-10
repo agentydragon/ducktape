@@ -162,6 +162,13 @@ mount; inline pages include that CSS automatically. Capture waits for fonts, ima
 paint and the fixture network ledger, and checks uncaught page errors and escaped requests.
 These are **not** application-readiness conditions: the test must assert its content first.
 
+Capture then repaints the whole page (`repaint` in `page_capture.py`) before taking the
+screenshot. Chromium's compositor can keep a layer's tiles rastered for the pixel alignment the
+layer had when the tiles were made. A sticky heading changes alignment as it sticks and unsticks,
+so without the repaint its text landed a device pixel off depending on scroll timing. A DevTools
+capture also hides the text caret, as `page.screenshot()` does by default, because the caret blinks
+on wall-clock time.
+
 The launcher pins Chromium's native device scale to the context's emulated scale with
 `--force-device-scale-factor`. Emulation alone changes the DOM's `devicePixelRatio` while
 leaving the native widget at its default scale (1 on RBE). Chromium's [screenshot handler] then rescales the

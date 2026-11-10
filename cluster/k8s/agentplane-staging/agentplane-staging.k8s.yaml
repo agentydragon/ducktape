@@ -9443,25 +9443,6 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: runner-to-haku-ci-egress
-  namespace: haku-ci
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: haku-ci-egress
-            k8s:io.kubernetes.pod.namespace: haku-ci
-      toPorts:
-        - ports:
-            - port: "3128"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: haku-runner
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
   name: haku-ci-egress
   namespace: agentplane-staging
 spec:
