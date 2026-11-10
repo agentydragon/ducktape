@@ -205,6 +205,29 @@ def test_retries_retract_fields_move_paths_and_respect_capture_rank(postgres_eng
         )
     assert _candidates(factory) == _reference(factory)
     with factory() as db, db.begin():
+        db.add(
+            ResticSnapshotRow(
+                machine_id="host", snapshot_id="e" * 64, captured_at=START + timedelta(minutes=3), paths=[]
+            )
+        )
+        db.flush()
+        db.add(
+            CodexTitleObservationRow(
+                machine_id="host",
+                snapshot_id="e" * 64,
+                native_session_id="test",
+                source_path="",
+                title="Equal-time capture",
+            )
+        )
+    assert _candidates(factory)[("", "title")] == ("e" * 64, "Equal-time capture")
+    assert _candidates(factory) == _reference(factory)
+    with factory() as db, db.begin():
+        tied = db.get(CodexTitleObservationRow, ("host", "e" * 64, "test"))
+        assert tied is not None
+        db.delete(tied)
+    assert _candidates(factory) == _reference(factory)
+    with factory() as db, db.begin():
         row = db.get(CodexTitleObservationRow, ("host", f"{3:064x}", "test"))
         assert row is not None
         db.delete(row)
@@ -291,6 +314,11 @@ def test_backfill_can_read_while_legacy_writer_holds_an_observation_row(legacy_f
         assert started_writer
         for future in futures:
             future.result(timeout=10)
+    candidates = _candidates(legacy_factory)
+    assert candidates[("changed-while-backfill-has-machine-lock", "title")] == (f"{2:064x}", "Retry after bootstrap")
+    assert candidates[(PATH, "title")] == (f"{0:064x}", "Name 0")
+    while not backfill_codex_title_candidates_batch(legacy_factory, "host"):
+        pass
     assert _candidates(legacy_factory) == _reference(legacy_factory)
 
 
