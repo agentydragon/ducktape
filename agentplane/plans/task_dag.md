@@ -3228,8 +3228,11 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
 
 Dispatcher and Notification already serve a Sandbox that names an Identity and has no managed
 ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (#15360), a precondition for deleting the per-Sandbox ServiceAccount here.
-In-Sandbox agents subscribe and message each other as Identities (identity-consumers
-`notification-messaging`), a precondition for the switch: an agent's ServiceAccount stops existing.
+In-Sandbox agents subscribe and message each other as Identities (#15374), a precondition for the
+switch: an agent's ServiceAccount stops existing. Before the switch, a privileged `CreateSession` on a
+Sandbox naming an Identity can race its ServiceAccount's creation; nothing sets `spec.identity`
+before the switch, so the switch design accepts that window and closes it by deleting the
+ServiceAccount path.
 
 Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
 a Session whose recorded execution identity differs), so the switch needs a step that either
