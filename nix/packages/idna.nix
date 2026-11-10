@@ -8,12 +8,12 @@
 }:
 python3Packages.buildPythonPackage rec {
   pname = "idna";
-  version = "3.19";
+  version = "3.20";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl";
-    hash = "sha256-gV5756eAbVSrtYbclDrdx56LLuFpFQWWWMvv9LG0O/Q=";
+    url = "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl";
+    hash = "sha256-q3rnEil0VTNw8L25GeGpYLLNG8HvAnZBbYltuBwUWCw=";
   };
 
   doCheck = false;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -148,8 +149,24 @@ async def test_accepts_configured_issuer_variants_audience_lists_and_jwks_kids(
     )
 
     assert access_token is not None
-    assert access_token.client_id == "agent-123"
+    # FastMCP 4.1 scopes MultiAuth identities to the verifier and issuer.
+    # The underlying JWT subject remains present without becoming the whole key.
+    assert json.loads(access_token.client_id)[1:] == ["agent-123", issuer, "agent-123"]
     assert access_token.scopes == scopes
+
+
+async def test_same_subject_from_different_issuers_has_distinct_client_identity(
+    jwt_contract_harness: _JWTContractHarness,
+) -> None:
+    machine_a = await jwt_contract_harness.auth.verify_token(jwt_contract_harness.create_token())
+    machine_b = await jwt_contract_harness.auth.verify_token(
+        jwt_contract_harness.create_token(issuer=MACHINE_B_ISSUER, audience="machine-b")
+    )
+    assert machine_a is not None
+    assert machine_b is not None
+    assert machine_a.client_id != machine_b.client_id
+    assert json.loads(machine_a.client_id)[2] == MACHINE_A_ISSUER
+    assert json.loads(machine_b.client_id)[2] == MACHINE_B_ISSUER
 
 
 @pytest.mark.parametrize(

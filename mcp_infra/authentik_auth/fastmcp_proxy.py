@@ -54,7 +54,7 @@ def _transient_oauth_state_storage_error(exc: BaseException) -> bool:
 
 
 def _transient_refresh_error(exc: BaseException) -> bool:
-    return _is_transient_token_error(exc) or _transient_oauth_state_storage_error(exc)
+    return _transient_upstream_error(exc) or _is_transient_token_error(exc) or _transient_oauth_state_storage_error(exc)
 
 
 def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
@@ -107,9 +107,9 @@ class RetryableJWTVerifier(JWTVerifier):
 class RetryableRefreshOIDCProxy(OIDCProxy):
     """Keep transient upstream refresh failures retryable for MCP clients.
 
-    FastMCP's `OAuthProxy.exchange_refresh_token` wraps the upstream refresh call
-    in a blanket `except Exception` and raises
-    `TokenError("invalid_grant")`. Per RFC 6749 §5.2, invalid_grant tells the client
+    FastMCP 4.1 lets upstream transport errors propagate; older 4.x versions
+    wrapped them in `TokenError("invalid_grant")`. Per RFC 6749 §5.2,
+    invalid_grant tells the client
     its refresh token is revoked — claude.ai correctly treats it as terminal, flips
     the connector to "Reconnect", and never retries. A single Authentik restart
     (503) or DNS blip therefore permanently killed connectors
@@ -120,8 +120,8 @@ class RetryableRefreshOIDCProxy(OIDCProxy):
     instead of invalid_grant. Genuine upstream OAuth error responses (Authentik
     actually rejecting the grant) still surface as invalid_grant.
 
-    Detection relies on FastMCP raising its TokenError `from` the original httpx
-    exception — pinned by test_fastmcp_proxy.py against the locked FastMCP version.
+    Detect the raw transport error or a TokenError caused by one, as pinned by
+    the compatibility and proxy tests against the locked FastMCP version.
     """
 
     # Short on purpose: retries only bridge sub-second blips; longer outages are
@@ -156,6 +156,14 @@ class RetryableRefreshOIDCProxy(OIDCProxy):
                 UPSTREAM_REFRESH_FAILURES.labels(outcome="oauth").inc()
             raise
         except Exception as e:
+            if _transient_upstream_error(e):
+                UPSTREAM_REFRESH_FAILURES.labels(outcome="transient").inc()
+                logger.exception("Upstream auth server unavailable during token refresh")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upstream authorization server temporarily unavailable; retry later.",
+                    headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+                ) from e
             if _transient_oauth_state_storage_error(e):
                 UPSTREAM_REFRESH_FAILURES.labels(outcome="storage").inc()
                 logger.exception("OAuth state store unavailable during token refresh")

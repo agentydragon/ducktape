@@ -24,6 +24,7 @@ from importlib.resources import files
 from typing import Any, cast
 
 from fastmcp.tools import Tool, ToolResult
+from jsonschema import Draft202012Validator
 from mcp.types import ToolAnnotations
 from pydantic import ConfigDict, Field
 
@@ -157,6 +158,10 @@ class GeneratedGoogleTool(Tool):
     service: Any = None  # a googleapiclient Resource; None when built only for schema reflection
 
     async def run(self, arguments: dict[str, Any], **_: Any) -> ToolResult:
+        # FastMCP advertises custom Tool.parameters but does not validate them
+        # before calling a Tool subclass. Enforce the discovery-generated
+        # contract before any Google API request, including pinned parameters.
+        Draft202012Validator(self.parameters).validate(arguments)
         merged = {**self.pinned, **arguments}
         raw = await asyncio.to_thread(_execute, self.service, self.method_id, merged)
         return self.convert_result(raw)
