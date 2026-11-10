@@ -32,7 +32,7 @@ const watchWriteTimeout = 5 * time.Second
 // Decisions reads a subject's retained decisions; a nil subject selects the refusals that never
 // authenticated.
 type Decisions interface {
-	Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error)
+	Recent(ctx context.Context, subject decision.Subject) ([]decision.Record, error)
 	ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decision.Record, error)
 	Readable(ctx context.Context) error
 	Window() history.Window
@@ -40,7 +40,7 @@ type Decisions interface {
 
 // Changes follows decision commits; see history.Changes.Follow.
 type Changes interface {
-	Follow(ctx context.Context, subject *decision.Subject, changed func(history.Change) error) error
+	Follow(ctx context.Context, subject decision.Subject, changed func(history.Change) error) error
 }
 
 // HistoryHealth reports the decision writer's counters.
@@ -261,17 +261,22 @@ func decisionDelta(previous, current []*egressadminpb.Decision) *egressadminpb.D
 
 // subjectOf is the decisions' subject the filter selects; nil selects the refusals that never
 // authenticated.
-func subjectOf(filter *egressadminpb.DecisionFilter) (*decision.Subject, error) {
+func subjectOf(filter *egressadminpb.DecisionFilter) (decision.Subject, error) {
 	switch scope := filter.GetScope().(type) {
 	case *egressadminpb.DecisionFilter_Subject:
 		if scope.Subject.GetNamespace() == "" || scope.Subject.GetName() == "" {
 			return nil, status.Error(codes.InvalidArgument, "subject needs a namespace and a name")
 		}
-		return &decision.Subject{Namespace: scope.Subject.GetNamespace(), Name: scope.Subject.GetName()}, nil
+		return decision.ServiceAccount{Namespace: scope.Subject.GetNamespace(), Name: scope.Subject.GetName()}, nil
+	case *egressadminpb.DecisionFilter_Identity:
+		if scope.Identity.GetName() == "" {
+			return nil, status.Error(codes.InvalidArgument, "identity needs a name")
+		}
+		return decision.Identity{Name: scope.Identity.GetName()}, nil
 	case *egressadminpb.DecisionFilter_Unauthenticated:
 		return nil, nil
 	default:
-		return nil, status.Error(codes.InvalidArgument, "filter must select a subject or the unauthenticated")
+		return nil, status.Error(codes.InvalidArgument, "filter must select a subject, an identity or the unauthenticated")
 	}
 }
 
