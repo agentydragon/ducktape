@@ -703,6 +703,11 @@ impl LocalExpression {
                         let MemberProp::Ident(property) = &member.prop else {
                             return None;
                         };
+                        // `__proto__` is the Object.prototype accessor, not an
+                        // own data slot.
+                        if property.sym == "__proto__" {
+                            return None;
+                        }
                         Some(Self::AssignField {
                             receiver: receiver.to_id(),
                             property: property.sym.to_string(),

@@ -6107,8 +6107,9 @@ pub(super) struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
-    /// Top-level expression statements lowered from their exact source
-    /// expression. Lowering selects nothing: `roots/operands` admits one.
+    /// Top-level `receiver.property = value` statements lowered from their
+    /// exact source expression. Lowering selects nothing: `roots/operands`
+    /// admits one.
     pub(super) ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Canonical owner/binding/initializer identity, independent of the
     /// legacy initializer leaf and allocation admission.
@@ -9437,6 +9438,7 @@ impl ExecutionIndex {
             }
             if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
                 && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
+                && body.root_field_store_statement().is_some()
             {
                 index.ordered_statements.insert(owner, body);
             }

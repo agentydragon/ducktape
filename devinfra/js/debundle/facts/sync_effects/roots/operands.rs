@@ -465,12 +465,15 @@ pub(super) fn prepare<'source>(
                     })
         })
         .map(|(body, _)| body);
-    let initialization_coverage_refusal = if ordered_statement.is_some() {
-        None
-    } else if field_store.is_some() {
-        Some(OwnerInitializationCoverageRefusalReason::UnprovedFieldStore)
-    } else {
-        initialization_coverage_refusal
+    // A field store refines only the generic non-declaration refusal.
+    let initialization_coverage_refusal = match initialization_coverage_refusal {
+        _ if ordered_statement.is_some() => None,
+        Some(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind)
+            if field_store.is_some() =>
+        {
+            Some(OwnerInitializationCoverageRefusalReason::UnprovedFieldStore)
+        }
+        refusal => refusal,
     };
     // Every other initializer whose root calls are all local: a call with
     // arguments, an IIFE, a call inside a comma. The body phase runs it

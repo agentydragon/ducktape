@@ -90,9 +90,13 @@ pub enum OwnerInitializationCoverageRefusalReason {
     UnsupportedInitializer,
     OwnerBindingMismatch,
     InitializerResultUnproved,
-    /// A root `receiver.property = value` statement whose receiver is not an
-    /// initialized module record with a writable own data slot at its
-    /// prefix: a global publication, a new property or an unproved alias.
+    /// A root `receiver.property = value` statement outside the admitted
+    /// root statements (`roots/operands`): its receiver is not an initialized
+    /// module record with a writable own data slot at its prefix (a global
+    /// publication, a new property, an unproved alias, an escaped record),
+    /// or the owner is excluded (dynamic scope, opaque, deferred global
+    /// write). A store whose value can run code keeps
+    /// `UnsupportedOwnerKind`.
     UnprovedFieldStore,
     /// An admitted root statement's kernel attempt did not seal it, so the
     /// flattened lane ran it instead.
