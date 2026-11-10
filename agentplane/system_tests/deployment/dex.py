@@ -154,7 +154,8 @@ def config_yaml(
                 "tlsCert": f"{_TLS_DIR}/tls.crt",
                 "tlsKey": f"{_TLS_DIR}/tls.key",
             },
-            "oauth2": {"skipApprovalScreen": True},
+            # The password grant gives the stack the operator's ID token for API calls.
+            "oauth2": {"skipApprovalScreen": True, "passwordConnector": "local"},
             "enablePasswordDB": True,
             "staticClients": [
                 {"id": client.id, "name": client.name, "secretEnv": secret_env, "redirectURIs": [client.redirect_uri]}

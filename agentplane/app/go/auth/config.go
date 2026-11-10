@@ -2,7 +2,9 @@
 package auth
 
 import (
+	"crypto/ed25519"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -34,6 +36,8 @@ type OIDCConfig struct {
 	SessionIdleSeconds         int
 	SessionActivityStepSeconds int
 	TokenRenewBeforeSeconds    int
+	// StaticKeys verify bearer ID tokens in place of the issuer's discovered keys.
+	StaticKeys []ed25519.PublicKey
 }
 
 // OIDCSettings contains the non-secret relying-party settings authored in the mounted app YAML.
@@ -45,6 +49,8 @@ type OIDCSettings struct {
 	SessionIdleSeconds         *int   `mapstructure:"session_idle_seconds"`
 	SessionActivityStepSeconds *int   `mapstructure:"session_activity_step_seconds"`
 	TokenRenewBeforeSeconds    *int   `mapstructure:"token_renew_before_seconds"`
+	// Unpadded base64url Ed25519 public keys; nil means the issuer's keys come from discovery.
+	StaticEd25519Keys []string `mapstructure:"static_ed25519_keys"`
 }
 
 // RedirectURI is the fixed public callback registered with the identity provider.
@@ -107,10 +113,40 @@ func LoadOIDC(settings *OIDCSettings) (*OIDCConfig, error) {
 	if c.TokenRenewBeforeSeconds < 0 {
 		return nil, errors.New("oidc.token_renew_before_seconds must be non-negative")
 	}
+	keys, err := staticKeys(settings.Issuer, settings.StaticEd25519Keys)
+	if err != nil {
+		return nil, err
+	}
+	c.StaticKeys = keys
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// staticKeys decodes keys pinned for a test issuer. Only an issuer under the reserved `.test` domain
+// (RFC 6761) may pin keys, so no setting can make the app trust a key for a real issuer, the
+// production one included; a real issuer's keys come from its discovery document.
+func staticKeys(issuer string, encoded []string) ([]ed25519.PublicKey, error) {
+	if encoded == nil {
+		return nil, nil
+	}
+	parsed, err := url.Parse(issuer)
+	if err != nil || !strings.HasSuffix(parsed.Hostname(), ".test") {
+		return nil, errors.New("oidc.static_ed25519_keys requires an issuer under the reserved .test domain")
+	}
+	if len(encoded) == 0 {
+		return nil, errors.New("oidc.static_ed25519_keys must not be empty; omit it to use discovery")
+	}
+	keys := make([]ed25519.PublicKey, 0, len(encoded))
+	for _, value := range encoded {
+		key, err := base64.RawURLEncoding.DecodeString(value)
+		if err != nil || len(key) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("oidc.static_ed25519_keys entry %q is not an unpadded base64url Ed25519 public key", value)
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
 }
 
 func intSetting(value *int, fallback int) int {

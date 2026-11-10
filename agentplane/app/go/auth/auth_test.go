@@ -3,6 +3,9 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -269,5 +274,141 @@ func TestTokenReviewRejectionLogsOnlyCuratedIdentity(t *testing.T) {
 				t.Fatal("credential-bearing TokenReview data escaped")
 			}
 		})
+	}
+}
+
+const pinnedTestIssuer = "https://operator-tokens.test"
+
+// pinnedAuth is an app whose OIDC issuer pins one generated key, as the system-test fixture's does.
+func pinnedAuth(t testing.TB) (*Auth, ed25519.PrivateKey) {
+	t.Helper()
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(Config{
+		OIDC: &OIDCConfig{
+			Issuer: pinnedTestIssuer, ClientID: "test-client", ClientSecret: "test-client-secret",
+			SessionSecret: "test-session-secret", PublicBaseURL: "https://agentplane.test",
+			StaticKeys: []ed25519.PublicKey{public},
+		},
+		Database: new(sql.DB),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, private
+}
+
+func operatorClaims() map[string]any {
+	return map[string]any{
+		"iss": pinnedTestIssuer, "aud": "test-client", "sub": "test-operator-subject",
+		"preferred_username": "test-operator", "iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix(),
+	}
+}
+
+func signedIDToken(t testing.TB, key ed25519.PrivateKey, claims map[string]any) string {
+	t.Helper()
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: key}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestPinnedIDTokenAuthenticatesTheOperatorWithoutACookie(t *testing.T) {
+	a, key := pinnedAuth(t)
+	_, otherKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		key    ed25519.PrivateKey
+		edit   func(map[string]any)
+		accept bool
+	}{
+		{name: "accepted", key: key, edit: func(map[string]any) {}, accept: true},
+		{name: "other key", key: otherKey, edit: func(map[string]any) {}},
+		{name: "other audience", key: key, edit: func(c map[string]any) { c["aud"] = "elsewhere" }},
+		{name: "other issuer", key: key, edit: func(c map[string]any) { c["iss"] = "https://elsewhere.test" }},
+		{name: "expired", key: key, edit: func(c map[string]any) { c["exp"] = time.Now().Add(-time.Minute).Unix() }},
+		{name: "no username", key: key, edit: func(c map[string]any) { delete(c, "preferred_username") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := operatorClaims()
+			tc.edit(claims)
+			var got *Caller
+			next := a.RequireCaller(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				caller, _ := CallerFromContext(r.Context())
+				got = &caller
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			// An unsafe method with no Origin: the same-origin check guards only the cookie.
+			r := httptest.NewRequest(http.MethodPost, "/protected", nil)
+			r.Header.Set("Authorization", "Bearer "+signedIDToken(t, tc.key, claims))
+			w := httptest.NewRecorder()
+			next.ServeHTTP(w, r)
+			if tc.accept {
+				if w.Code != http.StatusNoContent || got == nil || *got != (Caller{Kind: CallerOperator, Principal: "test-operator"}) {
+					t.Fatalf("status=%d caller=%+v", w.Code, got)
+				}
+			} else if w.Code != http.StatusUnauthorized || got != nil {
+				t.Fatalf("status=%d caller=%+v, want 401", w.Code, got)
+			}
+		})
+	}
+}
+
+// Production's issuer has no pinned keys: the first bearer discovers them.
+func TestDiscoveredIDTokenAuthenticatesTheOperator(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var issuer string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": issuer, "authorization_endpoint": issuer + "/auth", "token_endpoint": issuer + "/token",
+				"jwks_uri": issuer + "/keys", "id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/keys":
+			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: key.Public(), KeyID: "test-key", Algorithm: "RS256", Use: "sig"}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	issuer = server.URL
+	a, err := New(Config{
+		OIDC: &OIDCConfig{
+			Issuer: issuer, ClientID: "test-client", ClientSecret: "test-client-secret",
+			SessionSecret: "test-session-secret", PublicBaseURL: "https://agentplane.test",
+		},
+		Database: new(sql.DB), HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: jose.JSONWebKey{Key: key, KeyID: "test-key"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := operatorClaims()
+	claims["iss"] = issuer
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	r.Header.Set("Authorization", "Bearer "+raw)
+	if caller, status, _ := a.caller(r); caller == nil || *caller != (Caller{Kind: CallerOperator, Principal: "test-operator"}) {
+		t.Fatalf("caller=%+v status=%d", caller, status)
 	}
 }

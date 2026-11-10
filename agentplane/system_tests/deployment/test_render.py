@@ -71,6 +71,7 @@ def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
+        None,
     )
 
 
