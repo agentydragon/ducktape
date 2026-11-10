@@ -4511,7 +4511,7 @@ spec:
     name: litellm-buildbuddy-sync
     namespace: ducktape-flux
   timeout: 20m
-  wait: false
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

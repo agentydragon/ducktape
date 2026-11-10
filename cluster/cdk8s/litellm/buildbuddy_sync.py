@@ -38,7 +38,6 @@ def resources(
         NAME,
         directory,
         timeout="20m",
-        wait=False,
         depends_on=flux_kustomization_depends_on_many(tofu_controller, crossplane_keys),
         description="Forget Terraform's ownership of the BuildBuddy live-test secret without destroying it.",
     )
