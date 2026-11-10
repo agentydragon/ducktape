@@ -541,7 +541,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (!allowance) fallback = totalLabel(this._view);
 
       this._icon.icon_name = {
-        good: "emblem-ok-symbolic",
+        good: "object-select-symbolic",
         caution: "dialog-warning-symbolic",
         danger: "dialog-error-symbolic",
         unknown: "dialog-question-symbolic",

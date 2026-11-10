@@ -198,6 +198,18 @@ def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
         raise AssertionError(f"GNOME logged a Plaid Spend extension error during default startup:\n{log}")
 
 
+def test_status_icons_exist_in_the_gnome_theme(session: GnomeSession) -> None:
+    result = session.exec(
+        'gjs -c \'imports.gi.versions.Gtk = "4.0"; '
+        "const { Gtk, Gdk } = imports.gi; Gtk.init(); "
+        "const theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default()); "
+        'for (const name of ["object-select-symbolic", "dialog-warning-symbolic", '
+        '"dialog-error-symbolic", "dialog-question-symbolic"]) '
+        "if (!theme.has_icon(name)) throw new Error(`Missing icon: ${name}`);'"
+    )
+    assert result.exit_code == 0, exec_output(result)
+
+
 @contextmanager
 def _menu(session: GnomeSession, fixture_name: str, expected_label: str) -> Iterator[tuple[int, int, int, int]]:
     session.close_menu()
