@@ -27,6 +27,10 @@ does not expose this flag, upstream defaults it to false, and the current fork d
 it. Verify a Terraform reconciliation and its runner after Flux applies the change. The pins
 are deliberately outside image automation while this pair is staged.
 
+Drain in-flight reconciliations and confirm old runner pods are gone before activating the new
+controller: a running runner with the current TLS secret can otherwise be reused across the
+controller restart. Resume reconciliation after the matched pair and feature gate are active.
+
 ## Source
 
 `go.mod` pins `github.com/flux-iac/tofu-controller` and its nested `api` module to upstream
