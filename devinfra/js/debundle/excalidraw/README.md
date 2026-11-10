@@ -13,52 +13,75 @@ React 19 as an embedding application would. Everything comes from the npm
 registry through `rules_js`: `@excalidraw/excalidraw` is pinned exactly in the
 root `package.json` and by integrity in `pnpm-lock.yaml`; React, roughjs,
 jotai, radix and the other dependencies resolve through the same lockfile.
+The `app/vendor/` entry points each reach one package but not the editor, so
+esbuild splits that package into its own shared chunk, as an application's
+vendor entries would.
 
-`:debundle` is the residual baseline: the unmodified chunks, no module claims,
-no vendor substitutions, every chunk `inline_in_entry`. `gen_inputs.py` writes
-the JS list and tree config from the built chunk roster and
-`spec/config_template.yaml`, because esbuild names shared chunks by content
-hash. `:analysis` selects its saved analysis.
+`gen_inputs.py` writes the JS list, a copy of the chunks and the tree config
+from the built chunk roster, `spec/config_template.yaml` and
+`spec/chunk_aliases.yaml`: esbuild names shared chunks by content hash, so a
+chunk the spec names gets a stable ID, found through the esbuild metafile by a
+module it bundles. Every other chunk is `inline_in_entry`.
+
+## Spec
+
+`:debundle` runs the spec; `:analysis` selects its saved analysis.
+
+- **Modules**, each claimed by a source-anchored selector (property names,
+  self-emitted strings and class names; no minified-name pins):
+  - `editor`: `app_state/defaults` (`getDefaultAppState`), `data/blob`
+    (`blobToArrayBuffer`), `element/text_wrapping` (`isSingleCharacter`,
+    `satisfiesWordInvariant`);
+  - `main`: `components/card` (`Card`), `components/color_picker/labels`
+    (`HotkeyLabel`, `PickerHeading`).
+- **Vendor swaps**: whole-chunk `swap` of the default-only `vendor/clsx` and
+  `vendor/roughjs` entry chunks, and a `partial_swap` of the shared clsx chunk,
+  which rewrites the editor's and `main`'s imports to `"clsx"`. Its symbol key
+  is that chunk's minified export name, which the vendor-mark schema requires.
 
 `test_debundle_tree` checks the accepted tree is complete: no `GATE_REJECTED`,
-every input chunk has a non-empty emitted entry and an accepting gate and
-translation-validation summary, and every static chunk import names an emitted
-chunk. Dynamic imports and browser loading are left to the live-browser smoke.
+every input chunk has an accepting gate and translation-validation summary and,
+unless fully swapped, a non-empty emitted entry, and every static chunk import
+names an input chunk. `spec_output_test` asserts the spec's effects through the
+e2e helpers: claimed modules' export specifiers, `blobToArrayBuffer` reading a
+`Blob` under Node, the clsx import rewrite and strip, and the swap report.
+Dynamic imports and browser loading are left to the live-browser smoke.
+
+Candidates the gate or vendor strip rejected, kept out of the spec:
+`APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
+editor chunk's side-effect chain), welcome-screen components (each
+`X.displayName = …` write chains them with their neighbours), nanoid and roughjs
+`partial_swap`s (residual editor code shares their implementation; roughjs also
+exports three subpaths), and open-color (a JSON default).
 
 ## Shape and cost
 
 Measured at `@excalidraw/excalidraw` 0.18.1 (2026-11-10):
 
-- 75 JS chunks, 4,936,831 bytes: `main` (802,906 bytes); a shared `chunk-*`
-  holding most of the editor (544,734 bytes); a 1,825,162-byte chunk shared by
-  the two lazy font-subsetting chunks, 96% base64 WASM strings; five small
-  shared chunks; and 67 chunks reached only by `import()` (54 locales, font
-  subsetting, image, file-system and pica helpers).
-- Largest chunks by top-level structure, from the run's `chunk.json` counts:
-  the shared editor chunk has 274 top-level declarations, 29 side-effect
-  statements and 1,879 top-level bindings (1,859 source units); `main` has 493
-  declarations, 119 side-effect statements and 1,517 bindings (1,626 source
-  units).
-- The residual baseline is gate-accepted and translation-validated for all 75
-  chunks; input-chunk admission (A1/A3/A5) refuses none, so the spec carries no
+- 79 JS chunks, 4,937,119 bytes: `main` (802,981 bytes, 1,628 source units);
+  the shared `editor` chunk (517,159 bytes, 1,787 source units); a
+  1,825,162-byte chunk shared by the two lazy font-subsetting chunks, 96% base64
+  WASM strings; the roughjs (27,188 bytes) and clsx shared chunks with their
+  two entry stubs; five small shared chunks; and 67 chunks reached only by
+  `import()` (54 locales, font subsetting, image, file-system and pica
+  helpers).
+- Gate-accepted and translation-validated for all 79 chunks; input-chunk
+  admission (A1/A3/A5) refuses none, so the spec carries no
   `admission_overrides`.
-- `DebundleAnalyze` on RBE, two cold runs: 304 s wall, 337 s CPU, 939–942 MiB
-  peak RSS. `DebundleProjectAnalysis` ~2 s; `DebundlePipeline` 11–14 s.
+- `DebundleAnalyze` on RBE: 39.5–43.6 s wall / 59.5–64.9 s CPU / 927–988 MiB
+  peak RSS, and 48.6 s / 50.2 s / 808 MiB with `analysis_threads = 1`. With roughjs inlined
+  in the editor chunk it took about 305 s (<../perf/excalidraw_roughjs_analyze.md>).
+  `DebundlePipeline` 10.9–24.5 s.
 
-### Cost
-
-Analyze reruns whenever the analyzer's compiled closure or the bundle changes,
-which is common in debundle pull requests, and its ~5 minutes are nearly
-single-threaded (CPU/wall ≈ 1.1). `:debundle`,
-`:analysis` and `test_debundle_tree` are therefore tagged `postsubmit`: pushes to
-`devel` build and test them, pull requests do not. Run them on a branch with
-`bbr test //devinfra/js/debundle/excalidraw:all`.
+That is cheap enough to run on every pull request whose affected set includes
+it, so no target here is tagged `postsubmit`.
 
 ## What it represents, and what it does not
 
 It represents: minified, identifier-mangled, tree-shaken ESM with real
 chunk-split boundaries (shared chunks, locale and lazy-feature chunks reached by
-`import()`), bundled React and other vendor code, `import.meta.url` asset and
+`import()`, vendor chunks split by extra entry points), vendor code bundled into
+application chunks (React and most dependencies), `import.meta.url` asset and
 worker URLs, and large base64-embedded WASM strings.
 
 It does not represent: the excalidraw.com application (collaboration, Firebase,
@@ -74,8 +97,10 @@ text-to-diagram dialog loads, so that dialog cannot load in this build.
 2. Build `//devinfra/js/debundle/excalidraw:bundle` once; it fails after the
    managed lockfile update, then build again and commit `pnpm-lock.yaml`
    (<../../../docs/lockfiles.md>). Never run `pnpm install`.
-3. Build `:debundle` and re-measure (below); update anything in `spec/` that
-   names chunks or source shapes, validating the new source/spec pair as one.
+3. Build `:debundle` and re-measure. Update `spec/`: aliases whose module moved
+   chunks, the clsx chunk's export name in `vendor_marks.yaml`, vendor versions
+   in `package.json` matching the ones Excalidraw resolves, and any selector the
+   new source no longer matches, validating the new source/spec pair as one.
 
 ## License
 
