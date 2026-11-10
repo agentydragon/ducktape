@@ -10,6 +10,7 @@ import (
 	"iter"
 	"maps"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -479,12 +480,48 @@ func jsonObject(value map[string]any) (json.RawMessage, error) {
 	if value == nil {
 		return json.RawMessage(`{}`), nil
 	}
+	if !hasOnlyStringMapKeys(reflect.ValueOf(value)) {
+		return nil, errors.New("must be a JSON object")
+	}
 	document, err := json.Marshal(value)
 	if err != nil {
 		// Such as a nested mapping whose keys are not strings.
 		return nil, errors.New("must be a JSON object")
 	}
 	return document, nil
+}
+
+// hasOnlyStringMapKeys keeps YAML mappings valid as JSON objects across Go JSON implementations, which may stringify
+// non-string map keys while marshaling.
+func hasOnlyStringMapKeys(value reflect.Value) bool {
+	if !value.IsValid() {
+		return true
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		return value.IsNil() || hasOnlyStringMapKeys(value.Elem())
+	case reflect.Map:
+		entries := value.MapRange()
+		for entries.Next() {
+			key := entries.Key()
+			if key.Kind() == reflect.Interface {
+				if key.IsNil() {
+					return false
+				}
+				key = key.Elem()
+			}
+			if key.Kind() != reflect.String || !hasOnlyStringMapKeys(entries.Value()) {
+				return false
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < value.Len(); i++ {
+			if !hasOnlyStringMapKeys(value.Index(i)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // limit is value as a whole number from minimum to maximum, or fallback when it is absent.
