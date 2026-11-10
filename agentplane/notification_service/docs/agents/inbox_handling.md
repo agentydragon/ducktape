@@ -34,7 +34,8 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
    webhook delivery ID. Its payload describes the observed base and head SHAs, mergeability
    state, and observation time. A positive result includes a validated `mergeCommit` and its parent
    refs; a conflict is GitHub-reported without equivalent pair evidence. A message from another agent is `event.message`, with
-   `messageId` and the `sender` ServiceAccount the service authenticated, and no `subscriptionIds`; its
+   `messageId`, the `sender` ServiceAccount the service authenticated (for an agent acting as an Identity, the
+   Sandbox it sent from, with the Identity in `senderIdentity`), and no `subscriptionIds`; its
    `payload` is the `body` and, when the sender gave one, `from_session`, an unverified label for the
    Session it wrote from. Reply only through a send of your own
    ([messages](messages.md)).

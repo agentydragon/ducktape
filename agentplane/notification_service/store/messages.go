@@ -48,9 +48,8 @@ type AccountSender struct {
 }
 
 // IdentitySender is an Identity incarnation sending from the Sandbox its workload credential is
-// controlled by. Recipients see the message as from that Sandbox's name, the ServiceAccount the
-// Sandbox ran as before it ran as an Identity.
-// TODO(SESSION_IDENTITY_AUTHZ): show recipients the sending Identity (agentplane/plans/task_dag.md).
+// controlled by. Recipients see the message as from the Identity and that Sandbox's name, the
+// ServiceAccount the Sandbox ran as before it ran as an Identity.
 type IdentitySender struct {
 	Identity model.Identity
 	Sandbox  model.ServiceAccount
@@ -150,6 +149,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 		return SentMessage{}, err
 	}
 	var named model.ServiceAccount
+	var senderIdentity *model.Identity
 	var senderUID, identityName, identityUID sql.NullString
 	// unacknowledged counts the sender's messages; an AccountSender's include those a release before
 	// sender UIDs recorded none, never an IdentitySender's.
@@ -165,7 +165,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 		if sender.Identity.Name == "" || sender.Identity.UID == "" || sender.Sandbox.Name == "" {
 			return SentMessage{}, ErrNotFound
 		}
-		named = sender.Sandbox
+		named, senderIdentity = sender.Sandbox, &sender.Identity
 		identityName = sql.NullString{String: sender.Identity.Name, Valid: true}
 		identityUID = sql.NullString{String: sender.Identity.UID, Valid: true}
 		unacknowledged = `sender_identity_uid = $5`
@@ -227,7 +227,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		event := model.MessageEvent{MessageID: id, Sender: named}
+		event := model.MessageEvent{MessageID: id, Sender: named, SenderIdentity: senderIdentity}
 		accepted, cursor := now(), inbox.LastCursor+1
 		// A worker's release works out when the notice is due, so the inbox is only made due now.
 		if _, err := tx.ExecContext(ctx,

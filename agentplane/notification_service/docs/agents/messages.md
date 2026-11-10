@@ -4,8 +4,9 @@ Use `agentplane notifications send` and `message` for these operations. The App 
 
 ## Send
 
-You may send only to the Sandboxes a `session_inbox_access` rule bound to your ServiceAccount allows
-`send_message` to. Without one the send fails `PERMISSION_DENIED`; ask whoever grants your access.
+You may send to any Session that runs as your own Identity, and otherwise only to the Sandboxes a
+`session_inbox_access` rule bound to your ServiceAccount or Identity allows `send_message` to. Without one
+the send fails `PERMISSION_DENIED`; ask whoever grants your access.
 
 ```bash
 agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for review.'
