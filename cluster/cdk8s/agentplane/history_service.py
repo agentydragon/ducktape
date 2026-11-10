@@ -131,6 +131,8 @@ class HistoryService(Construct):
             content["delegation"] = {
                 "actor": f"{delegation_actor.namespace}/{delegation_actor.name}",
                 "caller_namespaces": [env.namespace],
+                # Session delegation names an Identity in policy_namespace as the effective caller.
+                "identity_callers": True,
                 "methods": [
                     "/agentplane.history_service.HistoryService/ReadSessionEvents",
                     "/agentplane.history_service.HistoryService/FollowSession",
