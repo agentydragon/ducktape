@@ -46,6 +46,7 @@ from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -53,6 +54,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/haku-ci"
 
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}
+# The ScaledJob's Pods, which egress_gateway.py admits.
+RUNNER_PODS = Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
 _AUTH = "forgejo"
 # The hand-written SOPS Secret (haku/forgejo-tea) Reflector copies into NAMESPACE for KEDA.
 FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"

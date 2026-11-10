@@ -136,6 +136,7 @@ def chart(app: App) -> Chart:
             "grocy-sf",
             "grocy-vallejo",
             "ha-mcp",
+            "haku-ci",
             "haku-console",
             "haku-egress-proxy",
             "haku-mailbox",

@@ -92,6 +92,7 @@ py_library(
         "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
@@ -638,6 +639,8 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/haku:ui_egress",
+        "//cluster/cdk8s/haku_ci:egress_gateway",
+        "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/agentplane:policy_set",
@@ -749,6 +752,12 @@ py_library(
 py_library(
     name = "environment",
     srcs = ["environment.py"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane/testing:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
+    ],
     deps = [
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -889,6 +898,8 @@ py_library(
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/haku:ui_egress",
+        "//cluster/cdk8s/haku_ci:egress_gateway",
+        "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/litellm:secrets",
         "//cluster/cdk8s/providers/agentplane:identity",
         "//cluster/cdk8s/providers/agentplane:kubernetes_role_set",

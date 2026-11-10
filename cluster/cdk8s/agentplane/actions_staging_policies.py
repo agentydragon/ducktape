@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
 from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -73,6 +74,7 @@ _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
 # AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
 ANKIWEB_SYNC_POLICY = "ankiweb-sync"
+HAKU_CI_BUILD_FETCH_POLICY = "haku-ci-build-fetch"
 
 # Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
 # key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
@@ -85,6 +87,9 @@ HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-a
 HAKU_UI = StandingCaller(
     ServiceAccountRef(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
     identity=haku_ui_egress.SERVICE_ACCOUNT,
+)
+HAKU_CI = StandingCaller(
+    ServiceAccountRef(namespace=runner.NAMESPACE, name=egress_gateway.NAME), identity=egress_gateway.NAME
 )
 
 
@@ -784,6 +789,54 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         ),
         subject=HAKU_UI.subject(identity_catalog=identity_catalog),
         policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
+    )
+
+    # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
+    # reached through haku-egress-proxy over 2026-11-08/09 (about 60 CI jobs), each with the methods it
+    # used. Add a host when its `no-rule` decision for subject haku-ci/haku-ci-egress appears. Docker Hub
+    # stays out: dind pulls it through oci-cache, in-cluster.
+    add_egress_policy(
+        scope,
+        "egresspolicy-haku-ci-build-fetch",
+        metadata=ApiObjectMetadata(name=HAKU_CI_BUILD_FETCH_POLICY, namespace=_NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[
+                    # keep-sorted start
+                    # Bazel's registry and its own releases.
+                    "bcr.bazel.build",
+                    # Forgejo Actions job images (dind pulls).
+                    "code.forgejo.org",
+                    "codeload.github.com",
+                    "files.pythonhosted.org",
+                    "github.com",
+                    # rules_oci's gawk source.
+                    "mirrors.kernel.org",
+                    "nodejs.org",
+                    "pypi.org",
+                    "registry.npmjs.org",
+                    "release-assets.githubusercontent.com",
+                    "releases.bazel.build",
+                    # keep-sorted end
+                ],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+            ),
+            # `uses:` actions, which forgejo-runner clones over smart HTTP (`git-upload-pack` is a POST).
+            Rule.egress(
+                hosts=["data.forgejo.org"], methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST]
+            ),
+        ],
+    )
+    _binding(
+        scope,
+        "policybinding-haku-ci-egress",
+        metadata=ApiObjectMetadata(
+            name=egress_gateway.NAME,
+            namespace=_NAMESPACE,
+            annotations={"description": "What haku-ci's builds (haku-ci namespace) may reach."},
+        ),
+        subject=HAKU_CI.subject(identity_catalog=identity_catalog),
+        policy_sets=[HAKU_CI_BUILD_FETCH_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
