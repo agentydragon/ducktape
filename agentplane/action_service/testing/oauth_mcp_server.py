@@ -19,9 +19,6 @@ PATH = "/mcp"
 
 
 def _build_mcp(auth: Any) -> FastMCP:
-    # TODO: Check whether an existing MCP image (especially the Everything image) can provide
-    # this tool surface while delegating OAuth discovery and token verification to Dex, allowing
-    # this custom fixture image and its deployment wiring to be removed.
     mcp = FastMCP("agentplane-oauth-fixture", auth=auth)
 
     @mcp.tool
