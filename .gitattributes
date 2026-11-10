@@ -176,3 +176,4 @@ agentplane/action_service/sandbox/golden.json linguist-generated=true
 
 # Tracked unified patches contain diff context that looks like whitespace to diff --check.
 cluster/cdk8s/providers/litellm/*.patch whitespace=-space-before-tab,-blank-at-eol,-blank-at-eof
+third_party/cli_proxy_api/patches/*.patch whitespace=-space-before-tab,-blank-at-eol,-blank-at-eof

@@ -916,7 +916,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := NewRuntime(store, settings)
+	runtime := NewRuntime(store, settings, manager)
 	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
 }
 

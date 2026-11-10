@@ -87,6 +87,12 @@ the process receiver filters attributes to keep credentials and request content 
 The bundled containerd does not register its upstream tracing plugin; imports have driver OTel spans
 and the existing Go CPU/runtime profiles.
 
+Suites call the app as the fixture's test operator, with the OIDC ID token in `Stack.token`. A plain
+fixture names a test-only issuer under the reserved `.test` domain, and the app pins a key the stack
+generates (`oidc.static_ed25519_keys`); the test process signs the token, so no issuer runs. MCP
+fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
+grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
+
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The

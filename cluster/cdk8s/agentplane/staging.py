@@ -76,8 +76,6 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     CLAUDE_AI,
     HAKU_AGENT,
-    HAKU_CI,
-    HAKU_UI,
     add_staging_action_policies,
     caller_role_sets,
 )
@@ -741,8 +739,8 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         egress=[_CONNECTION_SERVICE.egress()],
     )
     haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
-    haku_ui_egress.add_workload_credentials(chart)
-    egress_gateway.add_gateway(chart, env, clients=runner.RUNNER_PODS)
+    haku_ui = haku_ui_egress.add_workload_credentials(chart, policy_namespace=env.namespace)
+    haku_ci = egress_gateway.add_gateway(chart, env, clients=runner.RUNNER_PODS)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
     # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
@@ -938,7 +936,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(chart, identity_catalog=env.identity_catalog)
+    add_staging_action_policies(chart, identity_catalog=env.identity_catalog, haku_ui=haku_ui, haku_ci=haku_ci)
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
@@ -962,8 +960,6 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
-        (HAKU_UI, "Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox."),
-        (HAKU_CI, "haku-ci's builds, through its egress relay."),
         (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
     ):
         Identity(

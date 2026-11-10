@@ -1,6 +1,8 @@
 #!/usr/bin/env bpftrace
 /*
  * One record per outbound TCP connection attempt: when, which process, which peer.
+ * Record all TCP peers and filter at analysis time: a previous capture filter
+ * omitted GitHub API addresses and made the missing evidence unrecoverable.
  *
  * TCP_SYN_SENT is entered from the connect() syscall, so pid/comm/uid are the
  * calling process rather than a softirq context. Inbound connections enter

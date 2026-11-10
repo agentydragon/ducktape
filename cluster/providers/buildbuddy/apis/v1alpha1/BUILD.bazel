@@ -1,0 +1,70 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("//cluster/providers/buildbuddy:codegen.bzl", "provider_codegen")
+load("//devinfra/go:controller_gen.bzl", "controller_crds")
+
+go_library(
+    name = "inputs",
+    srcs = [
+        "api_key_types.go",
+        "doc.go",
+        "register.go",
+        "secret_types.go",
+        "types.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
+    deps = [
+        "@buildbuddy_controller_runtime//pkg/scheme",
+        "@buildbuddy_crossplane_apis//core/v2:core",
+        "@buildbuddy_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@buildbuddy_k8s_apimachinery//pkg/runtime/schema",
+    ],
+)
+
+go_path(
+    name = "gopath",
+    mode = "copy",
+    deps = [":inputs"],
+)
+
+provider_codegen(
+    name = "generated",
+    gopath = ":gopath",
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
+)
+
+controller_crds(
+    name = "crds",
+    gopath = ":gopath",
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
+    visibility = ["//cluster:__subpackages__"],
+)
+
+genrule(
+    name = "secret_crd",
+    srcs = [":crds"],
+    outs = ["secrets.buildbuddy.m.allegedly.works.yaml"],
+    cmd = "cp $(location :crds)/buildbuddy.m.allegedly.works_secrets.yaml $@",
+    visibility = ["//cluster:__subpackages__"],
+)
+
+genrule(
+    name = "providerconfig_crd",
+    srcs = [":crds"],
+    outs = ["providerconfigs.buildbuddy.m.allegedly.works.yaml"],
+    cmd = "cp $(location :crds)/buildbuddy.m.allegedly.works_providerconfigs.yaml $@",
+    visibility = ["//cluster:__subpackages__"],
+)
+
+go_library(
+    name = "v1alpha1",
+    srcs = [
+        "scheme.go",
+        ":generated",
+    ],
+    embed = [":inputs"],
+    visibility = ["//cluster/providers/buildbuddy:__subpackages__"],
+    deps = [
+        "@buildbuddy_crossplane_runtime//pkg/resource",
+        "@buildbuddy_k8s_apimachinery//pkg/runtime",
+    ],
+)

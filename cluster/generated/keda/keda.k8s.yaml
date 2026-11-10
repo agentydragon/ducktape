@@ -64,4 +64,4 @@ spec:
         requests:
           cpu: 25m
           memory: 64Mi
-    watchNamespace: haku-ci
+    watchNamespace: haku-ci,buildbuddy-executor

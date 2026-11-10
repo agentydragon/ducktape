@@ -668,3 +668,248 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
 
 
 # gazelle:include_dep @pypi//protobuf
+
+
+async def _wait_for_history_fold(
+    deployed: CentralStack, session_id: str, cursor: int
+) -> history_service_pb2.SessionSummary:
+    async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
+        async for _ in changes:
+            summary = await deployed.history.get_session_summary(session_id)
+            assert summary.feed_status != history_service_pb2.FEED_STATUS_FAILED, summary
+            if summary.folded_through >= cursor:
+                return summary
+    raise AssertionError(f"History watch ended before folding {session_id=} through {cursor=}")
+
+
+async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """Lost JavaScript work is settled once before the successor continues the confirmed input."""
+    session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
+                session_id=session_id,
+                spec=session_pb2.SessionSpec(
+                    placement=session_pb2.SessionPlacement(
+                        central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                            executor_environment=session_pb2.ExactEnvironment(
+                                name=deployed.sandbox, uid=deployed.sandbox_uid
+                            )
+                        )
+                    ),
+                    cwd=executor.cwd,
+                    model=MODEL,
+                ),
+                setup_script=":\n",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=command_id,
+                text="Start an executor process and keep this turn active.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == command_id
+        await _wait_for_setup(deployed, session_id)
+        request = await model.request()
+        assert request.native.client_metadata.session_id == session_id
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.CustomToolCall(
+                            "sampler-roll-live-cell",
+                            "exec",
+                            '// @exec: {"yield_time_ms": 1}\n'
+                            'let result = await tools.exec_command({cmd: "echo started >> roll-effects.txt; sleep 300", '
+                            "yield_time_ms: 1});\n"
+                            "while (result.session_id !== undefined) {\n"
+                            "  result = await tools.write_stdin({session_id: result.session_id, yield_time_ms: 300000});\n"
+                            "}\n"
+                            "text(result.output);",
+                        )
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        for kind, phase in (
+            (event_pb2.ExecutionProgress.KIND_CELL, event_pb2.ExecutionProgress.PHASE_LIVE),
+            (event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING),
+        ):
+            await _wait_for_execution_progress(deployed, session_id, kind, phase)
+        continuation = await model.request()
+        assert continuation.native.client_metadata.session_id == session_id
+        await model.hold(continuation)
+
+        snapshot = await deployed.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        assert snapshot.attached.active_turn_id == command_id
+        summary = await _wait_for_history_fold(deployed, session_id, snapshot.attached.last_cursor)
+        assert summary.attached.active_turn_id == command_id
+        prefix = await deployed.history.read_session_events(session_id, limit=1000)
+        (confirmed,) = [
+            entry
+            for entry in prefix.entries
+            if entry.event.HasField("harness_user_message_confirmed")
+            and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        ]
+        (started,) = [entry for entry in prefix.entries if entry.event.HasField("turn_started")]
+        assert confirmed.cursor < started.cursor
+        gateway = json.loads(
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+        )
+        gateway_uids = {pod["metadata"]["uid"] for pod in gateway["items"]}
+        sampler = json.loads(await cluster.kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
+        await capture_sampler_diagnostics(cluster)
+        # An abrupt replacement loses the shared JavaScript host while the executor remains alive.
+        await cluster.kubectl("delete", "pod", deployed.sampler_pod_name, "--grace-period=0", "--force", "--wait=true")
+        await cluster.kubectl("rollout", "status", "deployment/central-sampler", "--timeout=120s")
+        pods = json.loads(
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=central-sampler", "-o", "json")
+        )
+        (successor,) = [pod for pod in pods["items"] if not pod["metadata"].get("deletionTimestamp")]
+        assert successor["metadata"]["uid"] != sampler["metadata"]["uid"]
+        successor_model = scripted.model(successor["metadata"]["name"], session_pb2.HARNESS_CODEX)
+        assert isinstance(successor_model, CodexModel)
+        # The former owner's real 60-second lease can outlive Pod readiness.
+        async with asyncio.timeout(90):
+            request = await successor_model.request()
+        assert request.native.client_metadata.session_id == session_id
+        await successor_model.reply(request, Text("The sampler changed; the earlier process outcome is unknown."))
+        await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
+
+        # History can lag the sampler; its fold cursor must reach the sampler's terminal event.
+        frames = deployed.sampler.FollowEvents(
+            sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        entries = [frame.entry async for frame in frames]
+        terminal = next(entry for entry in entries if entry.event.HasField("turn_completed"))
+        summary = await _wait_for_history_fold(deployed, session_id, terminal.cursor)
+        assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
+        assert not summary.attached.active_turn_id
+        assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
+        retained = await deployed.history.read_session_events(session_id, limit=1000)
+        assert list(retained.entries[: len(prefix.entries)]) == list(prefix.entries)
+        assert [entry.cursor for entry in retained.entries] == sorted({entry.cursor for entry in retained.entries})
+        assert len({(entry.origin.source_id, entry.origin.sequence) for entry in retained.entries}) == len(
+            retained.entries
+        )
+        assert not [entry for entry in retained.entries if entry.event.HasField("command_failed")]
+        assert len([entry for entry in retained.entries if entry.event.HasField("turn_completed")]) == 1
+        loss = [
+            entry
+            for entry in retained.entries
+            if entry.event.HasField("execution_progress")
+            and entry.event.execution_progress.kind == event_pb2.ExecutionProgress.KIND_CODE_HOST_LOSS
+            and entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_COMMITTED
+        ]
+        (reconciled,) = loss
+        for kind in (event_pb2.ExecutionProgress.KIND_CELL, event_pb2.ExecutionProgress.KIND_PROCESS):
+            (abandoned,) = [
+                entry
+                for entry in retained.entries
+                if entry.event.HasField("execution_progress")
+                and entry.event.execution_progress.kind == kind
+                and entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_ABANDONED
+            ]
+            assert prefix.entries[-1].cursor < abandoned.cursor < reconciled.cursor < terminal.cursor
+
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=next_command_id,
+                text="Read the process marker without starting the earlier command again.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == next_command_id
+        request = await successor_model.request()
+        assert request.native.client_metadata.session_id == session_id
+        await successor_model.reply(request, ShellCall("read-roll-effects", "cat roll-effects.txt"))
+        request = await successor_model.request()
+        (output,) = [output for output in request.tool_outputs if output.call_id == "read-roll-effects"]
+        output_text = "\n".join(output.blocks)
+        _, separator, process_output = output_text.partition("Output:\n")
+        assert separator, output_text
+        assert process_output.strip() == "started", process_output
+        await successor_model.reply(request, Text("The next input completed on the same executor."))
+        await _wait_for_turn_status(deployed, session_id, next_command_id, event_pb2.TURN_STATUS_COMPLETED)
+        frames = deployed.sampler.FollowEvents(
+            sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        entries = [frame.entry async for frame in frames]
+        summary = await _wait_for_history_fold(deployed, session_id, entries[-1].cursor)
+        assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
+        assert not summary.attached.active_turn_id
+        retained = await deployed.history.read_session_events(session_id, limit=1000)
+        assert not [entry for entry in retained.entries if entry.event.HasField("command_failed")]
+        assert [
+            entry.event.turn_completed.turn_id for entry in retained.entries if entry.event.HasField("turn_completed")
+        ] == [command_id, next_command_id]
+        assert any(
+            entry.event.HasField("harness_user_message_confirmed")
+            and next_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+            for entry in retained.entries
+        )
+        entities = await deployed.history.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+            )
+        )
+        assert any(
+            entity.HasField("confirmed_input") and next_command_id in entity.confirmed_input.origin_command_ids
+            for entity in entities.entities
+        )
+        for settled_command_id in (command_id, next_command_id):
+            command = await deployed.sampler.GetCommand(
+                sampler_pb2.GetCommandRequest(session_id=session_id, command_id=settled_command_id),
+                metadata=deployed.sampler_metadata,
+                timeout=10,
+            )
+            assert command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+        snapshot = await deployed.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        assert not snapshot.blocked
+        assert not snapshot.attached.active_turn_id
+        assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
+        sandbox = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
+        assert sandbox["status"]["incarnation"]["uid"] == deployed.incarnation_uid
+        gateway_after = json.loads(
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+        )
+        assert {pod["metadata"]["uid"] for pod in gateway_after["items"]} == gateway_uids
+        (undeclared_outputs_dir() / "central-sampler-roll.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "command_id": command_id,
+                    "next_command_id": next_command_id,
+                    "previous_sampler_uid": sampler["metadata"]["uid"],
+                    "successor_sampler_uid": successor["metadata"]["uid"],
+                    "executor_incarnation_uid": deployed.incarnation_uid,
+                    "retained_prefix_cursor": prefix.entries[-1].cursor,
+                    "host_loss_cursor": reconciled.cursor,
+                    "first_terminal_cursor": terminal.cursor,
+                    "folded_through": summary.folded_through,
+                    "feed_status": history_service_pb2.FeedStatus.Name(summary.feed_status),
+                    "command_failed_count": 0,
+                    "passed": True,
+                },
+                indent=2,
+            )
+            + "\n"
+        )

@@ -188,6 +188,11 @@ replacement. Syntax placement must agree with the validated assignment, includin
 whole-statement moves and repeated declarations. Emission consumes an immutable
 validated plan.
 
+Final validation rejects a reconstructed file when a source global reference
+is proven to resolve to an emitted binding. This check runs even in dry runs
+and without a report directory; incomplete global-resolution evidence remains
+diagnostic.
+
 Generated module headers inline source-unit and binding lists only when each
 line fits within 160 bytes. Larger lists use a count and point to
 `reports/tree/<chunk>/chunk.json` at the output root; its `selected_module_lowerings`

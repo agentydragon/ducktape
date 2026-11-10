@@ -1,6 +1,6 @@
 # `tana-claude`: Claude Code on Tana-UI models via the cluster LiteLLM proxy, reading the
-# litellm_tana_key sops secret — a tana-scoped virtual key (SSOT in
-# tf/gitops/litellm-keys). The client key/team are removed while parked; recreate
+# litellm_tana_key sops secret — a tana-scoped virtual key retained in
+# secrets/litellm-tana-clients-key.yaml. The client key/team are removed while parked; recreate
 # them with a reviewed allowlist before enabling this retained renderer.
 # The main proxy's in-process Tana provider owns the Tana
 # credential; this client key never carries it. Tana encodes reasoning effort in the model name, so each entry is one

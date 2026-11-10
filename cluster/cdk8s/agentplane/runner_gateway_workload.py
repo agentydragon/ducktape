@@ -283,6 +283,8 @@ class RunnerGateway(Construct):
             content["delegation"] = {
                 "actor": _account(delegation_actor),
                 "caller_namespaces": [namespace],
+                # Session delegation names an Identity in policy_namespace as the effective caller.
+                "identity_callers": True,
                 "methods": [
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",

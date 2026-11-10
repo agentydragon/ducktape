@@ -64,9 +64,13 @@ class Records:
 
 async def _unions(records: Records) -> None:
     identity = {"identity": {"name": "test-agent", "uid": FIRST_POD}}
+    # Pinning the Identity's UID is the requester's choice; a record from git names none.
+    unpinned_identity = {"identity": {"name": "test-agent"}}
     for name, spec in (
         ("test-standing", {"subject": SUBJECT}),
         ("test-identity", {"subject": identity}),
+        ("test-standing-identity", {"subject": unpinned_identity}),
+        ("test-bound-unpinned-identity", {"subject": unpinned_identity, "binding": {"podUID": FIRST_POD}}),
         (
             "test-pod",
             {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}, "pod": {"name": "test-pod", "uid": FIRST_POD}},
@@ -83,7 +87,7 @@ async def _unions(records: Records) -> None:
         {"subject": {}},
         {"subject": {**SUBJECT, **identity}},
         {"subject": {"serviceAccount": ""}},
-        {"subject": {"identity": {"name": "test-agent"}}},
+        {"subject": {"identity": {"name": ""}}},
         {"subject": {"identity": {"name": "test-agent", "uid": "not-a-uid"}}},
         {"subject": SUBJECT, "binding": {}},
         {"subject": SUBJECT, "binding": {"podUID": FIRST_POD, "vmiUID": SECOND_POD}},

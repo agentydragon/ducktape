@@ -368,7 +368,9 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":final_global_resolution",
         ":gate",
+        ":js_ast",
         ":lowering",
         ":output_layout",
         ":source_identity",

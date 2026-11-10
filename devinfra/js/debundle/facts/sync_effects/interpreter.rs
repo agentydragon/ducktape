@@ -139,6 +139,30 @@ enum NativeCallIdentity {
     FailedGuard(&'static [IntrinsicSlot]),
 }
 
+/// What iterating a value can run; see `Executor::iteration_proof`.
+enum IterationProof {
+    Native,
+    PrototypeLookup,
+    Unknown,
+}
+
+/// An ordinary call's local target, for `Executor::execute_local_call_target`.
+struct LocalCallTarget<'a> {
+    key: u32,
+    captured: Option<CapturedContext>,
+    args: &'a [Values],
+    argument_selections: &'a [Option<CallableSelection>],
+    coverage_target: Option<&'a (
+        u32,
+        LocalBodyIdentity,
+        LocalBodyIdentity,
+        Box<ProofDependencies>,
+    )>,
+    single_target: bool,
+    needs_value: bool,
+    call_span: Span,
+}
+
 pub(super) fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
@@ -864,6 +888,10 @@ pub(super) struct ExecutionInputs<'source> {
     /// a callable nested in them (an arrow's `arguments` is its enclosing
     /// function's). Over-approximates for a nested function's own.
     reads_arguments: BTreeSet<u32>,
+    /// Per class, the enclosing scope's bindings its members read. A class
+    /// value carries no captured context, so a member (a constructor's
+    /// `super(...)` operands) reads them as unknown later.
+    pub(super) class_captured_reads: BTreeMap<u32, BTreeSet<Id>>,
     /// Locals a source-summary lane reads as unknown in addition to its own
     /// assignments: another callable writes them, or an assignment reads
     /// them before a later one assigns them.
@@ -7687,6 +7715,90 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         )
     }
 
+    /// One local function or closure target of an ordinary call: invoke
+    /// it, keep its receipt when it is the call's covered target, and absorb
+    /// its effects. Kept out of line for `execute_call`'s frame size, which
+    /// bounds the supported call depth.
+    #[inline(never)]
+    fn execute_local_call_target(
+        &mut self,
+        target: LocalCallTarget<'_>,
+        result_values: &mut Values,
+        result_selection: &mut Option<CallableSelection>,
+        outcome: &mut Outcome,
+    ) {
+        let LocalCallTarget {
+            key,
+            captured,
+            args,
+            argument_selections,
+            coverage_target,
+            single_target,
+            needs_value,
+            call_span,
+        } = target;
+        let mut nested = self.invoke_selected(
+            key,
+            args.to_vec(),
+            argument_selections.to_vec(),
+            captured,
+            false,
+        );
+        if single_target && coverage_target.is_some() {
+            *result_selection = nested.return_selection.clone();
+        }
+        if let Some((expected, caller, target, prerequisites)) = coverage_target
+            && *expected == key
+        {
+            let mut effect_coverage = nested.effect_coverage.clone();
+            effect_coverage.depend_on(prerequisites);
+            effect_coverage.selected_local_call(LocalCallReceipt {
+                caller: caller.clone(),
+                call_span,
+                target: target.clone(),
+                dependencies: prerequisites.clone(),
+            });
+            outcome.effect_coverage = effect_coverage;
+        }
+        if needs_value {
+            result_values.extend(nested.returns.iter().cloned());
+        }
+        self.apply_rebind_effects(&nested.effects.rebinds);
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(nested.executed_owners);
+        outcome.unknown_call |= nested.unknown_call;
+        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+    }
+
+    /// Runs each local plain function among `targets` for `new`, and
+    /// absorbs its effects into `outcome`.
+    #[inline(never)]
+    fn construct_plain_functions(
+        &mut self,
+        targets: &Values,
+        args: &[Values],
+        outcome: &mut Outcome,
+    ) {
+        for target in targets {
+            let (key, captured) = match target {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => (*key, None),
+                AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
+                    (*key, Some(captured.clone()))
+                }
+                _ => continue,
+            };
+            if !self.inputs.index.callables.contains_key(&key) {
+                continue;
+            }
+            let mut nested = self.invoke(key, args.to_vec(), captured, false);
+            self.apply_rebind_effects(&nested.effects.rebinds);
+            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+            outcome.executed_owners.extend(nested.executed_owners);
+            outcome.unknown_call |= nested.unknown_call;
+            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+        }
+    }
+
     /// The flat lane's invocation of an admitted constructor body.
     fn invoke_checked_constructor(
         &mut self,
@@ -10224,10 +10336,96 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// A class value created now: its members read the enclosing scope's
+    /// bindings as unknown later, so publish what those hold here. Its
+    /// superclass can also be called after this environment has gone away.
+    pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
+        let mut values: Values = self
+            .inputs
+            .class_captured_reads
+            .get(&class)
+            .into_iter()
+            .flatten()
+            .filter(|binding| !self.inputs.top_bindings.contains(*binding))
+            .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
+            .flatten()
+            .cloned()
+            .collect();
+
+        let facts = self.inputs.index.class_values.get(&class);
+        match facts.and_then(|facts| facts.super_class.as_ref()) {
+            Some(ValueExpr::Binding(binding))
+                if facts.is_some_and(|facts| facts.lexical_heritage.is_some()) =>
+            {
+                if !self.inputs.top_bindings.contains(binding) {
+                    values.extend(
+                        env.get(binding)
+                            .or_else(|| captures.get(binding))
+                            .into_iter()
+                            .flatten()
+                            .cloned(),
+                    );
+                }
+            }
+            None => {}
+            Some(heritage) => {
+                // The eventual base retains none of this environment. Publish
+                // its inputs without evaluating the expression again: a
+                // heritage factory may have effects already accounted for by
+                // the flattened call pass.
+                let mut inputs = facts
+                    .map(|facts| facts.super_class_inputs.clone())
+                    .unwrap_or_default();
+                heritage.bindings(&mut inputs);
+                let mut incomplete = heritage.bindings_may_be_incomplete()
+                    || facts.is_some_and(|facts| facts.super_class_inputs_incomplete);
+                for binding in inputs {
+                    let possible = if self.inputs.top_bindings.contains(&binding) {
+                        self.state.world.module.prefix_values.get(&binding)
+                    } else {
+                        env.get(&binding).or_else(|| captures.get(&binding))
+                    };
+                    if let Some(possible) = possible {
+                        values.extend(possible.iter().cloned());
+                    } else {
+                        incomplete = true;
+                    }
+                }
+                if incomplete {
+                    // An untracked local factory or lowered-away input can
+                    // return a base reaching any of these capabilities.
+                    values.extend(
+                        env.iter()
+                            .chain(captures)
+                            .filter(|(binding, _)| !self.inputs.top_bindings.contains(*binding))
+                            .flat_map(|(_, possible)| possible.iter().cloned()),
+                    );
+                }
+                if incomplete && let Some(owner) = self.inputs.index.class_owners.get(&class) {
+                    let reads = &self.inputs.facts[owner.0].reads;
+                    values.extend(
+                        reads
+                            .eager
+                            .iter()
+                            .chain(&reads.lazy)
+                            .filter_map(|binding| {
+                                self.state.world.module.prefix_values.get(binding)
+                            })
+                            .flatten()
+                            .cloned(),
+                    );
+                }
+            }
+        }
+        if !values.is_empty() {
+            self.escape_untracked_values(&values);
+        }
+    }
+
     /// Values flowing where a later read sees only unknown. Unknown reaches
     /// only published callbacks, so a value may leave a tracked set only once
     /// what it can reach is published.
-    fn escape_untracked_values(&mut self, values: &Values) {
+    pub(super) fn escape_untracked_values(&mut self, values: &Values) {
         self.publish_values(
             values,
             ClassMembersPublicationWriter::UntrackedLocalStore,
@@ -10299,6 +10497,176 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     env.entry(binding.clone()).or_default().extend(unknown());
                 }
             }
+        }
+    }
+
+    /// Binding an array-destructuring parameter runs the iterator protocol
+    /// on its incoming value, the default included.
+    #[inline(never)]
+    fn iterate_parameters(
+        &mut self,
+        callable: &Callable,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for (index, parameter) in callable.params.iter().enumerate() {
+            if !parameter.pattern_iterates {
+                continue;
+            }
+            let mut values = args
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+            if let Some(default) = &parameter.default
+                && may_be_undefined(&values)
+            {
+                values.remove(&AbstractValue::UNDEFINED);
+                values.extend(self.evaluate(default, env, env));
+            }
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+            if parameter.pattern_iterates_part {
+                self.run_iterator_protocol(&unknown(), callable.owner, outcome);
+            }
+            for default in &parameter.iterated_defaults {
+                let values = self.evaluate(default, env, env);
+                self.run_iterator_protocol(&values, callable.owner, outcome);
+            }
+        }
+    }
+
+    /// The iterator protocol a top-level owner runs on its
+    /// `top_iterated_sources`.
+    pub(super) fn iterate_top_sources(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let Some(sources) = self.inputs.index.top_iterated_sources.get(&owner) else {
+            return;
+        };
+        for source in sources {
+            let values = self.evaluate(source, env, captures);
+            self.run_iterator_protocol(&values, owner, outcome);
+        }
+    }
+
+    /// Calling generator `key` creates an opaque generator object. Its body
+    /// runs when some later code resumes the object (`next()`, `for`-`of`,
+    /// spread, destructuring): the body is a published callback, so each
+    /// resumption, an unknown call, promotes the body's effects to the
+    /// resuming owner. What the body can reach (the arguments and captures,
+    /// which the frame's environment holds) is published with it.
+    #[inline(never)]
+    fn create_generator(
+        &mut self,
+        key: u32,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let reached: Values = args.iter().chain(env.values()).flatten().cloned().collect();
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+        );
+        let body = self.deferred_callbacks(Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Function,
+            key,
+        ))]));
+        self.insert_escaped_callback_values(
+            &Values::from([body]),
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+            None,
+        );
+        outcome.returns.insert(AbstractValue::Value(Value::Top));
+    }
+
+    /// The iterator protocol a callable's body runs on its
+    /// `iterated_sources`.
+    #[inline(never)]
+    fn iterate_callable_sources(
+        &mut self,
+        callable: &Callable,
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for iterated in &callable.iterated_sources {
+            let values = self.evaluate(iterated, env, env);
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+        }
+    }
+
+    /// Iterating `values` calls their `[Symbol.iterator]` and the iterator's
+    /// `next`. Over anything but a proven native iterable those are unknown
+    /// callees: the iterated value is published and the operation may run
+    /// any published callback (a generator body, a hand-written `next`),
+    /// charged to the operation's owner. A primitive's method comes from its
+    /// prototype, where only a published function can have been installed:
+    /// the operation may run the published callbacks, and nothing else.
+    #[inline(never)]
+    fn run_iterator_protocol(
+        &mut self,
+        values: &Values,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        match self.iteration_proof(values) {
+            IterationProof::Native => {}
+            IterationProof::PrototypeLookup => {
+                self.invoke_possible_callbacks_at(&[], false, None, outcome);
+            }
+            IterationProof::Unknown => {
+                outcome.lose_call_target(owner, DUMMY_SP);
+                outcome.unknown_call = true;
+                self.invoke_possible_callbacks_at(
+                    std::slice::from_ref(values),
+                    false,
+                    None,
+                    outcome,
+                );
+            }
+        }
+    }
+
+    /// Which user code iterating `values` can run. `Native`: none, for
+    /// `null`/`undefined` (which throw), a throwing read, or an array
+    /// allocation no opaque code reached under intact Array intrinsics.
+    /// `PrototypeLookup`: what another primitive's prototype holds.
+    fn iteration_proof(&mut self, values: &Values) -> IterationProof {
+        if values.is_empty() {
+            return IterationProof::Unknown;
+        }
+        let mut arrays = false;
+        let mut primitives = false;
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(PrimKinds::UNDEFINED.union(PrimKinds::NULL)) => {}
+                AbstractValue::Value(Value::Prim(_)) => primitives = true,
+                AbstractValue::Value(Value::Unavailable) => {}
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if (*kind == Kind::Array
+                        || (*kind == Kind::Object
+                            && self.inputs.index.array_elements.contains_key(object)))
+                        && !self.state.world.surface.tainted_objects.contains(object) =>
+                {
+                    arrays = true;
+                }
+                _ => return IterationProof::Unknown,
+            }
+        }
+        if arrays && !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS) {
+            return IterationProof::Unknown;
+        }
+        if primitives {
+            IterationProof::PrototypeLookup
+        } else {
+            IterationProof::Native
         }
     }
 
@@ -10778,6 +11146,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ..Outcome::default()
         };
         outcome.executed_owners.insert(callable.owner);
+        self.iterate_parameters(callable, &args, &env, &mut outcome);
         if callable.generator {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
@@ -10787,6 +11156,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 callable.owner,
                 DUMMY_SP,
             );
+            self.create_generator(key, &args, &env, &mut outcome);
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
             self.remember_invocation(signature, &outcome);
@@ -10813,6 +11183,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
+        self.iterate_callable_sources(callable, &env, &mut outcome);
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
@@ -11524,6 +11895,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let single_target = targets.len() == 1;
         let mut result_selection = None;
+        // `new` of a local plain function runs its body with an untracked
+        // `this`: what it stores through `this` or into other bindings is
+        // part of the call's effects. The instance stays unknown (the
+        // unknown-callee arm below).
+        if call.kind == CallKind::New {
+            self.construct_plain_functions(&targets, &args, outcome);
+        }
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
@@ -11688,74 +12066,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
-                    let mut nested = self.invoke_selected(
-                        key,
-                        args.clone(),
-                        argument_selections.clone(),
-                        None,
-                        false,
-                    );
-                    if single_target && coverage_target.is_some() {
-                        result_selection = nested.return_selection.clone();
-                    }
-                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
-                        && *expected == key
-                    {
-                        let mut effect_coverage = nested.effect_coverage.clone();
-                        effect_coverage.depend_on(prerequisites);
-                        effect_coverage.selected_local_call(LocalCallReceipt {
-                            caller: caller.clone(),
+                    self.execute_local_call_target(
+                        LocalCallTarget {
+                            key,
+                            captured: None,
+                            args: &args,
+                            argument_selections: &argument_selections,
+                            coverage_target: coverage_target.as_ref(),
+                            single_target,
+                            needs_value,
                             call_span: call.span,
-                            target: target.clone(),
-                            dependencies: prerequisites.clone(),
-                        });
-                        outcome.effect_coverage = effect_coverage;
-                    }
-                    if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
-                    }
-                    self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome
-                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                    outcome.executed_owners.extend(nested.executed_owners);
-                    outcome.unknown_call |= nested.unknown_call;
-                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                        },
+                        &mut result_values,
+                        &mut result_selection,
+                        outcome,
+                    );
                 }
                 AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)
                     if call.kind == CallKind::Call =>
                 {
-                    let mut nested = self.invoke_selected(
-                        key,
-                        args.clone(),
-                        argument_selections.clone(),
-                        Some(captured),
-                        false,
-                    );
-                    if single_target && coverage_target.is_some() {
-                        result_selection = nested.return_selection.clone();
-                    }
-                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
-                        && *expected == key
-                    {
-                        let mut effect_coverage = nested.effect_coverage.clone();
-                        effect_coverage.depend_on(prerequisites);
-                        effect_coverage.selected_local_call(LocalCallReceipt {
-                            caller: caller.clone(),
+                    self.execute_local_call_target(
+                        LocalCallTarget {
+                            key,
+                            captured: Some(captured),
+                            args: &args,
+                            argument_selections: &argument_selections,
+                            coverage_target: coverage_target.as_ref(),
+                            single_target,
+                            needs_value,
                             call_span: call.span,
-                            target: target.clone(),
-                            dependencies: prerequisites.clone(),
-                        });
-                        outcome.effect_coverage = effect_coverage;
-                    }
-                    if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
-                    }
-                    self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome
-                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                    outcome.executed_owners.extend(nested.executed_owners);
-                    outcome.unknown_call |= nested.unknown_call;
-                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                        },
+                        &mut result_values,
+                        &mut result_selection,
+                        outcome,
+                    );
                 }
                 _ => {
                     outcome.lose_call_target(call.owner, call.span);
@@ -12819,6 +13163,20 @@ pub(crate) fn annotate_synchronous_calls(
                 })
             })
             .map(|(key, _)| *key)
+            .collect(),
+        class_captured_reads: index
+            .class_spans
+            .iter()
+            .map(|(class, span)| {
+                let reads = index
+                    .callable_spans
+                    .iter()
+                    .filter(|(_, callable)| span.lo <= callable.lo && callable.hi <= span.hi)
+                    .filter_map(|(key, _)| index.callables.get(key))
+                    .flat_map(|callable| callable.captured_reads().into_iter().cloned())
+                    .collect();
+                (*class, reads)
+            })
             .collect(),
         mutable_captures: index
             .callables

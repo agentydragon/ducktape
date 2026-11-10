@@ -27,9 +27,6 @@ class Entry(BaseModel):
     sha256: str | None = None
     link_target: str | None = None
 
-    def to_ndjson_line(self) -> str:
-        return self.model_dump_json()
-
 
 class Exclusions(BaseModel):
     """Narrow exclusion rules applied only at diff time (never at capture)."""
@@ -122,4 +119,4 @@ def parse_ndjson(path: str | Path) -> dict[str, Entry]:
 
 def write_entry(entry: Entry, out: IO[str] = sys.stdout) -> None:
     """Write a single Entry as an NDJSON line."""
-    out.write(entry.to_ndjson_line() + "\n")
+    out.write(entry.model_dump_json() + "\n")

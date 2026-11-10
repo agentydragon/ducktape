@@ -653,3 +653,584 @@ fn a_constructed_plain_function_without_effects_keeps_the_split() {
     );
     assert_preserved_entry_output(&fixture, "0 0\n");
 }
+
+/// Opposing control: calling a generator runs nothing, and its body runs
+/// when later code resumes the generator object, by `next()`, `for`-`of`,
+/// destructuring (declaration, assignment, parameter), spread or `yield*`,
+/// also from another statement than the one that created it. A hand-written
+/// iterator's `next` runs the same way. Each resumption reaches `second`,
+/// whether `run` discards `flag()` or calls what it returns, and whether or
+/// not a test keeps `flag` on the source-summary lane.
+#[test]
+fn resuming_a_generator_or_an_iterator_runs_its_body() {
+    const GEN: &str = "function* gen() { second(); yield 0; }";
+    const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
+    for (definitions, resume, extra) in [
+        (GEN, "gen().next();", &["gen"][..]),
+        (
+            "function* gen(f) { f(); yield 0; }",
+            "gen(second).next();",
+            &["gen"][..],
+        ),
+        (
+            "function* gen() { counter = 1; yield 0; }",
+            "gen().next();",
+            &["gen"][..],
+        ),
+        (GEN, "for (const x of gen()) {}", &["gen"][..]),
+        (GEN, "const [x] = gen();", &["gen"][..]),
+        (GEN, "let x; [x] = gen();", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction take([x]) { return x; }",
+            "take(gen());",
+            &["gen", "take"][..],
+        ),
+        (GEN, "[...gen()];", &["gen"][..]),
+        (GEN, "Math.max(...gen());", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction* outer() { yield* gen(); }",
+            "outer().next();",
+            &["gen", "outer"][..],
+        ),
+        (
+            "const holder = { *items() { second(); yield 0; } };",
+            "holder.items().next();",
+            &["holder"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst box = { it: null };",
+            "box.it = gen(); box.it.next();",
+            &["gen", "box"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst g = gen();",
+            "g.next();",
+            &["gen", "g"][..],
+        ),
+        (MK, "for (const x of mk()) {}", &["mk"][..]),
+        (MK, "[...mk()];", &["mk"][..]),
+        (MK, "const [x] = mk();", &["mk"][..]),
+    ] {
+        for guard in ["", "if (first()) {} "] {
+            for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+                assert_reader_split_diverges_with(
+                    &format!(
+                        "{definitions}\nfunction flag() {{ {guard}{resume} return noop; }}\n{run}"
+                    ),
+                    extra,
+                );
+            }
+        }
+    }
+}
+
+/// Opposing control: a generator result read at top level, and an async
+/// generator, whose first `next()` runs the body up to its first `await` or
+/// `yield` synchronously. Each reaches `second`.
+#[test]
+fn a_top_level_generator_result_and_an_async_generator_reach_their_body() {
+    for (definitions, extra) in [
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["ag"][..],
+        ),
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { return flag()(); }",
+            &["ag"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = gen().next().value;\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = [...gen()][0];\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function mk() { return [second]; }\nconst [h] = mk();\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["mk", "h"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
+/// Positive anchor: code after an async function's first `await` runs from
+/// a job, after the synchronous module body, so it keeps the split.
+#[test]
+fn an_async_function_after_its_first_await_keeps_the_split() {
+    let fixture = with_reader_split(
+        "async function a() { await 0; second(); }\nfunction flag() { a(); return noop; }\nfunction run() { flag(); return 0; }",
+        &["a"],
+        run_fixture,
+    );
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}
+
+/// Positive anchor for the control above: iterating native arrays of
+/// effect-free values keeps the split.
+#[test]
+fn iterating_native_arrays_keeps_the_split() {
+    for body in [
+        "for (const x of [first]) {}",
+        "const [y] = [1];",
+        "let z; [z] = [2];",
+        "return [...[1, 2]].length;",
+    ] {
+        let fixture = with_reader_split(
+            &format!("function flag() {{ {body} }}\nfunction run() {{ flag(); return 0; }}"),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+const SUPER_BASES: &[&str] = &[
+    "function Base(f) { f(); }",
+    "class Base { constructor(f) { f(); } }",
+];
+
+fn super_capture_definitions(base: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{base}\nfunction make(h) {{ {guard}return class extends Base {{ constructor() {{ super(h); }} }}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make({value}); return new C(); }}"
+    )
+}
+
+/// Opposing control: a class value carries no captured context, so its
+/// constructor's `super(h)` runs the base on unknown arguments later. The
+/// class's creation publishes the enclosing locals its members read, so the
+/// base calling its argument reaches `second`.
+#[test]
+fn a_class_publishes_the_enclosing_locals_its_members_read() {
+    for base in SUPER_BASES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &super_capture_definitions(base, guard, "second"),
+                &["Base", "make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor: the same classes passing only the effect-free `first`
+/// keep the split.
+#[test]
+fn a_class_capturing_only_effect_free_functions_keeps_the_split() {
+    for base in SUPER_BASES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &super_capture_definitions(base, guard, "first"),
+                &["Base", "make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+/// `make` returning a class that reaches `h` through its heritage or a
+/// member, and `run` reaching that member.
+const CLASS_CAPTURE_SHAPES: &[(&str, &str)] = &[
+    (
+        "return class extends h {};",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class extends h { constructor() { super(); } };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class { static m() { return h(); } };",
+        "return make({value}).m();",
+    ),
+    (
+        "return class { f = h(); };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "class C { m() { return h(); } } return C;",
+        "const C = make({value}); return new C().m();",
+    ),
+];
+
+fn class_capture_definitions(make: &str, run: &str, guard: &str, value: &str) -> String {
+    let run = run.replace("{value}", value);
+    format!(
+        "function make(h) {{ {guard}{make} }}\nfunction flag() {{ return 0; }}\nfunction run() {{ {run} }}"
+    )
+}
+
+/// Opposing control: a class reaching a captured `h` through its heritage,
+/// a static method, a field initializer, or a declared class's method
+/// reaches `second` when `run` constructs or calls it.
+#[test]
+fn a_class_publishes_its_heritage_and_member_captures() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &class_capture_definitions(make, run, guard, "second"),
+                &["make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same classes over the
+/// effect-free `first` keep the split.
+#[test]
+fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &class_capture_definitions(make, run, guard, "first"),
+                &["make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+// The analyzer's class values do not retain their creation environment. The
+// superclass can be an enclosing value reached through an expression, a
+// local object, or a factory; a later `new` must still reach it.
+const COMPOUND_CLASS_HERITAGE: &[(&str, &str, &[&str])] = &[
+    ("return class extends (0, h) {};", "", &[]),
+    (
+        "const o = { Base: h }; return class extends o.Base {};",
+        "",
+        &[],
+    ),
+    (
+        "return class extends mixin(h) {};",
+        "function mixin(v) { return v; }",
+        &["mixin"],
+    ),
+    ("return class extends (first() ? first : h) {};", "", &[]),
+    ("return class extends (h || first) {};", "", &[]),
+    (
+        "function factory() { return h; } return class extends factory() {};",
+        "",
+        &[],
+    ),
+    (
+        "const factory = () => h; return class extends factory() {};",
+        "",
+        &[],
+    ),
+    // These were already rejected: keep the unknown-property and unknown-syntax
+    // controls beside the newly covered cases.
+    (
+        "const o = { Base: h }; const key = 'Base'; return class extends o[key] {};",
+        "",
+        &[],
+    ),
+    (
+        "const factory = () => h; return class extends factory`` {};",
+        "",
+        &[],
+    ),
+];
+
+fn compound_heritage_definitions(make: &str, prefix: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{prefix}\n{}",
+        class_capture_definitions(
+            make,
+            "const C = make({value}); return new C();",
+            guard,
+            value
+        ),
+    )
+}
+
+#[test]
+fn a_class_publishes_compound_heritage_captures() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &compound_heritage_definitions(make, prefix, guard, "second"),
+                &members,
+            );
+        }
+    }
+}
+
+#[test]
+fn a_class_with_effect_free_compound_heritage_keeps_the_split() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &compound_heritage_definitions(make, prefix, guard, "first"),
+                &members,
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+#[test]
+fn compound_heritage_does_not_publish_an_unrelated_parameter() {
+    let definitions = "function make(h, unused) { return class extends (0, h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first, second); return new C(); }";
+    let fixture = with_reader_split(definitions, &["make"], run_fixture);
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}
+
+#[test]
+fn a_constructor_created_in_the_heritage_keeps_its_effects() {
+    for body in ["second();", "counter = 1;"] {
+        let definitions = format!(
+            "function make() {{ return class extends (0, function Base() {{ {body} }}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        assert_reader_split_diverges_with(&definitions, &["make"]);
+    }
+}
+
+#[test]
+fn a_local_heritage_factory_can_return_a_module_callback() {
+    for (value, effectful) in [("second", true), ("first", false)] {
+        let definitions = format!(
+            "function make() {{ const factory = () => {value}; return class extends factory() {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        if effectful {
+            assert_reader_split_diverges_with(&definitions, &["make"]);
+        } else {
+            let fixture = with_reader_split(&definitions, &["make"], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+#[test]
+fn a_heritage_factory_runs_at_class_creation() {
+    let definitions = "function factory() { second(); return first; }\nfunction make() { return class extends factory() {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["factory", "make"]);
+}
+
+#[test]
+fn heritage_observes_a_local_changed_by_an_earlier_operand() {
+    let definitions = "function make(h) { function change() { h = second; } return class extends (change(), h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["make"]);
+}
+
+const MODULE_HERITAGE_UPDATES: &[(&str, &str, &[&str])] = &[
+    ("let base = first;", "base = h, base", &["base"]),
+    (
+        "let base = first; function save(v) { base = v; }",
+        "save(h), base",
+        &["base", "save"],
+    ),
+];
+
+fn module_heritage_update_definitions(
+    prefix: &str,
+    update: &str,
+    guard: &str,
+    value: &str,
+) -> String {
+    format!(
+        "{prefix}\nfunction make(h, unused) {{ {guard}return class extends ({update}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make({value}, second); return new C(); }}"
+    )
+}
+
+#[test]
+fn class_heritage_preserves_inputs_of_module_binding_updates() {
+    for &(prefix, update, extra) in MODULE_HERITAGE_UPDATES {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &module_heritage_update_definitions(prefix, update, guard, "second"),
+                &members,
+            );
+        }
+    }
+}
+
+#[test]
+fn effect_free_module_heritage_updates_keep_unrelated_parameters_private() {
+    for &(prefix, update, extra) in MODULE_HERITAGE_UPDATES {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &module_heritage_update_definitions(prefix, update, guard, "first"),
+                &members,
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+/// Opposing control: a direct `eval` runs string code that can read and
+/// write any binding visible by name, which no summary sees: refused at
+/// admission (A1) at any depth.
+#[test]
+fn direct_eval_at_any_depth_is_refused_at_admission() {
+    for definitions in [
+        "function flag() { let f = noop; eval('f = second'); return f; }",
+        "function flag() { return eval('second'); }",
+        "function flag() { eval('counter = 1'); return noop; }",
+        "function flag() { eval('second()'); return noop; }",
+        "function flag() { let f = noop; const set = () => eval('f = second'); set(); return f; }",
+    ] {
+        with_reader_split(&format!("{definitions}\n{CALL_FLAG}"), &[], |opts| {
+            expect_rejection_containing_all(opts, &["a1_eval", "admission_overrides"])
+        });
+    }
+}
+
+/// Positive anchor: in an ES module, an indirect `eval`, `Function` and
+/// `new Function` run in global scope, where no module binding is
+/// visible (`typeof second` is `"undefined"`): an ordinary opaque call
+/// that keeps the split.
+#[test]
+fn indirect_eval_and_function_in_a_module_keep_the_split() {
+    for call in [
+        "(0, eval)('typeof second')",
+        "Function('return typeof second')()",
+        "new Function('return typeof second')()",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {call}; return noop; }}\nexport {{ first }};\n{CALL_FLAG}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// Opposing control: more iterator-protocol sites. A `catch` parameter's
+/// array pattern iterates the thrown value; a default below the root of a
+/// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
+/// supplies an iterated value; and `new Map`/`new WeakMap`/
+/// `Object.fromEntries`/`new Set` iterate their argument. Each reaches
+/// `second` through a generator or a hand-written iterator.
+#[test]
+fn every_iterator_protocol_site_runs_the_iterator() {
+    const GEN: &str = "function* gen() { second(); yield 0; }";
+    const ENTRIES: &str = "function* gen() { second(); yield [{}, 1]; }";
+    const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
+    for (definitions, resume, extra) in [
+        (GEN, "try { throw gen(); } catch ([x]) {}", &["gen"][..]),
+        (
+            GEN,
+            "try { throw { a: gen() }; } catch ({ a: [x] }) {}",
+            &["gen"][..],
+        ),
+        (MK, "try { throw mk(); } catch ([x]) {}", &["mk"][..]),
+        (MK, "const [[x] = mk()] = [];", &["mk"][..]),
+        (MK, "let x; [[x] = mk()] = [];", &["mk"][..]),
+        (MK, "const { a: [x] = mk() } = {};", &["mk"][..]),
+        (MK, "for (const [[x] = mk()] of [[]]) {}", &["mk"][..]),
+        (MK, "try { throw []; } catch ([[x] = mk()]) {}", &["mk"][..]),
+        (
+            "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }\nfunction take([[x] = mk()]) { return x; }",
+            "take([]);",
+            &["mk", "take"][..],
+        ),
+        (ENTRIES, "new Map(gen());", &["gen"][..]),
+        (ENTRIES, "new WeakMap(gen());", &["gen"][..]),
+        (ENTRIES, "Object.fromEntries(gen());", &["gen"][..]),
+        (GEN, "new Set(gen());", &["gen"][..]),
+        (GEN, "Array.from(gen());", &["gen"][..]),
+        (GEN, "Promise.all(gen());", &["gen"][..]),
+    ] {
+        for guard in ["", "if (first()) {} "] {
+            for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+                assert_reader_split_diverges_with(
+                    &format!(
+                        "{definitions}\nfunction flag() {{ {guard}{resume} return noop; }}\n{run}"
+                    ),
+                    extra,
+                );
+            }
+        }
+    }
+}
+
+/// Positive anchor for the control above: iterating a string, the native
+/// pairs of `Object.entries`, and native arrays through patterns keep the
+/// split.
+#[test]
+fn iterating_strings_entries_and_native_patterns_keeps_the_split() {
+    for body in [
+        "for (const c of 'ab') {}",
+        "for (const [k, v] of Object.entries({ a: 1 })) {}",
+        "const [[y] = [1]] = [];",
+        "try { throw [1]; } catch ([x]) {}",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {body} return noop; }}\nfunction run() {{ flag(); return 0; }}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// `new F()` of a plain function that stores its `this` in a module binding
+/// and stores `value` through `this`; `run` reaches the stored value
+/// through the binding.
+const THIS_STORE_SHAPES: &[(&str, &str)] = &[
+    (
+        "function F() { {guard}saved = this; this.fn = {value}; }",
+        "function flag() { new F(); return saved; }\nfunction run() { return flag().fn(); }",
+    ),
+    (
+        "function F() { this.fn = {value}; saved = this; }",
+        "function flag() { {guard}new F(); return saved.fn; }\nfunction run() { return flag()(); }",
+    ),
+];
+
+fn this_store_definitions(constructor: &str, rest: &str, guard: &str, value: &str) -> String {
+    format!(
+        "let saved = null;\n{}\n{}",
+        constructor
+            .replace("{guard}", guard)
+            .replace("{value}", value),
+        rest.replace("{guard}", guard)
+    )
+}
+
+/// Opposing control: `new` of a plain function runs its body, so what the
+/// body stores through `this` (here `second`) is published and reachable
+/// through the binding that saved `this`.
+#[test]
+fn new_of_a_plain_function_runs_its_body() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &this_store_definitions(constructor, rest, guard, "second"),
+                &["saved", "F"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same constructors storing
+/// the effect-free `first` keep the split.
+#[test]
+fn new_of_a_plain_function_without_effects_keeps_the_split() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &this_store_definitions(constructor, rest, guard, "first"),
+                &["saved", "F"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}

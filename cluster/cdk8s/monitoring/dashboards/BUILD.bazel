@@ -30,6 +30,12 @@ py_library(
 )
 
 grafana_dashboard_visual_test(
+    name = "cpap_gateway_disk_dashboard_visual_test",
+    dashboard = ":cpap-gateway-disk.json",
+    fixture_data = ":visual_fixtures/cpap-gateway-disk.json",
+)
+
+grafana_dashboard_visual_test(
     name = "buildbuddy_executor_pool_dashboard_visual_test",
     dashboard = ":buildbuddy-executor-pool.json",
     fixture_data = ":visual_fixtures/buildbuddy-executor-pool.json",
@@ -112,4 +118,10 @@ grafana_dashboard_visual_test(
     name = "aiquota_history_dashboard_visual_test",
     dashboard = ":aiquota-history.json",
     fixture_data = ":visual_fixtures/aiquota-history.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "zot_cache_image_pulls_dashboard_visual_test",
+    dashboard = ":zot-cache-image-pulls.json",
+    fixture_data = ":visual_fixtures/zot-cache-image-pulls.json",
 )

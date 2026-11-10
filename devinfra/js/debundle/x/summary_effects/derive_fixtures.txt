@@ -1,0 +1,365 @@
+### dep
+var __create = Object.create; var __defProp = Object.defineProperty; var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames; var __getProtoOf = Object.getPrototypeOf; var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __copyProps = (to, from, except, desc) => { if (from && typeof from == "object" || typeof from == "function") for (let key of __getOwnPropNames(from)) !__hasOwnProp.call(to, key) && key !== except && __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable }); return to; };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target, mod));
+export var log = [];
+var require_lib = __commonJS((exports) => { log.push('lib'); var tag = Symbol.for('t'); exports.wrap = function (render) { return { tag, render }; }; exports.read = function (o) { return o.v; }; });
+var require_other = __commonJS((exports, module) => { log.push('other'); module.exports = { name: 'other' }; });
+export function make(a, b) { return { a, b: [b] }; }
+export function context(value) { return value = { current: value }, value.self = value, value; }
+export function reads(o) { return { v: o.v }; }
+export function calls(f) { return { v: f() }; }
+export function extend() { require_lib().extra = 1; }
+const hooks = [];
+export function once(compute) { let done = false, value; hooks.push(() => { done = false; }); return () => done ? value : (done = true, value = compute()); }
+export function hookCount() { return hooks.length; }
+export function element(type, props) { return { type, key: props.key, props }; }
+export function guard(check, next) { async function run(input) { if (await check(input)) return next(input); } return run; }
+export class Store { items = []; index = new Map(); constructor(name) { this.name = name; } }
+let made = 0;
+export class Counted { id = ++made; }
+export const PREFIX = 'app'; export const SIZE = 4 * 2;
+export let mutable = 1;
+export function setMutable(value) { mutable = value; }
+export const THEME = { color: 'red', size: 4, nested: { a: 1 } };
+export const TOUCHED = { color: 'red' };
+export function recolor() { TOUCHED.color = 'blue'; }
+var require_third = __commonJS((exports) => { exports.box = function (v) { return { v }; }; exports.peek = function (o) { return o.v; }; });
+const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
+const before = 1, LISTED = '__listed__', after = 2; export { before, LISTED, after }; export let LOOSE = 'Set'; export function loosen() { LOOSE = 'Map'; } export var HOISTED = '__hoisted__'; export var CHANGED = 'Set'; export function change() { CHANGED = 'Map'; } export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
+export var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; export var eager = (target, all) => { for (var name in all) __defProp(target, name, { value: all[name](), enumerable: true }); };
+export var __exportAll = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); return flag || __defProp(target, Symbol.toStringTag, { value: 'Module' }), target; }; export var __exportIf = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); if (!flag) __defProp(target, Symbol.toStringTag, { value: 'Module' }); return target; }; export var eagerAll = (all) => { let target = {}; for (var name in all) target[name] = all[name](); return target; };
+export let Swappable = class { tag() { return 'a'; } }; export function swap() { Swappable = class { tag() { return 'b'; } }; } export function Legacy() {} Legacy.prototype.tag = function () { return 'a'; }; export function relegate() { Legacy.prototype = { tag() { return 'b'; } }; }
+export { __commonJS, __toESM, require_lib, require_other };
+### commutes same: allocator across an impure statement
+-
+import { make } from './dep.js'; let state = 0;
+state = 1;
+const a = make(1, 2);
+console.log(state + a.a);
+### commutes same: allocator that stores into its own object
+-
+import { context } from './dep.js'; let state = 0;
+state = 1;
+const a = context(2);
+console.log(state + a.self.current);
+### commutes same: allocator retains a callback that reads a later definition
+-
+import { make } from './dep.js';
+const a = make(() => later, 0);
+var later = 1;
+console.log(a.a());
+### ordered differs: a function that reads its argument is no allocator
+-
+import { reads } from './dep.js'; const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const a = reads(o);
+console.log(a.v);
+### ordered differs: a function that calls its argument is no allocator
+-
+import { calls } from './dep.js';
+const a = calls(() => later);
+var later = 1;
+console.log(a.v);
+### commutes same: two later uses of a lazy module
+-
+import { __toESM, require_lib } from './dep.js'; const first = __toESM(require_lib());
+const a = __toESM(require_lib());
+const b = __toESM(require_lib());
+console.log(a.wrap === b.wrap);
+### ordered differs: first uses of two lazy modules
+-
+import { __toESM, require_lib, require_other, log } from './dep.js';
+const a = __toESM(require_lib());
+const b = __toESM(require_other());
+console.log(log.join());
+### ordered differs: an impure statement changes a lazy module's exports
+-
+import { __toESM, require_lib, extend } from './dep.js'; const first = require_lib();
+extend();
+const b = __toESM(require_lib());
+console.log('extra' in b);
+### ordered differs: an impure statement observes a lazy module's first use
+-
+import { require_lib, log } from './dep.js'; let seen;
+const a = require_lib();
+seen = log.length;
+console.log(seen);
+### commutes same: an allocator member of a lazy module across an impure statement
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); let state = 0;
+state = 1;
+const c = ns.wrap(() => 1);
+console.log(state + c.render());
+### ordered differs: a member that reads its argument is no allocator
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const c = ns.read(o);
+console.log(c);
+### ordered differs: the first use of a local lazy module runs this chunk's code
+-
+import { __commonJS } from './dep.js'; let state = 0; const local = __commonJS((exports) => { state = 1; exports.x = 1; });
+const a = local();
+const seen = state;
+console.log(seen);
+### ordered differs: an allocator reads a constant defined later
+-
+function tagged(a) { return { k, a }; }
+const x = tagged(1);
+const k = 2;
+console.log(x.k);
+### ordered differs: an allocator calls one that reads a constant defined later
+-
+function tagged(a) { return { k, a }; } function outer(a) { return [tagged(a)]; }
+const x = outer(1);
+const k = 2;
+console.log(x[0].k);
+### commutes same: a derived contained call across a definition its callback reads
+-
+import { once } from './dep.js';
+const settings = once(() => later);
+var later = 1;
+console.log(settings());
+### ordered differs: an impure statement observes a derived contained call
+-
+import { once, hookCount } from './dep.js'; let seen;
+const settings = once(() => 1);
+seen = hookCount();
+console.log(seen);
+### commutes same: a property read of a literal argument across an impure statement
+-
+import { element } from './dep.js'; let state = 0;
+state = 1;
+const node = element('div', { key: 'a' });
+console.log(state + node.key);
+### ordered differs: a property read of an existing object
+-
+import { element } from './dep.js'; const props = { key: 'a' }; function rename() { props.key = 'b'; }
+rename();
+const node = element('div', props);
+console.log(node.key);
+### commutes same: a function that returns an inner async function, across an impure statement
+-
+import { guard } from './dep.js'; let state = 0;
+state = 1;
+const checked = guard(() => true, (input) => input + state);
+checked(1).then((value) => console.log(state, value));
+### commutes same: an inner function retains callbacks that read a later definition
+-
+import { guard } from './dep.js';
+const checked = guard(() => later, () => 2);
+var later = true;
+checked(1).then((value) => console.log(value));
+### commutes same: a class with allocating field initializers, across an impure statement
+-
+import { Store } from './dep.js'; let state = 0;
+state = 1;
+const store = new Store('a');
+console.log(state, store.items.length, store.index.size, store.name);
+### ordered differs: a class whose field initializer counts
+-
+import { Counted } from './dep.js';
+const a = new Counted();
+const b = new Counted();
+console.log(a.id, b.id);
+### commutes same: a template over an imported primitive, across an impure statement
+-
+import { PREFIX, SIZE } from './dep.js'; let state = 0;
+state = 1;
+const label = `${PREFIX}-button-${SIZE + 1}`;
+console.log(state, label);
+### commutes same: an imported primitive as a computed key
+-
+import { PREFIX } from './dep.js'; let state = 0;
+state = 1;
+const table = { [PREFIX]: 1 };
+console.log(state, table.app);
+### ordered differs: an imported binding its chunk assigns is no primitive
+-
+import { mutable, setMutable } from './dep.js';
+setMutable(5);
+const doubled = mutable * 2;
+console.log(doubled);
+### commutes same: a template over members of an imported literal, across an impure statement
+-
+import { THEME } from './dep.js'; let state = 0;
+state = 1;
+const label = `${THEME.color}-${THEME.size}`;
+console.log(state, label);
+### commutes same: an object literal reading members of an imported literal
+-
+import { THEME } from './dep.js'; let state = 0;
+state = 1;
+const style = { [THEME.color]: THEME.nested, size: THEME.size };
+console.log(state, style.red.a, style.size);
+### ordered differs: an imported literal its chunk stores into
+-
+import { TOUCHED, recolor } from './dep.js';
+recolor();
+const label = `${TOUCHED.color}`;
+console.log(label);
+### commutes same: an exported alias of a lazy module's allocator member, across an impure statement
+-
+import { box, boxDefault } from './dep.js'; let state = 0;
+state = 1;
+const c = [box(() => state), boxDefault(2)];
+console.log(state, c[1].v);
+### ordered differs: an exported alias of a member that reads its argument
+-
+import { peek } from './dep.js'; const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const c = peek(o);
+console.log(c);
+### commutes same: a local alias of a lazy module's allocator member, across an impure statement
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); const wrap = ns.wrap; let state = 0;
+state = 1;
+const c = wrap(() => 1);
+console.log(state + c.render());
+### commutes same: a store into the record of a global named by an imported constant string (census)
+-
+import { REGISTRY } from './dep.js'; const name = 'n';
+(globalThis[REGISTRY] ??= {})[name] = 1;
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[REGISTRY].n);
+### ordered differs: a store on the global object under an imported key that is not a literal (census)
+-
+import { SLOT } from './dep.js';
+globalThis[SLOT] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### ordered differs: a store on the global object under an imported constant naming the intrinsic used (census)
+-
+import { RENAMED } from './dep.js';
+globalThis[RENAMED] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### commutes same: a record store through a shorthand-default parameter and an imported, re-exported constant from a declarator list (census)
+-
+import { LISTED } from './dep.js'; const hosts = new Set(); function register(w) { hosts.add(w); } function cleanup(ref) { return () => { const t = ref.deref(); try { delete t[LISTED]; } catch {} }; } function setup({ target = globalThis } = {}) { let h = target; register(h); let g = h[LISTED] ??= {}; return (u, v) => { g[u] = v; }; } export { LISTED };
+setup()('n', 1);
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[LISTED].n);
+### ordered differs: a store under an imported binding its exporter can reassign (census)
+-
+import { LOOSE } from './dep.js';
+globalThis[LOOSE] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### commutes same: a record store under an imported never-assigned var of a program without cycles (census)
+-
+import { HOISTED } from './dep.js'; const name = 'n';
+(globalThis[HOISTED] ??= {})[name] = 1;
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[HOISTED].n);
+### ordered differs: a store under an imported var its exporter can reassign (census)
+-
+import { CHANGED } from './dep.js';
+globalThis[CHANGED] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### commutes same: the imported namespace-export helper across an impure statement
+-
+import { __export } from './dep.js'; const ns = {}; let state = 0;
+state = 1;
+__export(ns, { value: () => state, self: () => ns });
+console.log(ns.value, ns.self === ns);
+### commutes same: a local namespace-export helper across an impure statement
+-
+var __defProp = Object.defineProperty; var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; const ns = {}; let state = 0;
+state = 1;
+__export(ns, { value: () => state });
+console.log(ns.value);
+### ordered differs: an imported helper of the same call shape that invokes the functions
+-
+import { eager } from './dep.js'; const ns = {}; let state = 0;
+state = 1;
+eager(ns, { value: () => state });
+console.log(ns.value);
+### ordered differs: an impure statement inspects the namespace the helper fills
+-
+import { __export } from './dep.js'; const ns = {}; let seen; function peek() { seen = 'value' in ns; }
+peek();
+__export(ns, { value: () => 1 });
+console.log(seen);
+### ordered differs: an impure statement makes Object.prototype enumerate a member
+-
+import { __export } from './dep.js'; const ns = {}; let failed = 0; function taint() { Object.prototype.extra = 1; } function fill() { try { __export(ns, { value: () => 1 }); } catch { failed = 1; } }
+taint();
+fill();
+console.log(failed);
+### commutes same: the imported helper that returns a fresh namespace, across an impure statement
+-
+import { __exportAll, __exportIf } from './dep.js'; let state = 0;
+state = 1;
+const ns = [__exportAll({ value: () => state }), __exportIf({ value: () => state }, 1)];
+console.log(ns[0].value, ns[1].value, String(ns[0]), String(ns[1]));
+### ordered differs: an imported helper of that call shape that invokes the functions
+-
+import { eagerAll } from './dep.js'; let state = 0;
+state = 1;
+const ns = eagerAll({ value: () => state });
+console.log(ns.value);
+### ordered differs: an impure statement makes Object.prototype enumerate a member before a namespace is built
+-
+import { __exportAll } from './dep.js'; function taint() { Object.prototype.extra = 1; }
+taint();
+const ns = __exportAll({ value: () => 1 });
+console.log(ns.value);
+### commutes same: an exported literal the whole program only reads by name, across an impure statement that reaches it
+-
+import { make } from './dep.js'; export const table = { key: 'a', other: 1 }; let seen; function peek() { seen = table.other; }
+peek();
+const label = table.key;
+console.log(seen, label);
+### ordered differs: an exported literal this chunk also stores to
+-
+import { make } from './dep.js'; export const table = { key: 'a' }; function rename() { table.key = 'b'; }
+rename();
+const label = table.key;
+console.log(label);
+### commutes same: a literal reading imports their chunk never reassigns, across an impure statement
+-
+import { make, PREFIX, Store } from './dep.js'; let state = 0;
+state = 1;
+const bundle = { make, PREFIX, Store };
+console.log(state, typeof bundle.make, bundle.PREFIX);
+### ordered differs: a literal reading an import its chunk reassigns
+-
+import { mutable, setMutable } from './dep.js';
+setMutable(5);
+const bundle = { mutable };
+console.log(bundle.mutable);
+### commutes same: a class extending an imported class its chunk never reassigns, across an impure statement
+-
+import { Store } from './dep.js'; let state = 0; function note(o) { o.noted = state; }
+state = 1;
+class Derived extends Store { constructor() { super('d'); note(this); } }
+console.log(new Derived().noted, new Derived().name);
+### ordered differs: a class extending an imported binding its chunk reassigns
+-
+import { Swappable, swap } from './dep.js';
+swap();
+class Derived extends Swappable {}
+console.log(new Derived().tag());
+### ordered differs: a class extending an imported function whose prototype its chunk replaces
+-
+import { Legacy, relegate } from './dep.js';
+relegate();
+class Derived extends Legacy {}
+console.log(new Derived().tag());
+### ordered differs: a class extending an imported class, with a static field that calls
+-
+import { Store } from './dep.js'; let n = 0; const next = () => ++n;
+n = 5;
+class Derived extends Store { static id = next(); }
+console.log(Derived.id);
+### ordered differs: a class extending an imported class, with a computed member key that calls
+-
+import { Store } from './dep.js'; let n = 0; const next = () => ++n;
+n = 5;
+class Derived extends Store { [next()]() {} }
+console.log(Object.getOwnPropertyNames(Derived.prototype).join());

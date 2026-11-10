@@ -240,6 +240,44 @@ func TestADeletedIdentityRevokesItsCredentials(t *testing.T) {
 	requireRefused(t, resolves, record.leaf)
 }
 
+// Naming the Identity's UID is the requester's choice. A standing record rendered from git cannot
+// know it, so it names the Identity by name alone and follows a same-named successor, which git
+// applies as deliberately as the first; a bound record may choose the same.
+func TestARecordNamingNoUIDFollowsTheLiveIdentity(t *testing.T) {
+	ctx := t.Context()
+	ca := transporttesting.NewCA(t)
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-standing-identity"},
+		Spec:       policyapi.IdentitySpec{Description: "test standing agent"},
+	}
+	if err := objects.Create(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: identity.Name}}}
+	standing := issue(t, ca, servedNamespace, "test-standing-identity", nil, spec, nil, credentialIDs[0])
+	resolves := newResolver(t, objects)
+	peer, err := resolves.Resolve(ctx, standing.leaf)
+	if err != nil || peer.Subject != (resolver.Identity{Name: identity.Name, UID: identity.UID}) || peer.Binding != nil || peer.Owner != nil {
+		t.Fatalf("resolved %+v, %v", peer, err)
+	}
+	if err := objects.Delete(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	requireRefused(t, resolves, standing.leaf)
+	successor := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: identity.Name}, Spec: identity.Spec}
+	if err := objects.Create(ctx, successor); err != nil {
+		t.Fatal(err)
+	}
+	if peer, err := resolves.Resolve(ctx, standing.leaf); err != nil || peer.Subject != (resolver.Identity{Name: successor.Name, UID: successor.UID}) {
+		t.Fatalf("resolved %+v, %v", peer, err)
+	}
+	pod := types.UID("14141414-1414-4141-8141-141414141414")
+	bound := issue(t, ca, servedNamespace, "test-bound-unpinned-identity", nil, identityPodSpec(pod, ""), &workloadapi.Binding{PodUID: pod}, credentialIDs[1])
+	if peer, err := resolves.Resolve(ctx, bound.leaf); err != nil || peer.Subject != (resolver.Identity{Name: subjectIdentity, UID: identityUID(t, policyNamespace)}) || peer.Pod == nil || peer.Pod.UID != pod {
+		t.Fatalf("resolved %+v, %v", peer, err)
+	}
+}
+
 // A standing workload has no owner and no binding; its record alone is its incarnation.
 func TestAStandingWorkloadNeedsNoBinding(t *testing.T) {
 	ca := transporttesting.NewCA(t)

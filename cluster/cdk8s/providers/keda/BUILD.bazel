@@ -1,7 +1,16 @@
 # gazelle:resolve py keda_scaledjob_crds //cluster/cdk8s/providers/keda:scaledjob
+# gazelle:resolve py keda_scaledobject_crds //cluster/cdk8s/providers/keda:scaledobject
 # gazelle:resolve py keda_triggerauthentication_crds //cluster/cdk8s/providers/keda:triggerauthentication
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "scaledobject",
+    crd = "@keda_scaledobject_crd//file",
+    module_name = "keda_scaledobject_crds",
+    module_path = "sh/keda",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
 
 cdk8s_import(
     name = "scaledjob",

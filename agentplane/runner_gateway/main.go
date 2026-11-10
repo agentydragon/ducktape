@@ -404,7 +404,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
-	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
+	observersStopped := make(chan struct{})
+	go func() {
+		defer close(observersStopped)
+		reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx))
+	}()
 
 	// Serving once the gRPC listener accepts calls.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -420,6 +424,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
 	graceful.Stop(closing, server)
+	// Observer shutdown closes direct Runner connections before releasing their
+	// fenced Leases. Keep the process alive for that bounded handoff.
+	select {
+	case <-observersStopped:
+	case <-time.After(10 * time.Second):
+		slog.Warn("Runner observers did not finish before Gateway shutdown")
+	}
 	return result
 }
 

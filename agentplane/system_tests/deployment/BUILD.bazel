@@ -196,6 +196,7 @@ py_library(
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         ":certificates",
+        ":operator_tokens",
         ":process_traces",
         ":rendered_fixture",
         ":virtualization",
@@ -315,6 +316,17 @@ py_library(
     srcs = ["rendered_fixture.py"],
     deps = [
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_tokens",
+    srcs = ["operator_tokens.py"],
+    deps = [
+        ":rendered_fixture",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
     ],
 )
 

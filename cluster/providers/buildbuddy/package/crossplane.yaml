@@ -1,0 +1,7 @@
+apiVersion: meta.pkg.crossplane.io/v1alpha1
+kind: Provider
+metadata:
+  name: provider-buildbuddy
+  annotations:
+    meta.crossplane.io/source: github.com/agentydragon/ducktape
+    meta.crossplane.io/description: Manages BuildBuddy organization secrets and group API keys.

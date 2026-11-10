@@ -36,6 +36,7 @@ use crate::facts::at_init_fallback::{
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
+use crate::facts::collector::UnresolvedCallSourceCollector;
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
@@ -631,8 +632,14 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 }
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
+    let mut heritage_inputs = UnresolvedCallSourceCollector::default();
+    if let Some(heritage) = class.super_class.as_deref() {
+        heritage.visit_with(&mut heritage_inputs);
+    }
     let mut facts = ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
+        super_class_inputs: heritage_inputs.idents,
+        super_class_inputs_incomplete: heritage_inputs.inline_fn,
         lexical_heritage: class
             .super_class
             .as_deref()
@@ -1036,6 +1043,15 @@ pub(super) struct Parameter {
     /// of it only as unknown.
     pub(super) pattern_assignments: Vec<(Id, ValueExpr)>,
     pub(super) pattern_loses_values: bool,
+    /// The pattern destructures an array, so binding it runs the iterator
+    /// protocol on the incoming value (or on a part of it).
+    pub(super) pattern_iterates: bool,
+    /// Some array pattern below the root iterates a part of the incoming
+    /// value, or a default, which no source tracks.
+    pub(super) pattern_iterates_part: bool,
+    /// Defaults below the root that supply a value an array pattern
+    /// iterates.
+    pub(super) iterated_defaults: Vec<ValueExpr>,
 }
 
 /// The binding a pattern parameter's projections read its incoming value
@@ -1062,6 +1078,68 @@ fn pattern_loses_values(pattern: &Pat) -> bool {
     }
 }
 
+/// Whether destructuring `pattern` runs the iterator protocol on the value
+/// or on a part of it.
+fn pattern_iterates(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+        Pat::Assign(assign) => pattern_iterates(&assign.left),
+        Pat::Rest(rest) => pattern_iterates(&rest.arg),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => pattern_iterates(&property.value),
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(rest) => pattern_iterates(&rest.arg),
+        }),
+        Pat::Array(_) => true,
+    }
+}
+
+/// Whether destructuring `pattern` iterates a part of the value, or a
+/// default, rather than the value itself: an array pattern below the root.
+fn pattern_iterates_part(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Array(array) => array.elems.iter().flatten().any(pattern_iterates),
+        Pat::Assign(assign) => pattern_iterates_part(&assign.left),
+        Pat::Object(_) | Pat::Rest(_) => pattern_iterates(pattern),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
+}
+
+/// The defaults below the root of `pattern` that supply a value an array
+/// pattern iterates: `[[x] = mk()]`, `{ a: [x] = mk() }`.
+fn iterated_defaults<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    match pattern {
+        Pat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                collect_iterated_default(element, defaults);
+            }
+        }
+        Pat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        collect_iterated_default(&property.value, defaults)
+                    }
+                    ObjectPatProp::Rest(rest) => collect_iterated_default(&rest.arg, defaults),
+                    ObjectPatProp::Assign(_) => {}
+                }
+            }
+        }
+        Pat::Assign(assign) => iterated_defaults(&assign.left, defaults),
+        Pat::Rest(rest) => iterated_defaults(&rest.arg, defaults),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => {}
+    }
+}
+
+fn collect_iterated_default<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    if let Pat::Assign(assign) = pattern
+        && pattern_iterates(&assign.left)
+    {
+        defaults.push(&assign.right);
+    }
+    iterated_defaults(pattern, defaults);
+}
+
 impl Parameter {
     fn from_pattern(pattern: &Pat) -> Self {
         let mut assignments = Vec::new();
@@ -1083,6 +1161,13 @@ impl Parameter {
             _ => (None, None, Some(pattern)),
         };
         let mut pattern_assignments = Vec::new();
+        let pattern_iterates = destructured.is_some_and(pattern_iterates);
+        let pattern_iterates_part = destructured.is_some_and(pattern_iterates_part);
+        let mut defaults = Vec::new();
+        if let Some(destructured) = destructured {
+            iterated_defaults(destructured, &mut defaults);
+        }
+        let iterated_defaults = defaults.into_iter().map(ValueExpr::from_expr).collect();
         let pattern_loses_values = match destructured.filter(|_| binding.is_none()) {
             Some(destructured) => {
                 collect_pattern_assignments(
@@ -1100,6 +1185,9 @@ impl Parameter {
             default,
             pattern_assignments,
             pattern_loses_values,
+            pattern_iterates,
+            pattern_iterates_part,
+            iterated_defaults,
         }
     }
 }
@@ -1396,6 +1484,11 @@ pub(super) struct Callable {
     /// values (a `catch` parameter) and yielded values (a generator's
     /// consumer).
     pub(super) published_sources: Vec<ValueExpr>,
+    /// Operands this callable runs the iterator protocol on: `for`-`of`
+    /// iterables, array-destructured values, spread operands and `yield*`
+    /// operands. Over anything but a proven native iterable, the protocol
+    /// calls user code (`[Symbol.iterator]`, `next`).
+    pub(super) iterated_sources: Vec<ValueExpr>,
     /// Bindings an update expression (`x++`) of this callable writes; neither
     /// `rebinds` nor `local_assignments` records them.
     pub(super) update_targets: BTreeSet<Id>,
@@ -1714,6 +1807,7 @@ impl Default for Callable {
             undefined_before_assignment: BTreeSet::new(),
             head_bindings: BTreeSet::new(),
             published_sources: Vec::new(),
+            iterated_sources: Vec::new(),
             update_targets: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
@@ -6233,6 +6327,9 @@ pub(super) struct ExecutionIndex {
     /// Per top-level owner, what `Callable::published_sources` lists for a
     /// callable: values whose parts reach a binding only as unknown.
     pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
+    /// Per top-level owner, what `Callable::iterated_sources` lists for a
+    /// callable.
+    pub(super) top_iterated_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
@@ -6453,6 +6550,7 @@ impl Default for ExecutionIndex {
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_published_sources: BTreeMap::new(),
+            top_iterated_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
@@ -11722,6 +11820,40 @@ impl ExecutionIndex {
         }
     }
 
+    /// `arguments` is recorded as unknown: an own `[Symbol.iterator]` write
+    /// to it is not tracked.
+    fn record_iterated_source(&mut self, value: &Expr) {
+        let value = match value.unwrap_parens() {
+            Expr::Ident(ident) if ident.sym == "arguments" => ValueExpr::Unknown,
+            value => ValueExpr::from_expr(value),
+        };
+        self.record_iterated_value(value);
+    }
+
+    fn record_iterated_defaults(&mut self, pattern: &Pat) {
+        let mut defaults = Vec::new();
+        iterated_defaults(pattern, &mut defaults);
+        for default in defaults {
+            self.record_iterated_source(default);
+        }
+    }
+
+    fn record_iterated_value(&mut self, value: ValueExpr) {
+        match self.current {
+            Some(key) => self
+                .callables
+                .get_mut(&key)
+                .unwrap()
+                .iterated_sources
+                .push(value),
+            None => self
+                .top_iterated_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
+        }
+    }
+
     fn record_nested_write(&mut self, binding: Id) {
         for key in &self.prototype_capture_stack {
             self.nested_callable_writes
@@ -11884,6 +12016,9 @@ impl Visit for ExecutionIndex {
                             default: None,
                             pattern_assignments: Vec::new(),
                             pattern_loses_values: false,
+                            pattern_iterates: false,
+                            pattern_iterates_part: false,
+                            iterated_defaults: Vec::new(),
                         },
                     })
                     .collect();
@@ -12505,6 +12640,34 @@ impl Visit for ExecutionIndex {
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         self.record_published_source(&node.right);
+        self.record_iterated_source(&node.right);
+        // An array pattern in the head iterates each element, which no
+        // source tracks; `Object.entries` yields fresh native pairs.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        let entries = matches!(node.right.unwrap_parens(), Expr::Call(call)
+            if matches!(&call.callee, Callee::Expr(callee)
+                if matches!(callee.unwrap_parens(), Expr::Member(member)
+                    if static_prop(&member.prop).as_deref() == Some("entries")
+                        && matches!(member.obj.unwrap_parens(), Expr::Ident(object) if object.sym == "Object"))));
+        if head_iterates && !entries {
+            self.record_iterated_value(ValueExpr::Unknown);
+        }
+        match &node.left {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12593,6 +12756,11 @@ impl Visit for ExecutionIndex {
     fn visit_catch_clause(&mut self, clause: &CatchClause) {
         if let Some(parameter) = &clause.param {
             self.invalidate_property_key_pattern(parameter);
+            // The thrown value is untracked; an array pattern iterates it.
+            if pattern_iterates(parameter) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(parameter);
             if let Some(callable) = self.current {
                 self.callables
                     .get_mut(&callable)
@@ -13015,6 +13183,15 @@ impl Visit for ExecutionIndex {
             {
                 self.record_published_source(init);
             }
+            if let Some(init) = &declarator.init
+                && pattern_iterates(&declarator.name)
+            {
+                self.record_iterated_source(init);
+            }
+            if pattern_iterates_part(&declarator.name) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(&declarator.name);
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
             collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
@@ -13542,6 +13719,31 @@ impl Visit for ExecutionIndex {
             if loses_values {
                 self.record_published_source(&assignment.right);
             }
+            let (iterates, iterates_part) = match pattern {
+                AssignTargetPat::Array(array) => {
+                    (true, pattern_iterates_part(&Pat::Array(array.clone())))
+                }
+                AssignTargetPat::Object(object) => {
+                    let object = Pat::Object(object.clone());
+                    (pattern_iterates(&object), pattern_iterates_part(&object))
+                }
+                AssignTargetPat::Invalid(_) => (false, false),
+            };
+            if iterates {
+                self.record_iterated_source(&assignment.right);
+            }
+            if iterates_part {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            match pattern {
+                AssignTargetPat::Array(array) => {
+                    self.record_iterated_defaults(&Pat::Array(array.clone()))
+                }
+                AssignTargetPat::Object(object) => {
+                    self.record_iterated_defaults(&Pat::Object(object.clone()))
+                }
+                AssignTargetPat::Invalid(_) => {}
+            }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(
                 pattern,
@@ -13714,8 +13916,18 @@ impl Visit for ExecutionIndex {
     fn visit_yield_expr(&mut self, yielded: &YieldExpr) {
         if let Some(argument) = &yielded.arg {
             self.record_published_source(argument);
+            if yielded.delegate {
+                self.record_iterated_source(argument);
+            }
         }
         yielded.visit_children_with(self);
+    }
+
+    fn visit_expr_or_spread(&mut self, element: &ExprOrSpread) {
+        if element.spread.is_some() {
+            self.record_iterated_source(&element.expr);
+        }
+        element.visit_children_with(self);
     }
 
     fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {

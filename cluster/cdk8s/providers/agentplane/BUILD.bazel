@@ -61,6 +61,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//agentplane/crds:identity",
+        "//agentplane/crds:policybinding",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -95,9 +96,9 @@ py_library(
     srcs = ["workload_credential.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":identity",
         "//agentplane/crds:workloadcredential",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

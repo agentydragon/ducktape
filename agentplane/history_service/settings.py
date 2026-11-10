@@ -23,6 +23,9 @@ class DelegationSettings(BaseModel):
     caller_namespaces: tuple[str, ...] = Field(
         min_length=1, description="Namespaces whose caller identity Actions may assert."
     )
+    identity_callers: bool = Field(
+        default=False, description="Whether Actions may assert an Identity in policy_namespace as the effective caller."
+    )
     methods: tuple[str, ...] = Field(
         min_length=1, description="Full HistoryService RPC method names that admit delegation."
     )
@@ -91,4 +94,10 @@ class Settings(YamlFileSettings):
         )
         if not {self.token_audience, self.ingress.token_audience} <= audiences:
             raise ValueError("rpc.auth must allow the read and ingress bearer audiences")
+        return self
+
+    @model_validator(mode="after")
+    def identity_callers_need_policy_namespace(self) -> Settings:
+        if self.delegation is not None and self.delegation.identity_callers and self.policy_namespace is None:
+            raise ValueError("delegation.identity_callers requires policy_namespace")
         return self

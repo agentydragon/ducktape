@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -52,6 +53,8 @@ from devinfra.pr_visuals.metadata import (
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
+
+logger = logging.getLogger(__name__)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 REVIEW_PREFIX = "reviews-test-outputs"
@@ -508,6 +511,7 @@ def download_visual_tests(
     # Multiple cases may deliberately have identical bytes. Download each
     # target/digest destination once; concurrent writers to a path are unsafe.
     unique_downloads = {download.destination: download for download in downloads}
+    logger.info("Downloading %d screenshot blobs from %d targets", len(unique_downloads), len(tests))
     _download_all(list(unique_downloads.values()), bbapi=bbapi, run=run)
     return tests
 
@@ -804,6 +808,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         if digest is not None
     }
     failures: list[Exception] = []
+    logger.info("Checking and uploading %d shared images", len(digests))
     with ThreadPoolExecutor(max_workers=S3_IMAGE_UPLOAD_WORKERS) as executor:
         futures = [
             executor.submit(
@@ -823,6 +828,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
     paths = sorted(
         bundle.rglob("*"), key=lambda path: (path.name == "index.html", path == bundle / "index.html", path.as_posix())
     )
+    logger.info("Uploading review metadata and pages")
     for path in paths:
         if not path.is_file():
             continue
@@ -968,6 +974,7 @@ def _invocations_for(
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     args = parser().parse_args()
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
@@ -1000,6 +1007,7 @@ def main() -> None:
     base_sha: str | None = None
     try:
         if args.pull_request_head:
+            logger.info("Resolving pull request")
             found = find_reviewable_pull_request(
                 repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
             )
@@ -1008,8 +1016,10 @@ def main() -> None:
                 print(summary)
                 return
             pull_request, base_sha = found.number, found.base_sha
+        logger.info("Finding test invocations")
         invocations = _invocations_for(args, run=subprocess.run)
         test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
+        logger.info("Waiting for %d test invocation(s)", 1 if test_id in invocations else len(invocations))
         readiness = wait_for_test_invocations(
             [test_id] if test_id in invocations else invocations,
             workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
@@ -1017,6 +1027,7 @@ def main() -> None:
             build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
             run=subprocess.run,
         )
+        logger.info("Test invocation readiness: %s", readiness)
         if readiness == "incomplete":
             raise RuntimeError("Bazel test invocation did not complete before visual publication")
         if args.ci_conclusion != "success":
@@ -1050,6 +1061,7 @@ def main() -> None:
         baseline_source: BaselineSource | None = None
         if base_sha:
             baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
+        logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
         bundle = build_bundle(
             tests,
             args.work_dir / "site",
@@ -1064,12 +1076,9 @@ def main() -> None:
             # Devel push: advance the mutable per-target fallback pointers now
             # that this commit's immutable bundle is fully uploaded and the
             # invocation is confirmed complete.
-            write_baseline_pointers(
-                [test.slug for test in review_tests if test.baseline_eligible],
-                commit_sha=args.sha,
-                bucket=args.bucket,
-                client=s3,
-            )
+            slugs = [test.slug for test in review_tests if test.baseline_eligible]
+            logger.info("Updating %d baseline pointers", len(slugs))
+            write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=s3)
         public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
         if base_sha:
             totals = classification_totals(review_tests)
@@ -1120,6 +1129,7 @@ def main() -> None:
         conclusion = "failure"
         raise
     finally:
+        logger.info("Updating review comment and check")
         if pull_request is not None and (comment_body is not None or refresh_stale_comment_body is not None):
             # Rendering/uploading may outlast another push or PR closure. Recheck
             # before replacing the singleton comment; immutable bundles stay useful.
@@ -1150,6 +1160,7 @@ def main() -> None:
             external_id=args.check_external_id,
             token=github_token,
         )
+        logger.info("Visual publication finished: %s", conclusion)
 
 
 if __name__ == "__main__":

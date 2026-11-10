@@ -184,7 +184,7 @@ func run(ctx context.Context, config Config) error {
 			return fmt.Errorf("configure Action Service federation: %w", err)
 		}
 	}
-	appAuth, err := auth.NewWithContext(ctx, auth.Config{
+	appAuth, err := auth.New(auth.Config{
 		OIDC: oidc, Database: db, TokenReviews: kube.AuthenticationV1().TokenReviews(),
 		TokenAudience: config.TokenAudience, TokenSubjects: config.TokenSubjects,
 		StoreFederationTokens: federator != nil, SessionChanges: wakeupHub,

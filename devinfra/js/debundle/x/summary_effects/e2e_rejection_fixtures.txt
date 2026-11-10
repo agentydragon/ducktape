@@ -1,0 +1,772 @@
+### accepted: accepted_spec_runs_under_node_test::method_rebinding_requires_explicit_colocation_and_preserves_runtime
+1,2,0,3,4,5
+let counter = 0;
+class Counter {
+  bump(b) { counter = b; }
+  read() { return counter; }
+}
+const c = new Counter();
+c.bump(1);
+console.log(c.read());
+export { counter, Counter, c };
+### conflict: call_initializer_seal_test::unmodeled_body_and_invoking_patterns_keep_the_owner_open
+1,2,0,3
+globalThis.mode = "ready";
+function read(suffix) { for (let index = 0; index < 1; index++) {} return globalThis.mode + suffix; }
+const value = read(1);
+console.log(value);
+### conflict: call_initializer_seal_test::unmodeled_body_and_invoking_patterns_keep_the_owner_open
+1,2,0,3
+globalThis.mode = "ready";
+function make() { return { get value() { return globalThis.mode; } }; }
+const { value } = make();
+console.log(value);
+### incomplete: call_initializer_seal_test::unmodeled_body_and_invoking_patterns_keep_the_owner_open
+1,2,0,3
+globalThis.mode = "ready";
+function make() { return { *[Symbol.iterator]() { yield globalThis.mode; } }; }
+const [value] = make();
+console.log(value);
+### conflict: coarse_atomic_groups_test::coarse_routing_keeps_the_normal_gate_for_incompatible_named_claims
+1,0,2,3
+export const early = 1;
+export const middle = early + 1;
+export const late = middle + 1;
+console.log(late);
+### incomplete: commuting_statements_gate_test::unused_entry_does_not_fail_an_emit_on_rejection_run
+0,2,1,3,4
+const alpha = (globalThis.alpha = "a", "A");
+const beta = (globalThis.beta = "b", "B");
+const gamma = (globalThis.gamma = "c", "C");
+console.log(alpha, beta, gamma, globalThis.alpha, globalThis.beta, globalThis.gamma);
+export { alpha, beta, gamma };
+### accepted: cross_module_emission_test::cross_destination_rebind_is_rejected_when_effect_order_does_not_change
+0,1,2,3,4
+let mutable = 0;
+function write() {
+  mutable = 1;
+  return mutable;
+}
+write();
+console.log(mutable);
+export { mutable, write };
+### accepted: cross_module_emission_test::partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module
+0,1,2,3
+let mutable = 0;
+function write() { mutable = 1; }
+write();
+console.log(mutable);
+### accepted: cross_module_emission_test::partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module
+0,2,3,1
+let mutable = 0;
+function write() { mutable = 1; }
+write();
+console.log(mutable);
+### accepted: effect_tv_array_iteration_test::a_store_to_a_field_the_callback_does_not_read_commutes_with_the_iteration
+0,1,3,2,4
+const item = { size: 1, other: 5 };
+const entries = [item, { size: 2, executor: () => 3, other: 1 }];
+const patched = (() => { item.other = 9; return 0; })();
+const result = entries.reduce((t, e) => t + e.size, 0);
+console.log(result, patched);
+### conflict: effect_tv_array_iteration_test::a_callback_write_keeps_its_reader_before_the_iteration
+0,1,2,4,3,5
+const seen = [];
+function record(x) { seen.push(x); return x; }
+function run() { const items = [1, 2]; return items.map(record); }
+const observed = seen.length;
+var result = run();
+console.log(observed, result.join(','), seen.length);
+### conflict: effect_tv_array_iteration_test::a_hole_keeps_its_prototype_read
+0,2,4,3,1,5
+const log = [];
+Object.defineProperty(Object.prototype, 1, { get() { log.push('hole'); return 2; }, configurable: true });
+function run() { const items = [1, , 3]; items.forEach((x) => x); return items; }
+const observed = log.length;
+var result = run();
+console.log(observed, log.length);
+### incomplete: effect_tv_array_iteration_test::a_replaced_prototype_method_is_not_selected
+0,2,4,3,1,5
+const log = [];
+Array.prototype.forEach = function () { log.push('patched'); };
+function run() { const items = [1, 2]; items.forEach((x) => x); return items; }
+const observed = log.length;
+var result = run();
+console.log(observed, log.length);
+### conflict: effect_tv_array_iteration_test::a_store_to_a_field_the_callback_reads_conflicts_with_the_iteration
+0,1,3,2,4
+const item = { size: 1, other: 5 };
+const entries = [item, { size: 2, executor: () => 3, other: 1 }];
+const patched = (() => { item.size = 10; return 0; })();
+const result = entries.reduce((t, e) => t + e.size, 0);
+console.log(result, patched);
+### accepted: effect_tv_array_iteration_test::a_store_to_a_field_the_callback_does_not_read_commutes_with_the_iteration
+0,1,3,2,4
+const item = { executor: () => 1, other: 5 };
+const entries = [item, { size: 2, executor: () => 3, other: 1 }];
+const patched = (() => { item.other = 2; return 0; })();
+const result = entries.map((e) => e.executor);
+console.log(result.map((f) => f()).join(','), patched);
+### incomplete: effect_tv_array_iteration_test::an_element_getter_field_keeps_its_root_on_the_flat_lane
+0,1,3,2,4
+const log = [];
+const entries = [{ get size() { log.push('get'); return 1; } }];
+const observed = log.length;
+var result = entries.reduce((total, entry) => total + entry.size, 0);
+console.log(observed, log.length);
+### incomplete: effect_tv_array_iteration_test::an_element_getter_keeps_the_receiver_unproved
+0,1,3,2,4
+const log = [];
+function run() { const items = [1, 2]; Object.defineProperty(items, 0, { get() { log.push('get'); return 1; } }); items.forEach((x) => x); return items; }
+const observed = log.length;
+var result = run();
+console.log(observed, log.length);
+### conflict: effect_tv_array_iteration_test::a_store_to_a_field_the_callback_reads_conflicts_with_the_iteration
+0,1,3,2,4
+const item = { executor: () => 1, other: 5 };
+const entries = [item, { size: 2, executor: () => 3, other: 1 }];
+const patched = (() => { item.executor = () => 2; return 0; })();
+const result = entries.map((e) => e.executor);
+console.log(result.map((f) => f()).join(','), patched);
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { return [second].map((x) => x)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected
+2,0,1,3,4
+function pick(flag) { return flag || String(later); }
+const seen = [pick(true), pick(false)].join(' ');
+var later = 'set';
+console.log(seen);
+export { seen, pick, later };
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { return [second].filter(() => true)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return f(); }
+function run() { return flag(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; if (first()) {} set(); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (first()) { var r = {}; } return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (first()) {} return [second].filter(() => true)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_parameter_publishes_its_incoming_value
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag(p) { const get = () => p; if (first()) {} const r = get(); p = noop; return r; }
+function run() { return flag(second)(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; (() => { f = second; })(); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_only_a_closure_assigns_is_not_only_undefined
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r; const set = () => { r = {}; }; if (first()) {} set(); return r; }
+function run() { return flag() ? second() : first(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r = {}; let s = {}; for (const x of [1, 2]) { s = r; r = undefined; } if (first()) {} return s; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_read_at_top_level_is_not_an_effect_acceptance
+0,1,2,3,4,5,6,8,7,9
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return f; }
+const got = flag();
+function run() { return got(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (!first()) return r; var r = {}; return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_parameter_publishes_its_incoming_value
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag(p = second) { const get = () => p; if (first()) {} const r = get(); p = noop; return r; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const o = { set() { f = second; } }; o.set(); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { const items = [second]; return items.map((x) => x)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_value_dropped_to_unknown_keeps_its_capabilities
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { new Map(); let a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, a7 = 0, a8 = 0, a9 = 0, a10 = 0, a11 = 0, a12 = 0, a13 = 0, a14 = 0, a15 = 0, a16 = 0, a17 = 0, a18 = 0, a19 = 0, a20 = 0, a21 = 0, a22 = 0, a23 = 0, a24 = 0, a25 = 0, a26 = 0, a27 = 0, a28 = 0, a29 = 0, a30 = 0, a31 = 0, a32 = 0, a33 = 0, a34 = 0, a35 = 0, a36 = 0, a37 = 0, a38 = 0, a39 = 0, a40 = 0, a41 = 0, a42 = 0, a43 = 0, a44 = 0, a45 = 0, a46 = 0, a47 = 0, a48 = 0, a49 = 0, a50 = 0, a51 = 0, a52 = 0, a53 = 0, a54 = 0, a55 = 0, a56 = 0, a57 = 0, a58 = 0, a59 = 0, a60 = 0, a61 = 0, a62 = 0, a63 = 0, a64 = 0, a65 = 0, a66 = 0, a67 = 0, a68 = 0, a69 = 0; let zz = second; const get = () => (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33, a34, a35, a36, a37, a38, a39, a40, a41, a42, a43, a44, a45, a46, a47, a48, a49, a50, a51, a52, a53, a54, a55, a56, a57, a58, a59, a60, a61, a62, a63, a64, a65, a66, a67, a68, a69, zz); return get(); }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; let g = noop; for (const x of [1, 2]) { g = f; f = second; } if (first()) {} return g; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_parameter_publishes_its_incoming_value
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag({ p }) { const get = () => p; if (first()) {} const r = get(); p = noop; return r; }
+function run() { return flag({ p: second })(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (first()) {} const items = [second]; return items.map((x) => x)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_value_dropped_to_unknown_keeps_its_capabilities
+0,1,2,3,4,5,6,8,7,9
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function F() { return second; }
+function flag() { return new F(); }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r = {}; const clear = () => { r = undefined; }; clear(); return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected
+2,0,1,3,4
+function pick(flag) { return flag ? 'early' : String(later); }
+const seen = [pick(true), pick(false)].join(' ');
+var later = 'set';
+console.log(seen);
+export { seen, pick, later };
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const get = () => f; if (first()) {} f = second; return get(); }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_parameter_publishes_its_incoming_value
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag(p) { let g = noop; const swap = () => { g = p; p = noop; }; if (first()) {} swap(); return g; }
+function run() { return flag(second)(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const outer = () => { const inner = () => { f = second; }; inner(); }; outer(); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; let g = () => noop; for (const x of [1, 2]) { g = () => f; f = second; } if (first()) {} return g(); }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_parameter_publishes_its_incoming_value
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag(p) { const get = () => p; const set = () => { p = noop; }; if (first()) {} const r = get(); set(); return r; }
+function run() { return flag(second)(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag(p) { const set = () => { p = second; }; set(); return p; }
+function run() { return flag(noop)(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r = {}; if (first()) {} for (r of [0]) {} return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = (v) => { f = v; }; set(second); return f; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (first()) {} for (const h of [second]) { return h; } return noop; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return { f }; }
+function run() { return flag().f(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r; if (first()) r = {}; return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return f || noop; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_of_an_unsettled_iteration_result_keeps_its_stored_values
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { if (first()) {} return [second].map((x) => x)[0]; }
+function run() { return flag()(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_closure_write_reaches_the_declaring_frame
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let f = noop; const set = () => { f = second; }; set(); return f; }
+function run() { const picked = flag(); return picked(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected
+2,0,1,3,4
+function pick(flag) { return flag && String(later); }
+const seen = [pick(true), pick(false)].join(' ');
+var later = 'set';
+console.log(seen);
+export { seen, pick, later };
+### conflict: effect_tv_conditional_logical_test::a_summarized_local_holds_every_value_any_read_can_see
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { let r = {}; const clear = () => { r = undefined; }; if (first()) {} clear(); return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### conflict: effect_tv_conditional_logical_test::a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm
+0,1,2,3,4,5,7,6,8
+let counter = 0;
+function first() { return 0; }
+function second() { counter = 1; return 1; }
+function noop() { return 0; }
+function flag() { var r; if (first()) r = {}; return r; }
+function run() { return flag() ? first() : second(); }
+const observed = counter;
+var result = run();
+console.log(observed, counter);
+### accepted: effect_tv_root_binding_stores_test::a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses
+0,1,3,2,4
+const record = { value: 0 };
+var current;
+record.value = 1;
+current = 2;
+console.log(record.value, current);
+### incomplete: effect_tv_root_binding_stores_test::a_binding_read_after_an_await_in_a_closure_is_captured
+0,1,4,3,2,5
+var current = 0;
+async function read() { await null; console.log(current); }
+read();
+const independent = 7;
+current = 1;
+console.log(independent);
+### accepted: effect_tv_root_binding_stores_test::a_covered_store_away_from_its_declaration_stays_a_placement_refusal
+0,1,2,3
+var current;
+const independent = 7;
+current = 1;
+console.log(independent, current);
+### conflict: effect_tv_root_binding_stores_test::a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict
+0,2,1,3,4
+var current = 0;
+const before = current;
+current = 1;
+console.log(before, current);
+export { before };
+### conflict: effect_tv_root_binding_stores_test::two_writers_conflict_and_the_moved_writer_assigns_an_import
+0,2,1,3
+var current = 0;
+current = 1;
+current = 2;
+console.log(current);
+### conflict: effect_tv_root_statements_test::a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict
+0,2,1,3,4
+const record = { value: 0 };
+const copied = Object.getOwnPropertyDescriptors(record);
+record.value = 1;
+console.log(copied.value.value, record.value);
+export { copied };
+### incomplete: effect_tv_root_statements_test::a_store_moved_across_a_delete_of_its_slot_is_refused
+0,2,1,3
+const record = { value: 0 };
+delete record.value;
+record.value = 1;
+console.log('value' in record, record.value);
+### conflict: effect_tv_root_statements_test::a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict
+0,3,1,2,4,5
+const record = { value: 0 };
+function read() { return record.value; }
+const before = read();
+record.value = 1;
+console.log(before, record.value);
+export { before };
+### incomplete: effect_tv_root_statements_test::a_freeze_moved_ahead_of_the_store_is_refused
+0,2,1,3
+const record = { value: 0 };
+record.value = 1;
+Object.freeze(record);
+console.log(record.value);
+### conflict: effect_tv_root_statements_test::a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict
+0,2,4,1,3,5,6
+const record = { value: 0 };
+function read() { return record.value; }
+function set() { record.value = 1; return 1; }
+const before = read();
+const done = set();
+console.log(before, done, record.value);
+export { before, done };
+### incomplete: effect_tv_root_statements_test::a_store_through_an_own_setter_stays_uncovered
+0,1,3,2,4,5
+const log = [];
+const record = { set value(v) { log.push(v); } };
+const seen = log.length;
+record.value = 1;
+console.log(seen, log.length);
+export { seen };
+### conflict: effect_tv_root_statements_test::a_store_moved_before_a_direct_reader_of_its_slot_is_refused
+0,2,1,3,4
+const record = { value: 0 };
+const before = record.value;
+record.value = 1;
+console.log(before, record.value);
+export { before };
+### accepted: effect_tv_root_statements_test::stores_to_different_records_commute_where_the_legacy_chain_refuses
+0,1,3,2,4
+const first = { value: 0 };
+const second = { value: 0 };
+first.value = 1;
+second.value = 2;
+console.log(first.value, second.value);
+### conflict: emit_on_rejection_test::rejection_without_js_tree_writes_tree_to_harness_dir
+1,2,3,0,4,5,6
+const helper = "H";
+const sub_a = { foo: helper + "1" };
+const sub_b = { bar: helper + "2" };
+const ids = { ...sub_a, ...sub_b };
+const consumed = ids.foo + "|" + ids.bar;
+console.log(consumed);
+export { ids, sub_a, sub_b, helper };
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+2,0,1,3
+import { next, peek } from './peer.js';
+const first = next();
+const second = peek();
+console.log(first, second);
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+2,0,1,3
+import { next, peek } from './peer.js';
+const first = peek();
+const second = next();
+console.log(first, second);
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+3,0,1,2,4
+import { next } from './writer.js';
+import { peek } from './reader.js';
+const first = next();
+const second = peek();
+console.log(first, second);
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+2,0,1,3
+import { apply, next, peek } from './peer.js';
+const first = apply(next);
+const second = peek();
+console.log(first, second);
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+3,0,1,2,4
+import { next, peek } from './peer.js';
+function read() { return peek(); }
+const first = next();
+const second = read();
+console.log(first, second);
+### incomplete: foreign_cell_read_order_test::reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge
+2,0,1,3
+import { count, next } from './peer.js';
+const first = next();
+const second = count;
+console.log(first, second);
+### conflict: ordered_own_data_field_test::push_cannot_be_forced_before_a_root_array_length_read
+0,2,3,1,4,5
+const store = [];
+const append = () => store.push(1);
+const gamma = store.length;
+const keep = append;
+const alpha = append();
+console.log(gamma, alpha);
+### incomplete: own_data_object_spread_test::candidate_that_moves_source_write_before_spread_is_refused
+0,3,4,1,2,5
+const source = { alpha: 3 };
+const copied = { ...source };
+const observed = helper();
+function helper() { return 1; }
+source.alpha = 4;
+console.log(copied.alpha);
+### incomplete: provider_summary_effect_test::reordered_writers_of_a_provider_cell_are_refused_and_diverge
+2,0,1,3
+import { next } from './peer.js';
+const first = next();
+const second = next();
+console.log(first, second);
+### conflict: provider_summary_effect_test::callback_invoked_by_the_provider_is_refused_and_diverges
+2,0,1,3
+import { run } from './peer.js';
+const first = run(() => { globalThis.n = 2; return 0; });
+const second = globalThis.n;
+console.log(first, second);
+### conflict: provider_summary_effect_test::mixed_root_whose_local_call_writes_the_other_roots_argument_is_refused_and_diverges
+3,0,1,2,4
+import { make } from './peer.js';
+function bump() { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; }
+const first = make(bump());
+const second = make(bump());
+console.log(first.input, second.input);
+### conflict: provider_summary_effect_test::retained_callback_invoked_after_the_swap_point_is_refused_and_diverges
+1,3,0,2,4
+import { defer } from './peer.js';
+const bump = defer(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });
+const first = bump();
+const second = bump();
+console.log(first, second);
+### conflict: provider_summary_effect_test::mixed_root_whose_local_call_writes_the_other_roots_argument_is_refused_and_diverges
+3,0,1,2,4
+import { make } from './peer.js';
+function bump() { globalThis.n = (globalThis.n ?? 0) + 1; return 0; }
+const first = [bump(), make(globalThis.n)];
+const second = [bump(), make(globalThis.n)];
+console.log(first[1].input, second[1].input);
+### incomplete: provider_summary_effect_test::retaining_factory_reading_a_provider_cell_is_refused_and_diverges
+2,0,1,3
+import { counted, next } from './peer.js';
+const first = next();
+const second = counted(() => 0);
+console.log(first, second());
+### incomplete: provider_summary_effect_test::retained_callback_invoked_after_the_swap_point_is_refused_and_diverges
+1,3,0,2,4
+import { lazy } from './peer.js';
+const bump = lazy(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });
+const first = bump.value;
+const second = bump.value;
+console.log(first, second);

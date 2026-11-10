@@ -5,7 +5,11 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
-    let rejected = run_rejection_fixture(split(source));
+    first_reasons_of(split(source))
+}
+
+fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis::PurityRule> {
+    let rejected = run_rejection_fixture(opts);
     let graph = rejected.dependency_graph();
     let first = graph
         .nodes
@@ -142,8 +146,13 @@ fn rebound_factory_keeps_destructuring_order() {
 
 #[test]
 fn dynamic_scope_keeps_destructuring_order() {
+    // A direct `eval` is refused at admission (A1); the override keeps
+    // the analysis running.
     let source = declarations("function factory() { eval(''); return { selected: () => 1 }; }");
-    assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
+    assert!(
+        first_reasons_of(split(&source).with_admission_overrides(&["a1_eval"]))
+            .contains(&analysis::PurityRule::DestructuringPattern)
+    );
 }
 
 #[test]

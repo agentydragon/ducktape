@@ -146,7 +146,8 @@ runs remain authorized; broad disruption exercises remain waived. Revisit reliab
 normal use exposes a concrete regression. First such regression, 2026-11-10: three staging rollouts in four minutes
 (#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
 JavaScript host; fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the automatic
-settlement of host loss in flight; the executor's survival across control-plane rolls is
+settlement of host loss (#15455) in flight; the remaining operator-only blocks are
+`SAMPLER_INTENT_LEASES`; the executor's survival across control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
 | Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
@@ -1236,6 +1237,30 @@ Exit when selected: tool additions/removals reach model input and runtime consis
 cached prefix where supported, survive restart, and preserve execution authorization plus
 thinking/compaction validity. No worker or priority is assigned.
 
+### `SAMPLER_INTENT_LEASES` — sampling attempts are leased; a lapsed lease is reconciled, never a block
+
+**Decision; operator direction, 2026-11-10.** The sampler's owner lease (claim, generation, owner
+token, heartbeat; [SPEC](../central_sampler/SPEC.md#runtime-and-effects)) answers "is anyone holding
+this Session?", and `sampler_intent` records each effect in flight. Nothing answers "is anyone
+sampling this turn?": a block is a terminal decision the owner writes, so a Session whose owner is
+alive but could not continue (a provider stream failure mid-turn, an unconfirmed interrupt) waits
+for a human, even when nothing holds it and a retry would be safe. The automatic settlement in
+[#15455](https://github.com/agentydragon/ducktape/pull/15455) covers only a lost owner or host.
+
+Target: each sampling attempt takes a lease on its intent ("I am sampling this turn, until T"). The
+owner renews while the provider streams or the cell runs; on failure it releases with a reason and a
+backoff, never a terminal block; a draining owner stops renewing. One reconciliation rule, "an open
+turn whose intent lease has lapsed", reclaims by kind: a provider sample with nothing committed is
+resampled; an executor operation is settled as unknown outcome and never replayed; a lost cell is
+abandoned with the model-visible notice. "Operator-only" survives as a visible exhausted retry
+budget with its reason, so a Session never silently waits on a person. The drain's special handling
+of live work and #15455's work scan become instances of this rule. Keep the fenced owner writes and
+the no-replay rule for uncertain external effects.
+
+**Exit:** a reviewed lease and reconciliation contract (lease duration, renewal, backoff and budget
+per intent kind, what the app shows), then the implementation replacing the block paths in
+`central_sampler/store.go` and `runtime.go`.
+
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 
 **In review; [PR #12210](https://github.com/agentydragon/ducktape/pull/12210), 2026-10-27.** The question
@@ -2069,6 +2094,7 @@ the runner's private gRPC listener; the two routes are independent. Contract:
 ```mermaid
 flowchart TD
     RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed]
+    HISTORY_INGRESS_OUTCOME_DESIGN[Unscheduled decision: item completion and command outcome conflicts at History ingress]
 ```
 
 ### `RUNNER_JOURNAL_TRIM` — runners stop keeping what the ingress committed
@@ -2079,6 +2105,34 @@ selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
 (the retained incarnation history).
+
+### `HISTORY_INGRESS_OUTCOME_DESIGN` — item completion and command outcome invariants at History ingress
+
+**Decision, unscheduled; operator direction, 2026-11-10.** The incident's
+`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command: the
+[Thread fold](../history_service/threadfold/fold.go) settles origin commands as effected at
+confirmation, then errors when a later event settles an already-settled command. The
+[History append](../history_service/storage/store.go) accepts exact cursor replays and commits new
+entries without checking these semantic outcomes, leaving the raw event available while that
+Session's Thread projection stalls. Consider whether ingress should enforce one-time settlement
+invariants, and whether item completion and command outcome need different rules; rejection is an
+option to review, not a selected protocol policy.
+
+Alternatives include refusing a contradictory outcome before commit, retaining every raw event and
+folding the conflict into a visible anomaly while continuing the projection, or leaving ingress
+permissive and requiring explicit recovery for an unfoldable projection. Recommendation: design item
+and command rules separately, preserve raw evidence and per-Session availability, and require a
+runner recovery path before selecting ingress rejection. The journal is append-only and cursor
+ordered, so refusal can strand that cursor and prevent later entries, including later input
+confirmation, from reaching History.
+
+**Review question:** which repeated outcomes are exact replay versus contradiction, what item and
+command transitions are valid, and where should a conflict be handled? Design the check across one
+batch, earlier committed pages and concurrent Push calls; specify how existing malformed histories
+remain readable and how their projections recover. **Exit:** an operator-reviewed contract with
+concrete item and command examples, atomicity and concurrency boundaries, raw-history retention and
+projection recovery, and a bounded runner recovery path for any rejected record. Add an
+implementation node only if the decision selects a protocol change.
 
 ## 11. History reads and follows
 
@@ -2402,6 +2456,17 @@ never silently reassigned. If the Identity disappears, identity-dependent operat
 until it exists and is authorized again; a same-name replacement acts as the named principal, not
 as the old incarnation. Operator-only access to a Session whose Identity is gone stays distinct from
 a live Identity whose Session has no Environment.
+
+**Rebind boundary to review:** #15445 serializes an `EnvironmentService` identity change with
+Dispatcher Session admission, but a direct Kubernetes `Sandbox.spec.identity` edit bypasses that
+guard. Delivery and wake reject a mismatch, which can strand an existing Session. The service
+rechecks the chosen Identity's UID before patching a name-only reference; deletion and same-name
+recreation after that read can make the patch name the replacement. Decide whether those outcomes
+are acceptable under the existing name-based and fail-closed contract or whether direct writers and
+replacement need a stronger coordination boundary. Recommendation: retain that contract until the
+tradeoff is reviewed, rather than silently choosing UID-bound Sandbox references. Cover bypass,
+replacement between the final read and patch, accepted work and recovery in
+`SESSION_IDENTITY_ENFORCEMENT`; do not assume a Kubernetes/PostgreSQL transaction.
 
 **Exit:** reviewed examples for a central Session with zero Environments naming an existing
 Identity, two same-Identity Sessions sharing an Environment, a permission request for that Identity,
@@ -2836,6 +2901,13 @@ Those transitions are not a cross-service transaction. The central Session lifet
 selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
 deletion; that API is not implemented. The treatment of other services' data remains open.
 
+#15444 treats every retained Session naming an Identity as a cleanup reference, including one on
+the deleted Sandbox; #15445 refuses a rebind when any retained Session on that Sandbox names a
+different Identity incarnation. Without a terminal Session projection or deletion API these checks
+can conservatively prevent cleanup or rebinding. Settle which retained Sessions still constrain
+each action and how they are retired in this lifetime decision and `SESSION_LIFETIME_IMPLEMENTATION`;
+do not treat app archive as finish or discard retained History to unblock either action.
+
 The selected remaining policy is to keep the inbox and subscriptions until explicit Session
 deletion, even when a required Environment disappears, which Notification now does. Do not silently bind a
 replacement or claim lost native state is recoverable. The intended inbox behavior is to keep
@@ -3068,6 +3140,9 @@ flowchart LR
     ENVIRONMENT_LIFECYCLE_RULES[Blocked: Identity callers resume, wake and create under rules]
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
+    IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
+    IDENTITY_DELETE_CREDENTIAL_GUARD[Candidate: include name-only credential references]
+    STANDING_WORKLOAD_IDENTITY -. if UID-optional records land .-> IDENTITY_DELETE_CREDENTIAL_GUARD
     SANDBOX_IDENTITY_SPEC[Blocked on question 11: a Sandbox acts as its identity]
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
@@ -3370,6 +3445,35 @@ Sessions from before the switch are retired at the switch, not migrated: no Sand
 then. **Exit:** no Session-facing code path, column or wire field names a ServiceAccount, and the
 services' tests pass without one.
 
+### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees
+
+**Decision; independent of the other app slices.** #15444's Sandbox-delete dialog scans the live
+Sandbox inventory, PolicyBindings and retained Sessions before it calls `DeleteIdentity`. The
+Policy Controller separately checks unowned PolicyBindings and UID-matching WorkloadCredentials;
+neither scan is atomic with creating a reference. A Sandbox or Session can begin naming the Identity
+after the browser scan. The [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui)
+currently accepts an advisory check, with a concurrent launch failing closed if the Identity is
+gone. Decide whether that failure and the recovery of a stranded reference are acceptable, or
+whether to coordinate creation and deletion at backend owners. Recommendation: preserve the
+accepted advisory contract until reviewed; a UID/resourceVersion precondition on the Identity alone
+does not serialize references in Kubernetes and Dispatcher.
+
+Cover already referenced, concurrently created, removed and same-name replacement cases, as well
+as failures and recovery. `IDENTITY_DELETE_CREDENTIAL_GUARD` separately handles existing name-only
+credential references if UID-optional records land. **Exit:** a reviewed reference contract and
+independently actionable follow-ups, without changing the existing rule by implication.
+
+### `IDENTITY_DELETE_CREDENTIAL_GUARD` — include name-only credentials in Identity deletion checks
+
+**Candidate alongside [#15450](https://github.com/agentydragon/ducktape/pull/15450); independent
+of the reference-race decision.** That PR proposes WorkloadCredentials without an Identity UID that
+resolve to the live Identity by name. `DeleteIdentity` currently counts a credential only when its
+subject name **and UID** match, so an existing name-only credential would be missed even though it
+can act as that Identity. Include it in the refusal once that subject form is supported, retaining
+the distinction from a UID-pinned credential for a different incarnation. Test name-only,
+matching-UID and mismatched-UID records and their removal; this point-in-time check does not resolve
+the concurrent-creation race in `IDENTITY_CLEANUP_REFERENCE_DECISION`.
+
 ### `APP_IDENTITIES_UI` — identities in the app
 
 **Paused; landed so far: the identities list with bindings, expiries and the accounts its use
@@ -3380,8 +3484,11 @@ changed or cleared, guarded against placed Sessions (#15445). Remaining slices a
 `PolicyService` already watches Identities and deletes one for it (#15151;
 [Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the new-environment identity picker (lands with `SANDBOX_IDENTITY_SPEC`, since
 `CreateEnvironment` takes no Identity before it); the permission-request approval card with new
-temporary account, widen shared, or deny; the finish dialog's default to delete an app-minted
-identity once the app mints any (question 11); the identities an environment has run as on its page. The Connection consent page (`/#/connection-enrollments/{handle}`) and
+temporary account, widen shared, or deny; a Thread finish action that offers Identity cleanup after
+the authoritative Session finish/lifetime contract and its selected backend operation exist
+(`SESSION_AND_INBOX_LIFETIME`, `SESSION_LIFETIME_IMPLEMENTATION`); the finish dialog's default to
+delete an app-minted identity once the app mints any (question 11); the identities an environment
+has run as on its page. Thread finish's prerequisites do not block the other slices. The Connection consent page (`/#/connection-enrollments/{handle}`) and
 the OAuth clients tab's rebind picker choose an Identity from the edge's `connection_identities`
 instead of a ServiceAccount, a Connection's **View grants** shows that Identity's bindings, and an
 identity's page lists the Connections bound to it beside its Sandboxes and Sessions (operator,
@@ -3392,6 +3499,17 @@ deleted. The landed slice shows every identity not applied from git as of unknow
 app and the Dispatcher start minting identities (question 11, `SESSION_MANAGED_IDENTITY`) they
 stamp an origin marker on each, which `identities/origin.ts` then reads. The session form's
 identity picker is the slice to do next: it is what a launch under question 11's answer renders.
+The environment page reads only its current Sandbox-owned WorkloadCredential at the last check;
+revoked records do not supply a complete identity history. Choose a retained source and retention
+contract before claiming to show earlier identities.
+
+The merged #15444 and #15445 slices have no recorded k3s system test or post-Flux staging proof as
+of 2026-11-10. #15445's browser test exercises a running refusal by `EnvironmentService` and a
+stopped patch against the API server, not a Kubernetes admission refusal. When verifying a staging
+rollout, check the applied app/Gateway revisions and, with disposable resources, the stopped and
+running rebind cases and the credential-refused cleanup/retry path. `IDENTITY_SYSTEM_TESTS` owns
+cutover scenarios; missing live evidence alone is not a separate gate when suitable automated
+evidence exists.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
@@ -3527,7 +3645,11 @@ design nodes stay in their sections. Not cleanups: fakes kept to inject faults t
 cannot produce (named at the fake); the delta settlement flag (operator, 2026-10-13 PDT);
 upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in `electric_sync.tsx`
 against `@electric-sql/client` 1.5.28, the jsdom pragma in `markdown.test.tsx`). Doing one still
-needs the gate observed on devel and every reader found.
+needs the gate observed on devel and every reader found. The authentication surface left from the
+projected-ServiceAccount-token era is one burn-down split across the three subsections' "Authentication"
+headings: what each piece serves today, what it collapses into once an Identity SVID is the only
+workload credential, and the gate. Platform components calling each other as themselves keep
+service-to-service TokenReview (operator, 2026-11-10); that is not dead and is not listed.
 
 ```mermaid
 flowchart LR
@@ -3544,6 +3666,8 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
+#### Smaller items
+
 - **History migration 00012's trigger and function** (`thread_command_operation_enum` in
   `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
   since migration 00013 is on staging (section 14), so no History replica older than 00012 runs.
@@ -3551,18 +3675,38 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
 - **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
   wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
   Dex, then delete the custom fixture. Source: `TODO` at the fixture.
-- **Write-only Action Service fields,
-  [#11417](https://github.com/agentydragon/ducktape/pull/11417):** drops the `heartbeat_at` write on
-  `action_execution` that nothing reads, `store.ExecutionClaim.ExpiresAt`, `mcpexec.Executor.tools`
-  and settings no deployment sets. Partly overtaken: on devel `policy_resync_seconds` and
-  `policies.NoMatchReason` are already gone, while `github_visibility` (`action_service/config.go`,
-  `settings.py`; rendered by no cdk8s module), the `heartbeat_at` write (`store/executions.go`) and
-  `ExecutionClaim.ExpiresAt` remain. Rebase and recheck each item before merging.
 - **`cluster/cdk8s/agentplane/test_sandbox_service.py`** is named for the retired Sandbox Service;
   rename it for what it tests. The other item section 9 knew, `docs/operator_federation.md` saying
   "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
 - **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
   route and its code go once supported callers use a History-backed contract. Stays in section 11.
+
+#### Authentication: dead or stale today
+
+Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside tests).
+
+- **`auth.AnyAccount`** has one production site, History's `SessionJournalIngress.Push` when the
+  listener has no `spiffe` mode (`history_service/main.go`); staging's listener has it, so the rule
+  runs only in fixtures. Require `spiffe` on the ingress listener and delete `AnyAccount`, leaving
+  `SVIDOrAccounts` (runners by SVID, the sampler by bearer). No gate; a listener-contract change.
+- **`agentplane-runner-ingress`** (`RUNNER_INGRESS_AUDIENCE`, `history_service/settings.py`): runners
+  push by SVID, so its only sender is the central sampler's `history` projected token
+  (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;
+  coordinate the sampler's projection and History's listener audiences. No gate.
+- **The Action Service's `caller_service_account_namespaces`** lists `public-coder-agent`'s namespace
+  (`cluster/cdk8s/agentplane/staging.py`, `ActionsProps`), which no caller reaches it from
+  ([lifecycle plan § After the bearer hop](workload_identity_lifecycle.md#after-the-bearer-hop)); the
+  setting feeds the TokenReview and SVID resolvers, the policy informer and a per-namespace Role
+  (`actions.py`). Drop the entry and its Role after confirming no `WorkloadCredential` or bearer
+  caller in that namespace reaches the Action Service.
+- **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
+  says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
+  command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
+  ServiceAccount" (an Identity subject resolves since the expand phase). `workload_auth/README.md`
+  says a record naming an Identity "is refused until `Principal` has an Identity form" and "there is no
+  identity reference" (`IdentityPrincipal`, `AnySubject` and the Identity delegation exist, and the
+  same README describes them further down), and that the proxy's hop "still accepts" the
+  `agentplane-egress` audience (the `forward` listener is `spiffe` alone). Fix in one docs PR.
 
 #### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
@@ -3582,9 +3726,8 @@ node leaves with the last of them.
 **Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
 Kubernetes clients for state envtest can hold:
 
-Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
-`recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-`sandboxes/sandboxreader/reader_test.go`.
+Go `clientfake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags, `recreateSandbox`),
+`notification_service/main_test.go`.
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
@@ -3623,6 +3766,8 @@ and doc link. Exit: no import of the old path remains.
 
 Grouped by the node, PR or merge each waits for. Most of it is the identity migration's contract
 phase (section 14): expand → switch → contract leaves each transitional piece until the node named.
+
+#### By gate
 
 - **`STANDING_WORKLOAD_IDENTITY` (in flight):** the standing `WorkloadCredential`s' ServiceAccount
   subjects in `haku-sandbox` and `haku-ci`, their `PolicyBinding`s' ServiceAccount subjects and any
@@ -3692,6 +3837,9 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   - Plan exits: [`identity_and_kubernetes_accounts.md`](identity_and_kubernetes_accounts.md#exit)
     moves to `docs/` and the SPECs and is deleted, `agent_rbac.md` is rewritten, and section 14 and
     `AGENT_PRINCIPAL_MODEL_DESIGN` (section 5) leave this DAG.
+- **The Action Service's rollout that stops writing `action_execution.heartbeat_at`** (2026-11-10;
+  nothing reads it): drop the column in a new Action Service migration once no older replica runs, so
+  none writes it mid-roll.
 - **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
   per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records
@@ -3701,6 +3849,51 @@ phase (section 14): expand → switch → contract leaves each transitional piec
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
+
+#### Authentication: collapses with a named gate
+
+What each piece serves today, and what it becomes once an Identity SVID is the only workload form.
+Every first-party listener is `[kubernetes_bearer, spiffe]` (Action Service and LLM ingress on
+`agentplane-egress`; History on its own and the runner-ingress audiences; Notification and the Gateway
+on theirs); the proxy's `forward` is `spiffe` alone and its admin, the Policy Service and the sampler
+are bearer-only. The bearer halves stay for platform components; what goes is every path where a
+bearer or a ServiceAccount subject stands in for a workload.
+
+- **At `ENVIRONMENT_LIFECYCLE_RULES`:** `EnvironmentService`'s `auth.ReviewedServiceAccount` rule
+  (`runner_gateway/environments/service.go`) becomes `ReviewedServiceAccountOrIdentity`, since an
+  Identity caller gains resume, wake and read there; its eight `ServiceAccountPrincipal` sites keep
+  serving the app and the Action Service's launch executor. `ReviewedServiceAccount` then has one
+  caller left, the Policy Service's reads (`policy_controller/service/service.go`), a platform path.
+- **At `CENTRAL_SESSION_DELEGATED_ACTING`:** the sampler keeps its `llm`, `gateway` and `history`
+  projected tokens (`central_sampler_workload.py`) as a delegating actor; the `bearer` connection auth
+  type and LLM ingress's `central_sampler_accounts` are reviewed as listed under that gate above.
+  History's `SVIDOrAccounts` push rule stays: runners by SVID, the sampler by bearer.
+- **At `IDENTITY_CUTOVER`** (the pieces above under that gate, seen as one collapse):
+  - A workload SVID always names an Identity, so the SVID resolver's ServiceAccount subject
+    (`workload_auth/auth/svid.go`, `resolver.ServiceAccount`) and `SVIDResolver.IdentitySubjectsOnly`
+    (History's read API is the one user, `history_service/main.go`) go: Identity-only is the only mode.
+    `AnySubject`, `ReviewedServiceAccountOrIdentity` and `SVIDOrAccounts` then each admit "a platform
+    bearer, or an Identity SVID", and the three names and their `Admitted` branches fold into one rule
+    kind with an account allowlist; `auth.Principal` takes its platform-component name.
+  - The projected-token plumbing is one removal: the `kubernetes-token` projection for command boxes
+    (`sandbox_pod.py`, `command_sandbox.py`), the sidecar's `audience_token_files` and
+    `X-Agentplane-Workload-Token` forwarding (`egress/sidecar/relay.go`, `sidecar_config.py`), the
+    proxy's `identity.Verifier` second TokenReview and `projected_token_audiences` setting
+    (`egress/identity/identity.go`, `egress.py`), the `projectedWorkloadToken` credential source, the
+    proxy's `allowed_service_account_namespaces` (serving only those reviews), and the egress
+    `TODO.md` entry. The `kubernetesServiceAccount` source and the proxy's own impersonation token stay.
+  - The MCP edge stops being a token minter: `coreCaller.serviceAccountToken`'s TokenRequest and the
+    `actionAudience` constant (`mcp_edge/core_client.go`), `mintable_accounts`, the edge's
+    `caller_service_account_namespaces` (it only scopes `mintable_accounts`) and the `create` on
+    `serviceaccounts/token` for `claude-ai` go; the edge calls the Action Service with its own token
+    and a delegation envelope. The Action Service's `agentplane-egress` bearer listener keeps
+    Notification's `actions` token and the edge's own.
+  - The Action Service's `caller_service_account_namespaces` narrows to what still presents a bearer
+    or a `WorkloadCredential` there (the staging namespace; `haku-sandbox` for the standing records),
+    and the per-namespace `serviceaccounts` Role it renders goes where no ServiceAccount is read.
+  - `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) keeps the sampler's `llm` token and
+    Notification's `actions` token as senders, so the audience survives the cutover under a misleading
+    name; the rename stays frozen (`WORKLOAD_AUDIENCE_RENAME`).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3713,6 +3906,8 @@ and boots in seconds under emulation, and point the k3s VM scenarios at that gue
 ### Future
 
 The gate is a decision not yet made or a track not started; nothing here is dispatchable.
+
+#### Decisions and tracks
 
 - **`APP_AGENT_TOKEN_DECISION` (spike [#15448](https://github.com/agentydragon/ducktape/pull/15448)):**
   if test-minted OIDC tokens are adopted, the app's `agentplane-agent` TokenReview path (`caller()` in
@@ -3747,6 +3942,25 @@ The gate is a decision not yet made or a track not started; nothing here is disp
 - **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
   when a direction is chosen and its parts land in owning docs; [`standard_idioms.md`](standard_idioms.md)
   burns down with section 16.
+
+#### Authentication: waiting on a decision
+
+- **The app's `agentplane-agent` bearer** (`APP_AGENT_TOKEN_DECISION`, above): the last agent-side
+  TokenReview path. Its callers are the system-test driver (`system_tests/driver/cluster.py`),
+  the shared-cluster allocation probe (`system_tests/x/shared_cluster/allocation.py`) and hand-run
+  scripts; `caller()` in `app/go/auth/auth.go` and the `token_subjects` renderings go with the decision.
+- **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
+  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
+  (`history_service/api/service.go`), EnvironmentService management and the lifecycle manager
+  (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
+  of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
+  route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
+- **`Accounts` and `ReviewedServiceAccount` after the cutover:** the Gateway's caller, dispatcher,
+  executor and controller allowlists (`runner_gateway/gateway/gateway.go`), the Policy Service's
+  writers and the egress admin callers are platform components and stay on bearers by decision;
+  whether they later move to service-class SVIDs is explicitly open in the
+  [identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)
+  ("stay open for later; nothing now needs them") and has no node.
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 

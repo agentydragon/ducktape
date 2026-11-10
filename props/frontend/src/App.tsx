@@ -17,6 +17,7 @@ import { Notifications } from "@mantine/notifications";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent, type JSX } from "react";
 
+import RunDetail from "$components/RunDetail";
 import RunTriggerModal from "$components/RunTriggerModal";
 import { HashRouter, Link, Route, Routes, useLocation, useParams } from "react-router";
 import { RunModalContext } from "$lib/runModalContext";
@@ -33,7 +34,6 @@ import { createPropsQueryClient } from "$lib/queryClient";
 import DefinitionDetailPage from "./pages/DefinitionDetailPage";
 import ExamplesPage from "./pages/ExamplesPage";
 import OverviewPage from "./pages/OverviewPage";
-import RunDetailPage from "./pages/RunDetailPage";
 import RunsPage from "./pages/RunsPage";
 import SnapshotDetailPage from "./pages/SnapshotDetailPage";
 import SnapshotsPage from "./pages/SnapshotsPage";
@@ -51,7 +51,8 @@ function isActive(path: string, currentPath: string): boolean {
 function RunRoute(): JSX.Element {
   const { runId } = useParams();
   if (runId === undefined) throw new Error("missing runId route parameter");
-  return <RunDetailPage runId={runId} />;
+  if (!runId) return <Text c="dimmed">Invalid run ID</Text>;
+  return <RunDetail runId={runId} />;
 }
 
 function DefinitionRoute(): JSX.Element {

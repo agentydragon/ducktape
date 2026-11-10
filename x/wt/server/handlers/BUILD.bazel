@@ -29,8 +29,8 @@ py_library(
     deps = [
         "//x/wt/server:git_manager",
         "//x/wt/server:github_watcher",
+        "//x/wt/server:gitstatusd_listener",
         "//x/wt/server:rpc",
-        "//x/wt/server:services",
         "//x/wt/server:worktree_ids",
         "//x/wt/shared:configuration",
         "//x/wt/shared:env",

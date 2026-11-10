@@ -84,9 +84,13 @@ Build the artifacts with the normal BuildBuddy-backed Bazel configuration:
 
 ```bash
 bbr build //agentplane/x/runner_layering:base_initramfs
-bbr build //agentplane/x/runner_layering:tools_rootfs
-bbr build //agentplane/x/runner_layering:local_vm_probe
+bbr build //agentplane/x/runner_layering:tools_rootfs --remote_build_event_upload=all
+bbr build //agentplane/x/runner_layering:local_vm_probe --remote_build_event_upload=all
 ```
+
+These two calls explicitly upload the generated Python helper and launcher.
+This covers their regular BEP files; use the local `bb run` command below for
+the probe's runfiles and host `/dev/kvm`.
 
 The full-turn, shell-tool, and resume evidence runs with:
 

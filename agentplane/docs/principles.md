@@ -127,16 +127,28 @@ Restarting or breaking one service affects only the work that actually needs it 
   When the notification service has crashed, agents saw its errors, noted that it was having
   trouble, and carried on with their work.
 - Backend paths are accepted with the integration app unavailable.
-- A roll is not an incident (operator, 2026-11-10). A protocol, lease or stream design that takes
-  casualties when a server restarts mid-operation, such as lost process handles, an abandoned
-  effect or a Session that needs an operator to recover it, is a defect, not a cost of deploying.
-  Degrade gracefully: a dropped stream resumes inside the peer's retention window, an owner hands
-  off at a settled boundary or finishes the effect it started, and the successor continues the
-  committed work.
+- A roll is not an incident (operator, 2026-11-10). Losing reachable process handles, abandoning
+  accepted work or requiring an operator to recover a Session when an unrelated server restarts
+  mid-operation is a defect, not a cost of deploying. Resume a dropped stream inside the peer's
+  retention window when possible; hand off ownership and continue committed work.
+- Treat the Session and the user's view of it as the continuity boundary. A brief outage or roll
+  should not strand a turn, prevent retained History from catching up, or leave the user unable to
+  send the next input. Retain queued input and partial output. If an executor has actually
+  disappeared, tell the agent what was lost and let the Session continue when safe; do not present
+  unknown work as completed.
+- Design orderly handoff and crash recovery separately. On shutdown, stop local admission before
+  releasing ownership; fence stale owners so a successor can take over promptly. A crash or
+  partition may need lease expiry. Closing a connection does not prove an admitted remote effect
+  stopped: preserve its uncertain outcome, and retry only operations whose replay is safe.
+- Specify bounded, cancelable retries, retention budgets and what happens to accepted, in-flight and
+  unknown work. Exercise the relevant service restart or connection loss through real boundaries,
+  including History and a subsequent user input; a mocked retry test alone does not establish
+  Session recovery.
 
 **Question for a proposal:** while this component is down or rolling, what else stops? Anything
 that does not need it should not. What does a restart in the middle of its longest operation cost
-the agent, and why is that cost not zero?
+the agent and the user? What happens if the old owner or executor does not return, and how does
+the next input get through?
 
 ## Strong outer sandbox, free agent inside it
 

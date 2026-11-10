@@ -21,7 +21,7 @@
 mod chunk_admission;
 
 pub use chunk_admission::DynamicImportTarget;
-use chunk_admission::enforce_chunk_admission;
+use chunk_admission::{enforce_chunk_admission, enforce_split_admission};
 
 use anyhow::{Context, Result, bail};
 use swc_ecma_ast::Module;
@@ -102,6 +102,19 @@ pub fn check_chunk_facts(
         admission_overrides,
         resolve_dynamic_import,
     )
+}
+
+/// The admission checks that hold only for a transformed chunk (split across
+/// modules, reordered or renamed): a lazy direct `eval` names bindings at
+/// run time. Run once the chunk's assignment is known; `transformed` says
+/// whether the emitted tree differs from the source.
+pub fn check_transformed_chunk_admission(
+    chunk_id: &str,
+    module: &Module,
+    admission_overrides: AdmissionOverrides,
+    transformed: bool,
+) -> Result<()> {
+    enforce_split_admission(chunk_id, module, admission_overrides, transformed)
 }
 
 /// Build the chunk's dependency graph and structural atomic groups from its

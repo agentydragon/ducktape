@@ -4,13 +4,12 @@ Umbrella tracker: [#5943](https://github.com/agentydragon/ducktape/issues/5943).
 
 ## Remaining tofu-controller roots
 
-| Root                      | Required work                                                                                                                                                                     | Scheduling                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `thrive-scrape`           | Add private manifest generation and per-root runtime/RBAC; preserve the existing state schema and credentials during ownership handoff. Keep source and Inline manifests private. | Next ordinary application candidate; source investigation complete. |
-| `home-switch`             | Preserve human approval of a specific plan, home-network runtime placement and CA mount.                                                                                          | Design the approval/runtime workflow before migration.              |
-| `infra-drift`             | Preserve targeted, plan-only OVH drift checks and handle local modules, files and provisioners.                                                                                   | Separate source and drift-reporting design.                         |
-| `gitlab-spike`            | Resolve generated JSON configuration/dependencies through a native supported source path, without hand-written replacement HCL.                                                   | Explicitly postponed; tofu-controller ownership restored by #12133. |
-| `litellm-buildbuddy-sync` | Review the live-test credential sync separately.                                                                                                                                  | Explicitly skipped by the operator for now.                         |
+| Root            | Required work                                                                                                                                                                     | Scheduling                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `thrive-scrape` | Add private manifest generation and per-root runtime/RBAC; preserve the existing state schema and credentials during ownership handoff. Keep source and Inline manifests private. | Next ordinary application candidate; source investigation complete. |
+| `home-switch`   | Preserve human approval of a specific plan, home-network runtime placement and CA mount.                                                                                          | Design the approval/runtime workflow before migration.              |
+| `infra-drift`   | Preserve targeted, plan-only OVH drift checks and handle local modules, files and provisioners.                                                                                   | Separate source and drift-reporting design.                         |
+| `gitlab-spike`  | Resolve generated JSON configuration/dependencies through a native supported source path, without hand-written replacement HCL.                                                   | Explicitly postponed; tofu-controller ownership restored by #12133. |
 
 The bootstrap root under `cluster/terraform` has a separate lifecycle; it is not
 implicitly part of this in-cluster controller migration.
@@ -56,5 +55,5 @@ Terraform object. Never run both writers concurrently.
 Completed migration gates and obsolete per-root artifacts have been removed, including
 GitHub cleanup in #12148 / #12149. Keep the shared `authentik-tf`, `forgejo-gitops` and
 `github-tf` artifacts while nested Workspace Kustomizations consume them. The
-`litellm-keys-tf` Kustomization still applies the credential used by
-`litellm-buildbuddy-sync`; it is not an obsolete gate.
+`litellm-keys-tf` still applies the credential used by the BuildBuddy Crossplane
+provider; it is not an obsolete gate.
