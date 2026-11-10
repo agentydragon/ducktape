@@ -61,11 +61,13 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 ## Caller admission and Connection authority
 
-Every caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
+A workload caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or,
+by SVID only, an `Identity` of the policy namespace.
 The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
 clientAuth against the trust-manager roots. It resolves the exact live Sandbox UID and accepted
-credential to its controller-owned ServiceAccount and canonical UID. The sidecar originates TLS
+credential to the subject the credential names: a ServiceAccount and its canonical UID, or an
+Identity and its UID, read live and fenced on that UID. The sidecar originates TLS
 through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC runs
 the same Gate. Bearer headers cannot replace the certificate
 peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs.
@@ -103,8 +105,19 @@ admitting writer did not store a UID remain explicitly unknown, including writes
 during a roll. The service never looks up a same-name live account to fill it in, and a
 caller-delegating executor must refuse those requests.
 
+An Identity caller is admitted while a live `PolicyBinding` of the policy namespace names its
+Identity incarnation, whether or not the binding grants an Action rule; the index answers only
+while that Identity of that UID exists, and a watch rechecks it before every frame. No Identity is
+a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
+reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
+nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
+Executors that act as the calling ServiceAccount (`pod`, `orchestration_v1` launches,
+`session_delegation`) refuse an Identity's request with `caller_not_service_account`; MCP groups
+run it. A request a newer release recorded for a caller kind this one does not know names no
+caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
+
 Ownership reads, PolicySet subject matching, and submission idempotency remain scoped by the
-ServiceAccount namespace and name. A same-name replacement therefore shares the existing read and
+ServiceAccount namespace and name for a ServiceAccount caller. A same-name replacement therefore shares the existing read and
 idempotency scope: it can read the retained request and reusing its key is refused, while that
 request still carries its original UID and does not become a request from the replacement account.
 Connections acting as the same account share its receipt reads; different accounts remain isolated.

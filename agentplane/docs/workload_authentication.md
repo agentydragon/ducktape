@@ -111,7 +111,8 @@ including one inherited through a tunnel:
    UID; or an Identity in the policy namespace, whose live UID must be the one the record names, so
    deleting an Identity revokes every credential naming it and a same-named successor inherits
    none. A verifier constructed without the policy namespace refuses Identity subjects; the egress
-   proxy passes its own, and until each other service authorizes an Identity `Principal`
+   proxy and the Action Service ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority))
+   pass their own, and until each other service authorizes an Identity `Principal`
    (`SERVICES_IDENTITY_PRINCIPAL`) every other verifier does.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
    TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
@@ -122,7 +123,7 @@ Services see the record's subject and `spec.pod` as an `auth.Subject`: a Service
 `Principal`, or an `IdentityPrincipal` naming the Identity and its UID, each with the Pod as the
 provenance Pod. Only a method whose rule is `AnySubject` admits an Identity caller, as an
 `IdentityAdmission`; every other rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
-and refuse one. A standing workload's `Principal`, like a bound
+and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing workload's `Principal`, like a bound
 one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod
 proof refuses it. The egress proxy refuses a bound record with no Pod outright.
 

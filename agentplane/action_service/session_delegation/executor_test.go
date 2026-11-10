@@ -555,7 +555,7 @@ func requestFor(action string, args any, callerUID *string) store.ExecutionReque
 	return store.ExecutionRequest{
 		RequestID: testRequestID, ExecutionID: testExecutionID,
 		Action: store.ActionIdentity{Group: "sessions", Name: action}, Arguments: encoded,
-		Caller: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, CallerUID: callerUID,
+		Caller: store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, UID: callerUID},
 	}
 }
 

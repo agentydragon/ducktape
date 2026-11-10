@@ -16,9 +16,12 @@ import "agentplane/proto/identity.proto";
 // Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
 // ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label; a Pod binding is optional.
 // TokenReview must accept the configured audience; the resolver requires an allowed namespace and ServiceAccount UID.
-// A workload acts for its own
-// ServiceAccount and sees only the requests that account submitted, whichever Pod or external Connection submitted
-// them. The exception is a service reader (the Notification Service's ServiceAccount): it may list, get, watch and
+// A workload may instead present its workload SVID, whose WorkloadCredential names a labeled ServiceAccount as above
+// or an Identity of the policy namespace. An Identity caller is admitted while a live PolicyBinding names that
+// Identity incarnation, and acts as that incarnation: it owns the requests it submits, and a later Identity of the
+// same name owns none of them. A workload acts for its own
+// ServiceAccount or Identity and sees only the requests that account or Identity submitted, whichever Pod or external
+// Connection submitted them. The exception is a service reader (the Notification Service's ServiceAccount): it may list, get, watch and
 // read the events of every account's requests. An operator's bearer is the OIDC token the integration app forwards
 // for the operator, verified as for `OperatorActionService`. An operator reads every account's requests and also sees
 // what a workload is not shown, `McpHealth.detail` and the binding diagnostics of `CallerActionPolicy`, but submits
@@ -26,7 +29,7 @@ import "agentplane/proto/identity.proto";
 // proxy; `agentplane actions` uses this generated gRPC API, while other callers may use its HTTP facade.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
-// expired, or a workload's whose ServiceAccount is not labeled; the answer does not say which. `INVALID_ARGUMENT` is
+// expired, or a workload's whose ServiceAccount is not labeled or whose Identity no binding names; the answer does not say which. `INVALID_ARGUMENT` is
 // a malformed request, an invalid history cursor, arguments that do not satisfy the Action's schema, or a group and
 // Action this service cannot run. `NOT_FOUND` is a request that does not exist or that the caller may not read, or an
 // unknown Action in `GetAction`. `ALREADY_EXISTS` is an idempotency key the account already used. `PERMISSION_DENIED`
@@ -56,7 +59,8 @@ service ActionService {
   // message says why. Nothing is stored: no operator is asked, nothing is left to cancel and `idempotency_key` stays
   // unused.
   //
-  // `idempotency_key` is unique per calling ServiceAccount namespace/name and is accepted once. A ServiceAccount
+  // `idempotency_key` is unique per calling ServiceAccount namespace/name, or per calling Identity incarnation, and
+  // is accepted once. A ServiceAccount
   // recreated with the same name retains this existing read and idempotency scope; its UID does not rebind an older
   // request, whose receipt retains the original caller UID. A repeat fails `ALREADY_EXISTS` instead of replaying the
   // first response; recover a lost response with `ListActionRequests` by key, and never resubmit under a new key.
@@ -147,8 +151,8 @@ service ActionService {
     option (google.api.http) = {get: "/v1/action-groups/{group_key}/actions/{action_key}"};
   }
 
-  // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own, or those
-  // of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
+  // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own (an
+  // Identity caller's are its Identity incarnation's), or those of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
   // account no binding names reads as having none. A service reader's exception does not reach this RPC: it reads
   // policy as a workload, so only while its ServiceAccount is labeled. An operator has no account of its own and must
   // name one, else `INVALID_ARGUMENT`. Read it instead of submitting to find out whether a request would wait for an
@@ -362,7 +366,9 @@ message ActionRequest {
   string title = 5;
   // The caller-authored detail, unchanged; absent when the caller supplied none.
   optional string description = 6;
-  // The ServiceAccount that submitted it, from a Pod or through a Connection acting as it.
+  // The ServiceAccount that submitted it, from a Pod or through a Connection acting as it. Exactly one of `caller`
+  // and `caller_identity` is set, but on a request a newer release recorded for a kind of caller this one does not
+  // know, which has neither.
   agentplane.proto.ServiceAccount caller = 7;
   reserved 8;
   reserved "external_grant";
@@ -378,6 +384,8 @@ message ActionRequest {
   // The verified UID of the exact caller ServiceAccount incarnation at admission. Absent when the admitting writer
   // did not record it; it is unknown and must not be inferred from a same-name live account.
   optional string caller_uid = 15;
+  // The Identity incarnation that submitted it, from a workload whose SVID named it.
+  agentplane.proto.Identity caller_identity = 16;
 }
 
 // The Action a request names.
@@ -646,6 +654,8 @@ message Principal {
     // A workload, or an external Connection acting as the ServiceAccount.
     agentplane.proto.ServiceAccount caller = 1;
     Operator operator = 2;
+    // A workload whose SVID named this Identity incarnation.
+    agentplane.proto.Identity caller_identity = 4;
   }
   // The verified UID of a caller actor. Absent when the event writer did not record it and for operator actors.
   optional string caller_uid = 3;
@@ -747,8 +757,10 @@ message ToolAnnotations {
 // An account's effective Action policy: what its bindings auto-decide, as admission would resolve them now. An
 // operator's view adds each binding's diagnostics, which a workload's leaves out.
 message CallerActionPolicy {
-  // The ServiceAccount whose bindings these are.
+  // The ServiceAccount whose bindings these are; absent in an Identity caller's view of its own.
   agentplane.proto.ServiceAccount subject = 1;
+  // The Identity incarnation whose bindings these are, in an Identity caller's view of its own.
+  agentplane.proto.Identity identity = 6;
   // The subject's unexpired, valid bindings in name order. Empty means every request waits for an operator.
   repeated CallerBinding bindings = 2;
   // Whether the service's copy of the policy objects is complete and still refreshed. While it is not, including

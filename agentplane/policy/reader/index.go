@@ -227,8 +227,8 @@ type ServiceAccount policyapi.ServiceAccountRef
 // deletes an agent's bindings with the Identity.
 //
 // The WorkloadCredential resolver yields Identity subjects (agentplane/docs/workload_authentication.md,
-// "How a verifier resolves a peer"). The egress proxy looks them up; the other services do in
-// SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md).
+// "How a verifier resolves a peer"). The egress proxy and the Action Service look them up; the other
+// services do in SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md).
 type Identity struct {
 	Name string
 	UID  types.UID

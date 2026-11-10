@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -66,7 +67,7 @@ func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rul
 		t.Fatal(err)
 	}
 	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		bindings := s.index.ResolveBindings(subject)
+		bindings := s.index.ResolveBindings(reader.ServiceAccount(subject))
 		return len(bindings) == 1 && len(bindings[0].PolicySets) == 1, nil
 	}); err != nil {
 		t.Fatalf("the policy index never resolved the binding: %v", err)

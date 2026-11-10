@@ -15,13 +15,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -87,6 +87,21 @@ func (i *Index) Admits(account auth.Account) bool {
 	return labeled
 }
 
+// AdmitsIdentity reports whether an Identity incarnation may call the service: a live PolicyBinding of the policy
+// namespace names it now, which the Index answers only while that Identity of that UID exists. As with Admits,
+// nothing is admitted while the Index is unavailable, and every refusal is logged.
+func (i *Index) AdmitsIdentity(identity auth.Identity) bool {
+	if !i.Health.Available() {
+		slog.Warn("workload SVID refused: the policy index is unavailable", "identity", identity.Name, "uid", identity.UID)
+		return false
+	}
+	if len(i.Rules.Bindings(reader.Identity{Name: identity.Name, UID: types.UID(identity.UID)})) == 0 {
+		slog.Warn("workload SVID refused: no live PolicyBinding names the Identity", "identity", identity.Name, "uid", identity.UID)
+		return false
+	}
+	return true
+}
+
 // CallerServiceAccounts are the ServiceAccounts that carry the caller label now, in namespace and name order, and
 // whether the Index was available to read them: none when it was not.
 func (i *Index) CallerServiceAccounts() ([]auth.Account, bool) {
@@ -103,17 +118,17 @@ func (i *Index) CallerServiceAccounts() ([]auth.Account, bool) {
 // Resolve is the subject's PolicyBindings in name order, each with how the sets it names stand, and whether the Index
 // was available to read them: nothing when it was not. The Policy Controller deletes a binding at expiry. Admission
 // and the policy views read this one resolution, so what a view reports and what admission decides cannot drift.
-func (i *Index) Resolve(subject policyapi.ServiceAccountRef) ([]reader.BindingResolution[policies.Policy], bool) {
+func (i *Index) Resolve(subject reader.Subject) ([]reader.BindingResolution[policies.Policy], bool) {
 	if !i.Health.Available() {
 		return nil, false
 	}
-	return i.Rules.Bindings(reader.ServiceAccount(subject)), true
+	return i.Rules.Bindings(subject), true
 }
 
 // ResolveBindings is the caller's PolicyBindings as admission decides from them, in name order, each with the sets it
 // names that exist and parse; a missing or refused set contributes nothing. Nothing while the Index is unavailable, so
 // every request then waits for an operator.
-func (i *Index) ResolveBindings(caller policyapi.ServiceAccountRef) []policies.Binding {
+func (i *Index) ResolveBindings(caller reader.Subject) []policies.Binding {
 	resolved, _ := i.Resolve(caller)
 	var bindings []policies.Binding
 	for _, bound := range resolved {

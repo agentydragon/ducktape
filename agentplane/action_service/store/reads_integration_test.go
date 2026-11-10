@@ -175,7 +175,7 @@ func TestRequestViewsDoNotDependOnTheReader(t *testing.T) {
 	if got := want.Execution.Error; got.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN || got.GetMessage() != "test message" {
 		t.Errorf("an error stored under a kind this release does not name reads %v", got)
 	}
-	if want.Caller != caller.Account {
+	if accountOf(want.Caller) != caller.Account {
 		t.Errorf("caller = %+v", want.Caller)
 	}
 	for name, principal := range map[string]ReadPrincipal{"owner": caller, "operator": operator, "service reader": reader} {

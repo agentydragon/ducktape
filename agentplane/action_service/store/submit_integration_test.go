@@ -30,7 +30,7 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 	request := f.submitInput(t, caller, body, Admission{RequestID: id})
 
 	if request.ID != id || request.IdempotencyKey != "pending" || request.Action != body.Action ||
-		request.Title != body.Title || *request.Description != description || request.Caller != caller.Account ||
+		request.Title != body.Title || *request.Description != description || accountOf(request.Caller) != caller.Account ||
 		request.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || request.Version != 1 ||
 		!request.CreatedAt.Equal(request.UpdatedAt) || request.Decision != nil || request.Execution != nil {
 		t.Errorf("stored %+v", request)
