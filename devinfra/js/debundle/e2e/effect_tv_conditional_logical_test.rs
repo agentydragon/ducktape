@@ -659,13 +659,19 @@ fn a_constructed_plain_function_without_effects_keeps_the_split() {
 /// destructuring (declaration, assignment, parameter), spread or `yield*`,
 /// also from another statement than the one that created it. A hand-written
 /// iterator's `next` runs the same way. Each resumption reaches `second`,
-/// whether `run` discards `flag()` or calls what it returns.
+/// whether `run` discards `flag()` or calls what it returns, and whether or
+/// not a test keeps `flag` on the source-summary lane.
 #[test]
 fn resuming_a_generator_or_an_iterator_runs_its_body() {
     const GEN: &str = "function* gen() { second(); yield 0; }";
     const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
     for (definitions, resume, extra) in [
         (GEN, "gen().next();", &["gen"][..]),
+        (
+            "function* gen(f) { f(); yield 0; }",
+            "gen(second).next();",
+            &["gen"][..],
+        ),
         (
             "function* gen() { counter = 1; yield 0; }",
             "gen().next();",
@@ -705,13 +711,60 @@ fn resuming_a_generator_or_an_iterator_runs_its_body() {
         (MK, "[...mk()];", &["mk"][..]),
         (MK, "const [x] = mk();", &["mk"][..]),
     ] {
-        for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
-            assert_reader_split_diverges_with(
-                &format!("{definitions}\nfunction flag() {{ {resume} return noop; }}\n{run}"),
-                extra,
-            );
+        for guard in ["", "if (first()) {} "] {
+            for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+                assert_reader_split_diverges_with(
+                    &format!(
+                        "{definitions}\nfunction flag() {{ {guard}{resume} return noop; }}\n{run}"
+                    ),
+                    extra,
+                );
+            }
         }
     }
+}
+
+/// Opposing control: a generator result read at top level, and an async
+/// generator, whose first `next()` runs the body up to its first `await` or
+/// `yield` synchronously. Each reaches `second`.
+#[test]
+fn a_top_level_generator_result_and_an_async_generator_reach_their_body() {
+    for (definitions, extra) in [
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["ag"][..],
+        ),
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { return flag()(); }",
+            &["ag"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = gen().next().value;\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = [...gen()][0];\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function mk() { return [second]; }\nconst [h] = mk();\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["mk", "h"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
+/// Positive anchor: code after an async function's first `await` runs from
+/// a job, after the synchronous module body, so it keeps the split.
+#[test]
+fn an_async_function_after_its_first_await_keeps_the_split() {
+    let fixture = with_reader_split(
+        "async function a() { await 0; second(); }\nfunction flag() { a(); return noop; }\nfunction run() { flag(); return 0; }",
+        &["a"],
+        run_fixture,
+    );
+    assert_preserved_entry_output(&fixture, "0 0\n");
 }
 
 /// Positive anchor for the control above: iterating native arrays of

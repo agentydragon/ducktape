@@ -10247,8 +10247,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         reads_arguments: bool,
         args: &[Values],
         env: &mut Context,
-    ) -> Vec<Values> {
-        let mut iterated = Vec::new();
+    ) {
         for (id, values) in env.iter() {
             if self.inputs.untracked_locals.contains(id) {
                 self.escape_untracked_values(values);
@@ -10278,9 +10277,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Bind each pattern binding to its projection of the incoming
             // value. A part the pattern or the projection loses to unknown
             // is published with the whole value.
-            if parameter.pattern_iterates {
-                iterated.push(values.clone());
-            }
             env.insert(pattern_source(), values.clone());
             let mut loses_values = parameter.pattern_loses_values;
             for (binding, projection) in &parameter.pattern_assignments {
@@ -10304,7 +10300,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
-        iterated
+    }
+
+    /// Binding an array-destructuring parameter runs the iterator protocol
+    /// on its incoming value, the default included.
+    #[inline(never)]
+    fn iterate_parameters(
+        &mut self,
+        callable: &Callable,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for (index, parameter) in callable.params.iter().enumerate() {
+            if !parameter.pattern_iterates {
+                continue;
+            }
+            let mut values = args
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+            if let Some(default) = &parameter.default
+                && may_be_undefined(&values)
+            {
+                values.remove(&AbstractValue::UNDEFINED);
+                values.extend(self.evaluate(default, env, env));
+            }
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+        }
     }
 
     /// The iterator protocol a top-level owner runs on its
@@ -10860,8 +10883,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callable.local_assignments,
         );
         self.widen_untracked_locals(callable, &mut env);
-        let iterated_parameters =
-            self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
+        self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
@@ -10896,9 +10918,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ..Outcome::default()
         };
         outcome.executed_owners.insert(callable.owner);
-        for values in &iterated_parameters {
-            self.run_iterator_protocol(values, callable.owner, &mut outcome);
-        }
+        self.iterate_parameters(callable, &args, &env, &mut outcome);
         if callable.generator {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
