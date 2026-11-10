@@ -33,6 +33,11 @@ current work. Earlier callback-scale and other measured mechanisms are in
 
 ## Superlinear callback pools
 
+This section is about the execution-based producer. A summary-based producer
+has a different cost model (near-linear in code size) and is being measured as
+its replacement (<target_architecture.md> § Open decision); the delta below
+stays the plan for the execution-based one until that is decided.
+
 Target: a large private consumer corpus analyzes in under 4 minutes, ideally 2. Today the largest takes about 47 min and the next about 10 min, mostly
 single-threaded on 6 vCPUs.
 
