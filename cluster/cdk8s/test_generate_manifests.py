@@ -345,20 +345,28 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
 
     classes = {storage_class["name"]: storage_class for storage_class in values["storageClasses"]}
     assert len(classes) == len(values["storageClasses"])
-    # Consumers name these four StorageClasses directly, so their names and pool types
-    # are a deployment contract. Every class must resolve to a pool on a prepared node.
+    # StorageClass names and pool types are a deployment contract. Every class must
+    # resolve to a pool on a prepared node.
     expected_class_pools = {
         "piraeus-ssd-local": "ssd",
+        "piraeus-ssd-local-delete": "ssd",
         "piraeus-hdd-local": "hdd",
         "piraeus-ssd-2-autodiskful": "ssd",
         "piraeus-hdd-2": "hdd",
     }
-    assert set(expected_class_pools) <= set(classes)
+    expected_reclaim_policies = {
+        "piraeus-ssd-local": "Retain",
+        "piraeus-ssd-local-delete": "Delete",
+        "piraeus-hdd-local": "Retain",
+        "piraeus-ssd-2-autodiskful": "Retain",
+        "piraeus-hdd-2": "Retain",
+    }
+    assert set(classes) == set(expected_class_pools)
     available_pools = {name for pools in actual_devices.values() for name in pools}
-    local_classes = {"piraeus-ssd-local", "piraeus-hdd-local"}
+    local_classes = {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"}
     replicated_classes = {"piraeus-ssd-2-autodiskful", "piraeus-hdd-2"}
     for name, storage_class in classes.items():
-        assert storage_class["reclaimPolicy"] == "Retain"
+        assert storage_class["reclaimPolicy"] == expected_reclaim_policies[name]
         assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
         assert storage_class["allowVolumeExpansion"] is True
         parameters = storage_class["parameters"]
@@ -398,6 +406,25 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         {"name": "cert-manager", "namespace": "ducktape-flux"},
         {"name": "monitoring-crds", "namespace": "ducktape-flux"},
     ]
+
+
+def test_descheduler_protects_piraeus_node_local_storage_classes(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    descheduler = next(
+        doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "descheduler"
+    )
+    [default_profile] = descheduler["spec"]["values"]["deschedulerPolicy"]["profiles"]
+    default_evictor = next(config for config in default_profile["pluginConfig"] if config["name"] == "DefaultEvictor")
+    protected_classes = {
+        storage_class["name"]
+        for storage_class in default_evictor["args"]["podProtections"]["config"]["PodsWithPVC"][
+            "protectedStorageClasses"
+        ]
+    }
+    # nodeFit does not account for a strict-local PV, so eviction cannot move these Pods.
+    assert {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"} <= protected_classes
 
 
 def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(

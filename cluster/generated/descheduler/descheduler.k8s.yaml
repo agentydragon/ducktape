@@ -42,6 +42,7 @@ spec:
                       protectedStorageClasses:
                         - name: piraeus-hdd-local
                         - name: piraeus-ssd-local
+                        - name: piraeus-ssd-local-delete
                   extraEnabled:
                     - PodsWithPVC
                 priorityThreshold:
