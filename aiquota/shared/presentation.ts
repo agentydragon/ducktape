@@ -162,3 +162,21 @@ export function refreshWindowTiming<T extends WindowTiming>(window: T, now: numb
     forecast: resetPending || stale ? null : window.forecast,
   };
 }
+
+/** Recheck current quota signals against live freshness and every displayed reset deadline. */
+export function quotaActivity(
+  windows: { exhausted: boolean; resetPending: boolean }[],
+  stale: boolean,
+  overPlan: boolean,
+  paidCredits: boolean
+): { resetPending: boolean; overPlan: boolean; paidCredits: boolean; status: string | null } {
+  const resetPending = windows.some((window) => window.resetPending);
+  const current = !stale && !resetPending;
+  const activity = { resetPending, overPlan: current && overPlan, paidCredits: current && paidCredits };
+  const status = resetPending
+    ? "Reset time passed · awaiting updated usage"
+    : windows.some((window) => window.exhausted)
+      ? `Included quota exhausted${activity.overPlan ? " · extra usage enabled" : activity.paidCredits ? " · paid credits available" : ""}`
+      : null;
+  return { ...activity, status };
+}

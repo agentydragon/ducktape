@@ -151,6 +151,31 @@ async def test_stale_fallback(view: VisualPage) -> None:
     await expect(claude.get_by_text("Data stale · 1d", exact=True)).to_be_visible()
 
 
+@pytest.mark.parametrize("scene", ["extra_disabled_positive", "extra_spend_fallback"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_monthly_spend_is_history(view: VisualPage, scene: str) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(card.get_by_text("Extra spend this month: $25.50 of $100 limit", exact=True)).to_be_visible()
+    await expect(card.get_by_text("extra usage enabled", exact=False)).to_have_count(0)
+    if scene == "extra_spend_fallback":
+        await expect(card.locator(".aiquota-badge-stale")).to_be_visible()
+        await expect(card.locator(".aiquota-badge-error")).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["multi_window_reset_pending", "stale_paid_signals"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_uncertain_paid_signals(view: VisualPage, scene: str) -> None:
+    for label in ("Claude", "Codex"):
+        card = view.page.locator(f'.aiquota-card[aria-label="{label} quota"]')
+        await expect(card.get_by_text("extra usage enabled", exact=False)).to_have_count(0)
+        await expect(card.get_by_text("paid credits available", exact=False)).to_have_count(0)
+        if scene == "multi_window_reset_pending":
+            await expect(card.get_by_text("Reset time passed · awaiting updated usage", exact=True)).to_be_visible()
+            await expect(card.locator(".aiquota-window")).to_have_count(2)
+        else:
+            await expect(card.locator(".aiquota-badge-stale")).to_be_visible()
+
+
 @pytest.mark.parametrize("scene", ["anthropic_platform_credits"])
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_anthropic_platform_credits(view: VisualPage) -> None:

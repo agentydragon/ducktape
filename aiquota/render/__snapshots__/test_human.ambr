@@ -118,6 +118,12 @@
     7d:  30% used  ↻ 1d 19h  leaves ~60% unused at reset
   '''
 # ---
+# name: test_renders_shared_fixture[extra_disabled_positive]
+  '''
+  Claude
+    Extra spend this month: $25.50 of $100 limit
+  '''
+# ---
 # name: test_renders_shared_fixture[extra_enabled_not_burning]
   '''
   Claude
@@ -133,6 +139,16 @@
     1x burn — next 3x window in 18h
     5h:  20% used  ↻ 3h 30m  leaves ~33% unused at reset
     7d:  25% used  ↻ 5d      leaves ~12% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[extra_spend_fallback]
+  '''
+  Claude
+    Stale data · last observed 5m ago
+    Refresh failed · showing available data
+    Included quota exhausted
+    Extra spend this month: $25.50 of $100 limit
+    5h: 100% used  ↻ 1h 55m
   '''
 # ---
 # name: test_renders_shared_fixture[hot]
@@ -151,6 +167,21 @@
   z.ai
     1x burn — next 3x window in 18h
     7d:  40% used  ↻ 4d 21h  exhausts ~1d 18h before reset
+  '''
+# ---
+# name: test_renders_shared_fixture[multi_window_reset_pending]
+  '''
+  Claude
+    Reset time passed · awaiting updated usage
+    Extra spend this month: $25.50 of $100 limit
+    5h: 100% used  ↻ awaiting update
+    7d: 100% used  ↻ 23h 58m          exhausted
+  
+  Codex
+    Reset time passed · awaiting updated usage
+    Paid credits: 500 credits
+    5h: 100% used  ↻ awaiting update
+    7d: 100% used  ↻ 23h 58m          exhausted
   '''
 # ---
 # name: test_renders_shared_fixture[observed_account_2026_11_04]
@@ -266,6 +297,21 @@
     Stale data · last observed 20m ago
     Prepaid balance: $123.45
     5h:  45% used  ↻ 1h 40m
+  '''
+# ---
+# name: test_renders_shared_fixture[stale_paid_signals]
+  '''
+  Claude
+    Stale data · last observed 15m ago
+    Included quota exhausted
+    Extra spend this month: $25.50 of $100 limit
+    5h: 100% used  ↻ 1h 45m
+  
+  Codex
+    Stale data · last observed 15m ago
+    Included quota exhausted
+    Paid credits: 500 credits
+    5h: 100% used  ↻ 1h 45m
   '''
 # ---
 # name: test_renders_shared_fixture[tints]

@@ -12,6 +12,7 @@ import {
   formatExtraSpend,
   refreshWindowTiming,
   showResetCredits,
+  quotaActivity,
   staleObservationAt,
   formatClock,
   formatDeadline,
@@ -91,8 +92,12 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const staleSince = providerStaleSince(provider, quota, now);
   const isStale = staleSince !== null;
   const windows = quota.windows.map((window) => presentWindow(window, now, isStale));
-  const resetPending = windows.some(({ resetPending }) => resetPending);
-  const status = resetPending ? "Reset time passed · awaiting updated usage" : (provider.status ?? null);
+  const { resetPending, status } = quotaActivity(
+    windows.map(({ window, resetPending }) => ({ exhausted: window.exhausted, resetPending })),
+    isStale,
+    provider.currently_over_plan,
+    provider.paid_credits_active
+  );
   const hasReadings =
     quota.windows.length > 0 ||
     balances.length > 0 ||
@@ -141,7 +146,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} showSummary={showResetSummary} />
       )}
       {provider.burn && hasReadings && <BurnSummary burn={provider.burn} now={now} />}
-      {quota.extraSpend && provider.extra_status !== "none" && (
+      {quota.extraSpend && (
         <p className="aiquota-extra-usage">
           {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}
         </p>

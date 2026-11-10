@@ -26,7 +26,7 @@ Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 
 `/v1/quotas` returns the shared view model (`aiquota/render/view_model.py`): each
 provider's selected display snapshot, its provenance and the latest fetch status, plus the derived policy bits every surface renders —
-`currently_over_plan`, `extra_status`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
+`currently_over_plan`, `extra_status`, `monthly_extra_spend`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
 than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
 dashboard from drifting (see AGENTS.md). `/raw` returns the response body
 from the provider's usage endpoint, with fetch status and content type. It also
@@ -128,8 +128,15 @@ Provider observations become stale after ten minutes (two default collector inte
 or immediately when falling back after a provider error. Transport connection state is
 separate from provider freshness. CLI server failures retain the selected cached reading,
 show an offline warning, and refresh countdowns without fetching providers or choosing a
-different snapshot. Stale forecasts are suppressed. After a reset deadline passes, usage
-remains the last reported value and the surface says it is awaiting updated usage.
+different snapshot. Stale forecasts are suppressed. Current paid/extra signals, including
+compact `⚡` markers, also stop when the reading is stale or any displayed window is awaiting
+updated usage. Positive reported extra spend this month remains visible from the selected
+snapshot when extra usage is disabled or refresh fails, with the same stale/error indicators
+as that snapshot. It records monthly history rather than current spending activity. A new
+spend-only observation replaces the previous snapshot; omitted quota windows remain unknown
+rather than inheriting an older reading with the new timestamp. After a
+reset deadline passes, usage remains the last reported value and the surface says it is
+awaiting updated usage.
 
 ## Historical collection
 

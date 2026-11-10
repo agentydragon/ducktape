@@ -10,6 +10,7 @@ from aiquota.models import (
     AllQuotas,
     AnthropicPlatformCredits,
     AnthropicPlatformTranche,
+    ExtraSpend,
     FetchSuccess,
     OpenAIPlatformCredits,
     PrepaidBalance,
@@ -92,6 +93,7 @@ class ProviderView(BaseModel):
     last_success: SuccessfulProviderFetch | None
     currently_over_plan: bool
     extra_status: ExtraStatus
+    monthly_extra_spend: ExtraSpend | None = None
     paid_credits_active: bool
     burn: BurnStatus | None
     display_windows: list[WindowView]
@@ -242,14 +244,20 @@ def _provider_view(
     )
     balances, grants = _credit_rows(selection, display_openai_platform_credits, display_anthropic_credits, stale_since)
     grants.extend(_reset_grant_rows(source, now))
+    reset_pending = any(window.reset_pending for window in display_windows)
+    activity_current = stale_since is None and not reset_pending
+    over_plan = activity_current and currently_over_plan(pq.last_output)
+    paid_active = activity_current and _paid_credits_active(pq.last_output)
+    extra = source.extra_spend if source is not None else None
+    monthly_extra = extra if extra is not None and extra.used_usd > 0 else None
     status = None
-    if any(window.reset_pending for window in display_windows):
+    if reset_pending:
         status = "Reset time passed · awaiting updated usage"
     elif any(window.exhausted for window in display_windows):
         status = "Included quota exhausted"
-        if stale_since is None and currently_over_plan(pq.last_output):
+        if over_plan:
             status += " · extra usage enabled"
-        elif stale_since is None and _paid_credits_active(pq.last_output):
+        elif paid_active:
             status += " · paid credits available"
     error = pq.last_output.result.error if not isinstance(pq.last_output.result, FetchSuccess) else None
     return ProviderView(
@@ -265,9 +273,10 @@ def _provider_view(
         display=selection,
         last_output=pq.last_output,
         last_success=pq.last_success,
-        currently_over_plan=currently_over_plan(pq.last_output),
-        extra_status=_extra_status(pq.last_output),
-        paid_credits_active=_paid_credits_active(pq.last_output),
+        currently_over_plan=over_plan,
+        extra_status="active" if over_plan else "informational" if monthly_extra is not None else "none",
+        monthly_extra_spend=monthly_extra,
+        paid_credits_active=paid_active,
         burn=status_for(pq.provider, now),
         display_windows=display_windows,
         display_openai_platform_credits=display_openai_platform_credits,
@@ -461,18 +470,7 @@ def currently_over_plan(out: ProviderFetch) -> bool:
     extra = out.result.extra_spend
     if extra is None or not extra.is_enabled:
         return False
-    return any(is_exhausted(window) for window in out.result.windows)
-
-
-def _extra_status(out: ProviderFetch) -> ExtraStatus:
-    if currently_over_plan(out):
-        return "active"
-    if not isinstance(out.result, FetchSuccess):
-        return "none"
-    extra = out.result.extra_spend
-    if extra is not None and extra.is_enabled and extra.used_usd > 0:
-        return "informational"
-    return "none"
+    return any(is_exhausted(window) for window in out.result.windows if window.display)
 
 
 def _paid_credits_active(out: ProviderFetch) -> bool:

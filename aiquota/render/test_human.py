@@ -232,6 +232,24 @@ def test_renders_shared_fixture(
     assert human.render(quotas, now=quotas.fetched_at, tz=UTC) == snapshot
 
 
+@pytest.mark.parametrize("fixture_name", ["extra_disabled_positive", "extra_spend_fallback"])
+def test_monthly_spend_history_uses_selected_snapshot(
+    quota_fixture: Callable[[str], AllQuotas], fixture_name: str
+) -> None:
+    quotas = quota_fixture(fixture_name)
+    view = to_view(quotas, quotas.fetched_at).providers[0]
+    assert view.monthly_extra_spend is not None
+    assert view.monthly_extra_spend.used_usd == 25.5
+    assert view.extra_status == "informational"
+    assert not view.currently_over_plan
+    rendered = human.render(quotas, now=quotas.fetched_at, tz=UTC)
+    assert "Extra spend this month: $25.50 of $100 limit" in rendered
+    assert "No quota or credit data available" not in rendered
+    if fixture_name == "extra_spend_fallback":
+        assert "Stale data" in rendered
+        assert "Refresh failed" in rendered
+
+
 def test_terminal_window_keeps_shared_tint() -> None:
     quotas = _quota(FetchSuccess(windows=[QuotaWindow(used_percent=60, reset_seconds=9000, window_seconds=18000)]))
 

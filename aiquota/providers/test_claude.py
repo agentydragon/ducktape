@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import pytest
 import pytest_bazel
 import respx
 from pydantic import SecretStr
@@ -31,11 +32,12 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_spend_shape_drives_extra_spend() -> None:
+@pytest.mark.parametrize("enabled", [True, False, None])
+def test_spend_shape_retains_monthly_totals_independently_of_enabled(enabled: bool | None) -> None:
     usage = UsageResponse.model_validate(
         {
             "spend": {
-                "enabled": True,
+                "enabled": enabled,
                 "limit": {"amount_minor": 250000, "currency": "USD", "exponent": 2},
                 "used": {"amount_minor": 12345, "currency": "USD", "exponent": 2},
                 "percent": 4.94,
@@ -43,15 +45,25 @@ def test_spend_shape_drives_extra_spend() -> None:
             }
         }
     )
-    extra = _spend_to_extra_spend(usage.spend)
+    extra = _to_success(usage).extra_spend
     assert extra is not None
+    assert extra.is_enabled is (enabled is True)
     assert extra.monthly_limit_usd == 2500.0
     assert extra.used_usd == 123.45
     assert extra.utilization == 4.94
 
 
-def test_disabled_spend_does_not_render_extra_spend() -> None:
-    usage = UsageResponse.model_validate({"spend": {"enabled": False, "disabled_reason": "payment_method_required"}})
+@pytest.mark.parametrize(
+    "spend",
+    [
+        None,
+        {"enabled": False, "disabled_reason": "payment_method_required"},
+        {"enabled": True, "used": {"amount_minor": 12345}},
+        {"enabled": False, "limit": {"amount_minor": 250000}},
+    ],
+)
+def test_spend_without_complete_totals_remains_unknown(spend: dict[str, object] | None) -> None:
+    usage = UsageResponse.model_validate({"spend": spend})
     assert _spend_to_extra_spend(usage.spend) is None
 
 

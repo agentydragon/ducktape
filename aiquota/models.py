@@ -174,6 +174,7 @@ def is_substantive(result: FetchSuccess) -> bool:
         result.windows
         or result.claude_reset_grants is not None
         or result.available_reset_credits is not None
+        or (result.extra_spend is not None and result.extra_spend.used_usd > 0)
         or result.paid_credits is not None
         or result.openai_platform_credits is not None
         or (

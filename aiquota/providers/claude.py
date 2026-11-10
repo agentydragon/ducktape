@@ -203,12 +203,10 @@ def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | 
 
 
 def _spend_to_extra_spend(spend: Spend | None) -> ExtraSpend | None:
-    if spend is None or not spend.has_usage_totals:
+    if spend is None or spend.limit is None or spend.used is None:
         return None
-    assert spend.limit is not None
-    assert spend.used is not None
     return ExtraSpend(
-        is_enabled=True,
+        is_enabled=spend.enabled is True,
         monthly_limit_usd=spend.limit.major_units,
         used_usd=spend.used.major_units,
         utilization=spend.utilization_percent,
