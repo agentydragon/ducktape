@@ -48,7 +48,9 @@ source, analysis projection and engine (`staged_analysis/analysis_projection.rs`
 - **Premises are axioms**: `host_behavior`, `program_premises`,
   `chunk_export_purity`, the `chunk_analysis_options` premise lists and member
   annotations. The engine generates an audit list for each premise: the sites
-  and facts the premise discharged. Each premise also has a runtime probe
+  and facts the premise discharged. Today the list is complete only for
+  `reentry_free_operations` (<../docs/premise_provenance.md>), where
+  `spec lint` reads it. Each premise also has a runtime probe
   where one is possible. Probes back premises; they never decide a verdict.
 - **Refusals for constructs neither target needs** (`chunk_analysis/chunk_admission.rs`: A1,
   A3 and A5, top-level `await`, cross-module rebinding). A refusal is loud and

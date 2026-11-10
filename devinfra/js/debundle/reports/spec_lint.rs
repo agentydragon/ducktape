@@ -6,7 +6,9 @@
 //! `inconclusive`. Findings are suggestions: removal stays a reviewed spec edit.
 
 use serde::{Deserialize, Serialize};
-use spec::{AdmissionCheck, ResolvedMemberSelector};
+use std::collections::BTreeSet;
+
+use spec::{AdmissionCheck, ReentryFreeOperation, ResolvedMemberSelector};
 
 use crate::graph::{CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason};
 use crate::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
@@ -19,10 +21,22 @@ pub enum LintRule {
     InferableAnnotation,
 }
 
+/// One chunk's `spec_lint.json`: its findings, and the program-wide
+/// annotations its analysis consumed, which `spec lint` joins across chunks.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkSpecLint {
+    pub findings: Vec<LintFinding>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub consumed_reentry_free_operations: BTreeSet<ReentryFreeOperation>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LintFinding {
     pub rule: LintRule,
-    pub chunk: String,
+    /// The chunk a chunk-scoped annotation belongs to; `None` for a
+    /// program-wide one (`host_behavior`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<String>,
     pub annotation: LintedAnnotation,
     pub verdict: InferenceVerdict,
 }
@@ -39,6 +53,8 @@ pub enum LintedAnnotation {
         spec_location: String,
         check: AdmissionCheck,
     },
+    /// One `host_behavior.reentry_free_operations` entry.
+    ReentryFreeOperation { operation: ReentryFreeOperation },
     /// One `chunk_analysis_options.<chunk>.commuting_statements` entry.
     CommutingStatements {
         spec_location: String,
@@ -85,6 +101,9 @@ pub enum InferableReason {
     /// annotation withheld: it was accepted with identical reports (dependency
     /// graphs, atomic groups, precision losses, module contents).
     WithheldRunUnchanged,
+    /// No analysis consumed the annotation: its only reader records every use
+    /// it grants, and no chunk recorded one (docs/premise_provenance.md).
+    NeverConsumed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,13 +122,32 @@ pub enum InconclusiveReason {
     ProbeFailed { error: String },
     /// `--max-probes` was reached before this annotation was probed.
     NotProbed,
+    /// Some analysis recorded a use. The fact it supported may have another
+    /// derivation; `--probe-analysis` decides.
+    Consumed,
+    /// A program-wide annotation, but some chunk was not linted, so its uses
+    /// are unknown.
+    UnlintedChunks,
 }
 
 impl LintFinding {
+    /// A `host_behavior.reentry_free_operations` entry, from its recorded uses.
+    pub fn reentry_free_operation(
+        operation: ReentryFreeOperation,
+        verdict: InferenceVerdict,
+    ) -> Self {
+        Self {
+            rule: LintRule::InferableAnnotation,
+            chunk: None,
+            annotation: LintedAnnotation::ReentryFreeOperation { operation },
+            verdict,
+        }
+    }
+
     pub fn unused_commuting_statements(chunk: &str, unused: &CommutingStatementsUnused) -> Self {
         Self {
             rule: LintRule::InferableAnnotation,
-            chunk: chunk.to_owned(),
+            chunk: Some(chunk.to_owned()),
             annotation: LintedAnnotation::CommutingStatements {
                 spec_location: unused.spec_location.clone(),
                 a: Box::new(unused.a.clone()),
@@ -129,7 +167,7 @@ impl LintFinding {
     pub fn redundant_admission_override(chunk: &str, check: AdmissionCheck) -> Self {
         Self {
             rule: LintRule::InferableAnnotation,
-            chunk: chunk.to_owned(),
+            chunk: Some(chunk.to_owned()),
             annotation: LintedAnnotation::AdmissionOverride {
                 spec_location: format!("chunk_analysis_options.{chunk}.admission_overrides"),
                 check,
@@ -147,7 +185,7 @@ impl LintFinding {
     ) -> Self {
         Self {
             rule: LintRule::InferableAnnotation,
-            chunk: chunk.to_owned(),
+            chunk: Some(chunk.to_owned()),
             annotation: LintedAnnotation::PurityHint { owner },
             verdict: InferenceVerdict::Inconclusive {
                 reason: InconclusiveReason::PurityClassification {
