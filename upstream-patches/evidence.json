@@ -125,43 +125,6 @@
       }
     },
     {
-      "id": "cli-race",
-      "project": "CLIProxyAPI",
-      "title": "Streaming logger channel race",
-      "kind": "Patch",
-      "status": "Released",
-      "priority": "High",
-      "impact": "Our CLIProxyAPI build applies a local patch for the streaming logger channel race.",
-      "upstream": "Issue #7064 was closed after upstream changed the worker to capture the channel and writer. v8.0.62 contains the changed code; the original PR #7068 closed unmerged after an equivalent change landed.",
-      "next_step": "The v8.0.63 upgrade PR replaces our patch with the upstream fix; remove this entry after the upgrade rolls out.",
-      "links": [
-        {
-          "label": "Our patch",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/cli_proxy_api/patches/streaming-channel-race.patch"
-        },
-        {
-          "label": "Upstream source",
-          "url": "https://github.com/router-for-me/CLIProxyAPI/blob/v8.0.62/internal/api/middleware/response_writer.go"
-        },
-        {
-          "label": "Our PR",
-          "url": "https://github.com/agentydragon/ducktape/pull/12629"
-        },
-        {
-          "label": "Upstream report",
-          "url": "https://github.com/router-for-me/CLIProxyAPI/issues/7064"
-        },
-        {
-          "label": "Upstream fix history",
-          "url": "https://github.com/router-for-me/CLIProxyAPI/pull/7068"
-        },
-        {
-          "label": "Upgrade PR",
-          "url": "https://github.com/agentydragon/ducktape/pull/15291"
-        }
-      ]
-    },
-    {
       "id": "swc",
       "project": "SWC",
       "title": "Unresolved default-export resolution",
