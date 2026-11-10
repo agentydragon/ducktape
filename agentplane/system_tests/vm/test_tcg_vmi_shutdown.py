@@ -20,13 +20,11 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
-from cluster.cdk8s.agentplane import launcher_relay
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _NAMESPACE_PREFIX = "vm-tcg-shutdown-"
@@ -207,6 +205,12 @@ def _state_claim(namespace: str) -> dict[str, Any]:
 
 def _virtiofs_shutdown_policy(namespace: str) -> dict[str, Any]:
     """Install only the real launcher's generated virtiofs native-sidecar mutation, scoped to this test."""
+    # The cgroup-only unit tests do not synthesize a policy; avoid importing the
+    # launcher generator and its Kubernetes CRDs for every test subset.
+    from cdk8s import App, Chart, Testing as Cdk8sTesting  # noqa: PLC0415
+
+    from cluster.cdk8s.agentplane import launcher_relay  # noqa: PLC0415
+
     chart = Chart(App(), "standalone-vmi-tcg")
     runner_pod = {
         "spec": {
@@ -1104,6 +1108,8 @@ def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> No
 
 
 def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace() -> None:
+    from cluster.cdk8s.agentplane import launcher_relay  # noqa: PLC0415 — only this test needs the policy generator
+
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
     policy = _virtiofs_shutdown_policy(namespace)
