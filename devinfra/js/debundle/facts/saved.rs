@@ -465,6 +465,7 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
+    root_attempt: Option<crate::facts::RootAttempt>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
     local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
     local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
@@ -511,6 +512,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
+            root_attempt: calls.root_attempt,
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
             local_record_factory_uses: calls
                 .local_record_factory_uses
@@ -599,6 +601,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
+            root_attempt: self.root_attempt,
             evaluation_effects: self.evaluation_effects.into_owned(),
             purity_disagreement: self
                 .purity_disagreement

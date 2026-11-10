@@ -70,6 +70,7 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         initializer_binding_effects: _,
         completed_initialization: _,
         initialization_coverage_refusal: _,
+        root_attempt: _,
         purity_disagreement: _,
         local_record_factory_purity: _,
         binding_effect_coverage: _,

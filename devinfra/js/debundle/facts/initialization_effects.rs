@@ -98,6 +98,20 @@ pub enum OwnerInitializationCoverageRefusalReason {
     /// write). A store whose value can run code keeps
     /// `UnsupportedOwnerKind`.
     UnprovedFieldStore,
+    /// A root `binding = value` statement storing to an imported binding,
+    /// which throws.
+    ImportedBindingStore,
+    /// A root `binding = value` statement storing to a `const`, which throws.
+    ConstBindingStore,
+    /// A root `binding = value` statement storing to a lexical binding still
+    /// in its TDZ at the statement's prefix, which throws.
+    UninitializedBindingStore,
+    /// A root `binding = value` statement storing to a binding some closure
+    /// reads: the closure's view of the binding is not a module-prefix value.
+    CapturedBindingStore,
+    /// A root `binding = value` statement storing to an exported binding,
+    /// which an importer can observe through its live binding.
+    ExportedBindingStore,
     /// An admitted root statement's kernel attempt did not seal it, so the
     /// flattened lane ran it instead.
     UnprovedStatementOperation,
@@ -112,6 +126,37 @@ pub enum OwnerInitializationCoverageRefusalReason {
     BindingNotInitialized,
     NoExecutionSummary,
     RefusalUnavailable,
+}
+
+/// Why a root's kernel attempt did not seal its owner, so the executor
+/// rewound it and the flattened lane ran (`roots/body.rs`). The first failing
+/// condition of the seal, in its check order.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttemptRewind {
+    IncompleteExecution,
+    UnknownCall,
+    PrecisionLoss,
+    UninitializedRead,
+    FallbackOnlyEffect,
+    OpenEffectLedger,
+    LexicalReceiptUnsealed,
+}
+
+/// The outcome of one root's kernel attempt.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttempt {
+    Sealed,
+    Rewound(RootAttemptRewind),
+}
+
+/// Per chunk: how many roots the attempted lane ran, and why the rewound
+/// ones did not seal.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RootAttemptCounts {
+    pub sealed: usize,
+    pub rewound: BTreeMap<RootAttemptRewind, usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -139,6 +184,7 @@ pub struct InitializationEffects<'a> {
     pub execution_losses: &'a [ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
+    pub root_attempt: Option<RootAttempt>,
 }
 
 impl InitializationEffects<'_> {
@@ -198,10 +244,21 @@ impl StatementFacts {
             execution_losses: &[],
             opaque_heap: own_heap.opaque,
             owner_coverage_refusal: None,
+            root_attempt: self
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.root_attempt),
         };
         // These statement kinds execute no body at module evaluation. In
         // particular their lazy reads and export heap opacity are irrelevant.
-        if !self.initializes_bindings_at_evaluation() {
+        // Neither does `var a, b;` without initializers: its bindings were
+        // instantiated with the module and keep their values. This view is
+        // report-only; the binding timeline keeps its own rule.
+        if !self.initializes_bindings_at_evaluation()
+            || (self.kind == StatementKind::VarDecl
+                && self.var_initializers.is_empty()
+                && self.declared.is_subset(&self.var_declared))
+        {
             effects.allocates.clear();
             effects.dataflow_opacity.clear();
             effects.opaque_heap = false;
