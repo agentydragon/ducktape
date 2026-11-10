@@ -1,48 +1,123 @@
 diff --git a/internal/api/handlers/management/oidc.go b/internal/api/handlers/management/oidc.go
-index 349d701..fdf49e2 100644
+index 349d701..d45a7fe 100644
 --- a/internal/api/handlers/management/oidc.go
 +++ b/internal/api/handlers/management/oidc.go
-@@ -22,5 +22,7 @@ const (
+@@ -22,5 +22,10 @@ const (
 -	managementOIDCSessionCookie = "__Host-management-session"
 -	managementOIDCFlowCookie    = "__Host-management-login"
 -	managementOIDCMaxEntries    = 1024
 -	managementOIDCFlowLifetime  = 5 * time.Minute
 -	managementOIDCSessionMaxAge = time.Hour
-+	managementOIDCSessionCookie     = "__Secure-management-session"
-+	managementOIDCSessionCookiePath = "/v8/management"
-+	managementOIDCFlowCookie        = "__Secure-management-login"
-+	managementOIDCFlowCookiePath    = "/v8/management/auth/oidc"
-+	managementOIDCMaxEntries        = 1024
-+	managementOIDCFlowLifetime      = 5 * time.Minute
-+	managementOIDCSessionMaxAge     = time.Hour
-@@ -148 +150 @@ func randomManagementOIDCToken() (string, error) {
++	managementOIDCLegacySessionCookie = "__Host-management-session"
++	managementOIDCLegacyFlowCookie    = "__Host-management-login"
++	managementOIDCLegacyCookiePath    = "/"
++	managementOIDCSessionCookie       = "__Secure-management-session"
++	managementOIDCSessionCookiePath   = "/v8/management"
++	managementOIDCFlowCookie          = "__Secure-management-login"
++	managementOIDCFlowCookiePath      = "/v8/management/auth/oidc"
++	managementOIDCMaxEntries          = 1024
++	managementOIDCFlowLifetime        = 5 * time.Minute
++	managementOIDCSessionMaxAge       = time.Hour
+@@ -148 +153 @@ func randomManagementOIDCToken() (string, error) {
 -func setManagementOIDCCookie(c *gin.Context, name, value string, age int) {
 +func setManagementOIDCCookie(c *gin.Context, name, value, path string, age int) {
-@@ -152 +154 @@ func setManagementOIDCCookie(c *gin.Context, name, value string, age int) {
+@@ -152 +157 @@ func setManagementOIDCCookie(c *gin.Context, name, value string, age int) {
 -		Path:     "/",
 +		Path:     path,
-@@ -284 +286 @@ func (h *Handler) ManagementOIDCLogin(c *gin.Context) {
+@@ -159,0 +165,10 @@ func setManagementOIDCCookie(c *gin.Context, name, value string, age int) {
++// Legacy __Host cookies were root-scoped and reached non-management endpoints.
++// Clear them on management requests as they are encountered during migration.
++func clearLegacyManagementOIDCCookies(c *gin.Context) {
++	for _, name := range []string{managementOIDCLegacySessionCookie, managementOIDCLegacyFlowCookie} {
++		if _, err := c.Cookie(name); err == nil {
++			setManagementOIDCCookie(c, name, "", managementOIDCLegacyCookiePath, -1)
++		}
++	}
++}
++
+@@ -221,1 +236,2 @@
+ func (h *Handler) ManagementOIDCSession(c *gin.Context) {
++	clearLegacyManagementOIDCCookies(c)
+@@ -230,1 +246,2 @@
+ func (h *Handler) ManagementOIDCLogin(c *gin.Context) {
++	clearLegacyManagementOIDCCookies(c)
+@@ -284 +301 @@ func (h *Handler) ManagementOIDCLogin(c *gin.Context) {
 -	setManagementOIDCCookie(c, managementOIDCFlowCookie, binding, int(managementOIDCFlowLifetime.Seconds()))
 +	setManagementOIDCCookie(c, managementOIDCFlowCookie, binding, managementOIDCFlowCookiePath, int(managementOIDCFlowLifetime.Seconds()))
-@@ -301 +303 @@ func (h *Handler) ManagementOIDCCallback(c *gin.Context) {
+@@ -292,1 +309,2 @@
+ func (h *Handler) ManagementOIDCCallback(c *gin.Context) {
++	clearLegacyManagementOIDCCookies(c)
+@@ -301 +319 @@ func (h *Handler) ManagementOIDCCallback(c *gin.Context) {
 -	setManagementOIDCCookie(c, managementOIDCFlowCookie, "", -1)
 +	setManagementOIDCCookie(c, managementOIDCFlowCookie, "", managementOIDCFlowCookiePath, -1)
-@@ -358 +360 @@ func (h *Handler) ManagementOIDCCallback(c *gin.Context) {
+@@ -358 +376 @@ func (h *Handler) ManagementOIDCCallback(c *gin.Context) {
 -	setManagementOIDCCookie(c, managementOIDCSessionCookie, key, int(time.Until(expires).Seconds()))
 +	setManagementOIDCCookie(c, managementOIDCSessionCookie, key, managementOIDCSessionCookiePath, int(time.Until(expires).Seconds()))
-@@ -377 +379 @@ func (h *Handler) ManagementOIDCLogout(c *gin.Context) {
+@@ -362,1 +380,2 @@
+ func (h *Handler) ManagementOIDCLogout(c *gin.Context) {
++	clearLegacyManagementOIDCCookies(c)
+@@ -377 +396 @@ func (h *Handler) ManagementOIDCLogout(c *gin.Context) {
 -	setManagementOIDCCookie(c, managementOIDCSessionCookie, "", -1)
 +	setManagementOIDCCookie(c, managementOIDCSessionCookie, "", managementOIDCSessionCookiePath, -1)
 diff --git a/internal/api/handlers/management/oidc_test.go b/internal/api/handlers/management/oidc_test.go
-index 3d5e7fb..148cd56 100644
+index 3d5e7fb..6b51431 100644
 --- a/internal/api/handlers/management/oidc_test.go
 +++ b/internal/api/handlers/management/oidc_test.go
 @@ -9,0 +10 @@ import (
 +	"net/http/cookiejar"
-@@ -265 +266 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
+@@ -103,0 +105,48 @@ func TestManagementOIDCAuthenticationBoundary(t *testing.T) {
++func TestManagementOIDCLegacyCookiesAreExpiredOnSessionCheck(t *testing.T) {
++	jar, err := cookiejar.New(nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	modelURL, err := url.Parse("https://admin.example/v1/chat/completions")
++	if err != nil {
++		t.Fatal(err)
++	}
++	sessionURL, err := url.Parse("https://admin.example/v8/management/auth/session")
++	if err != nil {
++		t.Fatal(err)
++	}
++	legacyCookies := []*http.Cookie{
++		{Name: managementOIDCLegacySessionCookie, Value: "old-session", Path: managementOIDCLegacyCookiePath, Secure: true, HttpOnly: true},
++		{Name: managementOIDCLegacyFlowCookie, Value: "old-flow", Path: managementOIDCLegacyCookiePath, Secure: true, HttpOnly: true},
++	}
++	jar.SetCookies(modelURL, legacyCookies)
++	if got := jar.Cookies(modelURL); len(got) != len(legacyCookies) {
++		t.Fatalf("legacy cookies were not stored for the root-scoped model route: got %d", len(got))
++	}
++
++	h := &Handler{oidc: testManagementOIDC()}
++	response := managementOIDCRequest(h.ManagementOIDCSession, http.MethodGet, sessionURL.String(), jar.Cookies(sessionURL), nil)
++	if response.Code != http.StatusOK {
++		t.Fatalf("session check status=%d want=%d", response.Code, http.StatusOK)
++	}
++	deleted := make(map[string]bool)
++	for _, cookie := range response.Result().Cookies() {
++		if cookie.Name != managementOIDCLegacySessionCookie && cookie.Name != managementOIDCLegacyFlowCookie {
++			continue
++		}
++		if cookie.Path != managementOIDCLegacyCookiePath || cookie.MaxAge >= 0 || !cookie.Secure || !cookie.HttpOnly || cookie.Domain != "" {
++			t.Errorf("legacy cookie %q was not expired with its original root-scoped host-only attributes: %+v", cookie.Name, cookie)
++		}
++		deleted[cookie.Name] = true
++	}
++	for _, cookie := range legacyCookies {
++		if !deleted[cookie.Name] {
++			t.Errorf("session check did not expire legacy cookie %q", cookie.Name)
++		}
++	}
++	jar.SetCookies(sessionURL, response.Result().Cookies())
++	if got := jar.Cookies(modelURL); len(got) != 0 {
++		t.Fatalf("legacy cookies remained attached to the root-scoped model route after cleanup: %+v", got)
++	}
++}
++
+@@ -265 +314 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
 -				if sessionCookie == nil || !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteLaxMode || sessionCookie.Path != "/" || sessionCookie.Domain != "" {
 +				if sessionCookie == nil || !strings.HasPrefix(sessionCookie.Name, "__Secure-") || !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteLaxMode || sessionCookie.Path != managementOIDCSessionCookiePath || sessionCookie.Domain != "" {
-@@ -268 +269,30 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
+@@ -268 +317,30 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
 -				blocked := managementOIDCRequest(h.ManagementOIDCLogout, http.MethodPost, "/", []*http.Cookie{sessionCookie}, nil)
 +				jar, err := cookiejar.New(nil)
 +				if err != nil {
@@ -74,13 +149,13 @@ index 3d5e7fb..148cd56 100644
 +				}
 +				logoutURL := "https://admin.example/v8/management/auth/logout"
 +				blocked := managementOIDCRequest(h.ManagementOIDCLogout, http.MethodPost, logoutURL, []*http.Cookie{sessionCookie}, nil)
-@@ -272 +302 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
+@@ -272 +350 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
 -				logout := managementOIDCRequest(h.ManagementOIDCLogout, http.MethodPost, "/", []*http.Cookie{sessionCookie}, map[string]string{
 +				logout := managementOIDCRequest(h.ManagementOIDCLogout, http.MethodPost, logoutURL, []*http.Cookie{sessionCookie}, map[string]string{
-@@ -298 +328 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
+@@ -298 +376 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
 -		if cookie.Name == managementOIDCFlowCookie && cookie.Secure && cookie.HttpOnly && cookie.SameSite == http.SameSiteLaxMode {
 +		if cookie.Name == managementOIDCFlowCookie && cookie.Secure && cookie.HttpOnly && cookie.SameSite == http.SameSiteLaxMode && cookie.Path == managementOIDCFlowCookiePath && cookie.Domain == "" {
-@@ -304,0 +335,32 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
+@@ -304,0 +383,32 @@ func TestManagementOIDCLoginAndCallback(t *testing.T) {
 +	if !strings.HasPrefix(flowCookie.Name, "__Secure-") {
 +		t.Fatal("path-scoped login binding cookie must use a Secure-compatible prefix")
 +	}
