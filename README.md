@@ -18,9 +18,10 @@ report snapshots. The CI reports are:
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
-Each CI refresh replaces only its own directory's `index.html`, `evidence.json`,
+Each CI refresh replaces its own directory's `index.html`, `evidence.json`,
 `manifest.json`, and optional `attribution.json`, through a PR against `gh-pages`.
-Preserve the other report directories and this navigation. Remove stale optional
+Preserve the other report directories; keep this navigation and the root index
+current when report entries change. Remove stale optional
 attribution only within the report being refreshed. Use Git history for earlier
 measurements; do not accumulate dated run directories. This branch continues the
 history of `ci-latency-history`; pre-migration latency snapshots are at the root
