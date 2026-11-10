@@ -105,6 +105,54 @@ fn iteration_rows_keep_receipts_across_an_independent_inversion() {
     }
 }
 
+/// A top-level initializer whose one invocation is a row is admitted to the
+/// ordered lane, so its own binding gets the row's receipt.
+#[test]
+fn top_level_iteration_roots_keep_receipts_across_an_independent_inversion() {
+    for (declarations, initializer, members, member, expected) in [
+        (
+            "",
+            "items.map((x) => x * 2)",
+            &["items", "result"][..],
+            "map",
+            "7 2,4,6\n",
+        ),
+        (
+            "function double(x) { return x * 2; }\n",
+            "items.map(double)",
+            &["double", "items", "result"][..],
+            "map",
+            "7 2,4,6\n",
+        ),
+        (
+            "",
+            "items.filter((x) => x > 1)",
+            &["items", "result"][..],
+            "filter",
+            "7 2,3\n",
+        ),
+        (
+            "",
+            "items.reduce((sum, x) => sum + x, 0)",
+            &["items", "result"][..],
+            "reduce",
+            "7 6\n",
+        ),
+    ] {
+        let source = format!(
+            "{declarations}const items = [1, 2, 3];\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, [result].flat().join(','));\n"
+        );
+        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("run", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_commuting_relocation(&fixture, initializer);
+    }
+}
+
 /// Run a rejected split's original and emitted programs: the original prints
 /// `original`, the emitted layout `emitted`, so the refusal is required.
 fn assert_rejected_split_diverges(
@@ -225,11 +273,13 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
 
 /// A row nested in the callback of a legacy row stays legacy: the legacy row
 /// invokes its callback with `array_iteration_depth > 0`, and only a
-/// depth-zero invocation takes the kernel prologue. The split is valid;
-/// it becomes provable when the outer row runs in the kernel (L4e).
+/// depth-zero invocation takes the kernel prologue. The outer root has two
+/// calls, so it is not attempted on the ordered lane and its row is legacy.
+/// The split is valid; it becomes provable when the outer row runs in the
+/// kernel (L4e).
 #[test]
 fn a_row_inside_a_legacy_row_callback_stays_legacy() {
-    let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = outer.map(wrap);\nconsole.log(independent, result.join(','));\n";
+    let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = String(outer.map(wrap));\nconsole.log(independent, result);\n";
     let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![logical_module(
@@ -243,4 +293,133 @@ fn a_row_inside_a_legacy_row_callback_stays_legacy() {
     ));
     assert_preserved_entry_output(&fixture, "7 2,4\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "nested legacy row");
+}
+
+/// Each refusal the row makes after selecting its method is typed. The
+/// split stays valid (Node parity) and the root's coverage stays open.
+/// `array_iteration_intrinsics_changed` needs a modeled `Array` intrinsic
+/// write between GetValue and the call or inside a callback; every lowered
+/// form of such a write refuses earlier, so no fixture reaches it today.
+#[test]
+fn row_refusals_carry_their_typed_reasons() {
+    for (body, expected, refusal) in [
+        (
+            "const items = [1, 2]; return items.flatMap((x) => [x, x]);",
+            "7 1,1,2,2\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; return [items.reduce((sum, x) => sum + x)];",
+            "7 3\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; items.forEach((x) => x, null); return items;",
+            "7 1,2\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; const pending = items.map(async (x) => x); return [pending.length];",
+            "7 2\n",
+            "array_iteration_callback_unsupported",
+        ),
+        (
+            "const items = [1, 2]; return items.map((x) => { console.log(x); return x; });",
+            "1\n2\n7 1,2\n",
+            "array_iteration_callback_incomplete",
+        ),
+        (
+            "const items = [1, 2]; return items.map((x, index, array) => { array.push(0); return x; });",
+            "7 1,2\n",
+            "array_iteration_receiver_unproved",
+        ),
+    ] {
+        let source = format!("function run() {{ {body} }}\n{RELOCATION}");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("run"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_eq!(
+            array_iteration_refusals(&fixture, "result"),
+            vec![Value::from(refusal)],
+            "{body}"
+        );
+    }
+}
+
+/// An empty receiver never invokes its callback; the row still commits its
+/// fresh result.
+#[test]
+fn an_empty_receiver_keeps_its_receipt() {
+    let source = format!(
+        "function run() {{ const items = []; return items.map((x) => x * 2); }}\n{RELOCATION}"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module(
+            "run",
+            &[Member::new("run"), Member::new("result")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 \n");
+    assert_iteration_receipt(&fixture, "map", "empty receiver");
+    assert_commuting_relocation(&fixture, "empty receiver");
+}
+
+/// Roots the kernel attempts but cannot seal rewind to the flat lane: the
+/// legacy gate still accepts the split with Node parity, and the effect
+/// verdict stays pending. A refused attempt must leave nothing behind.
+#[test]
+fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
+    let many: Vec<String> = (0..300).map(|index| index.to_string()).collect();
+    let many = many.join(", ");
+    for (declarations, initializer, members, expected) in [
+        (
+            // The inner `[x]` site is pooled: its writability witness is gone
+            // on the second invocation, so the inner row refuses.
+            "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];".to_owned(),
+            "outer.map(wrap)",
+            &["wrap", "outer", "result"][..],
+            "7 2,4\n".to_owned(),
+        ),
+        (
+            "class Thing { constructor(name) { this.name = name; } }\nconst names = ['a', 'b'];".to_owned(),
+            "names.map((name) => new Thing(name))",
+            &["Thing", "names", "result"][..],
+            "7 [object Object],[object Object]\n".to_owned(),
+        ),
+        (
+            "const items = [1, 2];".to_owned(),
+            "items.map((x) => { items.push(x); return x; })",
+            &["items", "result"][..],
+            "7 1,2\n".to_owned(),
+        ),
+        (
+            format!("const items = [{many}];"),
+            "items.map((x) => x)",
+            &["items", "result"][..],
+            format!("7 {}\n", (0..300).map(|index| index.to_string()).collect::<Vec<_>>().join(",")),
+        ),
+        (
+            "let later = 0;\nconst items = [{ size: 1, executor: () => later }, { size: 2, executor: () => later }];".to_owned(),
+            "items.reduce((total, entry) => total + entry.size, 0)",
+            &["later", "items", "result"][..],
+            "7 3\n".to_owned(),
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, String(result));\n"
+        );
+        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("run", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, &expected);
+        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
+    }
 }
