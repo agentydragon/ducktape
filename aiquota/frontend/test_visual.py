@@ -51,6 +51,12 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
             "Banked resets: 2 · expiry lookup failed"
         )
+    if scene == "claude_reset_grants":
+        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+        await expect(card.get_by_text("Fable resets", exact=True)).to_be_visible()
+        await expect(card.get_by_text("2 remaining", exact=True)).to_be_visible()
+        await expect(card.get_by_text("Full resets", exact=True)).to_be_visible()
+        await expect(card.get_by_text("paused", exact=False)).to_be_visible()
     if scene == "openai_platform_credits":
         card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
         await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()

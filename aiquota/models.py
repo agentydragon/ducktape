@@ -6,7 +6,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
 
 class QuotaWindow(BaseModel):
@@ -120,6 +120,16 @@ class PrepaidBalanceUnavailable(BaseModel):
 PrepaidBalance = Annotated[PrepaidBalanceAvailable | PrepaidBalanceUnavailable, Field(discriminator="kind")]
 
 
+class ClaudeResetGrant(BaseModel):
+    label: str
+    remaining: int = Field(ge=0)
+    original: int = Field(ge=0)
+    starts_at: AwareDatetime | None = None
+    expires_at: AwareDatetime | None = None
+    paused: bool = False
+    usable_now: bool | None = None
+
+
 class FetchSuccess(BaseModel):
     """Payload from a quota fetch that returned without error.
 
@@ -137,6 +147,8 @@ class FetchSuccess(BaseModel):
     # Claude's prepaid monetary balance is a separate endpoint and denomination
     # from Codex paid credits. None means this provider does not report it.
     prepaid_balance: PrepaidBalance | None = None
+    # None means the inventory was unavailable, not that there are no resets.
+    claude_reset_grants: list[ClaudeResetGrant] | None = None
     # Earned Codex rate-limit resets. None means the provider did not publish a
     # count; 0 is an authoritative "none available" response.
     available_reset_credits: int | None = Field(default=None, ge=0)
@@ -160,6 +172,7 @@ def is_substantive(result: FetchSuccess) -> bool:
     """Whether a success contains data worth retaining and displaying."""
     return bool(
         result.windows
+        or result.claude_reset_grants is not None
         or result.available_reset_credits is not None
         or result.paid_credits is not None
         or result.openai_platform_credits is not None

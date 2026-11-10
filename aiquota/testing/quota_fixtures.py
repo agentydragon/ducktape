@@ -23,6 +23,7 @@ FIXTURE_NAMES = (
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
     "claude_prepaid_balance_stale",
+    "claude_reset_grants",
     "reset_credit_expiry_unavailable",
     "platform_credits_with_subscription_resets",
     "wire_fields",
