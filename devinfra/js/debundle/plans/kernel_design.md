@@ -52,8 +52,9 @@ the family when every leaf has completed; the contract is in
   run-wide accumulators, and the flat lane runs as if the attempt never
   ran. The filter (`roots/operands.rs`, `root_array_iteration`) is cheap and
   has no side effects. The cost is a second execution of every refused
-  attempt: in the e2e suite about 123 iteration roots attempt and about 105
-  of them rewind, most in `intrinsic_array_iteration_test`. A root over
+  attempt: with the early-exit rows, 217 iteration roots attempt in the e2e
+  suite and 187 of them rewind (30 seal), most in
+  `intrinsic_array_iteration_test`. A root over
   record elements does not seal yet even when every read is covered: an
   own-data read leaves the owner's initialization domains unknown
   (`EffectCoverageFragment::lexical_operation`), so row 13 has nothing to

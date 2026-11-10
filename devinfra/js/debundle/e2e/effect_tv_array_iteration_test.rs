@@ -464,3 +464,38 @@ fn an_early_exit_callback_write_keeps_its_reader_before_the_iteration() {
         "2 2\n",
     );
 }
+
+/// Opposing controls for the other early-exit rows: how many callbacks run
+/// depends on their results, so each callback's write is a possible effect
+/// of the whole row and its reader stays before the iteration.
+#[test]
+fn every_early_exit_row_keeps_its_callback_reader_before_the_iteration() {
+    for (call, original, emitted) in [
+        ("items.every((x) => check(x) < 2)", "0 2\n", "2 2\n"),
+        ("items.find((x) => check(x) > 1)", "0 2\n", "2 2\n"),
+        ("items.findIndex((x) => check(x) > 1)", "0 2\n", "2 2\n"),
+    ] {
+        let source = format!(
+            "const log = [];\nfunction check(x) {{ log.push(x); return x; }}\nconst items = [1, 2, 3];\nconst observed = log.length;\nvar result = {call};\nconsole.log(observed, log.length);\n"
+        );
+        assert_rejected_split_diverges(
+            &source,
+            &["log", "check", "items", "result"],
+            original,
+            emitted,
+        );
+    }
+}
+
+/// Opposing control: the element a row stops at depends on state the
+/// predicate reads, so a statement writing that state stays before the
+/// iteration. Moving the call before the write stops at another element.
+#[test]
+fn an_early_exit_row_keeps_the_writer_of_its_predicate_state_first() {
+    assert_rejected_split_diverges(
+        "const flags = { threshold: 5 };\nconst items = [1, 2, 3];\nflags.threshold = 1;\nvar result = items.findIndex((x) => x > flags.threshold);\nconst observed = result;\nconsole.log(observed);\n",
+        &["flags", "items", "result"],
+        "1\n",
+        "-1\n",
+    );
+}
