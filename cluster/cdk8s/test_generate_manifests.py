@@ -1055,7 +1055,7 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_buildbuddy_secret_stays_paused_during_terraform_forget_plan(
+def test_buildbuddy_secret_stays_paused_while_terraform_forgets_it(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -1072,7 +1072,7 @@ def test_buildbuddy_secret_stays_paused_during_terraform_forget_plan(
         and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
     )
     assert terraform["metadata"]["namespace"] == "flux-system"
-    assert terraform["spec"]["planOnly"] is True
-    assert terraform["spec"].get("approvePlan") != "auto"
+    assert not terraform["spec"].get("planOnly", False)
+    assert terraform["spec"]["approvePlan"] == "plan-latest-62a5ac5453"
     assert staged["metadata"]["annotations"]["crossplane.io/paused"] == "true"
     assert "Delete" not in staged["spec"]["managementPolicies"]

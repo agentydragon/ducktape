@@ -40,13 +40,13 @@ not what a compromised provider process can access.
 ## LiteLLM ownership handoff
 
 The cluster installs the provider and stages `litellm/live-tests` paused with
-`Observe`, `Create`, and `Update` policies. The Terraform CR is in plan-only
-mode while its ownership is transferred. Its former resource had a destroy
-provisioner that deletes BuildBuddy `OPENAI_API_KEY`. The Terraform module now
-uses a `removed` block with `destroy = false` to forget that resource.
+`Observe`, `Create`, and `Update` policies. Its former Terraform resource had a
+destroy provisioner that deletes BuildBuddy `OPENAI_API_KEY`. The Terraform
+module now uses a `removed` block with `destroy = false` to forget that resource;
+the CR approves only the reviewed module revision's plan.
 
-Verify the plan only forgets the resource, then apply it and confirm the state
-no longer contains the writer. Only then enable Crossplane and verify a
+Confirm the state no longer contains the writer after the forget plan applies.
+Only then enable Crossplane and verify a
 successful write and live-test consumer behavior. Preserve the independently
 owned BuildBuddy admin credential through the transfer. Retire the remaining
 Terraform resources in a later change, after checking their deletion behavior
