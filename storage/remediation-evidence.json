@@ -2,7 +2,7 @@
   "schema_version": 1,
   "snapshot_utc": "2026-11-10T19:20:23Z",
   "source_devel_commit": "ff90cac07e",
-  "scope": "Non-atomic read-only live LINSTOR, Kubernetes, SeaweedFS filer, and ClickHouse observations; no retention, replication, or volume changes.",
+  "scope": "Non-atomic read-only live LINSTOR, Kubernetes, SeaweedFS, ClickHouse, Mimir and Loki observations; no retention, replication, or volume changes.",
   "units": "Decimal GB for physical and logical bytes; GiB for requested PVC sizes. Reported pool limits are sums of diskful LINSTOR volume definitions on each node, not reservations or actual used bytes.",
   "pool_observed_at_utc": "2026-11-10T19:13:45Z",
   "pools": [
@@ -188,27 +188,28 @@
     {
       "id": "mimir",
       "rank": 8,
-      "title": "Shorten Mimir metrics retention",
+      "title": "Trim source-less HTTP flow metrics or shorten Mimir retention",
       "category": "Retention",
-      "gain": "Eligible bytes not measured",
-      "gain_type": "Unmeasured",
-      "effort": "Low",
-      "confidence": "365-day configuration verified; bucket gauges disagree",
-      "risk": "Historical metrics beyond the selected period disappear.",
-      "detail": "For example, 365 to 180 days. The logical bucket reports 211–271 GB depending on source, and age distribution is unknown; do not assume half is immediately reclaimable.",
+      "gain": "~12% of current series; or ~200 GB physical above 90 days",
+      "gain_type": "Future series or historical upper bound",
+      "effort": "Medium",
+      "confidence": "Point-in-time series count; all block metadata and live S3 listing",
+      "risk": "The filter loses HTTP counts for destinations without a source; 90-day retention loses all older metric history.",
+      "detail": "133,686 source-less L7 HTTP flow series are 12.5% of 1,073,249 current series; all Hubble flow series are 27.1%. Filtering affects future ingestion, not existing blocks, and compressed-byte savings are unmeasured. Hubble historical network attribution was deliberately enabled: audit ad-hoc use and preserve useful flow/drop metrics. Alternatively, blocks older than 90 days hold 100.24 GB logical (~200 GB with two Seaweed copies), before compaction and discard; the 365-day setting currently contains only about 161 days of data.",
       "link": "https://grafana.com/docs/mimir/latest/configure/configure-metrics-storage-retention/"
     },
     {
       "id": "loki",
       "rank": 9,
-      "title": "Shorten Loki log retention",
+      "title": "Investigate repetitive Talos audit events",
       "category": "Retention",
-      "gain": "Eligible bytes not measured",
-      "gain_type": "Unmeasured",
-      "effort": "Low",
-      "confidence": "90-day configuration verified; bucket gauges disagree",
-      "risk": "Historical logs beyond the selected period disappear.",
-      "detail": "For example, 90 to 30 days. The logical bucket reports 96–121 GB depending on source; count the actual age distribution before estimating savings."
+      "gain": "~25–36 GB physical per 30 days: broad scenario only",
+      "gain_type": "Low-confidence future-storage scenario",
+      "effort": "Medium–high",
+      "confidence": "Four five-minute byte/compression windows and nine bounded event samples",
+      "risk": "Audit records preserve security evidence. Do not suppress all denials or infer that every SELinux decision is permissive.",
+      "detail": "In a 3,000-AVC sample, all had permissive=1 and 2,943 involved unlabeled DRBD paths. Correlated fragments represented 86.4% of bytes in nine 1,000-line audit samples (18–100% per window). Investigate the SELinux labeling/policy cause and any narrowly scoped noise reduction first. The 25–36 GB scenario extrapolates removal of ALL auditd using 30-day indexed raw volume, sampled audit share and Talos compression, then doubles for Seaweed; it is not measured reclaim and targeted filtering would save less. Existing records cannot be selected by service-level retention because their streams lack that label.",
+      "link": "https://github.com/siderolabs/talos/blob/v1.14.0/internal/app/auditd/auditd.go"
     },
     {
       "id": "gitlab",
@@ -245,6 +246,88 @@
     {
       "label": "Forgejo-to-GitLab migration plan",
       "url": "https://github.com/agentydragon/ducktape/pull/14223"
+    },
+    {
+      "label": "Loki v3.6.11: TSDB indexes approximate uncompressed chunk bytes",
+      "url": "https://github.com/grafana/loki/blob/v3.6.11/pkg/storage/stores/shipper/indexshipper/tsdb/store.go"
+    },
+    {
+      "label": "Flux suspend metric nil-path fix",
+      "url": "https://github.com/agentydragon/ducktape/pull/5864"
+    },
+    {
+      "label": "Talos v1.14.0 audit service",
+      "url": "https://github.com/siderolabs/talos/blob/v1.14.0/internal/app/auditd/auditd.go"
+    },
+    {
+      "label": "Hubble metric flow context",
+      "url": "https://docs.cilium.io/en/stable/observability/metrics/"
     }
-  ]
+  ],
+  "observability": {
+    "observed_utc": "2026-11-10T21:12:00Z–21:28:00Z",
+    "mimir_bucket_gb": 239.718,
+    "mimir_reported_bucket_gb": 272.026,
+    "mimir_exporter_bucket_gb": 211.729,
+    "mimir_block_ages": [
+      {
+        "age": "0–30 days",
+        "index": 10.266,
+        "chunks_other": 47.971
+      },
+      {
+        "age": "30–90 days",
+        "index": 13.502,
+        "chunks_other": 67.74
+      },
+      {
+        "age": "90–161 days",
+        "index": 13.631,
+        "chunks_other": 86.607
+      }
+    ],
+    "mimir_series": [
+      {
+        "name": "HTTP, no source",
+        "series": 133686
+      },
+      {
+        "name": "Other Hubble flows",
+        "series": 156645
+      },
+      {
+        "name": "Other metrics",
+        "series": 782918
+      }
+    ],
+    "mimir_series_total": 1073249,
+    "mimir_http_total": 207086,
+    "loki_indexed_jobs": [
+      {
+        "age": "0–30 days",
+        "Talos": 286.384,
+        "KubeState": 0.272
+      },
+      {
+        "age": "30–60 days",
+        "Talos": 44.288,
+        "KubeState": 0.038
+      },
+      {
+        "age": "60–90 days",
+        "Talos": 122.822,
+        "KubeState": 182.569
+      }
+    ],
+    "audit_avc_sample": 3000,
+    "audit_avc_drbd_unlabeled": 2943,
+    "audit_correlated_sample_lines": 9000,
+    "audit_correlated_pct": 86.4,
+    "audit_correlated_range_pct": [18.4, 99.9],
+    "audit_share_range_pct": [74.9, 85.5],
+    "talos_chunk_ratio_pct": [5.9, 7.3],
+    "loki_ksm_sample_lines": 1500,
+    "loki_ksm_chunk_ratio_pct": [4.1, 5.9],
+    "sampling_note": "Mimir block age groups use maxTime of all 171 block metadata records and the file sizes on the filer, validated against a 963-object S3 listing. Blocks straddling a cutoff are included on the newer side. Mimir active-series counts are point-in-time estimates, not compressed bytes. Loki indexed byte estimates can include chunks overlapping interval boundaries, exclude streams without job, and are not physical bytes. Four five-minute windows estimate the audit share and chunk compression; nine 1,000-line node/time samples correlate audit fragments; neither is byte-weighted across the month. Four short KSM chunk samples estimate compression. No individual log lines or credentials were saved."
+  }
 }

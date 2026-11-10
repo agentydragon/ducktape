@@ -14,7 +14,7 @@ report snapshots. The CI reports are:
 
 - **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with upstream status, local impact, evidence, and follow-up actions.
 
-- **Cluster storage:** [HDD budget scenarios and interventions](storage/index.html), with dated Langfuse evidence and the earlier inventory retained below it.
+- **Cluster storage:** [HDD budget scenarios and interventions](storage/index.html), with dated Langfuse, Mimir and Loki evidence and the earlier inventory retained below it.
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
