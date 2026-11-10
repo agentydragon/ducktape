@@ -10228,17 +10228,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    /// Values flowing where a later read sees only unknown. Unknown reaches
-    /// only published callbacks, so a value may leave a tracked set only once
-    /// what it can reach is published.
     /// A class value created now: its members read the enclosing scope's
-    /// bindings as unknown later, so publish what those hold here.
+    /// bindings as unknown later, so publish what those hold here. A local
+    /// binding as the heritage (`class extends h`) is the base a later
+    /// construction runs on unknown arguments; publish it too.
     pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
-        let Some(reads) = self.inputs.class_captured_reads.get(&class) else {
-            return;
-        };
-        let values: Values = reads
-            .iter()
+        let heritage = self
+            .inputs
+            .index
+            .class_values
+            .get(&class)
+            .and_then(|facts| match &facts.super_class {
+                Some(ValueExpr::Binding(binding)) => Some(binding),
+                _ => None,
+            });
+        let values: Values = self
+            .inputs
+            .class_captured_reads
+            .get(&class)
+            .into_iter()
+            .flatten()
+            .chain(heritage)
             .filter(|binding| !self.inputs.top_bindings.contains(*binding))
             .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
             .flatten()
@@ -10249,6 +10259,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Values flowing where a later read sees only unknown. Unknown reaches
+    /// only published callbacks, so a value may leave a tracked set only once
+    /// what it can reach is published.
     pub(super) fn escape_untracked_values(&mut self, values: &Values) {
         self.publish_values(
             values,

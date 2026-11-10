@@ -818,11 +818,76 @@ fn a_class_publishes_the_enclosing_locals_its_members_read() {
 #[test]
 fn a_class_capturing_only_effect_free_functions_keeps_the_split() {
     for base in SUPER_BASES {
-        let fixture = with_reader_split(
-            &super_capture_definitions(base, "if (first()) {} ", "first"),
-            &["Base", "make"],
-            run_fixture,
-        );
-        assert_preserved_entry_output(&fixture, "0 0\n");
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &super_capture_definitions(base, guard, "first"),
+                &["Base", "make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+/// `make` returning a class that reaches `h` through its heritage or a
+/// member, and `run` reaching that member.
+const CLASS_CAPTURE_SHAPES: &[(&str, &str)] = &[
+    (
+        "return class extends h {};",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class extends h { constructor() { super(); } };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class { static m() { return h(); } };",
+        "return make({value}).m();",
+    ),
+    (
+        "return class { f = h(); };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "class C { m() { return h(); } } return C;",
+        "const C = make({value}); return new C().m();",
+    ),
+];
+
+fn class_capture_definitions(make: &str, run: &str, guard: &str, value: &str) -> String {
+    let run = run.replace("{value}", value);
+    format!(
+        "function make(h) {{ {guard}{make} }}\nfunction flag() {{ return 0; }}\nfunction run() {{ {run} }}"
+    )
+}
+
+/// Opposing control: a class reaching a captured `h` through its heritage,
+/// a static method, a field initializer, or a declared class's method
+/// reaches `second` when `run` constructs or calls it.
+#[test]
+fn a_class_publishes_its_heritage_and_member_captures() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &class_capture_definitions(make, run, guard, "second"),
+                &["make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same classes over the
+/// effect-free `first` keep the split.
+#[test]
+fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &class_capture_definitions(make, run, guard, "first"),
+                &["make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }
