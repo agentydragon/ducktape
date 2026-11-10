@@ -32,8 +32,16 @@ An inbox is also owned by the Identity incarnation the Dispatcher recorded its S
 when a worker delivers to it, or when the ServiceAccount owner is reconciled; it is immutable once set. A Sandbox
 SVID whose WorkloadCredential names an Identity (resolved in `namespace`, which also holds the policy objects the
 service watches) reads, acknowledges and retires the inboxes and manages the subscriptions of its Sandbox that
-are established for its Identity incarnation; the Sandbox is the credential's controller owner. Creating a
-subscription and sending or reading messages still need a ServiceAccount caller.
+are established for its Identity incarnation; the Sandbox is the credential's controller owner.
+
+An Identity caller also subscribes and messages, by the conservative analogue of the ServiceAccount rules
+(`SESSION_IDENTITY_AUTHZ` in [the task DAG](../plans/task_dag.md) decides the lasting design). It subscribes only
+a Session the Dispatcher recorded as executing as its Identity incarnation alone, placed in the Sandbox that
+controls its credential, to an Action request that incarnation submitted (`ActionRequest.caller_identity`). Its
+send is granted by a `session_inbox_access` rule bound to its Identity, fenced on the live Identity's UID; the
+message records the Identity incarnation, which alone reads it back, and recipients see it as from the name of
+the Sandbox it was sent from. A message to an Identity-run Session goes to the inbox its Identity owns, and only
+while the destination Sandbox's `spec.identity` still names that Identity.
 A Session the Dispatcher recorded as executing as an Identity alone (an Identity-run Sandbox, which has no
 managed ServiceAccount) has an inbox owned by that Identity incarnation and no ServiceAccount; its
 `owner_namespace` and `owner_name` still name the destination Sandbox, so inbox keys and the per-account inbox
