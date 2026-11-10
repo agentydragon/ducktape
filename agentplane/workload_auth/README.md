@@ -29,6 +29,8 @@ Deleting the record or replacing its credential ID revokes the certificate. `Res
 listener allows SPIFFE. Listener credential selection does not grant method authorization, and
 delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
 bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
+`SVIDResolver.IdentitySubjectsOnly` refuses records naming a ServiceAccount, for a listener whose
+ServiceAccount callers keep presenting bearers (History's read API).
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
