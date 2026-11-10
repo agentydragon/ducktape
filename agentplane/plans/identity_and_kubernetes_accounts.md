@@ -18,8 +18,8 @@ cutover still changes.
 
 ## Target: one identity, three credential forms
 
-Operator direction, 2026-11-10, pending final confirmation. This is the contract the cutover works
-toward; none of it has landed. The Agentplane `Identity` is the one identity source. Each credential
+Operator decision, 2026-11-10. This is the contract the cutover works toward;
+[where the migration stands](#where-the-migration-stands) says how far it has got. The Agentplane `Identity` is the one identity source. Each credential
 form below is an explicit, named mapping to one `Identity`:
 
 1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.

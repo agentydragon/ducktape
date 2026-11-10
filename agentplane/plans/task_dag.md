@@ -3016,8 +3016,8 @@ per-incarnation `WorkloadCredential`s ([workload authentication](../docs/workloa
 Stage edges are technical prerequisites; the fan-in to system tests is a sequencing hold, not
 permission to start them early.
 
-The target is one identity source with three credential forms (operator direction, 2026-11-10,
-pending final confirmation; [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
+The target is one identity source with three credential forms (operator decision, 2026-11-10;
+[plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
 SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication toward the Kubernetes
 API alone. The paths that miss it are inventoried in the
 [lifecycle plan](workload_identity_lifecycle.md#remaining-paths), each tracked by a node below or by
