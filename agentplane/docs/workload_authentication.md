@@ -104,8 +104,12 @@ including one inherited through a tunnel:
    with a controller owner or a binding also needs `spec.binding` to equal `status.acceptedBinding`,
    so clearing or replacing the binding revokes before the ID rotates. A stale certificate is
    refused after a name is reused, because the new record has a new ID.
-5. `spec.subject` is the subject: a ServiceAccount in the record's namespace, read live for its
-   UID. Identity subjects are refused until `IDENTITY_CUTOVER`.
+5. `spec.subject` is the subject, read live: a ServiceAccount in the record's namespace, for its
+   UID; or an Identity in the policy namespace, whose live UID must be the one the record names, so
+   deleting an Identity revokes every credential naming it and a same-named successor inherits
+   none. A verifier constructed without the policy namespace refuses Identity subjects, and until
+   each service authorizes an Identity `Principal` (`SERVICES_IDENTITY_PRINCIPAL`,
+   `EGRESS_IDENTITY_RULES`) every verifier does.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
    TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
    binds to it.

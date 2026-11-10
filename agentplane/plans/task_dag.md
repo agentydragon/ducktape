@@ -3008,7 +3008,8 @@ Stage edges are technical prerequisites; the fan-in to system tests is a sequenc
 permission to start them early.
 
 What stays provisional, each tracked by the node that removes it: every `WorkloadCredential` names a
-ServiceAccount subject and the resolver refuses an Identity one, so an SVID yields the same
+ServiceAccount subject; the resolver resolves an Identity one, live with its UID, but no verifier is
+given the policy namespace yet and `Principal` has no Identity form, so an SVID yields the same
 ServiceAccount `Principal` a TokenReview does (`SERVICES_IDENTITY_PRINCIPAL`, `IDENTITY_CUTOVER`); a
 Sandbox sidecar forwards its Kubernetes-audience token beside the SVID for `kubectl` substitution
 (`EGRESS_IDENTITY_RULES`); the proxy's `forward` listener, the sidecar and the command-box templates
@@ -3020,8 +3021,8 @@ flowchart LR
     APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Done: Firecracker runners' control listener trusts the workload CA alone]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
-    SANDBOX_IDENTITY_SPEC -->|identity source| EGRESS_IDENTITY_RULES[Blocked: identity rules at the proxy]
-    SANDBOX_IDENTITY_SPEC -->|identity source| SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
+    SANDBOX_IDENTITY_SPEC -->|identity source| EGRESS_IDENTITY_RULES[In progress: identity rules at the proxy]
+    SANDBOX_IDENTITY_SPEC -->|identity source| SERVICES_IDENTITY_PRINCIPAL[In progress: services act and record by identity]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
@@ -3056,10 +3057,10 @@ states rollback and verifies callers after image/config convergence.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Blocked on a per-caller identity source: `SANDBOX_IDENTITY_SPEC`, plus the `WorkloadCredential`
-resolver reading Identity subjects, which `IDENTITY_CUTOVER`'s change set adds
-(`agentplane/workload_identity/resolver/resolver.go` refuses one today).** Until then every SVID
-resolves to a ServiceAccount, so there is no identity to key on. The proxy's decision keys on the
+**In progress (identity-consumers, 2026-11-10), consumers first: the `WorkloadCredential` resolver
+resolves an Identity subject live with its UID (`resolver.Subject`); the proxy still refuses one.**
+`SANDBOX_IDENTITY_SPEC` is the first requester to write one; until then every SVID resolves to a
+ServiceAccount. The proxy's decision keys on the
 identity the resolver yields, and decision history records it. The Kubernetes-audience projected
 token is removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only
 `projectedWorkloadToken` source, so the source, the sidecar's `X-Agentplane-Workload-Token`
@@ -3073,7 +3074,8 @@ other noticing.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**Blocked on the per-caller identity source, as `EGRESS_IDENTITY_RULES`.** History's execution
+**In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
+resolver yields an Identity subject; `auth.SVIDResolver` still refuses one.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
@@ -3152,8 +3154,7 @@ a `PolicySet`), deletes the old code paths (SA binding subject, Kubernetes rule 
 Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
 the objects of the new kinds. Every `WorkloadCredential` requester switches its `subject` to an
-Identity, cdk8s renders `haku-ui` as one, and the resolver reads `spec.subject.identity` through the
-shared policy reader, live with its UID, in the policy namespace
+Identity and cdk8s renders `haku-ui` as one
 ([lifecycle](workload_identity_lifecycle.md#migration-and-rollback)). The caller ServiceAccounts and
 the static Flux RoleBindings naming the `claude-ai` ServiceAccount stay until here, since the MCP edge
 and the Action Service still authenticate them. The MCP edge's `connection_identities` setting is set

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	corev1 "k8s.io/api/core/v1"
@@ -29,16 +30,32 @@ var (
 	ErrUnavailable = errors.New("workload credential lookup unavailable")
 )
 
-// ServiceAccount is the subject of a credential until IDENTITY_CUTOVER, read live with its UID.
+// Subject is who a resolved workload acts as: a ServiceAccount or an Identity, each read live with
+// its UID.
+type Subject interface{ subject() }
+
+// ServiceAccount is a ServiceAccount in the record's namespace.
+// CLEANUP(added 2026-11-10): remove in IDENTITY_CUTOVER (agentplane/plans/task_dag.md), with the
+// WorkloadCredential's ServiceAccount subject.
 type ServiceAccount struct {
 	Namespace, Name string
 	UID             types.UID
 }
 
+// Identity is an Identity in the policy namespace, as the incarnation the record names: a
+// credential of a deleted Identity gains nothing from a same-named successor.
+type Identity struct {
+	Name string
+	UID  types.UID
+}
+
+func (ServiceAccount) subject() {}
+func (Identity) subject()       {}
+
 // Peer is a resolved workload.
 type Peer struct {
 	Workload transport.WorkloadID
-	Subject  ServiceAccount
+	Subject  Subject
 	// Owner is the record's controller owner reference; nil for a standing workload.
 	Owner *metav1.OwnerReference
 	// Binding is the accepted incarnation; nil for a standing workload.
@@ -57,25 +74,42 @@ func (p Peer) RequirePod(podUID types.UID) error {
 	return nil
 }
 
+// Identities is where a credential's Identity subject lives: the policy namespace.
+type Identities struct {
+	PolicyNamespace string
+}
+
 // Resolver reads the WorkloadCredentials of its allowed namespaces.
 type Resolver struct {
 	objects    client.Reader
 	namespaces []string
+	identities *Identities
 }
 
 // New returns a Resolver. objects must read the API server directly: a certificate never
-// preserves the authority of a deleted record or a replaced credential ID.
-func New(objects client.Reader, namespaces []string) (*Resolver, error) {
+// preserves the authority of a deleted record, a replaced credential ID or a deleted Identity.
+// identities nil refuses every Identity subject.
+// CLEANUP(added 2026-11-10): require identities once every verifier passes its policy namespace, which
+// each does with the change that lets it authorize an Identity (SERVICES_IDENTITY_PRINCIPAL,
+// EGRESS_IDENTITY_RULES in agentplane/plans/task_dag.md), at the latest in IDENTITY_CUTOVER.
+func New(objects client.Reader, namespaces []string, identities *Identities) (*Resolver, error) {
 	if objects == nil || len(namespaces) == 0 || slices.Contains(namespaces, "") {
 		return nil, errors.New("a WorkloadCredential reader and non-empty allowed namespaces are required")
 	}
-	return &Resolver{objects: objects, namespaces: slices.Clone(namespaces)}, nil
+	if identities != nil && identities.PolicyNamespace == "" {
+		return nil, errors.New("resolving Identity subjects requires the policy namespace")
+	}
+	r := &Resolver{objects: objects, namespaces: slices.Clone(namespaces)}
+	if identities != nil {
+		r.identities = &Identities{PolicyNamespace: identities.PolicyNamespace}
+	}
+	return r, nil
 }
 
 // NewKubernetes returns a Resolver over an uncached client.
-func NewKubernetes(config *rest.Config, namespaces []string) (*Resolver, error) {
+func NewKubernetes(config *rest.Config, namespaces []string, identities *Identities) (*Resolver, error) {
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			return nil, err
 		}
@@ -84,7 +118,7 @@ func NewKubernetes(config *rest.Config, namespaces []string) (*Resolver, error) 
 	if err != nil {
 		return nil, err
 	}
-	return New(objects, namespaces)
+	return New(objects, namespaces, identities)
 }
 
 // Resolve takes a leaf whose chain the TLS listener verified against the workload CA, and rechecks
@@ -131,22 +165,41 @@ func (r *Resolver) Resolve(ctx context.Context, leaf *x509.Certificate) (Peer, e
 		peer.Binding = &binding
 		peer.Pod = record.Spec.Pod.DeepCopy()
 	}
-	subject := record.Spec.Subject
-	if subject.ServiceAccount == "" {
-		// CLEANUP(added 2026-11-09): resolve an Identity subject through the shared policy reader in
-		// IDENTITY_CUTOVER (agentplane/plans/task_dag.md); no requester writes one before it.
-		return Peer{}, fmt.Errorf("%w: WorkloadCredential %s names an Identity subject, which is not resolved yet", ErrRefused, key)
+	subject, err := r.subject(ctx, &record)
+	if err != nil {
+		return Peer{}, err
+	}
+	peer.Subject = subject
+	return peer, nil
+}
+
+// subject reads the record's subject live and checks it is still the incarnation the record names.
+func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCredential) (Subject, error) {
+	if named := record.Spec.Subject.Identity; named != nil {
+		if r.identities == nil {
+			return nil, fmt.Errorf("%w: WorkloadCredential %s names an Identity subject, which this verifier does not resolve", ErrRefused, client.ObjectKeyFromObject(record))
+		}
+		var identity policyapi.Identity
+		key := types.NamespacedName{Namespace: r.identities.PolicyNamespace, Name: named.Name}
+		if err := r.objects.Get(ctx, key, &identity); apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: subject Identity %s is gone", ErrRefused, key)
+		} else if err != nil {
+			return nil, fmt.Errorf("%w: read Identity %s: %w", ErrUnavailable, key, err)
+		}
+		if identity.UID != named.UID || !identity.DeletionTimestamp.IsZero() {
+			return nil, fmt.Errorf("%w: subject Identity %s is not the incarnation the record names", ErrRefused, key)
+		}
+		return Identity{Name: identity.Name, UID: identity.UID}, nil
 	}
 	var account corev1.ServiceAccount
-	accountKey := types.NamespacedName{Namespace: record.Namespace, Name: subject.ServiceAccount}
-	if err := r.objects.Get(ctx, accountKey, &account); apierrors.IsNotFound(err) {
-		return Peer{}, fmt.Errorf("%w: subject ServiceAccount %s is gone", ErrRefused, accountKey)
+	key := types.NamespacedName{Namespace: record.Namespace, Name: record.Spec.Subject.ServiceAccount}
+	if err := r.objects.Get(ctx, key, &account); apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: subject ServiceAccount %s is gone", ErrRefused, key)
 	} else if err != nil {
-		return Peer{}, fmt.Errorf("%w: read ServiceAccount %s: %w", ErrUnavailable, accountKey, err)
+		return nil, fmt.Errorf("%w: read ServiceAccount %s: %w", ErrUnavailable, key, err)
 	}
 	if account.UID == "" || !account.DeletionTimestamp.IsZero() {
-		return Peer{}, fmt.Errorf("%w: subject ServiceAccount %s is being deleted", ErrRefused, accountKey)
+		return nil, fmt.Errorf("%w: subject ServiceAccount %s is being deleted", ErrRefused, key)
 	}
-	peer.Subject = ServiceAccount{Namespace: account.Namespace, Name: account.Name, UID: account.UID}
-	return peer, nil
+	return ServiceAccount{Namespace: account.Namespace, Name: account.Name, UID: account.UID}, nil
 }

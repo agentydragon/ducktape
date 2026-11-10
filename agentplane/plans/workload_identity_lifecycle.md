@@ -98,8 +98,8 @@ node, recorded in the DAG. A Sandbox caller's boxes already hang off the Sandbox
 in the same change, a caller with no Sandbox has its records owned by its `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
 cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
 every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. The
-resolver then reads `spec.subject.identity` through the shared policy reader, live with its UID, in
-the policy namespace rather than the record's own, which matters for `haku-sandbox` records. Step 5
+resolver already reads `spec.subject.identity` live with its UID, in the policy namespace rather than
+the record's own, which matters for `haku-sandbox` records. Step 5
 may land on either side.
 
 ## Open question
