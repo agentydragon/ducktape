@@ -49,7 +49,8 @@ export { read };\n";
 #[test]
 fn transformed_dynamic_eval_scope_is_incomplete() {
     // Direct `eval` resolves through the lexical scope at run time; the
-    // resolver cannot prove that scope once the body is transformed.
+    // resolver cannot prove that scope once the body is transformed. A1
+    // refuses it at admission; the override keeps the resolver running.
     let source =
         "function read() { return eval('1 + 1'); }\nconsole.log(read());\nexport { read };\n";
     let fixture = run_fixture(
@@ -57,7 +58,8 @@ fn transformed_dynamic_eval_scope_is_incomplete() {
             source,
             vec![logical_module("a_reader", &[Member::new("read")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_admission_overrides(&["a1_eval"]),
     );
     assert_preserved_entry_output(&fixture, "2\n");
     let report = fixture.global_resolution();
