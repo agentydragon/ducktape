@@ -237,7 +237,12 @@ Kubernetes is reached only at egress, by impersonation through a use rule. The s
 expand → switch → contract: they first accept Identity callers and record Identities beside the
 ServiceAccount (`SERVICES_IDENTITY_PRINCIPAL`, `EGRESS_IDENTITY_RULES`), Sandboxes then run as their
 Identity (`SANDBOX_IDENTITY_SPEC`), and the Session ServiceAccount paths are then deleted
-([`SESSION_SA_PRINCIPAL_REMOVAL`](task_dag.md#session_sa_principal_removal--sessions-carry-no-serviceaccount)).
+([`SESSION_SA_PRINCIPAL_REMOVAL`](task_dag.md#session_sa_principal_removal--sessions-carry-no-serviceaccount)). Workload and Session
+principals end as Identities. The callers that stay ServiceAccount-authenticated are privileged
+platform components (the app, central sampler, Action Service executors, MCP edge, gateway proxy),
+authorized by component role rather than by bindings; one acting for an Identity names it through
+[delegated authorization](../docs/delegated_authorization.md), whose effective caller becomes an
+Identity only (`IDENTITY_CUTOVER`).
 
 ## Open questions and tricky bits
 

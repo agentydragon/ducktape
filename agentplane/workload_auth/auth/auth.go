@@ -57,9 +57,12 @@ func (a *Account) UnmarshalText(text []byte) error {
 }
 
 // Principal is the account and Pod binding established by verified workload credentials.
-// It is the ServiceAccount variant of Subject.
-// TODO: rename to AccountPrincipal once every service admits workloads through AnySubject
-// (IDENTITY_CUTOVER, agentplane/plans/task_dag.md).
+// It is the ServiceAccount variant of Subject, which after IDENTITY_CUTOVER only privileged
+// platform components (the app, central sampler, Action Service executors, MCP edge, gateway proxy)
+// present; they are authorized by component role and act for an Identity through delegation.
+// TODO: rename to a name meaning "platform component caller" (ComponentPrincipal or PlatformCaller,
+// to be decided) once every service admits workloads through AnySubject (IDENTITY_CUTOVER,
+// agentplane/plans/task_dag.md).
 // ServiceAccountUID is populated only when the resolver also verifies the canonical account UID.
 type Principal struct {
 	Account           Account
