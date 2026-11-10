@@ -1118,8 +1118,8 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         request, read_text, visible = read_failure
         assert "Script failed" in read_text, read_text
         assert "executor session resume retry budget exhausted" in visible, visible
-        assert '"remote_outcome":"unknown"' in visible, visible
-        assert '"automatic_replay":false' in visible, visible
+        assert "remote effect outcome is unknown" in visible, visible
+        assert "mutation was not replayed" in visible, visible
         await model.reply(request, ShellCall("probe-budget-session", "cat gateway-budget-marker"))
         request = await asyncio.wait_for(model.request(), timeout=45)
         (probe_output,) = [output for output in request.tool_outputs if output.call_id == "probe-budget-session"]
