@@ -323,11 +323,11 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 // ListSubscriptions returns the owner's subscriptions in ID order after afterID, at most 128.
 func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uuid.UUID) ([]Subscription, error) {
 	viewedAt := now()
+	predicate, args := ownerPredicate(owner, "i.", 2)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE i.owner_namespace = $1 AND i.owner_name = $2
-			AND i.destination_uid = $3 AND s.id > $4 AND i.owner_uid = $5
-		ORDER BY s.id LIMIT 128`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, startAfter(afterID), owner.AccountUID)
+		WHERE s.id > $1 AND `+predicate+`
+		ORDER BY s.id LIMIT 128`, append([]any{startAfter(afterID)}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -353,11 +353,10 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 
 // GetSubscription returns one of the owner's subscriptions.
 func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
+	predicate, args := ownerPredicate(owner, "i.", 2)
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3
-			AND i.destination_uid = $4 AND i.owner_uid = $5`,
-		id, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID), now())
+		WHERE s.id = $1 AND `+predicate, append([]any{id}, args...)...), now())
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}

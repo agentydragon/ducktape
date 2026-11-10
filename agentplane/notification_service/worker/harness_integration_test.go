@@ -42,7 +42,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 

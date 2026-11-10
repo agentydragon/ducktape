@@ -44,6 +44,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -142,19 +143,20 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
-	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
+	callers, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
 	if err != nil {
 		return err
 	}
 	var workloadSVIDs *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
-		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, nil)
+		// The namespace holds the Sandboxes and the policy objects, Identities included, the service watches.
+		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, &resolver.Identities{PolicyNamespace: c.Namespace})
 		if err != nil {
 			return err
 		}
 		workloadSVIDs = svid
 	}
-	resolver, err = resolver.WithListenerAuthentication(c.RPC, workloadSVIDs)
+	callers, err = callers.WithListenerAuthentication(c.RPC, workloadSVIDs)
 	if err != nil {
 		return err
 	}
@@ -249,7 +251,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(options, resolver))
+	maps.Copy(methods, api.Methods(options, callers))
 	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
 	security, err := c.RPC.ServerCredentials(environment_runtime_transport.NotificationsURI)
 	if err != nil {

@@ -41,7 +41,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {

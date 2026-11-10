@@ -81,27 +81,28 @@ func serve[Request, Response any](
 	return response, nil
 }
 
-// serveOwned is serve for a request about the caller's inboxes and subscriptions: those opened for the Sandbox that
-// runs as its account now. A Sandbox runs as the ServiceAccount of its own name, so one recreated under a deleted
-// Sandbox's name sees none of the deleted one's. An account no Sandbox runs as gets none, or NOT_FOUND if none is nil.
+// serveOwned runs handle under the request timeout for a request about the caller's inboxes and subscriptions:
+// those opened for the Sandbox incarnation it runs in now, owned by its ServiceAccount or Identity incarnation
+// (currentWorkload). A Sandbox recreated under a deleted one's name sees none of the deleted one's. A caller whose
+// Sandbox is gone gets none, or NOT_FOUND if none is nil.
 func serveOwned[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request, none *Response,
 	handle func(context.Context, store.Owner, *Request) (*Response, error),
 ) (*Response, error) {
-	return serve(ctx, s, request, func(ctx context.Context, account model.ServiceAccount, request *Request) (*Response, error) {
-		sandbox, err := s.sandbox(ctx, model.DestinationRef{Namespace: account.Namespace, Name: account.Name})
-		if errors.Is(err, errSandboxMissing) && none != nil {
-			return none, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		owner, err := s.owner(ctx, account, sandbox.Identity.Uid)
-		if err != nil {
-			return nil, err
-		}
-		return handle(ctx, owner, request)
-	})
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	caller, err := s.currentWorkload(ctx)
+	if errors.Is(err, errSandboxMissing) && none != nil {
+		return none, nil
+	}
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	response, err := handle(ctx, caller.owner, request)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	return response, nil
 }
 
 func (s *Notifications) CreateSubscription(ctx context.Context, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
@@ -218,11 +219,11 @@ func (s *Notifications) listInboxes(ctx context.Context, owner store.Owner, _ *n
 func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	caller, err := s.caller(ctx)
+	operator, err := s.operator(ctx)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	if s.operatorReader == "" || caller.Namespace != s.namespace || caller.Name != s.operatorReader {
+	if !operator {
 		return serveOwned(ctx, s, request, nil, s.readInbox)
 	}
 	if err := rejectRetiredInboxAddress(request); err != nil {

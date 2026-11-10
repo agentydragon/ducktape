@@ -104,13 +104,12 @@ func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString
 
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
 func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
-	query := `SELECT ` + inboxColumns + ` FROM inbox
-		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3
-			AND destination_uid = $4 AND owner_uid = $5`
+	predicate, args := ownerPredicate(owner, "", 2)
+	query := `SELECT ` + inboxColumns + ` FROM inbox WHERE id = $1 AND ` + predicate
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, inboxID, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID))
+	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, append([]any{inboxID}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}
@@ -120,7 +119,8 @@ func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock
 // InboxIDForSession resolves only an inbox owned by the current Sandbox incarnation.
 func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID string) (uuid.UUID, error) {
 	var id uuid.UUID
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3 AND session_id = $4 AND owner_uid = $5`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, sessionID, owner.AccountUID).Scan(&id)
+	predicate, args := ownerPredicate(owner, "", 2)
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE session_id = $1 AND `+predicate, append([]any{sessionID}, args...)...).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return uuid.Nil, ErrNotFound
 	}
@@ -184,11 +184,8 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 
 // ListInboxes lists the owner's inboxes in ID order, retired ones included, at most 1000.
 func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+inboxColumns+` FROM inbox
-		WHERE owner_namespace = $1 AND owner_name = $2
-			AND destination_uid = $3 AND owner_uid = $4 ORDER BY id LIMIT 1000`,
-		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID)
+	predicate, args := ownerPredicate(owner, "", 1)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+inboxColumns+` FROM inbox WHERE `+predicate+` ORDER BY id LIMIT 1000`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -499,12 +496,24 @@ func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredT
 	return err
 }
 
-// UnestablishedInboxes returns retained inboxes whose original ServiceAccount UID is unknown.
+// UnestablishedInboxes returns retained inboxes of owner's Sandbox incarnation whose owner of that
+// kind is unknown: for an AccountOwner, its account's inboxes without a UID; for an IdentityOwner,
+// those without either owner, since establishing the account owner also establishes any Identity.
 // This metadata is for reconciliation, never for authorizing an owner read.
 func (s *Store) UnestablishedInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+inboxColumns+` FROM inbox
-		WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3
-		AND owner_uid IS NULL ORDER BY id LIMIT 1000`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
+	var predicate string
+	var args []any
+	switch owner := owner.(type) {
+	case AccountOwner:
+		predicate = `owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3 AND owner_uid IS NULL`
+		args = []any{owner.Account.Namespace, owner.Account.Name, owner.SandboxUID}
+	case IdentityOwner:
+		predicate = `destination_uid = $1 AND owner_uid IS NULL AND owner_identity_uid IS NULL`
+		args = []any{owner.SandboxUID}
+	default:
+		panic(fmt.Sprintf("unknown inbox owner %T", owner))
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+inboxColumns+` FROM inbox WHERE `+predicate+` ORDER BY id LIMIT 1000`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -547,6 +556,37 @@ func (s *Store) EstablishInboxOwner(ctx context.Context, account model.ServiceAc
 			return nil
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE inbox SET owner_uid = $2 WHERE session_id = $1 AND owner_uid IS NULL`, sessionID, uid)
+		return err
+	})
+}
+
+// EstablishInboxIdentity pins an inbox to the Identity incarnation the Session authority recorded the
+// Session as executing as. The caller verifies that Identity and the Session's destination against the
+// Session authority. An established Identity is immutable, and an absent inbox needs no reconciliation.
+func (s *Store) EstablishInboxIdentity(ctx context.Context, ref model.DestinationRef, sessionID string, identity model.Identity) error {
+	if identity.Name == "" || identity.UID == "" {
+		return ErrNotFound
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		var destination model.DestinationRef
+		var name, uid sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT destination_namespace, destination_name, destination_uid,
+			owner_identity_name, owner_identity_uid FROM inbox WHERE session_id = $1 FOR UPDATE`, sessionID).
+			Scan(&destination.Namespace, &destination.Name, &destination.UID, &name, &uid)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if destination != ref || uid.Valid && (model.Identity{Name: name.String, UID: uid.String}) != identity {
+			return ErrNotFound
+		}
+		if uid.Valid {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE inbox SET owner_identity_name = $2, owner_identity_uid = $3
+			WHERE session_id = $1 AND owner_identity_uid IS NULL`, sessionID, identity.Name, identity.UID)
 		return err
 	})
 }
