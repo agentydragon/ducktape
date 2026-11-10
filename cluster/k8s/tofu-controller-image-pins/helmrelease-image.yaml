@@ -1,7 +1,7 @@
-# The controller and runner images are Helm values, not container fields, so the pins are a
-# HelmRelease patch rather than `images:` entries. Every field carries a marker: until CI has
-# pushed our image they name upstream's, and the first image-policy write switches the repository
-# too (cluster/cdk8s/AGENTS.md § image-pins on the `:tag` marker form).
+# Keep both current images pinned while CI publishes the matching controller and runner built
+# from the new upstream source. Their gRPC protocol changed, so independent image-policy updates
+# could deploy an incompatible pair. After both new images are published, switch both values in
+# one HelmRelease update; see third_party/tofu_controller/README.md.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -10,9 +10,9 @@ metadata:
 spec:
   values:
     image:
-      repository: ghcr.io/agentydragon/tofu-controller # {"$imagepolicy": "flux-system:tofu-controller:name"}
-      tag: devel-20261110095747-5ba4944 # {"$imagepolicy": "flux-system:tofu-controller:tag"}
+      repository: ghcr.io/agentydragon/tofu-controller
+      tag: devel-20261110095747-5ba4944
     runner:
       image:
-        repository: ghcr.io/agentydragon/tf-runner # {"$imagepolicy": "flux-system:tf-runner:name"}
-        tag: devel-20261110095440-5ba4944 # {"$imagepolicy": "flux-system:tf-runner:tag"}
+        repository: ghcr.io/agentydragon/tf-runner
+        tag: devel-20261110095440-5ba4944

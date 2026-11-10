@@ -14,6 +14,16 @@ The image publication roster pushes it to `ghcr.io/agentydragon/tofu-controller`
 Forgejo: see `cluster/cdk8s/tofu_controller_release.py`). The cluster runs it through the
 upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 
+## Staged rollout
+
+The controller and runner must use matching protocols. The upstream commit changed how state
+locks are reported, so the v0.16.5 runner cannot be paired safely with this controller. CI
+publishes both the controller and a runner built from the same upstream commit, but the live
+HelmRelease image pins stay on the old pair until both new images are available. Then update
+both pins together in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml` and
+verify a Terraform reconciliation and its runner after Flux applies the change. The pins are
+deliberately outside image automation while this pair is staged.
+
 ## Source
 
 `go.mod` pins `github.com/flux-iac/tofu-controller` and its nested `api` module to upstream
