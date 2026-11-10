@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from cdk8s import App, Chart, JsonPatch
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/buildbuddy-sync"
 TF_MODULE = "litellm-buildbuddy-sync"
@@ -17,18 +17,16 @@ NAME = "litellm-buildbuddy-sync"
 
 def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
-    buildbuddy_api_key = SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key")
     writer = terraform.gitops_terraform(
         chart,
         "terraform",
         module=module,
         variables=None,
-        additional_vars=[terraform.secret_var("buildbuddy_api_key", buildbuddy_api_key)],
-        env=[terraform.secret_env("BUILDBUDDY_API_KEY", buildbuddy_api_key)],
+        auto_apply=False,
+        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
     )
-    # Keep the writer stopped until its state ownership is removed and the
-    # BuildBuddy Terraform provisioning can be retired without a destroy.
-    writer.add_json_patch(JsonPatch.add("/spec/suspend", True))
+    # Review the forget-only plan before allowing the ownership handoff.
+    writer.add_json_patch(JsonPatch.add("/spec/planOnly", True))
     return chart
 
 

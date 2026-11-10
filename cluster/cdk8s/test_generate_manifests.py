@@ -743,7 +743,7 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
+def test_litellm_buildbuddy_terraform_runner_no_longer_receives_admin_key(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -755,18 +755,10 @@ def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
     }
     assert set(terraform_resources) == {"litellm-buildbuddy-sync"}
 
-    expected_env = {
-        "name": "BUILDBUDDY_API_KEY",
-        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
-    }
-    expected_var = {
-        "name": "buildbuddy_api_key",
-        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
-    }
     for resource in terraform_resources.values():
         env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
-        assert expected_env in env
-        assert expected_var in resource["spec"]["vars"]
+        assert not any(variable["name"] == "BUILDBUDDY_API_KEY" for variable in env)
+        assert not resource["spec"].get("vars")
         assert not any(variable["name"].startswith("TF_VAR_") for variable in env)
 
 
@@ -1063,7 +1055,7 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_buildbuddy_secret_stays_paused_while_terraform_owns_it(
+def test_buildbuddy_secret_stays_paused_during_terraform_forget_plan(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -1080,6 +1072,7 @@ def test_buildbuddy_secret_stays_paused_while_terraform_owns_it(
         and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
     )
     assert terraform["metadata"]["namespace"] == "flux-system"
-    assert terraform["spec"]["suspend"] is True
+    assert terraform["spec"]["planOnly"] is True
+    assert terraform["spec"].get("approvePlan") != "auto"
     assert staged["metadata"]["annotations"]["crossplane.io/paused"] == "true"
     assert "Delete" not in staged["spec"]["managementPolicies"]
