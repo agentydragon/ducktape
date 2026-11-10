@@ -172,12 +172,18 @@ def gnome_session(
     object_path: str,
     environment: Mapping[str, str],
     display_size: tuple[int, int] = (1920, 500),
+    compile_extension_schemas: bool = False,
+    activate_display: bool = False,
 ) -> Iterator[GnomeSession]:
     screenshot_dir.chmod(0o777)  # GNOME writes screenshots as a different uid.
     container = DockerContainer(image)
     container.with_env("RENDER_WIDTH", str(display_size[0]))
     container.with_env("RENDER_HEIGHT", str(display_size[1]))
-    container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{extension}", "ro")
+    container.with_volume_mapping(
+        str(extension_dir),
+        f"/usr/share/gnome-shell/extensions/{extension}",
+        "rw" if compile_extension_schemas else "ro",
+    )
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
     container.with_volume_mapping(
@@ -195,6 +201,16 @@ def gnome_session(
         failure: BaseException | None = None
         try:
             session.boot()
+            if activate_display:
+                result = session.exec("dbus-update-activation-environment DISPLAY DBUS_SESSION_BUS_ADDRESS")
+                if result.exit_code != 0:
+                    raise RuntimeError(f"Could not set D-Bus activation environment: {exec_output(result)}")
+            if compile_extension_schemas:
+                result = session.container.exec_run(
+                    ["glib-compile-schemas", f"/usr/share/gnome-shell/extensions/{extension}/schemas"], demux=True
+                )
+                if result.exit_code != 0:
+                    raise RuntimeError(f"Extension schema compilation failed: {exec_output(result)}")
             session.start(environment=environment)
             session.wait_for_paint()
             yield session
@@ -218,9 +234,9 @@ def string_reply(reply: bytes) -> str:
     return parsed[0]
 
 
-def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> Image.Image:
+def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int], *, left_padding: int = 0) -> Image.Image:
     x, y, width, height = geometry
-    left, bottom = max(0, x), min(full.height, y + height)
+    left, bottom = max(0, x - left_padding), min(full.height, y + height)
     if width <= 0 or height <= 0 or left >= full.width or bottom <= 0:
         raise AssertionError(f"menu lies outside the screenshot: {geometry}, screen={full.size}")
     return full.crop((left, 0, full.width, bottom))
@@ -234,9 +250,11 @@ class GnomeMenuCapture:
     outputs: BoundTestOutputs
     title: str
 
-    def capture(self, geometry: tuple[int, int, int, int], *, label: str, checkpoint: str | None = None) -> Path:
+    def capture(
+        self, geometry: tuple[int, int, int, int], *, label: str, checkpoint: str | None = None, left_padding: int = 0
+    ) -> Path:
         with Image.open(BytesIO(self.session.screenshot())) as full:
-            cropped = crop_panel_menu(full, geometry)
+            cropped = crop_panel_menu(full, geometry, left_padding=left_padding)
             png = BytesIO()
             cropped.save(png, format="PNG")
         return self.outputs.publish(

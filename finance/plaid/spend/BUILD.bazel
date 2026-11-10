@@ -12,6 +12,7 @@ py_library(
         ":configuration",
         ":models",
         ":oidc_principal",
+        ":pace_history",
         ":portfolio",
         ":service",
         ":settings",
@@ -43,12 +44,23 @@ py_library(
 )
 
 py_library(
+    name = "pace_history",
+    srcs = ["pace_history.py"],
+    deps = [
+        ":allowance",
+        ":sustainability",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
         ":allowance",
         ":configuration",
         ":models",
+        ":pace_history",
         ":policy_queries",
         ":portfolio",
         ":portfolio_models",
@@ -114,6 +126,20 @@ py_library(
 )
 
 py_test(
+    name = "test_pace_history",
+    srcs = ["test_pace_history.py"],
+    deps = [
+        ":allowance",
+        ":conftest",
+        ":pace_history",
+        ":sustainability",
+        "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_allowance",
     srcs = ["test_allowance.py"],
     data = ["one-off-configuration.yaml"],
@@ -142,6 +168,7 @@ py_test(
         ":conftest",
         ":models",
         ":oidc_principal",
+        ":pace_history",
         ":service",
         ":settings",
         ":sustainability",

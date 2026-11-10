@@ -26,6 +26,7 @@ let TEST_NOW_MS = TEST_START_NOW_MS;
 const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
   `<node><interface name="${INTERFACE_NAME}">
     <method name="GetView"><arg name="view" type="s" direction="out"/></method>
+    <method name="GetPaceHistory"><arg name="history" type="s" direction="out"/></method>
     <method name="Login"/>
     <signal name="ViewChanged"><arg name="view" type="s"/></signal>
     <property name="Status" type="s" access="read"/>
@@ -76,6 +77,39 @@ function formatMoney(minorUnits, currency) {
     const amount = value / 100;
     if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
     return `${code} ${amount.toFixed(0)}`;
+  }
+}
+
+function formatCompactMoney(minorUnits, currency) {
+  if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return "—";
+  try {
+    const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    const amount = Number(minorUnits) / 10 ** (precision ?? 2);
+    if (amount !== 0 && Math.abs(amount) < 0.5) return formatMoney(minorUnits, currency);
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      notation: "compact",
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 0,
+    })
+      .format(amount)
+      .replace(/K$/, "k");
+  } catch (_error) {
+    return formatMoney(minorUnits, currency);
+  }
+}
+
+function formatExactMoney(minorUnits, currency) {
+  if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return "Unavailable";
+  try {
+    const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
+    const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
+    return formatter.format(Number(minorUnits) / 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2));
+  } catch (_error) {
+    return formatMoney(minorUnits, currency);
   }
 }
 
@@ -133,13 +167,30 @@ function totalLabel(view) {
   return `${cards.length} cards`;
 }
 
-function allowanceSignal(allowance) {
-  if (allowance.status !== "active" || allowance.available_minor_units == null)
-    return { level: "unknown", label: "Unavailable", marker: "" };
-  if (allowance.available_minor_units <= 0) return { level: "danger", label: "Exhausted", marker: "!!" };
-  if (allowance.spending_signal === "warning") return { level: "caution", label: "Pace high", marker: "!" };
-  if (allowance.spending_signal === "unavailable") return { level: "unknown", label: "Pace warming up", marker: "" };
-  return { level: "good", label: "Below leash", marker: "" };
+function selectedPace(allowance, window) {
+  const periodId = window === "30d" ? "rolling_30d" : "rolling_7d";
+  const amount = periodReport(allowance, "recorded_pace_periods", periodId)?.observed_daily_minor_units;
+  const reference = allowance?.daily_reference_minor_units;
+  if (amount == null || reference == null || !Number.isFinite(amount) || !Number.isFinite(reference) || reference <= 0)
+    return null;
+  return { amount, reference, ratio: amount / reference };
+}
+
+function panelSignal(allowance, window) {
+  if (!allowance || allowance.status !== "active" || allowance.available_minor_units == null)
+    return { level: "unknown", label: "Unavailable" };
+  if (allowance.available_minor_units <= 0) return { level: "danger", label: "Allowance exhausted" };
+  const pace = selectedPace(allowance, window);
+  if (!pace) return { level: "unknown", label: "Pace unavailable" };
+  if (pace.ratio > 1.2) return { level: "danger", label: "Pace over 120% of leash" };
+  if (pace.ratio > 1) return { level: "caution", label: "Pace above leash" };
+  return { level: "good", label: "Pace at or below leash" };
+}
+
+const PANEL_ITEMS = ["status", "balance", "pace", "sparkline"];
+
+function panelOrder(settings) {
+  return [...new Set([...settings.get_strv("panel-order").filter((id) => PANEL_ITEMS.includes(id)), ...PANEL_ITEMS])];
 }
 
 function formatDaily(minorUnits, currency) {
@@ -178,9 +229,11 @@ function desktopTimingLabel(status, lastAttemptAt, nextRetryAt) {
 
 const PlaidSpendIndicator = GObject.registerClass(
   class PlaidSpendIndicator extends PanelMenu.Button {
-    _init() {
+    _init(settings, openPreferences) {
       super._init(0.0, "Plaid Spend", false);
 
+      this._settings = settings;
+      this._openPreferences = openPreferences;
       this._destroyed = false;
       this._view = { cards: [], generated_at: null };
       this._status = "starting";
@@ -190,6 +243,10 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._hasView = false;
       this._viewRequestId = 0;
       this._viewRequestCancellable = null;
+      this._historyRequestId = 0;
+      this._historyRequestCancellable = null;
+      this._history = null;
+      this._historyError = false;
       this._proxyHandlerIds = [];
       this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1";
       this._testIface = null;
@@ -197,12 +254,26 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._timingItem = null;
       this._timingRefreshId = 0;
 
-      const box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
+      this._box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER, style_class: "plaid-spend-panel" });
       this._icon = new St.Icon({ icon_name: "credit-card-symbolic", style_class: "system-status-icon" });
       this._label = new St.Label({ text: "Loading…", y_align: Clutter.ActorAlign.CENTER });
-      box.add_child(this._icon);
-      box.add_child(this._label);
-      this.add_child(box);
+      this._paceLabel = new St.Label({ y_align: Clutter.ActorAlign.CENTER });
+      this._sparklineUnavailable = new St.Label({ text: "—", y_align: Clutter.ActorAlign.CENTER });
+      this._sparkline = new St.DrawingArea({ width: 60, height: 16, y_align: Clutter.ActorAlign.CENTER });
+      this._sparkline.connect("repaint", (area) => this._drawSparkline(area));
+      this._panelText = "Loading…";
+      this.add_child(this._box);
+      this._sparklineEnabled = this._settings.get_strv("panel-visible").includes("sparkline");
+      this._settingsChangedId = this._settings.connect("changed", (_settings, key) => {
+        if (key === "panel-visible") {
+          const enabled = this._settings.get_strv("panel-visible").includes("sparkline");
+          if (enabled !== this._sparklineEnabled) {
+            this._sparklineEnabled = enabled;
+            this._fetchHistory();
+          }
+        }
+        this._render();
+      });
 
       this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
         if (open) {
@@ -237,6 +308,8 @@ const PlaidSpendIndicator = GObject.registerClass(
             this._proxyHandlerIds.push(
               this._proxy.connect("notify::g-name-owner", () => {
                 this._cancelViewRequest();
+                this._cancelHistoryRequest();
+                this._history = null;
                 this._readProperties();
                 if (this._proxy.g_name_owner) this._fetchView();
               })
@@ -257,6 +330,7 @@ const PlaidSpendIndicator = GObject.registerClass(
 
     _readProperties() {
       if (!this._proxy) return;
+      const previousStatus = this._status;
       this._status = unpackString(this._proxy.get_cached_property("Status"), this._status);
       this._error = unpackString(this._proxy.get_cached_property("LastError"), this._error);
       if (!this._proxy.g_name_owner) {
@@ -266,6 +340,7 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._lastAttemptAt = unpackNumber(this._proxy.get_cached_property("LastAttemptAt"));
         this._nextRetryAt = unpackNumber(this._proxy.get_cached_property("NextRetryAt"));
       }
+      if (previousStatus !== "ready" && this._status === "ready") this._fetchHistory();
       this._render();
     }
 
@@ -331,6 +406,100 @@ const PlaidSpendIndicator = GObject.registerClass(
       }
     }
 
+    _cancelHistoryRequest() {
+      this._historyRequestId += 1;
+      if (this._historyRequestCancellable) {
+        this._historyRequestCancellable.cancel();
+        this._historyRequestCancellable = null;
+      }
+    }
+
+    _fetchHistory() {
+      this._cancelHistoryRequest();
+      this._history = null;
+      this._historyError = false;
+      if (!this._settings.get_strv("panel-visible").includes("sparkline")) return;
+      const proxy = this._proxy;
+      const owner = proxy?.g_name_owner;
+      if (!owner || this._destroyed || !this._hasView || this._status !== "ready") return;
+      const requestId = ++this._historyRequestId;
+      const cancellable = new Gio.Cancellable();
+      this._historyRequestCancellable = cancellable;
+      proxy.call("GetPaceHistory", null, Gio.DBusCallFlags.NONE, -1, cancellable, (source, result) => {
+        const isCurrent = () =>
+          !this._destroyed &&
+          source === proxy &&
+          this._proxy === proxy &&
+          owner === proxy.g_name_owner &&
+          requestId === this._historyRequestId;
+        try {
+          const reply = source.call_finish(result);
+          if (!isCurrent()) return;
+          this._historyRequestCancellable = null;
+          const [raw] = reply.deep_unpack();
+          const history = JSON.parse(raw);
+          if (!history || history.status !== "active" || !Array.isArray(history.windows))
+            throw new Error("Pace history unavailable");
+          this._history = history;
+          this._historyError = false;
+          this._render();
+        } catch (_error) {
+          if (!isCurrent()) return;
+          this._historyRequestCancellable = null;
+          this._history = null;
+          this._historyError = true;
+          this._render();
+        }
+      });
+    }
+
+    _historyPoints() {
+      const periodId = this._settings.get_string("pace-window") === "30d" ? "rolling_30d" : "rolling_7d";
+      const windows = Array.isArray(this._history?.windows) ? this._history.windows : [];
+      const window = windows.find((candidate) => candidate?.period_id === periodId);
+      return Array.isArray(window?.points) ? window.points : [];
+    }
+
+    _drawSparkline(area) {
+      if (!area.get_stage()) return;
+      const cr = area.get_context();
+      try {
+        const points = this._historyPoints();
+        const reference = this._history?.daily_reference_minor_units;
+        const values = points.map((point) => point?.observed_daily_minor_units);
+        const present = values.filter((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
+        if (present.length < 2 || !Number.isFinite(reference) || reference <= 0) return;
+        const [width, height] = area.get_surface_size();
+        const pad = 2;
+        const max = Math.max(reference * 1.25, ...present);
+        const x = (index) => pad + (index * Math.max(0, width - 2 * pad)) / Math.max(1, values.length - 1);
+        const y = (value) => height - pad - (value / max) * Math.max(0, height - 2 * pad);
+        const color = area.get_theme_node().get_foreground_color();
+        cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 0.45);
+        cr.setLineWidth(1);
+        cr.setDash([2, 2], 0);
+        cr.moveTo(pad, y(reference));
+        cr.lineTo(width - pad, y(reference));
+        cr.stroke();
+        cr.setDash([], 0);
+        cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 1);
+        cr.setLineWidth(1.5);
+        let drawing = false;
+        values.forEach((value, index) => {
+          if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+            drawing = false;
+          } else if (drawing) cr.lineTo(x(index), y(value));
+          else {
+            cr.moveTo(x(index), y(value));
+            drawing = true;
+          }
+        });
+        cr.stroke();
+      } finally {
+        cr.$dispose();
+      }
+    }
+
     _acceptView(rawView) {
       try {
         const view = JSON.parse(rawView);
@@ -338,6 +507,7 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._cancelViewRequest();
         this._view = view;
         this._hasView = true;
+        this._fetchHistory();
         this._render();
       } catch (error) {
         this._error = error.message;
@@ -349,47 +519,69 @@ const PlaidSpendIndicator = GObject.registerClass(
     _render() {
       if (this._destroyed) return;
       const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
-      let label;
-      if (this._status === "authentication-required") label = "Sign in";
-      else if (this._status === "authorizing") label = "Signing in…";
-      else if (!this._hasView && this._status === "error") label = "Offline";
-      else if (!this._hasView && this._status !== "ready") label = "Connecting…";
-      else if (this._view?.allowance?.status === "active" && this._status === "ready") {
-        const a = this._view.allowance;
-        const signal = allowanceSignal(a);
-        label = `Flex ${formatMoney(a.available_minor_units, a.currency)} ${signal.marker}`.trim();
-      } else if (this._view?.allowance) label = "Flex unavailable";
-      else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
-      else label = totalLabel(this._view);
-      if (
-        !this._view?.allowance &&
-        cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")
-      ) {
-        label = `${label} !`;
-      }
+      const allowance = this._view?.allowance;
+      const window = this._settings.get_string("pace-window");
+      const ready = this._status === "ready" && allowance?.status === "active";
+      let signal = ready ? panelSignal(allowance, window) : { level: "unknown", label: "Unavailable" };
+      if (this._status === "ready" && !allowance && cards.some((card) => card.alert_state === "exceeded"))
+        signal = { level: "danger", label: "Card limit exceeded" };
+      else if (this._status === "ready" && !allowance && cards.some((card) => card.alert_state === "warning"))
+        signal = { level: "caution", label: "Card warning threshold reached" };
+      const pace = ready ? selectedPace(allowance, window) : null;
+      const visible = new Set(this._settings.get_strv("panel-visible"));
+      const labels = [];
+      let fallback = null;
+      if (this._status === "authentication-required") fallback = "Sign in";
+      else if (this._status === "authorizing") fallback = "Signing in…";
+      else if (!this._hasView && this._status === "error") fallback = "Offline";
+      else if (!this._hasView && this._status !== "ready") fallback = "Connecting…";
+      else if (this._status !== "ready") fallback = "Offline";
+      else if (allowance && !ready) fallback = "Unavailable";
+      else if (!allowance && cards.length === 0) fallback = "No cards";
+      else if (!allowance) fallback = totalLabel(this._view);
 
-      for (const level of ["good", "caution", "danger", "unknown"])
-        this._label.remove_style_class_name(`plaid-spend-${level}`);
-      if (this._view?.allowance) {
-        const signal = this._status === "ready" ? allowanceSignal(this._view.allowance) : { level: "unknown" };
-        this._label.add_style_class_name(`plaid-spend-${signal.level}`);
+      this._icon.icon_name = {
+        good: "object-select-symbolic",
+        caution: "dialog-warning-symbolic",
+        danger: "dialog-error-symbolic",
+        unknown: "dialog-question-symbolic",
+      }[signal.level];
+      for (const actor of [this._icon, this._label, this._paceLabel, this._sparkline, this._sparklineUnavailable]) {
+        for (const level of ["good", "caution", "danger", "unknown"])
+          actor.remove_style_class_name(`plaid-spend-${level}`);
+        actor.add_style_class_name(`plaid-spend-${signal.level}`);
       }
-
-      const level =
-        this._view?.allowance && this._status === "ready" ? allowanceSignal(this._view.allowance).level : "unknown";
-      // Keep the card glyph in ordinary operation; an alert glyph makes a high pace
-      // or exhausted cushion recognizable before reading the compact number.
-      this._icon.icon_name =
-        level === "danger"
-          ? "dialog-error-symbolic"
-          : level === "caution"
-            ? "dialog-warning-symbolic"
-            : "credit-card-symbolic";
-      for (const state of ["good", "caution", "danger", "unknown"])
-        this._icon.remove_style_class_name(`plaid-spend-${state}`);
-      this._icon.add_style_class_name(`plaid-spend-${level}`);
-      this._label.set_text(label);
-      this.accessible_name = `Plaid Spend ${label}`;
+      this._label.set_text(fallback ?? formatCompactMoney(allowance?.available_minor_units, allowance?.currency));
+      this._paceLabel.set_text(`${window} ${pace ? `${Math.round(pace.ratio * 100)}%` : "—"}`);
+      for (const child of this._box.get_children()) this._box.remove_child(child);
+      if (fallback !== null) {
+        if (visible.has("status")) this._box.add_child(this._icon);
+        this._box.add_child(this._label);
+        labels.push(fallback);
+      } else {
+        const points = this._historyPoints();
+        const count = points.filter((point) => typeof point?.observed_daily_minor_units === "number").length;
+        const actors = {
+          status: this._icon,
+          balance: this._label,
+          pace: this._paceLabel,
+          sparkline: count >= 2 ? this._sparkline : this._sparklineUnavailable,
+        };
+        for (const id of panelOrder(this._settings)) {
+          if (!visible.has(id)) continue;
+          this._box.add_child(actors[id]);
+          if (id === "balance") labels.push(this._label.get_text());
+          if (id === "pace") labels.push(this._paceLabel.get_text());
+        }
+        // An empty selection still leaves a way to open the menu and preferences.
+        if (this._box.get_n_children() === 0) this._box.add_child(this._icon);
+      }
+      if (this._sparkline.get_stage()) this._sparkline.queue_repaint();
+      this._panelText = labels.join(" ");
+      this._panelLevel = signal.level;
+      this.accessible_name = ready
+        ? `Plaid Spend: ${signal.label}; ${formatExactMoney(allowance.available_minor_units, allowance.currency)} available; ${window} pace ${pace ? `${Math.round(pace.ratio * 100)}% of leash` : "unavailable"}`
+        : `Plaid Spend: ${fallback ?? signal.label}`;
       this._renderPopup();
     }
 
@@ -418,6 +610,8 @@ const PlaidSpendIndicator = GObject.registerClass(
             : 0
           : now + Number(fixture.retry_in_seconds);
       this._view = fixture.view;
+      this._history = fixture.pace_history ?? null;
+      this._historyError = fixture.history_error === true;
       this._hasView = fixture.has_view !== false;
       this._render();
     }
@@ -430,9 +624,12 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
           '<method name="AdvanceClock"><arg type="d" direction="in" name="seconds"/></method>' +
           '<method name="OpenMenu"/>' +
+          '<method name="OpenPreferences"/>' +
           '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
+          '<method name="GetPanelState"><arg type="s" direction="out" name="state"/></method>' +
+          '<method name="SetPanelSettings"><arg type="s" direction="in" name="settings"/></method>' +
           '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
@@ -457,8 +654,29 @@ const PlaidSpendIndicator = GObject.registerClass(
             global.stage.queue_redraw();
           },
           OpenMenu: () => this.menu.open(false),
+          OpenPreferences: () => this._openPreferences(),
           CloseMenu: () => this.menu.close(false),
-          GetPanelLabel: () => this._label.get_text(),
+          GetPanelLabel: () => this._panelText,
+          GetPanelState: () => {
+            const actors = new Map([
+              [this._icon, "status"],
+              [this._label, "balance"],
+              [this._paceLabel, "pace"],
+              [this._sparkline, "sparkline"],
+              [this._sparklineUnavailable, "sparkline-unavailable"],
+            ]);
+            return JSON.stringify({
+              items: this._box.get_children().map((actor) => actors.get(actor)),
+              level: this._panelLevel,
+              window: this._settings.get_string("pace-window"),
+            });
+          },
+          SetPanelSettings: (raw) => {
+            const config = JSON.parse(raw);
+            if (config.order) this._settings.set_strv("panel-order", config.order);
+            if (config.visible) this._settings.set_strv("panel-visible", config.visible);
+            if (config.window) this._settings.set_string("pace-window", config.window);
+          },
           GetDaemonOwner: () => this._proxy?.g_name_owner || "",
           GetMenuText: () =>
             this.menu
@@ -529,17 +747,39 @@ const PlaidSpendIndicator = GObject.registerClass(
 
       if (allowance) {
         if (allowance.status === "active" && this._status === "ready") {
-          const signal = allowanceSignal(allowance);
+          const window = this._settings.get_string("pace-window");
+          const signal = panelSignal(allowance, window);
+          const label = signal.label.startsWith("Pace") ? `${window} ${signal.label.toLowerCase()}` : signal.label;
           this._addReadOnly(
-            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${signal.label}`,
+            `${formatExactMoney(allowance.available_minor_units, allowance.currency)} available · ${label}`,
             `plaid-spend-${signal.level}`
           );
+          if (allowance.spending_signal === "warning") {
+            const basis = allowance.forecast?.basis_period?.id === "rolling_30d" ? "30d" : "7d";
+            this._addReadOnly(`Forecast or ${basis} pace: warning`, "plaid-spend-caution");
+          }
           this._addReadOnly(
             `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
               `30d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_30d")?.observed_daily_minor_units, allowance.currency)}`
           );
           const daily = allowance.daily_reference_minor_units;
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
+          const windowToggle = new PopupMenu.PopupSwitchMenuItem(
+            "Use 30-day pace",
+            this._settings.get_string("pace-window") === "30d"
+          );
+          windowToggle.connect("toggled", (_item, state) =>
+            this._settings.set_string("pace-window", state ? "30d" : "7d")
+          );
+          this.menu.addMenuItem(windowToggle);
+          if (this._settings.get_strv("panel-visible").includes("sparkline")) {
+            const points = this._historyPoints();
+            if (this._historyError) this._addReadOnly("Pace history unavailable", "plaid-spend-caution");
+            else if (this._history && points.filter((point) => point?.observed_daily_minor_units != null).length < 2)
+              this._addReadOnly("Pace history lacks coverage", "plaid-spend-caution");
+            else if (points.some((point) => point?.observed_daily_minor_units == null))
+              this._addReadOnly("Pace history has coverage gaps", "plaid-spend-caption");
+          }
           for (const [periodId, label] of [
             ["rolling_7d", "7d"],
             ["rolling_30d", "30d"],
@@ -595,6 +835,9 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._addReadOnly(`View updated ${formatTimestamp(this._view.generated_at)}`);
       }
       if (this._error) this._addReadOnly(`Details: ${this._error.slice(0, 120)}`);
+      const preferences = new PopupMenu.PopupMenuItem("Customize panel…");
+      preferences.connect("activate", () => this._openPreferences());
+      this.menu.addMenuItem(preferences);
     }
 
     destroy() {
@@ -602,6 +845,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._stopTimingRefresh();
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
       this._cancelViewRequest();
+      this._cancelHistoryRequest();
+      this._settings.disconnect(this._settingsChangedId);
       for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);
       this._proxyHandlerIds = [];
       this._unexportTestInterface();
@@ -613,7 +858,7 @@ const PlaidSpendIndicator = GObject.registerClass(
 
 export default class PlaidSpendExtension extends Extension {
   enable() {
-    this._indicator = new PlaidSpendIndicator();
+    this._indicator = new PlaidSpendIndicator(this.getSettings(), () => this.openPreferences());
     Main.panel.addToStatusArea(this.uuid, this._indicator);
   }
 

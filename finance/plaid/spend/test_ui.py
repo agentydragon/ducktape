@@ -21,6 +21,7 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
 )
 from finance.plaid.spend.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
+from finance.plaid.spend.pace_history import PaceHistory
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView, disabled_view
@@ -59,6 +60,9 @@ class _Reader:
             allowance=None,
             rows=[],
         )
+
+    async def read_pace_history(self) -> PaceHistory | None:
+        return None
 
     async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
         if window_days is not None and window_days not in (30, 90, 365):
@@ -105,6 +109,7 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         "/api/v1/view",
         "/api/v1/configuration",
         "/api/v1/transactions",
+        "/api/v1/pace-history",
         "/api/v1/sustainability",
         "/api/v1/sustainability/windows",
     )

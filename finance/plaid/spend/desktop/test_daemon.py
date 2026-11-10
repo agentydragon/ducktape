@@ -66,6 +66,27 @@ async def test_stream_views_are_emitted_through_the_dbus_interface() -> None:
     assert daemon._retry_delay == 2.0
 
 
+async def test_pace_history_uses_daemon_auth_and_returns_the_server_payload() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"status": "active", "windows": []}, request=request)
+
+    daemon = PlaidSpendDaemon()
+    await daemon.http.aclose()
+    daemon.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    daemon.auth.http = daemon.http
+    daemon.auth.access_token = "test-token"
+    daemon.auth.access_token_expires_at = time.monotonic() + 3600
+    try:
+        assert json.loads(await daemon.get_pace_history()) == {"status": "active", "windows": []}
+    finally:
+        await daemon.close()
+    assert [request.url.path for request in requests] == ["/api/v1/pace-history"]
+    assert requests[0].headers["authorization"] == "Bearer test-token"
+
+
 async def test_token_refresh_reconnect_skips_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     daemon = PlaidSpendDaemon()
     attempts = 0

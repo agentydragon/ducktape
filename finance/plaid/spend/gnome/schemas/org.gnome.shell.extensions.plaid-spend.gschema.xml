@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.plaid-spend" path="/org/gnome/shell/extensions/plaid-spend/">
+    <key name="panel-order" type="as">
+      <default>['status', 'balance', 'pace', 'sparkline']</default>
+      <summary>Panel item order</summary>
+    </key>
+    <key name="panel-visible" type="as">
+      <default>['status', 'balance']</default>
+      <summary>Visible panel items</summary>
+    </key>
+    <key name="pace-window" type="s">
+      <choices>
+        <choice value="7d"/>
+        <choice value="30d"/>
+      </choices>
+      <default>'7d'</default>
+      <summary>Rolling pace window</summary>
+    </key>
+  </schema>
+</schemalist>

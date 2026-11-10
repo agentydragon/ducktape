@@ -254,9 +254,16 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         view = await service.read_view()
+        history = await service.read_pace_history()
         transactions = await service.read_transactions(period=PeriodId.CREDIT_CYCLE)
         rolling = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert view.allowance is not None
+    assert history is not None
+    assert history.status == Status.ACTIVE
+    history_7d = next(window for window in history.windows if window.period_id == PeriodId.ROLLING_7D)
+    view_7d = next(period for period in view.allowance.recorded_pace_periods if period.period.id == PeriodId.ROLLING_7D)
+    assert history_7d.points[-1].observed_daily_minor_units == view_7d.observed_daily_minor_units
+    assert history.windows[1].points[-1].observed_daily_minor_units is None
     assert view.allowance.posted_minor_units == 2_200
     assert view.allowance.pending_minor_units == 0
     assert view.cards[0].posted_minor_units == 2_600  # original posting dates: 11 + 9 + 6
@@ -515,11 +522,19 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert result.allowance is not None
         assert result.allowance.available_minor_units == 8_800
         assert result.allowance.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.ACTIVE
+        assert all(point.observed_daily_minor_units is None for window in history.windows for point in window.points)
         await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = 'item-checking'")
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
         assert unavailable.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.UNAVAILABLE
+        assert history.windows == []
         await connection.execute(
             "UPDATE public.links SET status = 'active', last_synced_at = $1 WHERE item_id = 'item-checking'",
             now - timedelta(days=4),
@@ -528,6 +543,10 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
         assert unavailable.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.UNAVAILABLE
+        assert history.windows == []
 
 
 async def test_prior_purchases_are_queried_for_pace_but_not_balance(

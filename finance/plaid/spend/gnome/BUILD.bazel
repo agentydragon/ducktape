@@ -9,6 +9,8 @@ pkg_files(
     srcs = [
         "extension.js",
         "metadata.json",
+        "prefs.js",
+        "schemas/org.gnome.shell.extensions.plaid-spend.gschema.xml",
         "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
@@ -62,6 +64,7 @@ py_test(
         "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

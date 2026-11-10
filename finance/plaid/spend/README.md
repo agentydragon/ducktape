@@ -45,6 +45,13 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
+- `GET /api/v1/pace-history` returns 30 daily points for 7- and 30-day recorded flexible-purchase averages and the
+  current daily leash. A point is null when its full window lacks account-history coverage, and an unavailable or
+  stale spending source has no series. It uses the same positive-purchase accounting as the allowance, including
+  pending and provisional purchases and holding unconfirmed credits outside spend. The latest incomplete day is
+  included. The series is reconstructed with current rules and reconciliations, not saved historical snapshots;
+  earlier values can change. Coverage is inferred from first recorded activity unless stronger account evidence is
+  configured, and provider data can lag. The endpoint returns null if no allowance is configured.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
   transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
