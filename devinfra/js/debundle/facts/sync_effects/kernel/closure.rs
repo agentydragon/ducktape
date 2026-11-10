@@ -21,9 +21,10 @@ use swc_ecma_ast::Id;
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum CapturePolicy<'a> {
     /// The application prefix. Module bindings are read live at call time,
-    /// so creation captures nothing for them. A binding some closure writes,
-    /// or one past the capture budget, is unknown; a value only a nested
-    /// closure reads keeps its capabilities but not its exact value.
+    /// so creation captures nothing for them. A binding past the capture
+    /// budget is unknown. A binding some closure writes, and a value only a
+    /// nested closure reads, keep their capabilities but not their exact
+    /// value: unknown alone reaches no unescaped closure.
     Application {
         module_bindings: &'a FxHashSet<Id>,
         mutable: &'a BTreeSet<Id>,
@@ -90,18 +91,19 @@ pub(in crate::facts::sync_effects) fn lexical_captures(
         };
         let snapshot = match policy {
             CapturePolicy::Exact => values.clone(),
-            CapturePolicy::Application { mutable, .. }
-                if mutable.contains(id)
-                    || captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET =>
+            CapturePolicy::Application { .. }
+                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET =>
             {
                 Values::from([AbstractValue::Value(Value::Top)])
             }
-            CapturePolicy::Application { .. }
-                if !body.reads.contains(id) && !body.rebinds.contains(id) =>
+            CapturePolicy::Application { mutable, .. }
+                if mutable.contains(id)
+                    || (!body.reads.contains(id) && !body.rebinds.contains(id)) =>
             {
-                // A source-summary activation supplied a descendant-only
-                // value snapshot, not a live binding proof. Retain its
-                // capabilities while forfeiting its exact value.
+                // A later write can replace a written binding's value, and a
+                // source-summary activation supplied a descendant-only value
+                // snapshot, not a live binding proof. Retain the capabilities
+                // while forfeiting the exact value.
                 let mut possible = values.clone();
                 possible.insert(AbstractValue::Value(Value::Top));
                 possible
