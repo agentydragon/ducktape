@@ -362,7 +362,8 @@ def test_prefix_retry_and_changed_parent_reconstruct_checkpoint(postgres_engine:
         publish(*args, **kwargs)
 
     with patch.object(importer, "_publish_version", side_effect=change_ancestry_before_publication):
-        assert importer.ingest().files_complete == 4
+        assert importer.ingest().files_complete == 3
+    assert importer.ingest().files_complete == 4
     with sessionmaker(postgres_engine)() as db:
         version = db.scalar(select(FileVersionRow).where(FileVersionRow.first_snapshot_id == current.id))
         assert version is not None
@@ -445,6 +446,53 @@ def test_cleanup_of_already_published_stage_preserves_shared_evidence(postgres_e
         assert db.scalar(select(func.count()).select_from(FileVersionRecordRow)) == 1
         assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 1
         assert db.scalar(select(func.count()).select_from(UsageObservationRow)) == 1
+
+
+def test_dump_fingerprint_and_parse_release_transactions(postgres_engine: Engine) -> None:
+    importer = _ingestor(postgres_engine, _contents())
+    dump = importer._source.restic.dump_to
+    fingerprint = ingest._fingerprint_file
+    read_batch = ingest._read_record_batch
+
+    def dump_without_transaction(*args: Any, **kwargs: Any) -> None:
+        assert isinstance(postgres_engine.pool, QueuePool)
+        assert postgres_engine.pool.checkedout() == 0
+        dump(*args, **kwargs)
+
+    def fingerprint_without_transaction(*args: Any, **kwargs: Any) -> tuple[str, int, int]:
+        assert isinstance(postgres_engine.pool, QueuePool)
+        assert postgres_engine.pool.checkedout() == 0
+        return fingerprint(*args, **kwargs)
+
+    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ingest._ParsedRecord]:
+        assert isinstance(postgres_engine.pool, QueuePool)
+        assert postgres_engine.pool.checkedout() == 0
+        return read_batch(*args, **kwargs)
+
+    with (
+        patch.object(importer._source.restic, "dump_to", side_effect=dump_without_transaction),
+        patch.object(ingest, "_fingerprint_file", side_effect=fingerprint_without_transaction),
+        patch.object(ingest, "_read_record_batch", side_effect=parse_without_transaction),
+    ):
+        assert importer.ingest().files_partial == 1
+
+
+def test_publication_rechecks_file_identity_after_parsing(postgres_engine: Engine) -> None:
+    importer = _ingestor(postgres_engine, _contents())
+    store_batch = importer._store_record_batch
+
+    def change_file_identity_after_batch(*args: Any, **kwargs: Any) -> None:
+        store_batch(*args, **kwargs)
+        with sessionmaker(postgres_engine)() as db, db.begin():
+            file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
+            assert file is not None
+            file.modified_at = SNAPSHOT.captured_at
+
+    with patch.object(importer, "_store_record_batch", side_effect=change_file_identity_after_batch):
+        assert importer.ingest().files_failed == 1
+    with sessionmaker(postgres_engine)() as db:
+        assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
+    assert importer.ingest().files_partial == 1
 
 
 if __name__ == "__main__":
