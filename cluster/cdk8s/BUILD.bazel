@@ -862,7 +862,6 @@ py_library(
         ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/cert_manager:interception_ca",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

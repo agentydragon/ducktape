@@ -2054,21 +2054,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Every slot census-intact, for a proof that records no inference use.
-    /// A failure records the mutated families like [`Self::native_guard_intact`].
+    /// Success records the census's proof dependencies (the program premises
+    /// that kept the slots intact); a failure records the mutated families
+    /// like [`Self::native_guard_intact`].
     fn census_slots_intact(
         &mut self,
         guard: NativeIntegrityGuard,
         slots: &[IntrinsicSlot],
     ) -> bool {
         self.observe_native_prefix(guard, None);
-        let intact = matches!(
-            self.inputs.index.integrity.require(slots, None),
-            Integrity::Intact(_)
-        );
-        if !intact {
-            self.record_failed_native_guard(guard, slots);
+        match self.inputs.index.integrity.require(slots, None) {
+            Integrity::Intact(dependencies) => {
+                self.record_proof_dependencies(guard, dependencies);
+                true
+            }
+            _ => {
+                self.record_failed_native_guard(guard, slots);
+                false
+            }
         }
-        intact
     }
 
     fn record_failed_native_guard(&mut self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {

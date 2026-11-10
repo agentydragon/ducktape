@@ -98,22 +98,21 @@ fn reordered_writers_of_a_provider_cell_are_refused_and_diverge() {
 }
 
 /// A reader of the cell moved before its writer: neither provider body has a
-/// summary, so the effect verdict gives no receipt and stays incomplete, and
-/// the emitted program reads the counter before the increment (the source
-/// prints `1 1`). The legacy gate accepts this split today
-/// (`debug/2026_11_09_l4c_discrepancy_audit.md` § Unsafe legacy acceptance),
-/// so the run is not rejected until the effect verdict decides.
+/// summary, so the effect verdict gives no receipt and stays incomplete. Both
+/// gates refuse, and the emitted order reads the counter before the increment
+/// (the source prints `1 1`).
 #[test]
 fn provider_cell_reader_moved_before_its_writer_has_no_effect_receipt() {
     let peers = [("static/peer", PEER)];
     let source = "import { next, peek } from './peer.js';\nconst first = next();\nconst second = peek();\nconsole.log(first, second);\n";
-    let reordered = run_fixture(second_first(source, &peers));
-    assert_entry_output(&reordered, "1 0\n");
-    let assessment = candidate_relocation_assessment(&reordered);
+    let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
+    assert_node_output(&reordered.entry_path(), "1 0\n", "");
+    let assessment = reordered.candidate_relocation_assessment();
     assert!(
         assessment["swapped_pairs"].as_u64().unwrap() > 0,
         "{assessment:#}"
     );
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
     assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
 }
 

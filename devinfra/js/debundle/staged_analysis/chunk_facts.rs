@@ -190,6 +190,11 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.stable_imports = program_summary
+            .stable_imports
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.imported_values = program_summary
             .values
             .get(chunk_id)

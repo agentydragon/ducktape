@@ -75,8 +75,9 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
 ### Standing workloads
 
 A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
-incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet) and Anki's (`haku-anki`, a
-Deployment) into `haku-sandbox` (`cluster/cdk8s/haku/ui_egress.py`), both with subject `haku-ui`;
+incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet), Anki's (`haku-anki`, a
+Deployment) and Jupyter's (`haku-jupyter`, a Deployment) into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), all with subject `haku-ui`;
 Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
 Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
 Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount

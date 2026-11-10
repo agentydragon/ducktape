@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use analysis::reports::spec_lint::{
-    InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule, LintedAnnotation,
-    PurityHintOwner,
+    ChunkSpecLint, InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule,
+    LintedAnnotation, PurityHintOwner,
 };
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
@@ -25,7 +25,7 @@ use peel::{OutputFormat, print_report};
 use pipeline::{AnnotationProbe, AnnotationProbeRun, load_transform_spec_source};
 use serde::Serialize;
 use serde_json::Value;
-use spec::{MemberPurity, TransformSpec};
+use spec::{MemberPurity, ReentryFreeOperation, TransformSpec};
 use transform_command::TransformArgs;
 
 use crate::validate::run_captured_pass;
@@ -40,17 +40,19 @@ pub struct SpecLintArgs {
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 
-    /// Rerun the program once per `purity: pure` hint with that hint withheld
-    /// and report the hint `inferable` when the run is accepted with identical
-    /// reports. Costs one full pipeline run per probed hint.
+    /// Rerun the program once per `purity: pure` hint and per consumed
+    /// `reentry_free_operations` entry, with that one annotation withheld, and
+    /// report it `inferable` when the run is accepted with identical reports.
+    /// Costs one full pipeline run per probed annotation.
     #[arg(long)]
     pub probe_analysis: bool,
 
-    /// Probe only hints of this chunk (repeatable). Requires `--probe-analysis`.
+    /// Probe only annotations of this chunk (repeatable); program-wide
+    /// annotations are then not probed. Requires `--probe-analysis`.
     #[arg(long = "probe-chunk", requires = "probe_analysis")]
     pub probe_chunks: Vec<String>,
 
-    /// Probe at most this many hints; the rest are reported `inconclusive`
+    /// Probe at most this many annotations; the rest are reported `inconclusive`
     /// (`not_probed`). Requires `--probe-analysis`.
     #[arg(long, requires = "probe_analysis")]
     pub max_probes: Option<usize>,
@@ -70,7 +72,8 @@ struct SpecLintReport {
 
 #[derive(Debug, Serialize)]
 struct ProbeTiming {
-    chunk: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chunk: Option<String>,
     annotation: LintedAnnotation,
     outcome: ProbeOutcome,
     millis: u128,
@@ -87,11 +90,74 @@ enum ProbeOutcome {
     Inconclusive,
 }
 
-/// One `purity: pure` hint the probe can withhold.
-#[derive(Debug, Clone)]
-struct PurityTarget {
-    chunk: String,
-    owner: PurityHintOwner,
+/// One annotation the probe can withhold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProbeTarget {
+    PurityHint {
+        chunk: String,
+        owner: PurityHintOwner,
+    },
+    /// A consumed `host_behavior.reentry_free_operations` entry.
+    ReentryFreeOperation(ReentryFreeOperation),
+}
+
+impl ProbeTarget {
+    fn chunk(&self) -> Option<&str> {
+        match self {
+            Self::PurityHint { chunk, .. } => Some(chunk),
+            Self::ReentryFreeOperation(_) => None,
+        }
+    }
+
+    fn annotation(&self) -> LintedAnnotation {
+        match self {
+            Self::PurityHint { owner, .. } => LintedAnnotation::PurityHint {
+                owner: owner.clone(),
+            },
+            Self::ReentryFreeOperation(operation) => LintedAnnotation::ReentryFreeOperation {
+                operation: *operation,
+            },
+        }
+    }
+
+    fn finding(&self, verdict: InferenceVerdict) -> LintFinding {
+        LintFinding {
+            rule: LintRule::InferableAnnotation,
+            chunk: self.chunk().map(str::to_owned),
+            annotation: self.annotation(),
+            verdict,
+        }
+    }
+
+    /// A copy of `spec` without this annotation.
+    fn withhold(&self, spec: &TransformSpec) -> Result<TransformSpec> {
+        let mut spec = spec.clone();
+        match self {
+            Self::PurityHint { chunk, owner } => {
+                let annotation = match owner {
+                    PurityHintOwner::LogicalMember(member) => spec
+                        .logical_modules
+                        .get_mut(chunk)
+                        .and_then(|modules| modules.get_mut(&member.module))
+                        .and_then(|module| module.annotations.get_mut(&member.name)),
+                    PurityHintOwner::ChunkRename { name } => spec
+                        .chunk_renames
+                        .get_mut(chunk)
+                        .and_then(|renames| renames.annotations.get_mut(name)),
+                    PurityHintOwner::InputBinding { .. } => None,
+                }
+                .with_context(|| format!("purity hint {self:?} vanished from the spec"))?;
+                annotation.purity = MemberPurity::default();
+            }
+            Self::ReentryFreeOperation(operation) => {
+                ensure!(
+                    spec.host_behavior.reentry_free_operations.remove(operation),
+                    "reentry-free operation {operation:?} vanished from the spec"
+                );
+            }
+        }
+        Ok(spec)
+    }
 }
 
 pub fn run(args: SpecLintArgs) -> Result<()> {
@@ -99,62 +165,102 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
     if let Some(max_probes) = args.max_probes {
         ensure!(max_probes > 0, "--max-probes must be positive");
     }
+    let cli = args.transform.clone().resolve()?;
+    let spec = load_transform_spec_source(&cli.spec_source)?;
     let pass = run_captured_pass(args.transform.clone())?;
-    let reports: Vec<(String, Vec<LintFinding>)> = pass.chunk_reports(SPEC_LINT_REPORT)?;
+    let reports: Vec<(String, ChunkSpecLint)> = pass.chunk_reports(SPEC_LINT_REPORT)?;
     if reports.is_empty()
         && let Some(error) = pass.error
     {
         return Err(error).context("running the spec lint pass");
     }
-    let unlinted_chunks = pass
+    let unlinted_chunks: Vec<String> = pass
         .expected_chunks
         .iter()
         .filter(|chunk| !reports.iter().any(|(linted, _)| linted == *chunk))
         .cloned()
         .collect();
+    let consumed: BTreeSet<_> = reports
+        .iter()
+        .flat_map(|(_, chunk)| chunk.consumed_reentry_free_operations.iter().copied())
+        .collect();
+    let mut findings: Vec<LintFinding> = reports
+        .into_iter()
+        .flat_map(|(_, chunk)| chunk.findings)
+        .collect();
+    for operation in &spec.host_behavior.reentry_free_operations {
+        let verdict = if !unlinted_chunks.is_empty() {
+            InferenceVerdict::Inconclusive {
+                reason: InconclusiveReason::UnlintedChunks,
+            }
+        } else if consumed.contains(operation) {
+            InferenceVerdict::Inconclusive {
+                reason: InconclusiveReason::Consumed,
+            }
+        } else {
+            InferenceVerdict::Inferable {
+                reason: InferableReason::NeverConsumed,
+            }
+        };
+        findings.push(LintFinding::reentry_free_operation(*operation, verdict));
+    }
     let mut report = SpecLintReport {
-        findings: reports
-            .into_iter()
-            .flat_map(|(_, findings)| findings)
-            .collect(),
+        findings,
         unlinted_chunks,
         probes: Vec::new(),
     };
     if args.probe_analysis {
-        probe_purity_hints(&args, &mut report)?;
+        probe_annotations(&args, &cli, &spec, &mut report)?;
     }
     print_report(&report, format, render_text).context("writing spec lint output")
 }
 
-/// Withhold each selected `purity: pure` hint in turn and compare the run with
-/// the baseline. A probed hint's finding replaces its classifier lead.
-fn probe_purity_hints(args: &SpecLintArgs, report: &mut SpecLintReport) -> Result<()> {
-    let cli = args.transform.clone().resolve()?;
-    let spec = load_transform_spec_source(&cli.spec_source)?;
+/// Withhold each selected annotation in turn and compare the run with the
+/// baseline: every `purity: pure` hint, and every `reentry_free_operations`
+/// entry some chunk consumed (an unconsumed one is already exact). A probed
+/// annotation's finding replaces its cheap lead.
+fn probe_annotations(
+    args: &SpecLintArgs,
+    cli: &pipeline::TransformRequest,
+    spec: &TransformSpec,
+    report: &mut SpecLintReport,
+) -> Result<()> {
     let chunks: BTreeSet<_> = args.probe_chunks.iter().cloned().collect();
-    let targets: Vec<_> = purity_targets(&spec)
+    let consumed_operations = report.findings.iter().filter_map(|finding| match finding {
+        LintFinding {
+            annotation: LintedAnnotation::ReentryFreeOperation { operation },
+            verdict:
+                InferenceVerdict::Inconclusive {
+                    reason: InconclusiveReason::Consumed,
+                },
+            ..
+        } => Some(ProbeTarget::ReentryFreeOperation(*operation)),
+        _ => None,
+    });
+    let targets: Vec<_> = purity_targets(spec)
         .into_iter()
-        .filter(|target| chunks.is_empty() || chunks.contains(&target.chunk))
+        .chain(consumed_operations.collect::<Vec<_>>())
+        .filter(|target| {
+            chunks.is_empty() || target.chunk().is_some_and(|chunk| chunks.contains(chunk))
+        })
         .collect();
     if targets.is_empty() {
         return Ok(());
     }
-    let probe = AnnotationProbe::prepare(&cli, &spec)?;
+    let probe = AnnotationProbe::prepare(cli, spec)?;
     let scratch = tempfile::tempdir().context("creating probe scratch dir")?;
     let baseline_root = scratch.path().join("baseline");
+    let mut probed = Vec::new();
     let baseline = match probe.run(probe.spec(), &baseline_root)? {
         AnnotationProbeRun::Accepted => Some(report_tree(&baseline_root)?),
         AnnotationProbeRun::Rejected(error) | AnnotationProbeRun::Inconclusive(error) => {
             let error = format!("{error:#}");
             for target in &targets {
-                report.findings.push(purity_finding(
-                    target,
-                    InferenceVerdict::Inconclusive {
-                        reason: InconclusiveReason::BaselineNotAccepted {
-                            error: error.clone(),
-                        },
+                probed.push(target.finding(InferenceVerdict::Inconclusive {
+                    reason: InconclusiveReason::BaselineNotAccepted {
+                        error: error.clone(),
                     },
-                ));
+                }));
             }
             None
         }
@@ -163,17 +269,14 @@ fn probe_purity_hints(args: &SpecLintArgs, report: &mut SpecLintReport) -> Resul
         let budget = args.max_probes.unwrap_or(usize::MAX);
         for (index, target) in targets.iter().enumerate() {
             if index >= budget {
-                report.findings.push(purity_finding(
-                    target,
-                    InferenceVerdict::Inconclusive {
-                        reason: InconclusiveReason::NotProbed,
-                    },
-                ));
+                probed.push(target.finding(InferenceVerdict::Inconclusive {
+                    reason: InconclusiveReason::NotProbed,
+                }));
                 continue;
             }
             let root = scratch.path().join(format!("probe-{index}"));
             let started = Instant::now();
-            let verdict = match probe.run(&withhold_purity(probe.spec(), target)?, &root)? {
+            let verdict = match probe.run(&target.withhold(probe.spec())?, &root)? {
                 AnnotationProbeRun::Accepted if report_tree(&root)? == baseline => {
                     Some(InferenceVerdict::Inferable {
                         reason: InferableReason::WithheldRunUnchanged,
@@ -187,10 +290,8 @@ fn probe_purity_hints(args: &SpecLintArgs, report: &mut SpecLintReport) -> Resul
                 }),
             };
             report.probes.push(ProbeTiming {
-                chunk: target.chunk.clone(),
-                annotation: LintedAnnotation::PurityHint {
-                    owner: target.owner.clone(),
-                },
+                chunk: target.chunk().map(str::to_owned),
+                annotation: target.annotation(),
                 outcome: match &verdict {
                     Some(InferenceVerdict::Inferable { .. }) => ProbeOutcome::Unchanged,
                     Some(InferenceVerdict::Inconclusive { .. }) => ProbeOutcome::Inconclusive,
@@ -199,51 +300,33 @@ fn probe_purity_hints(args: &SpecLintArgs, report: &mut SpecLintReport) -> Resul
                 millis: started.elapsed().as_millis(),
             });
             if let Some(verdict) = verdict {
-                report.findings.push(purity_finding(target, verdict));
+                probed.push(target.finding(verdict));
             }
             std::fs::remove_dir_all(&root)
                 .with_context(|| format!("removing probe dir {}", root.display()))?;
         }
     }
-    // The probe supersedes the classifier lead for every hint it targeted.
-    let probed: Vec<_> = targets
-        .iter()
-        .map(|target| (target.chunk.clone(), target.owner.clone()))
-        .collect();
+    // The probe supersedes every cheap lead for the annotations it targeted.
     report.findings.retain(|finding| {
-        !matches!(
-            (&finding.annotation, &finding.verdict),
-            (
-                LintedAnnotation::PurityHint { owner },
-                InferenceVerdict::Inconclusive {
-                    reason: InconclusiveReason::PurityClassification { .. }
-                },
-            ) if probed.contains(&(finding.chunk.clone(), owner.clone()))
-        )
+        !targets.iter().any(|target| {
+            finding.annotation == target.annotation()
+                && finding.chunk.as_deref() == target.chunk()
+                && matches!(finding.verdict, InferenceVerdict::Inconclusive { .. })
+        })
     });
+    report.findings.extend(probed);
     Ok(())
 }
 
-fn purity_finding(target: &PurityTarget, verdict: InferenceVerdict) -> LintFinding {
-    LintFinding {
-        rule: LintRule::InferableAnnotation,
-        chunk: target.chunk.clone(),
-        annotation: LintedAnnotation::PurityHint {
-            owner: target.owner.clone(),
-        },
-        verdict,
-    }
-}
-
 /// Every authored `purity: pure` annotation, in spec order.
-fn purity_targets(spec: &TransformSpec) -> Vec<PurityTarget> {
+fn purity_targets(spec: &TransformSpec) -> Vec<ProbeTarget> {
     let modules = spec.logical_modules.iter().flat_map(|(chunk, modules)| {
         modules.iter().flat_map(move |(module, logical)| {
             logical
                 .annotations
                 .iter()
                 .filter(|(_, annotation)| annotation.purity == MemberPurity::Pure)
-                .map(move |(name, _)| PurityTarget {
+                .map(move |(name, _)| ProbeTarget::PurityHint {
                     chunk: chunk.clone(),
                     owner: PurityHintOwner::LogicalMember(spec::ResolvedMemberSelector {
                         module: module.clone(),
@@ -257,32 +340,12 @@ fn purity_targets(spec: &TransformSpec) -> Vec<PurityTarget> {
             .annotations
             .iter()
             .filter(|(_, annotation)| annotation.purity == MemberPurity::Pure)
-            .map(move |(name, _)| PurityTarget {
+            .map(move |(name, _)| ProbeTarget::PurityHint {
                 chunk: chunk.clone(),
                 owner: PurityHintOwner::ChunkRename { name: name.clone() },
             })
     });
     modules.chain(renames).collect()
-}
-
-/// A copy of `spec` with `target`'s `purity: pure` reset to the default.
-fn withhold_purity(spec: &TransformSpec, target: &PurityTarget) -> Result<TransformSpec> {
-    let mut spec = spec.clone();
-    let annotation = match &target.owner {
-        PurityHintOwner::LogicalMember(member) => spec
-            .logical_modules
-            .get_mut(&target.chunk)
-            .and_then(|modules| modules.get_mut(&member.module))
-            .and_then(|module| module.annotations.get_mut(&member.name)),
-        PurityHintOwner::ChunkRename { name } => spec
-            .chunk_renames
-            .get_mut(&target.chunk)
-            .and_then(|renames| renames.annotations.get_mut(name)),
-        PurityHintOwner::InputBinding { .. } => None,
-    }
-    .with_context(|| format!("purity hint {target:?} vanished from the spec"))?;
-    annotation.purity = MemberPurity::default();
-    Ok(spec)
 }
 
 /// Every report a run wrote under `root`, keyed by relative path, decoded
@@ -350,6 +413,7 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                             "the chunk has no violation to override",
                         InferableReason::WithheldRunUnchanged =>
                             "withholding it alone leaves every report unchanged",
+                        InferableReason::NeverConsumed => "no analysis consumed it",
                     }
                 ),
             ),
@@ -368,6 +432,11 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                             format!("the withheld run failed to run: {error}"),
                         InconclusiveReason::NotProbed =>
                             "not probed: --max-probes reached".to_owned(),
+                        InconclusiveReason::Consumed =>
+                            "consumed by the analysis; --probe-analysis decides whether it is needed"
+                                .to_owned(),
+                        InconclusiveReason::UnlintedChunks =>
+                            "some chunk was not linted, so its uses are unknown".to_owned(),
                     }
                 ),
             ),
@@ -389,6 +458,13 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 spec_location,
                 check,
             } => format!("admission override `{check}` at {spec_location}"),
+            LintedAnnotation::ReentryFreeOperation { operation } => format!(
+                "`host_behavior.reentry_free_operations` entry `{}`",
+                serde_json::to_value(operation)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_default()
+            ),
             LintedAnnotation::CommutingStatements {
                 spec_location,
                 a,
@@ -397,10 +473,13 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 format!("{spec_location}: endpoints {a} and {b}")
             }
         };
+        let scope = finding
+            .chunk
+            .as_ref()
+            .map_or_else(|| "program".to_owned(), |chunk| format!("chunk {chunk}"));
         let _ = writeln!(
             out,
-            "{severity}[inferable_annotation]: chunk {}: {subject}: {verdict}",
-            finding.chunk
+            "{severity}[inferable_annotation]: {scope}: {subject}: {verdict}"
         );
     }
     for chunk in &report.unlinted_chunks {
@@ -413,8 +492,11 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
         for probe in &report.probes {
             let _ = writeln!(
                 out,
-                "probe: chunk {}: {:?}: {:?} in {} ms",
-                probe.chunk, probe.annotation, probe.outcome, probe.millis
+                "probe: {}: {:?}: {:?} in {} ms",
+                probe.chunk.as_deref().unwrap_or("program"),
+                probe.annotation,
+                probe.outcome,
+                probe.millis
             );
         }
         let total: u128 = report.probes.iter().map(|probe| probe.millis).sum();

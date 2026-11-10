@@ -14,8 +14,8 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 NAMESPACE = "haku-sandbox"
 SERVICE_ACCOUNT = "haku-ui"
 # Haku's own workloads in haku-state's `k8s/`, each named after its StatefulSet or Deployment. Anki
-# shares haku-ui's account and grants, but has a record of its own.
-STANDING_WORKLOADS = ("haku-ui", "haku-anki")
+# and Jupyter share haku-ui's account and grants, but each has a record of its own.
+STANDING_WORKLOADS = ("haku-ui", "haku-anki", "haku-jupyter")
 
 
 def add_gateway_resources(scope: Construct, *, namespace: str) -> None:

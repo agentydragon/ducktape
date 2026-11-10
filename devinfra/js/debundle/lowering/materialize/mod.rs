@@ -38,7 +38,7 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
-use analysis::reports::spec_lint::{LintFinding, PurityHintOwner};
+use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, PurityHintOwner};
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
@@ -504,13 +504,16 @@ pub(super) fn finish_logical_chunk(
             report_out_dir,
             chunk_id,
             SPEC_LINT_REPORT,
-            &spec_lint_findings(
-                chunk_id,
-                &precomputed.unused_commuting_statements,
-                &redundant_admission_overrides,
-                &analysis.redundant_purity_hints,
-                graph_context.resolved_member_sites,
-            ),
+            &ChunkSpecLint {
+                findings: spec_lint_findings(
+                    chunk_id,
+                    &precomputed.unused_commuting_statements,
+                    &redundant_admission_overrides,
+                    &analysis.redundant_purity_hints,
+                    graph_context.resolved_member_sites,
+                ),
+                consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+            },
         )?;
     }
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");

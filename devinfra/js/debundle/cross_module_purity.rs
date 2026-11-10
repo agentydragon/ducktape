@@ -19,6 +19,12 @@
 //! those obligations. Pure is projected only after closure, so recursive pure
 //! components remain pure without optimistic verdicts.
 //!
+//! `Pure` here also means order-free for the importer: a body that reads its
+//! module's state, or an import a provider can rebind, gets an
+//! `OrderDependentRead` effect (`crate::purity::OrderDependentCells`),
+//! because no importer's dependency graph orders that read against the
+//! state's writers.
+//!
 //! Soundness is conservative by construction: an import whose target module or
 //! export is absent (external/vendor module not analyzed, a non-function
 //! export, an unresolved re-export) simply gets no entry, so the call stays
@@ -646,6 +652,7 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.plain_data_inference_uses,
             &prepared.plain_array_bindings,
             &BTreeSet::new(),
+            &BTreeSet::new(),
             self.locator(),
         )
     }
@@ -859,6 +866,7 @@ pub fn resolve_imported_purities(
             &callable_summaries.selected_imported_primitive_array_spread_inputs,
         )?;
 
+    let stable_imports = resolve_stable_imports(modules, asserted_pure);
     let mut bodies = BTreeMap::new();
     let no_declared_pure = BTreeSet::new();
     let no_declared_pure_members = BTreeMap::new();
@@ -892,6 +900,7 @@ pub fn resolve_imported_purities(
             plain_data_inference_uses: &prepared_facts.plain_data_inference_uses,
             plain_array_bindings: &prepared_facts.plain_array_bindings,
             stable_var_number_candidates: &BTreeSet::new(),
+            stable_imports: stable_imports.get(module).unwrap_or(&no_declared_pure),
         };
         let call_context = crate::purity::PurityCallContext {
             module,
@@ -920,6 +929,73 @@ pub fn resolve_imported_purities(
         .iter()
         .map(|(key, facts)| (key.clone(), facts.imported_purities(&export_purity)))
         .collect())
+}
+
+/// Per module, the named and default imports bound to a provider cell that is
+/// never rebound (`AnalysisInputs::stable_imports`): the export resolves,
+/// through local re-exports of imports, to a top-level binding of an analyzed
+/// module that is declared once and never written, or to an export an author
+/// asserted pure (`asserted_pure`, the `resolve_imported_purities` axioms).
+/// Every other import, including one of a module outside the program, stays
+/// a cell its provider can change.
+pub fn resolve_stable_imports(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
+    let never_rebound: BTreeMap<&SourceModuleKey, BTreeSet<String>> = modules
+        .iter()
+        .map(|(module, facts)| {
+            (
+                module,
+                crate::purity::immutable_declarations(facts.body, |_| true)
+                    .into_iter()
+                    .map(|(name, _)| name.to_string())
+                    .collect(),
+            )
+        })
+        .collect();
+    let is_stable = |import: &ResolvedImport| {
+        let mut target = import;
+        let mut visited = BTreeSet::new();
+        loop {
+            if asserted_pure
+                .get(&target.module)
+                .is_some_and(|exports| exports.contains(&target.export))
+            {
+                return true;
+            }
+            if !visited.insert((&target.module, &target.export)) {
+                return false;
+            }
+            let Some(facts) = modules.get(&target.module) else {
+                return false;
+            };
+            let Some(local) = facts.exports.get(&target.export) else {
+                return false;
+            };
+            if never_rebound[&target.module].contains(local) {
+                return true;
+            }
+            match facts.imports.get(local) {
+                Some(reexported) => target = reexported,
+                None => return false,
+            }
+        }
+    };
+    modules
+        .iter()
+        .map(|(module, facts)| {
+            (
+                module.clone(),
+                facts
+                    .imports
+                    .iter()
+                    .filter(|(_, import)| is_stable(import))
+                    .map(|(local, _)| local.clone())
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 /// Callback transfer is independent of purity, including asserted purity.

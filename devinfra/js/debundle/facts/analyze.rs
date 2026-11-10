@@ -466,6 +466,7 @@ fn analyze_chunk_with_policy_and_sync(
         &plain_data_inference_uses,
         &plain_array_bindings,
         &stable_var_number_candidates,
+        &hints.stable_imports,
         locator,
     );
     let local_effect_context = local_effects::LocalEffectContext::for_body(

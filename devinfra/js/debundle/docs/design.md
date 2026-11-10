@@ -812,6 +812,34 @@ ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
 exists. The gate's I-graph (`ChunkConstrainingEdgeSet::i_successors`)
 therefore holds every non-rebind cross-module edge, `I` and `S` alike.
 
+#### Reads of another chunk's cells
+
+A `Pure` statement is left off the S-chain because the cells it reads are
+ordered by the graph's own binding and heap timelines. Those timelines hold
+the reading chunk's cells only: an importer's graph has no node for a
+provider's module state or for that state's writers. A read of such a cell is
+therefore an effect (`PurityRule::OrderDependentRead`,
+`purity/order_dependent_reads.rs`), which puts the reading statement on the
+S-chain with every other impure statement:
+
+- **In an exported function** (the cross-module purity oracle): a reference
+  to any binding its chunk declares outside a function body, unless that
+  binding is declared once, never written, and holds a function, a class or a
+  proved primitive; and a member read through any such binding, since a
+  function or class object has properties too. Reads in nested function
+  bodies do not count (creating a closure reads nothing), except an
+  immediately invoked function expression.
+- **Anywhere** (exported functions, local functions and top-level
+  statements): a reference to a named or default import, unless the import is
+  **stable**: it resolves, through local re-exports of imports, to a binding
+  of an analyzed chunk that is declared once and never written; it has a
+  proved imported primitive read; or an author purity assertion (A9) names
+  it. An import of a module outside the analyzed program is not stable.
+
+The rule is deliberately coarse: it does not model which writer a read
+conflicts with, so two readers of the same provider cell keep their source
+order as well.
+
 #### Emission modes
 
 `S` is materialised at source-unit level (`emit_s_chain` in `graph/build.rs`) and
