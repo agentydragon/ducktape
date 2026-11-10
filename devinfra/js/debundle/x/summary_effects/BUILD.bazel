@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 # Report-only prototype of a summary-based, flow-insensitive effect analysis.
 # Nothing depends on it; it reads a chunk and writes a measurement report.
@@ -11,8 +11,10 @@ rust_library(
         "helpers.rs",
         "lib.rs",
         "model.rs",
+        "orders.rs",
         "pairs.rs",
         "report.rs",
+        "tier0.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
@@ -41,5 +43,23 @@ rust_binary(
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde_json",
+    ],
+)
+
+# Statements Node observes when swapped: both analyses must refuse each swap.
+rust_test(
+    name = "soundness_test",
+    srcs = ["soundness_test.rs"],
+    compile_data = [
+        "definition_fixtures.txt",
+        "reach_fixtures.txt",
+        "soundness_fixtures.txt",
+    ],
+    crate_root = "soundness_test.rs",
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:swc_common",
     ],
 )

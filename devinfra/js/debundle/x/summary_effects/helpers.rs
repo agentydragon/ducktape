@@ -41,7 +41,7 @@ pub struct Prepass<'a> {
 
 /// Every identifier some assignment, update or loop head writes.
 #[derive(Default)]
-struct Assigned {
+pub(crate) struct Assigned {
     ids: FxHashSet<Id>,
 }
 
@@ -116,6 +116,13 @@ impl Visit for Assigned {
         }
         looped.visit_children_with(self);
     }
+}
+
+/// Every identifier an assignment, update or loop head inside `node` writes.
+pub(crate) fn assigned_ids(node: &impl VisitWith<Assigned>) -> FxHashSet<Id> {
+    let mut assigned = Assigned::default();
+    node.visit_with(&mut assigned);
+    assigned.ids
 }
 
 /// What disqualifies a function from specialization, its bindings, and

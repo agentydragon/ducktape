@@ -9,7 +9,9 @@ use serde::Serialize;
 use crate::effects::{Cell, Effects, summarize};
 use crate::generate::{FunctionHeap, generate};
 use crate::model::{ANY, Model, ObjKind, REASONS, Reason, SolveStats};
+use crate::orders::{Modules, OrderCost, cost};
 use crate::pairs::{ESCAPED, PairCheck, flag_names, positions};
+use crate::tier0::{self, ImpureCause, Kind};
 
 const EXAMPLE_LIMIT: usize = 3;
 
@@ -127,6 +129,7 @@ pub struct Report {
     pub all_pairs: PairCounts,
     pub conflict_degree: Degrees,
     pub swapped_pairs: Option<PairCounts>,
+    pub order_cost: Option<OrderCost>,
     pub reasons: Vec<ReasonCount>,
     pub builtin_sites: Vec<(String, u64)>,
     pub what_if: Vec<WhatIf>,
@@ -142,6 +145,13 @@ pub struct Inputs<'a> {
     /// Rows of the current analysis's `--effect-conflicts-jsonl` export.
     pub current_conflicts: Option<Vec<serde_json::Value>>,
     pub function_heap: FunctionHeap,
+    /// The pipeline's `modules.json` for the same assignment.
+    pub modules: Option<serde_json::Value>,
+    /// Include source text, identifiers and property names in the report.
+    pub examples: bool,
+    /// Where to write the unproven swapped pairs, one
+    /// `earlier<TAB>later<TAB>class` line each, in source ordinals.
+    pub pairs_out: Option<std::path::PathBuf>,
 }
 
 pub struct Analysis {
@@ -294,6 +304,9 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
         order,
         current_conflicts,
         function_heap,
+        modules,
+        examples: with_examples,
+        pairs_out,
     } = inputs;
     let Analysis {
         model,
@@ -339,6 +352,31 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
             example(low, high, flags);
         }
     });
+    let modules = modules
+        .as_ref()
+        .map(|modules| Modules::parse(modules, n))
+        .transpose()?;
+    let mut unproven = String::new();
+    let order_cost = positions.as_deref().map(|positions| {
+        cost(
+            positions,
+            modules.as_ref(),
+            |low, high| {
+                Some(check.flags(low, high, 0))
+                    .filter(|flags| *flags != 0)
+                    .map(flag_names)
+            },
+            |low, high| {
+                if pairs_out.is_some() {
+                    let class = flag_names(check.flags(low, high, 0));
+                    unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
+                }
+            },
+        )
+    });
+    if let Some(path) = &pairs_out {
+        std::fs::write(path, &unproven).with_context(|| format!("writing {}", path.display()))?;
+    }
     let mut sorted_degree = degree.clone();
     sorted_degree.sort_unstable();
     let conflict_degree = Degrees {
@@ -369,7 +407,7 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
                 .get(&reason)
                 .into_iter()
                 .flatten()
-                .filter(|span_lo| **span_lo != 0)
+                .filter(|span_lo| with_examples && **span_lo != 0)
                 .map(|span_lo| snippet(&source, *span_lo, 80))
                 .collect(),
         })
@@ -457,10 +495,19 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
                         comparison.missed_modeled.push(MissedPair {
                             first,
                             later,
-                            first_source: statement_source(first),
-                            later_source: statement_source(later),
+                            first_source: if with_examples {
+                                statement_source(first)
+                            } else {
+                                String::new()
+                            },
+                            later_source: if with_examples {
+                                statement_source(later)
+                            } else {
+                                String::new()
+                            },
                             current_cells: cells
                                 .iter()
+                                .filter(|_| with_examples)
                                 .map(|cell| cell["cell"].to_string())
                                 .collect(),
                         });
@@ -477,7 +524,7 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
     };
 
     Ok(Report {
-        chunk: chunk.to_string(),
+        chunk: file_name(chunk),
         function_heap,
         timings,
         peak_rss_kib: peak_rss_kib(),
@@ -505,10 +552,228 @@ pub fn report(inputs: Inputs<'_>) -> Result<Report> {
         all_pairs,
         conflict_degree,
         swapped_pairs,
+        order_cost,
         reasons,
-        builtin_sites,
+        builtin_sites: if with_examples {
+            builtin_sites
+        } else {
+            Vec::new()
+        },
         what_if,
-        examples,
+        examples: if with_examples { examples } else { Vec::new() },
         current,
+    })
+}
+
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map_or_else(
+        || path.to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+#[derive(Serialize, Default)]
+pub struct KindCounts {
+    pub inert: usize,
+    pub hoisted_function: usize,
+    pub pure_definition: usize,
+    pub impure: usize,
+}
+
+#[derive(Serialize)]
+pub struct Tier0Pair {
+    pub class: tier0::Conflict,
+    pub first: usize,
+    pub later: usize,
+    pub first_source: String,
+    pub later_source: String,
+}
+
+#[derive(Serialize)]
+pub struct Tier0Comparison {
+    pub current_conflict_pairs: u64,
+    pub both_conflict: u64,
+    pub current_only: u64,
+    pub tier0_only: u64,
+}
+
+#[derive(Serialize)]
+pub struct Tier0Report {
+    pub chunk: String,
+    pub exports_reachable: bool,
+    pub parse_ms: f64,
+    pub analysis_ms: f64,
+    pub pair_check_ms: f64,
+    pub peak_rss_kib: Option<u64>,
+    pub statements: usize,
+    pub top_level_bindings: usize,
+    /// The chunk uses `eval` or `with`: every statement is impure.
+    pub refused: bool,
+    pub kinds: KindCounts,
+    pub impure_causes: BTreeMap<ImpureCause, usize>,
+    pub all_pairs: u64,
+    pub all_pairs_conflicting: u64,
+    pub all_pairs_by_class: BTreeMap<String, u64>,
+    pub conflict_degree: Degrees,
+    pub order_cost: Option<OrderCost>,
+    pub current: Option<Tier0Comparison>,
+    pub examples: Vec<Tier0Pair>,
+    pub impure_examples: BTreeMap<ImpureCause, Vec<String>>,
+}
+
+fn class_name(class: tier0::Conflict) -> String {
+    serde_json::to_value(class)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier0Report> {
+    let Inputs {
+        chunk,
+        source,
+        order,
+        current_conflicts,
+        modules,
+        examples: with_examples,
+        pairs_out,
+        ..
+    } = inputs;
+    let start = Instant::now();
+    let parsed = js_ast::parse_js_module(chunk, &source)?;
+    let parse_ms = elapsed_ms(start);
+    let start = Instant::now();
+    let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+    let analysis = tier0::analyze(&parsed.module, unresolved, options);
+    let analysis_ms = elapsed_ms(start);
+    let n = analysis.units.len();
+
+    let mut spans = Vec::with_capacity(n);
+    for item in &parsed.module.body {
+        match js_ast::split_var_declarators(item) {
+            Some(declarators) => {
+                spans.extend(declarators.iter().map(|declarator| declarator.span.lo.0))
+            }
+            None => spans.push(swc_common::Spanned::span(item).lo.0),
+        }
+    }
+    let mut kinds = KindCounts::default();
+    let mut impure_causes: BTreeMap<ImpureCause, usize> = BTreeMap::new();
+    let mut impure_examples: BTreeMap<ImpureCause, Vec<String>> = BTreeMap::new();
+    for (ordinal, unit) in analysis.units.iter().enumerate() {
+        match unit.kind {
+            Kind::Inert => kinds.inert += 1,
+            Kind::Hoisted => kinds.hoisted_function += 1,
+            Kind::Pure => kinds.pure_definition += 1,
+            Kind::Impure(cause) => {
+                kinds.impure += 1;
+                *impure_causes.entry(cause).or_default() += 1;
+                let examples = impure_examples.entry(cause).or_default();
+                if with_examples && examples.len() < EXAMPLE_LIMIT {
+                    examples.push(snippet(&source, spans[ordinal], 100));
+                }
+            }
+        }
+    }
+
+    let start = Instant::now();
+    let mut degree = vec![0usize; n];
+    let mut all_pairs_conflicting = 0;
+    let mut all_pairs_by_class: BTreeMap<String, u64> = BTreeMap::new();
+    for low in 0..n {
+        for high in low + 1..n {
+            if let Some(class) = analysis.conflict(low, high) {
+                all_pairs_conflicting += 1;
+                *all_pairs_by_class.entry(class_name(class)).or_default() += 1;
+                degree[low] += 1;
+                degree[high] += 1;
+            }
+        }
+    }
+    let positions = order.as_deref().map(|order| positions(order, n));
+    let modules = modules
+        .as_ref()
+        .map(|modules| Modules::parse(modules, n))
+        .transpose()?;
+    let mut examples = Vec::new();
+    let mut example_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut unproven = String::new();
+    let order_cost = positions.as_deref().map(|positions| {
+        cost(
+            positions,
+            modules.as_ref(),
+            |low, high| analysis.conflict(low, high).map(class_name),
+            |low, high| {
+                let Some(class) = analysis.conflict(low, high) else {
+                    return;
+                };
+                if pairs_out.is_some() {
+                    unproven.push_str(&format!("{low}\t{high}\t{}\n", class_name(class)));
+                }
+                let seen = example_counts.entry(class_name(class)).or_default();
+                if with_examples && *seen < EXAMPLE_LIMIT {
+                    *seen += 1;
+                    examples.push(Tier0Pair {
+                        class,
+                        first: low,
+                        later: high,
+                        first_source: snippet(&source, spans[low], 100),
+                        later_source: snippet(&source, spans[high], 100),
+                    });
+                }
+            },
+        )
+    });
+    let pair_check_ms = elapsed_ms(start);
+    if let Some(path) = &pairs_out {
+        std::fs::write(path, &unproven).with_context(|| format!("writing {}", path.display()))?;
+    }
+
+    let current = match (current_conflicts, positions.as_deref(), &order_cost) {
+        (Some(rows), Some(_), Some(order_cost)) => {
+            let mut both = 0;
+            for row in &rows {
+                let (first, later) = (row_unit(row, "runs_first")?, row_unit(row, "runs_later")?);
+                if analysis.conflict(first, later).is_some() {
+                    both += 1;
+                }
+            }
+            Some(Tier0Comparison {
+                current_conflict_pairs: rows.len() as u64,
+                both_conflict: both,
+                current_only: rows.len() as u64 - both,
+                tier0_only: order_cost.unproven_pairs - both,
+            })
+        }
+        _ => None,
+    };
+    let mut sorted_degree = degree.clone();
+    sorted_degree.sort_unstable();
+    Ok(Tier0Report {
+        chunk: file_name(chunk),
+        exports_reachable: options.exports_reachable,
+        parse_ms,
+        analysis_ms,
+        pair_check_ms,
+        peak_rss_kib: peak_rss_kib(),
+        statements: n,
+        top_level_bindings: analysis.bindings,
+        refused: analysis.refused,
+        kinds,
+        impure_causes,
+        all_pairs: (n * n.saturating_sub(1) / 2) as u64,
+        all_pairs_conflicting,
+        all_pairs_by_class,
+        conflict_degree: Degrees {
+            min: sorted_degree.first().copied().unwrap_or(0),
+            median: sorted_degree.get(n / 2).copied().unwrap_or(0),
+            p90: sorted_degree.get(n * 9 / 10).copied().unwrap_or(0),
+            max: sorted_degree.last().copied().unwrap_or(0),
+            mean: degree.iter().sum::<usize>() as f64 / n.max(1) as f64,
+        },
+        order_cost,
+        current,
+        examples,
+        impure_examples,
     })
 }

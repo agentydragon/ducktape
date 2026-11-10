@@ -1042,11 +1042,22 @@ impl Model {
         let exotic = self.constraint(Cx::ExoticSink, 0, 0);
         self.subscribe(EXOTIC_SINK, exotic);
         self.edge(THROWN, ESCAPED_SINK);
+        // The constant nodes were filled directly; deliver their contents to
+        // the constraints subscribed on them.
+        for (node, obj) in [
+            (ESC_NODE, ESC),
+            (GLOBAL_NODE, GLOBAL),
+            (SYMBOLS_NODE, SYMBOLS),
+        ] {
+            self.delta[node as usize].push(obj);
+            self.queued[node as usize] = true;
+            self.worklist.push(node);
+        }
         let progress = std::env::var_os("SUMMARY_EFFECTS_PROGRESS").is_some();
         let mut steps = 0u64;
         while let Some(node) = self.worklist.pop() {
             steps += 1;
-            if progress && steps % 500_000 == 0 {
+            if progress && steps.is_multiple_of(500_000) {
                 eprintln!(
                     "steps={steps} nodes={} objs={} cxs={} worklist={} {:?}",
                     self.pts.len(),
@@ -1500,7 +1511,7 @@ impl Model {
                     span_lo,
                 );
             }
-            NativeBehavior::Bind => {}
+            NativeBehavior::Bind | NativeBehavior::HasInstance => {}
         }
         // The receiver-dependent part, for each receiver now and later.
         match receiver_cx {
@@ -1579,9 +1590,13 @@ pub enum NativeBehavior {
     Call,
     Apply,
     Bind,
+    /// `Function.prototype[Symbol.hasInstance]`: walks prototype chains and
+    /// runs no code on a modeled receiver.
+    HasInstance,
 }
 
-pub const RECEIVER_BEHAVIORS: [NativeBehavior; 6] = [
+pub const RECEIVER_BEHAVIORS: [NativeBehavior; 7] = [
+    NativeBehavior::HasInstance,
     NativeBehavior::ToPrimitive,
     NativeBehavior::ValueOf,
     NativeBehavior::OwnPropertyQuery,
@@ -1600,6 +1615,7 @@ impl NativeBehavior {
             Self::Call => 8,
             Self::Apply => 16,
             Self::Bind => 32,
+            Self::HasInstance => 64,
         }
     }
 
@@ -1615,6 +1631,7 @@ pub fn native_behavior(name: &str) -> NativeBehavior {
         "hasOwnProperty" | "isPrototypeOf" | "propertyIsEnumerable" => {
             NativeBehavior::OwnPropertyQuery
         }
+        "@@hasInstance" => NativeBehavior::HasInstance,
         "call" => NativeBehavior::Call,
         "apply" => NativeBehavior::Apply,
         "bind" => NativeBehavior::Bind,

@@ -1527,7 +1527,24 @@ impl<'a> Generator<'a> {
             BinaryOp::InstanceOf => {
                 // `Symbol.hasInstance` on the right, a Proxy on the left.
                 self.cx(Cx::Touch { val: left }, span_lo);
-                self.coerce(right, span_lo);
+                let has_instance = self.m.props.intern("@@hasInstance");
+                let callee = self.load(right, has_instance, Root::Other, span_lo);
+                let dst = self.node();
+                self.cx(
+                    Cx::Call {
+                        callee,
+                        this: Some(right),
+                        args: vec![Arg {
+                            node: left,
+                            spread: false,
+                        }],
+                        dst,
+                        new_site: None,
+                        root: Root::Other,
+                        coercion: false,
+                    },
+                    span_lo,
+                );
                 let prototype = self.m.props.intern("prototype");
                 self.load(right, prototype, Root::Other, span_lo);
                 EMPTY_NODE
