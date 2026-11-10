@@ -224,6 +224,16 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "window[prefix + 'Map'] = class {}; const a = new Map();",
             "const key = 'Map'; globalThis[key] = class {}; const a = new Map();",
             "const P = 'Ma'; window[P + suffix] = class {}; const a = new Map();",
+            // An unnamed store through an unfollowed `.prototype` may hit a
+            // prototype member of any intrinsic that escaped.
+            "const known = [Map]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const a = new Map([['k', 1]]);",
+            "const known = [Object]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const ts = Object.prototype.toString;",
+            "function mixin(Target, k) { Target.prototype[k] = 1; } mixin(Map, 'set'); const a = new Map([['k', 1]]);",
+            "class Local {} function mixin(Target) { Target.prototype[k] = 1; } mixin(Local); [Map].forEach(mixin); const a = new Map([['k', 1]]);",
+            "let Local = class {}; Local = Map; [Map].forEach(Boolean); Local.prototype[k] = 1; const a = new Map([['k', 1]]);",
+            // The record of a global whose name is not known may be any
+            // intrinsic.
+            "function setup({ win: o = window } = {}) { let h = o; let g = h[unknownName()] ??= {}; return (u, v) => { g[u] = v; }; } setup(); const a = new Map();",
             "const n = 1; window[n + suffix] = 1; const a = new Map();",
             "window[suffix + '_cb'] = 1; const a = new Map();",
             "const K = 'Map'; const root = globalThis; const record = root[K] ??= {}; record[name] = 1; const a = new Map();",
@@ -266,6 +276,15 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "for (const name of ['first', 'second']) Object.defineProperty(globalThis, name, { value: 1 }); const a = new Map();",
             "[['first', 1], ['second', 2]].forEach(([name, value]) => { globalThis[name] = value; }); const a = new Map();",
             "for (const name in { first: 1, second: 2 }) globalThis[name] = 1; const a = new Map();",
+            // A store through `.prototype` of something that only ever holds
+            // a local class, or a use that depends on no prototype member.
+            "[Map, Set].forEach(Boolean); function mixin(Target, source) { for (const k in source) Target.prototype[k] = source[k]; } class Local {} mixin(Local, {}); const a = new Map([['k', 1]]);",
+            "[Map].forEach(Boolean); class Local {} Local.prototype[k] = 1; const a = new Map([['k', 1]]);",
+            "const known = [Error]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); class A extends Error {}",
+            "const known = [Object]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const dp = Object.defineProperty;",
+            // A store into the record a destructured parameter's default
+            // global object holds under a constant name.
+            "const K = '__records__'; function setup({ win: o = window } = {}) { let h = o; let g = h[K] ??= {}; return (u, v) => { g[u] = v; }; } setup(); const a = new Map();",
             // A key that starts with what a binding holds.
             "const P = 'cb_'; class C { constructor(id) { this.id = id; window[P + this.id] = () => {}; } } const a = new Map();",
             "const P = 'cb_'; window[`${P}${id}`] = 1; const a = new Map();",

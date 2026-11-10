@@ -384,6 +384,7 @@ struct Classifier<'a> {
     symbols: &'a FxHashSet<Binding>,
     /// Bindings that only ever hold one array literal.
     arrays: &'a FxHashSet<Binding>,
+    settled: &'a Settled,
     /// Literals the statement reads a property of.
     pristine: Vec<Binding>,
     upgrades: &'a FxHashSet<Upgrade>,
@@ -429,6 +430,9 @@ pub struct DerivedCounts {
     pub local_lazy_modules: usize,
     /// Imports that only ever hold a primitive.
     pub primitive_imports: usize,
+    /// Imports holding an object literal the program only reads named
+    /// members of.
+    pub settled_imports: usize,
 }
 
 #[derive(Default)]
@@ -489,10 +493,33 @@ fn primitive(
     expr: &Expr,
     bindings: &FxHashMap<Id, Binding>,
     primitives: &FxHashSet<Binding>,
+    settled: &Settled,
     reads: &mut Vec<Binding>,
 ) -> bool {
-    let mut recurse = |expr: &Expr| primitive(expr, bindings, primitives, reads);
+    let mut recurse = |expr: &Expr| primitive(expr, bindings, primitives, settled, reads);
     match expr {
+        // A member of a settled import, written as a primitive.
+        Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(key),
+            ..
+        }) => {
+            let Expr::Ident(table) = &**obj else {
+                return false;
+            };
+            let Some(binding) = bindings.get(&table.to_id()) else {
+                return false;
+            };
+            let primitive = settled
+                .get(binding)
+                .and_then(|keys| keys.get(&*key.sym))
+                .copied()
+                == Some(true);
+            if primitive {
+                reads.push(*binding);
+            }
+            primitive
+        }
         Expr::Paren(paren) => recurse(&paren.expr),
         Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
         Expr::Ident(ident) => match bindings.get(&ident.to_id()) {
@@ -523,6 +550,11 @@ fn primitive(
         _ => false,
     }
 }
+
+/// Imports holding an object literal that nothing in the program handles
+/// except to read a named member: per key, whether its value is written as
+/// a primitive.
+type Settled = FxHashMap<Binding, FxHashMap<String, bool>>;
 
 fn literal_only(expr: &Expr) -> bool {
     match expr {
@@ -593,7 +625,7 @@ impl Classifier<'_> {
                     .copied()
                     .filter(|binding| self.symbols.contains(binding));
                 self.eager.extend(symbol);
-                (symbol.is_some() && self.untouched(vec![("Symbol", &[])], None))
+                (symbol.is_some() && self.untouched(vec![("Symbol", &[])], None, false))
                     || self.primitive_arg(expr)
             }
             // `Symbol.iterator`, or a primitive entry of a literal table.
@@ -613,7 +645,8 @@ impl Classifier<'_> {
                         self.deep.push(table);
                         self.pristine.push(table);
                     }
-                    primitive_entry.is_some()
+                    // Or a primitive member of a settled import.
+                    primitive_entry.is_some() || self.primitive_arg(expr)
                 }
             }
             other => literal_only(other) || self.primitive_arg(other),
@@ -634,7 +667,13 @@ impl Classifier<'_> {
 
     fn primitive_arg(&mut self, expr: &Expr) -> bool {
         let mut reads = Vec::new();
-        let ok = primitive(expr, self.bindings, self.primitives, &mut reads);
+        let ok = primitive(
+            expr,
+            self.bindings,
+            self.primitives,
+            self.settled,
+            &mut reads,
+        );
         if ok {
             self.eager.extend(reads);
         }
@@ -800,13 +839,20 @@ impl Classifier<'_> {
     }
 
     /// Whether the chunk leaves every dependency untouched; records them.
-    fn untouched(&mut self, dependencies: Vec<Dependency>, extra_prop: Option<&str>) -> bool {
+    /// `prototype_members` says the properties are members of the
+    /// intrinsic's prototype object, not of the constructor or namespace.
+    fn untouched(
+        &mut self,
+        dependencies: Vec<Dependency>,
+        extra_prop: Option<&str>,
+        prototype_members: bool,
+    ) -> bool {
         let ok = dependencies.iter().all(|(global, props)| {
             let mut props: Vec<&str> = props.to_vec();
             props.extend(extra_prop);
             self.native_site
                 || self.never_written.contains(*global)
-                || self.census.untouched(global, &props)
+                || self.census.untouched(global, &props, prototype_members)
         });
         if ok {
             self.intrinsics
@@ -948,7 +994,7 @@ impl Classifier<'_> {
             .flatten()
             .map(|global| (*global, &[] as &[_]))
             .collect();
-        if !needed.is_empty() && !self.untouched(needed, None) {
+        if !needed.is_empty() && !self.untouched(needed, None, false) {
             return false;
         }
         if let Some(reads) = self.premises.allocator_reads.get(&callee_binding) {
@@ -1144,7 +1190,7 @@ impl Classifier<'_> {
             Some(heritage) if self.upgrades.contains(&Upgrade::IntrinsicHeritage) => self
                 .global(heritage)
                 .and_then(|name| HERITAGE.iter().find(|known| **known == name).copied())
-                .is_some_and(|global| self.untouched(vec![(global, &[])], None)),
+                .is_some_and(|global| self.untouched(vec![(global, &[])], None, false)),
             Some(_) => false,
         };
         if !heritage || !class.decorators.is_empty() {
@@ -1187,16 +1233,38 @@ impl Classifier<'_> {
             return Ok(());
         }
         let mut reads = Vec::new();
-        if primitive(expr, self.bindings, self.primitives, &mut reads) {
+        if primitive(
+            expr,
+            self.bindings,
+            self.primitives,
+            self.settled,
+            &mut reads,
+        ) {
             self.eager.extend(reads);
             return Ok(());
         }
         if let Some(dependencies) = self.native_allocation(expr)
-            && self.untouched(dependencies, None)
+            && self.untouched(dependencies, None, true)
         {
             return Ok(());
         }
         if self.premised_allocation(expr) {
+            return Ok(());
+        }
+        // A member of a settled import: nothing in the program changes it.
+        if let Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(key),
+            ..
+        }) = expr
+            && let Expr::Ident(table) = &**obj
+            && let Some(binding) = self.bindings.get(&table.to_id())
+            && self
+                .settled
+                .get(binding)
+                .is_some_and(|keys| keys.contains_key(&*key.sym))
+        {
+            self.eager.push(*binding);
             return Ok(());
         }
         if let Some(table) = self.literal_member_read(expr) {
@@ -1213,7 +1281,10 @@ impl Classifier<'_> {
                 }) => prop.sym.to_string(),
                 _ => unreachable!("an intrinsic member read is a named member"),
             };
-            if self.untouched(dependencies, Some(&prop)) {
+            // `G.prototype.x` is a member of the prototype object.
+            let on_prototype = matches!(expr, Expr::Member(MemberExpr { obj, .. })
+                if matches!(&**obj, Expr::Member(_)));
+            if self.untouched(dependencies, Some(&prop), on_prototype) {
                 return Ok(());
             }
         }
@@ -1278,7 +1349,7 @@ impl Classifier<'_> {
                     let Some(spread) = spread else {
                         return Err(ImpureCause::Conversion);
                     };
-                    if !self.untouched(vec![("Array", &["@@iterator"])], None) {
+                    if !self.untouched(vec![("Array", &["@@iterator"])], None, true) {
                         return Err(ImpureCause::Conversion);
                     }
                     self.eager.push(spread);
@@ -1779,6 +1850,20 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let found = options
         .derive
         .then(|| crate::derive::derive(module, unresolved, options.program.as_ref()));
+    // Off an import cycle the exporting chunk has run, and no code of the
+    // program touches these objects except to read named members.
+    let mut settled = Settled::default();
+    let off_cycle = options
+        .program
+        .as_ref()
+        .is_some_and(|program| !program.on_import_cycle);
+    if let (Some(found), true) = (&found, off_cycle) {
+        for (id, keys) in &found.settled_imports {
+            if let Some(binding) = bindings.get(id) {
+                settled.insert(*binding, keys.iter().cloned().collect());
+            }
+        }
+    }
     let mut primitives: FxHashSet<Binding> = FxHashSet::default();
     if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
         // The initializer of each binding declared by one identifier
@@ -1807,11 +1892,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         // An import that only ever holds a primitive, by its exporting
         // chunk's declaration. Off an import cycle that chunk has run before
         // this one starts, so the binding already holds its one value.
-        let settled = options
-            .program
-            .as_ref()
-            .is_some_and(|program| !program.on_import_cycle);
-        if let (Some(found), true) = (&found, settled) {
+        if let (Some(found), true) = (&found, off_cycle) {
             let imported = found.primitive_imports.iter();
             primitives.extend(imported.filter_map(|id| bindings.get(id).copied()));
             derived_primitive_imports = found.primitive_imports.len();
@@ -1819,8 +1900,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         loop {
             let before = primitives.len();
             for (binding, init) in &candidates {
-                let holds_primitive = init
-                    .is_none_or(|init| primitive(init, &bindings, &primitives, &mut Vec::new()));
+                let holds_primitive = init.is_none_or(|init| {
+                    primitive(init, &bindings, &primitives, &settled, &mut Vec::new())
+                });
                 if holds_primitive {
                     primitives.insert(*binding);
                 }
@@ -1838,6 +1920,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
     let mut derived = DerivedCounts {
         primitive_imports: derived_primitive_imports,
+        settled_imports: settled.len(),
         ..DerivedCounts::default()
     };
     if let Some(found) = &found {
@@ -1953,6 +2036,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             literals: &literals,
             symbols: &symbols,
             arrays: &arrays,
+            settled: &settled,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,

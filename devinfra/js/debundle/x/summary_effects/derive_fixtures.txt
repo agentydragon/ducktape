@@ -23,6 +23,9 @@ export class Counted { id = ++made; }
 export const PREFIX = 'app'; export const SIZE = 4 * 2;
 export let mutable = 1;
 export function setMutable(value) { mutable = value; }
+export const THEME = { color: 'red', size: 4, nested: { a: 1 } };
+export const TOUCHED = { color: 'red' };
+export function recolor() { TOUCHED.color = 'blue'; }
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -174,3 +177,21 @@ import { mutable, setMutable } from './dep.js';
 setMutable(5);
 const doubled = mutable * 2;
 console.log(doubled);
+### commutes same: a template over members of an imported literal, across an impure statement
+-
+import { THEME } from './dep.js'; let state = 0;
+state = 1;
+const label = `${THEME.color}-${THEME.size}`;
+console.log(state, label);
+### commutes same: an object literal reading members of an imported literal
+-
+import { THEME } from './dep.js'; let state = 0;
+state = 1;
+const style = { [THEME.color]: THEME.nested, size: THEME.size };
+console.log(state, style.red.a, style.size);
+### ordered differs: an imported literal its chunk stores into
+-
+import { TOUCHED, recolor } from './dep.js';
+recolor();
+const label = `${TOUCHED.color}`;
+console.log(label);

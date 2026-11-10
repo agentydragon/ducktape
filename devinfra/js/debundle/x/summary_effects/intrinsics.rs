@@ -88,8 +88,10 @@ impl Census {
     }
 
     /// Whether the chunk leaves the global binding and these properties of
-    /// it (or of its `prototype`) untouched.
-    pub fn untouched(&self, global: &str, props: &[&str]) -> bool {
+    /// it (or of its `prototype`) untouched. `prototype_members` says the
+    /// properties are members of the prototype object: only those can be
+    /// hit by a store through an unfollowed `<base>.prototype`.
+    pub fn untouched(&self, global: &str, props: &[&str], prototype_members: bool) -> bool {
         if self.all
             || self
                 .prefixes
@@ -101,7 +103,9 @@ impl Census {
         let clear =
             |writes: &Writes| !writes.any && props.iter().all(|prop| !writes.props.contains(*prop));
         self.written.get(global).is_none_or(clear)
-            && (!self.escaped(global) || clear(&self.unfollowed_prototype_stores))
+            && (!prototype_members
+                || !self.escaped(global)
+                || clear(&self.unfollowed_prototype_stores))
     }
 }
 
@@ -404,6 +408,14 @@ struct Functions {
     /// The key bindings of an earlier pass, for initializers built from
     /// them.
     known: KeyBindings,
+    /// Bindings declared by a function or class.
+    constructors: FxHashSet<Id>,
+    /// Per identifier: every mention, and those as the callee of a call.
+    mentions: FxHashMap<Id, usize>,
+    callee_uses: FxHashMap<Id, usize>,
+    /// Per function called by name: for each call, the identifier at each
+    /// argument position, where the argument is one.
+    call_arguments: FxHashMap<Id, Vec<Vec<Option<Id>>>>,
 }
 
 impl Functions {
@@ -475,8 +487,19 @@ fn positions(function: &Expr) -> Option<Vec<Option<Id>>> {
 }
 
 impl Visit for Functions {
+    fn visit_ident(&mut self, ident: &Ident) {
+        *self.mentions.entry(ident.to_id()).or_default() += 1;
+    }
+
+    fn visit_class_decl(&mut self, class: &ClassDecl) {
+        *self.declared.entry(class.ident.to_id()).or_default() += 1;
+        self.constructors.insert(class.ident.to_id());
+        class.visit_children_with(self);
+    }
+
     fn visit_fn_decl(&mut self, function: &FnDecl) {
         let id = function.ident.to_id();
+        self.constructors.insert(id.clone());
         *self.declared.entry(id.clone()).or_default() += 1;
         if let Some(positions) = function_positions(&function.function) {
             self.params.insert(id, positions);
@@ -487,6 +510,12 @@ impl Visit for Functions {
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         if let Pat::Ident(name) = &declarator.name {
             *self.declared.entry(name.id.to_id()).or_default() += 1;
+            if matches!(
+                declarator.init.as_deref().map(strip),
+                Some(Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_))
+            ) {
+                self.constructors.insert(name.id.to_id());
+            }
             // A number is no string to build a key from.
             if let Some(key) = declarator
                 .init
@@ -536,6 +565,19 @@ impl Visit for Functions {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(callee) = strip(callee)
+        {
+            *self.callee_uses.entry(callee.to_id()).or_default() += 1;
+            let arguments = call.args.iter().map(|arg| match strip(&arg.expr) {
+                Expr::Ident(ident) if arg.spread.is_none() => Some(ident.to_id()),
+                _ => None,
+            });
+            self.call_arguments
+                .entry(callee.to_id())
+                .or_default()
+                .push(arguments.collect());
+        }
         // `[…].forEach((key) => …)`.
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(MemberExpr {
@@ -562,6 +604,9 @@ impl Visit for Functions {
 
 struct Flow {
     unresolved: SyntaxContext,
+    /// Bindings that only ever hold a function or class of this chunk:
+    /// their `prototype` is no intrinsic's.
+    local_constructors: FxHashSet<Id>,
     keys: KeyBindings,
     taints: FxHashMap<Id, Taint>,
     params: FxHashMap<Id, Vec<Option<Id>>>,
@@ -786,7 +831,9 @@ impl Visitor<'_> {
         // A local may also hold an escaped intrinsic the census lost.
         let on_prototype = key(&member.prop, self.flow.unresolved, &self.flow.keys).as_deref()
             == Some("prototype");
-        if on_prototype && !self.named_by_global(&member.obj) {
+        let local = matches!(strip(&member.obj), Expr::Ident(base)
+            if self.flow.local_constructors.contains(&base.to_id()));
+        if on_prototype && !self.named_by_global(&member.obj) && !local {
             let stores = &mut self.census.unfollowed_prototype_stores;
             match &prop {
                 Some(name) => {
@@ -1040,7 +1087,7 @@ pub fn census(
 ) -> Census {
     // A key binding may be built from another: read them until none is new.
     let mut known = KeyBindings::default();
-    let (mut params, declared, assigned, keys) = loop {
+    let (mut params, declared, assigned, keys, local_constructors) = loop {
         let mut functions = Functions {
             unresolved,
             params: FxHashMap::default(),
@@ -1048,6 +1095,10 @@ pub fn census(
             assigned: FxHashSet::default(),
             keys: KeyBindings::default(),
             known: known.clone(),
+            constructors: FxHashSet::default(),
+            mentions: FxHashMap::default(),
+            callee_uses: FxHashMap::default(),
+            call_arguments: FxHashMap::default(),
         };
         module.visit_with(&mut functions);
         let Functions {
@@ -1055,11 +1106,47 @@ pub fn census(
             declared,
             assigned,
             mut keys,
+            constructors,
+            mentions,
+            callee_uses,
+            call_arguments,
             ..
         } = functions;
         keys.retain(|id, _| declared.get(id).copied().unwrap_or(1) == 1 && !assigned.contains(id));
         if keys == known {
-            break (params, declared, assigned, keys);
+            let single = |id: &Id| declared.get(id) == Some(&1) && !assigned.contains(id);
+            let mut local: FxHashSet<Id> =
+                constructors.into_iter().filter(|id| single(id)).collect();
+            // A parameter of a function that is only ever called by name,
+            // given a local function or class at every call, holds one too.
+            loop {
+                let before = local.len();
+                for (function, positions) in &params {
+                    let only_called = mentions.get(function).copied().unwrap_or(0)
+                        == callee_uses.get(function).copied().unwrap_or(0) + 1;
+                    let Some(calls) = call_arguments.get(function) else {
+                        continue;
+                    };
+                    if !single(function) || !only_called {
+                        continue;
+                    }
+                    for (position, param) in positions.iter().enumerate() {
+                        let Some(param) = param else {
+                            continue;
+                        };
+                        let always_local = calls.iter().all(|arguments| {
+                            matches!(arguments.get(position), Some(Some(given)) if local.contains(given))
+                        });
+                        if always_local && !assigned.contains(param) {
+                            local.insert(param.clone());
+                        }
+                    }
+                }
+                if local.len() == before {
+                    break;
+                }
+            }
+            break (params, declared, assigned, keys, local);
         }
         known = keys;
     };
@@ -1068,6 +1155,7 @@ pub fn census(
     params.retain(|id, _| declared[id] == 1 && !assigned.contains(id));
     let mut flow = Flow {
         unresolved,
+        local_constructors,
         keys,
         taints: FxHashMap::default(),
         params,

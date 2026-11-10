@@ -185,6 +185,116 @@ struct Chunk<'a> {
     /// Top-level variables that can hold private state.
     private: FxHashMap<Id, Private>,
     stores: Stores,
+    handled: Handled,
+    /// Sources of `export * from`.
+    export_all: Vec<String>,
+}
+
+/// Bindings mentioned other than to read a named member, and the chunks the
+/// code may hold whole.
+#[derive(Default)]
+struct Handled {
+    bindings: FxHashSet<Id>,
+    /// Literal specifiers of `import()` and `import.meta.require`.
+    loaded: Vec<String>,
+    /// One of those with a specifier that is not a literal.
+    loads_unknown: bool,
+}
+
+impl Handled {
+    /// `binding.name` used as more than a read: stored to, deleted, or
+    /// called with the binding as receiver.
+    fn used(&mut self, expr: &Expr) {
+        if let Expr::Member(MemberExpr { obj, .. }) = expr
+            && let Expr::Ident(binding) = &**obj
+        {
+            self.bindings.insert(binding.to_id());
+        }
+    }
+}
+
+impl Visit for Handled {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Ident(binding) = expr {
+            self.bindings.insert(binding.to_id());
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        // `binding.name` reads one property and keeps nothing.
+        if matches!(&*member.obj, Expr::Ident(_)) && matches!(member.prop, MemberProp::Ident(_)) {
+            return;
+        }
+        member.visit_children_with(self);
+    }
+
+    fn visit_prop(&mut self, prop: &Prop) {
+        if let Prop::Shorthand(binding) = prop {
+            self.bindings.insert(binding.to_id());
+        }
+        prop.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, assign: &AssignExpr) {
+        if let AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr { obj, .. })) =
+            &assign.left
+            && let Expr::Ident(binding) = &**obj
+        {
+            self.bindings.insert(binding.to_id());
+        }
+        assign.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        self.used(&update.arg);
+        update.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if unary.op == UnaryOp::Delete {
+            self.used(&unary.arg);
+        }
+        unary.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, tagged: &TaggedTpl) {
+        self.used(&tagged.tag);
+        tagged.visit_children_with(self);
+    }
+
+    fn visit_opt_call(&mut self, call: &OptCall) {
+        self.used(&call.callee);
+        call.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        match &call.callee {
+            Callee::Expr(callee) => {
+                self.used(callee);
+                let requires = matches!(&**callee, Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(method),
+                    ..
+                }) if &*method.sym == "require" && matches!(&**obj, Expr::MetaProp(_)));
+                if requires {
+                    self.load(call);
+                }
+            }
+            Callee::Import(_) => self.load(call),
+            Callee::Super(_) => {}
+        }
+        call.visit_children_with(self);
+    }
+}
+
+impl Handled {
+    fn load(&mut self, call: &CallExpr) {
+        match call.args.first().map(|arg| &*arg.expr) {
+            Some(Expr::Lit(Lit::Str(specifier))) => self.loaded.push(js_ast::str_value(specifier)),
+            _ => self.loads_unknown = true,
+        }
+    }
 }
 
 fn export_name(name: &ModuleExportName) -> String {
@@ -297,6 +407,18 @@ impl<'a> Chunk<'a> {
         private.retain(|id, _| declared[id] == 1);
         let mut stores = Stores::default();
         module.visit_with(&mut stores);
+        let mut handled = Handled::default();
+        module.visit_with(&mut handled);
+        let export_all = module
+            .body
+            .iter()
+            .filter_map(|item| match item {
+                ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export)) => {
+                    Some(js_ast::str_value(&export.src))
+                }
+                _ => None,
+            })
+            .collect();
         Self {
             module,
             unresolved,
@@ -306,6 +428,8 @@ impl<'a> Chunk<'a> {
             assigned,
             private,
             stores,
+            handled,
+            export_all,
         }
     }
 }
@@ -824,6 +948,108 @@ impl<'a> Resolver<'a> {
             }
             _ => false,
         }
+    }
+
+    /// The binding an import names, in the chunk that declares it.
+    fn home(&self, chunk: usize, id: &Id) -> Option<(usize, Id)> {
+        let mut home = (chunk, id.clone());
+        for _ in 0..8 {
+            let Some((specifier, export)) = self.chunks[home.0].imports.get(&home.1) else {
+                return Some(home);
+            };
+            let provider = self.provider(home.0, specifier)?;
+            match self.chunks[provider].exports.get(export)? {
+                Export::Local(local) => home = (provider, local.clone()),
+                Export::From(..) => return None,
+            }
+        }
+        None
+    }
+
+    /// The object literals the program only ever reads named members of:
+    /// declared once and never assigned by their chunk, mentioned by no
+    /// chunk in any other way, in a chunk no code holds as a whole.
+    fn settled_literals(&self) -> FxHashMap<(usize, Id), Vec<(String, bool)>> {
+        let mut settled = FxHashMap::default();
+        if self.chunks.iter().any(|chunk| chunk.handled.loads_unknown) {
+            return settled;
+        }
+        // Chunks some code holds as a namespace object.
+        let mut opened: FxHashSet<usize> = FxHashSet::default();
+        let mut handled: FxHashSet<(usize, Id)> = FxHashSet::default();
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            let namespaces = chunk
+                .imports
+                .values()
+                .filter(|(_, export)| export == "*")
+                .map(|(specifier, _)| specifier);
+            let whole = namespaces
+                .chain(&chunk.handled.loaded)
+                .chain(&chunk.export_all);
+            opened.extend(whole.filter_map(|specifier| self.provider(index, specifier)));
+            for binding in &chunk.handled.bindings {
+                // An import from outside the program shares none of its
+                // chunks' objects.
+                let outside = chunk
+                    .imports
+                    .get(binding)
+                    .is_some_and(|(specifier, _)| self.provider(index, specifier).is_none());
+                if outside {
+                    continue;
+                }
+                match self.home(index, binding) {
+                    Some(home) => {
+                        handled.insert(home);
+                    }
+                    // An import that resolves to no declaration: nothing
+                    // is known of what it shares.
+                    None => return FxHashMap::default(),
+                }
+            }
+        }
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            if opened.contains(&index) {
+                continue;
+            }
+            for (id, def) in &chunk.defs {
+                let Def::Value(Expr::Object(object)) = def else {
+                    continue;
+                };
+                let key = (index, id.clone());
+                if handled.contains(&key) {
+                    continue;
+                }
+                let keys: Option<Vec<(String, bool)>> = object
+                    .props
+                    .iter()
+                    .map(|prop| match prop {
+                        PropOrSpread::Prop(prop) => match &**prop {
+                            Prop::KeyValue(pair) => {
+                                let name = match &pair.key {
+                                    PropName::Ident(name) => name.sym.to_string(),
+                                    PropName::Str(name) => js_ast::str_value(name),
+                                    _ => return None,
+                                };
+                                let primitive = matches!(
+                                    &*pair.value,
+                                    Expr::Lit(
+                                        Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_)
+                                    )
+                                );
+                                Some((name, primitive))
+                            }
+                            Prop::Shorthand(name) => Some((name.sym.to_string(), false)),
+                            _ => None,
+                        },
+                        PropOrSpread::Spread(_) => None,
+                    })
+                    .collect();
+                if let Some(keys) = keys {
+                    settled.insert(key, keys);
+                }
+            }
+        }
+        settled
     }
 
     /// The name a helper shape gives an identifier bound outside it.
@@ -1579,6 +1805,10 @@ pub struct Derived {
     pub classes: Vec<(Id, Vec<Id>, Vec<&'static str>)>,
     /// Bindings holding the function-naming helper.
     pub namers: Vec<Id>,
+    /// Imported bindings holding an object literal nothing in the program
+    /// handles except to read a named member, with each key of the literal
+    /// and whether its value is written as a primitive.
+    pub settled_imports: Vec<(Id, Vec<(String, bool)>)>,
     /// Imported bindings that only ever hold a primitive: their exporting
     /// chunk declares them once, never assigns them, and initializes them
     /// with operators over literals and other such bindings.
@@ -1628,6 +1858,18 @@ pub fn derive(
     let mut derived = Derived::default();
     let mut imported: Vec<Id> = resolver.chunks[0].imports.keys().cloned().collect();
     imported.sort();
+    if program.is_some() {
+        let settled = resolver.settled_literals();
+        for id in &imported {
+            let keys = resolver
+                .home(0, id)
+                .filter(|home| home.0 != 0)
+                .and_then(|home| settled.get(&home));
+            if let Some(keys) = keys {
+                derived.settled_imports.push((id.clone(), keys.clone()));
+            }
+        }
+    }
     for id in imported {
         if resolver.primitive_binding(0, &id) {
             derived.primitive_imports.push(id);

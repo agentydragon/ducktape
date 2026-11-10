@@ -139,6 +139,25 @@ makes 89 distinctly named stores through an unfollowed `.prototype` and none
 under a computed key. One of the names is `toString` (a class giving itself
 one), which costs `editor` its two reads of `Object.prototype.toString`.
 
+A store through an unfollowed `.prototype` is charged to an escaped intrinsic
+only for uses that depend on a member of its prototype: a native allocation
+that calls one (`new Map(entries)`), array iteration, a read of
+`G.prototype.x`. A subclass of an escaped intrinsic, a read of a static
+member (`Object.defineProperty`), a `Symbol(…)` binding and an empty
+collection depend on none, so such a store, named or not, does not refuse
+them. `X.prototype[k] = v` is not recorded at all when `X` only ever holds a
+function or class of the chunk: a binding declared once by one and never
+assigned, or a parameter of a function that is only ever called by name with
+such a binding in that position. That the global object escaped refuses
+nothing by itself; it only makes every intrinsic count as escaped.
+
+A store into the record a global holds, `(x[K] ??= {})[u] = v` or through a
+binding initialized with `x[K] ??= {}`, is charged to the one global `K`
+names when `K` resolves to a string (a literal, a binding that only ever
+holds one, a concatenation of those); `x` may be a destructured parameter
+whose default is the global object. With a name the census cannot resolve
+the record may be any intrinsic and the store stays unnamed.
+
 A callee summary for local functions that only allocate was not built. The
 statements it was meant for are not allocator calls: in `editor`, 160 of 172
 local-callee statements are `X = wrap(importedNamespace.jsxs(…))`, and the
@@ -390,8 +409,19 @@ premises tier 0 refuses all 39.
   an import cycle the exporting chunk has run before the importer starts, so
   the binding already holds its one value: it joins the importer's
   primitive-only bindings and needs no ordering. On a cycle, or without the
-  program, it stays a foreign read. A member of an imported object literal is
-  not covered: nothing shows the exporting chunk left the object as written.
+  program, it stays a foreign read.
+- **Settled imported literals.** `imp.member` is a pure definition (and a
+  primitive, when the member is written as a primitive literal) if the
+  exporting chunk declares the binding once, never assigns it, initializes
+  it with an object or array literal of pure parts, and no statement of any
+  chunk mentions the binding other than to read a named member, import it or
+  re-export it. Any other mention (a store, a call receiver, an argument, a
+  spread, a computed read) disqualifies it, as does a chunk that is opened
+  whole (a namespace import, a dynamic load, `export *`), an import that
+  does not resolve inside the program, or any load of an unknown specifier.
+  It needs the chunk off an import cycle, like primitive imports. Excalidraw
+  has 22 such imports in `main` and 1 in `editor`; the stress numbers do not
+  move.
 - **Members of a lazy module.** `ns.member` and `ns.default.member`, where
   `ns` is a lazy module's exports directly or through the interop helper, are
   resolved to the single top-level `exports.member = …` of the module body
@@ -412,8 +442,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 22 two-chunk programs run under Node in both
-orders (10 admitted with Node agreeing, 12 refused with Node showing the
+`derive_fixtures.txt` holds 28 two-chunk programs run under Node in both
+orders (14 admitted with Node agreeing, 14 refused with Node showing the
 divergence). `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
