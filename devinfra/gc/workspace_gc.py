@@ -8,8 +8,8 @@ bases linking to it are gone), so one joint scan (`workspace_scan.scan_workspace
 `repo_contents_cache_gc.scan_repo_contents_cache` over its bases) classifies them together
 and the subcommands are views of that single result:
 
-  * `all`          — the default; every domain, and one `--prune` removes all prunable
-                     items in dependency order (worktrees → branches → bases → repo cache).
+  * `all`          — the default; every domain, and one `--prune` removes prunable items
+                     as their dependencies permit.
   * `worktrees`    — the worktree slice; `--prune` removes prunable worktrees.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
   * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
@@ -41,6 +41,7 @@ import sys
 import threading
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
@@ -67,7 +68,6 @@ from devinfra.gc import (
 )
 from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RetainedBranch
 from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, PrunableForeignClone, RetainedForeignClone
-from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
@@ -196,9 +196,8 @@ class _ProgressReporter:
     a lock, which the classification worker pools rely on. `transient=True` clears the table
     on completion — the CLI's own report print, right after, is the record of the outcome.
 
-    Used as a context manager around each scan or removal step: `Live` owns the terminal's
-    bottom region while live, so any other output must happen with it stopped, not
-    interleaved. Each entry starts with an empty table.
+    `Live` owns the terminal's bottom region while active, so ordinary output waits until it
+    stops. Scan and removal rows can advance at the same time.
     """
 
     def __init__(self, columns: Mapping[str, str]) -> None:
@@ -216,6 +215,10 @@ class _ProgressReporter:
     def for_removals(cls) -> _ProgressReporter:
         return cls(_REMOVAL_COLUMNS)
 
+    @classmethod
+    def for_interleaved(cls) -> _ProgressReporter:
+        return cls(_SCAN_COLUMNS | _REMOVAL_COLUMNS)
+
     def __enter__(self) -> _ProgressReporter:
         self._phases.clear()
         self._live = Live(self.render(), console=self._console, transient=True)
@@ -223,9 +226,10 @@ class _ProgressReporter:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
-        assert self._live is not None
-        self._live.stop()
-        self._live = None
+        with self._lock:
+            assert self._live is not None
+            self._live.stop()
+            self._live = None
 
     def render(self) -> Table:
         table = Table.grid(padding=(0, 2))
@@ -246,8 +250,8 @@ class _ProgressReporter:
         return table
 
     def _refresh(self) -> None:
-        assert self._live is not None
-        self._live.update(self.render())
+        if self._live is not None:
+            self._live.update(self.render())
 
     def start_phase(self, phase: str, total: int) -> None:
         with self._lock:
@@ -259,6 +263,12 @@ class _ProgressReporter:
             self._phases[phase].counts[outcome] += 1
             self._refresh()
 
+    def enqueue(self, phase: str) -> None:
+        with self._lock:
+            state = self._phases.setdefault(phase, _PhaseProgress(0, dict.fromkeys(self._columns, 0)))
+            state.total += 1
+            self._refresh()
+
 
 def _scan(
     context: _RunContext,
@@ -267,6 +277,7 @@ def _scan(
     session_bases: Sequence[Path],
     progress: ProgressSink,
     foreign_clone_roots: Sequence[Path] = (),
+    classifications: workspace_scan.ClassificationSink = workspace_scan.NULL_CLASSIFICATIONS,
 ) -> WorkspaceScan:
     pg = git_repo.open_repo(context.repo)
     return workspace_scan.scan_workspace(
@@ -280,6 +291,7 @@ def _scan(
         foreign_clone_roots=foreign_clone_roots,
         workers=context.workers,
         progress=progress,
+        classifications=classifications,
     )
 
 
@@ -391,36 +403,9 @@ def _report_removals[S](
     return _RemovalOutcome(frozenset(removed), ok=failed == 0)
 
 
-async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classification]) -> _RemovalOutcome[Path]:
-    """Remove every prunable worktree that is still prunable now."""
-    candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
-    if not candidates:
-        return _nothing_to_remove()
-    logger.info("Removing %d worktrees", len(candidates))
-    main_path = git_repo.main_worktree(context.repo)
-    active_path = _active_worktree(context.repo)
-    live = worktree_gc.processes_by_worktree(item.worktree.path for item in candidates)
-
-    def remove_one(item: PrunableWorktree) -> RemovalResult[Path]:
-        logger.info("Removing worktree %s", item.worktree.path)
-        return worktree_gc.remove_if_still_prunable(
-            context.repo,
-            item.worktree,
-            main=item.main,
-            pr_states=context.prs,
-            main_path=main_path,
-            active_path=active_path,
-            live_pids=live.get(item.worktree.path, []),
-        )
-
-    return _report_removals(
-        await _remove_all(candidates, remove_one, _WORKTREE_LABELS, workers=context.workers), _WORKTREE_LABELS
-    )
-
-
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
     """Delete every prunable branch that has not moved since it was classified."""
-    candidates = [item for item in branches if isinstance(item, PrunableBranch)]
+    candidates = [item for item in branches if isinstance(item, PrunableBranch) and item.checkout is None]
     if not candidates:
         return _nothing_to_remove()
     logger.info("Deleting %d branches", len(candidates))
@@ -432,14 +417,24 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
 
 
 async def _apply_base_deletions(
-    candidates: Sequence[PrunableBase], *, output_user_root: Path, workers: int
+    candidates: Sequence[PrunableBase],
+    *,
+    output_user_root: Path,
+    workers: int,
+    earlier: Sequence[RemovalResult[Path]] = (),
+    free_before: int | None = None,
 ) -> _RemovalOutcome[Path]:
     """Delete the given prunable output bases; `delete_prunable_bases` revalidates each one under
     its Bazel lock, so the caller's scan needs no refresh beyond what it already knows."""
-    if not candidates:
+    if not candidates and not earlier:
         return _nothing_to_remove()
-    free_before = shutil.disk_usage(output_user_root).free
-    results = await _remove_all(candidates, output_base_gc.delete_prunable_base, _BASE_LABELS, workers=workers)
+    if free_before is None:
+        free_before = shutil.disk_usage(output_user_root).free
+    results = [*earlier]
+    if candidates:
+        results.extend(
+            await _remove_all(candidates, output_base_gc.delete_prunable_base, _BASE_LABELS, workers=workers)
+        )
     free_change = shutil.disk_usage(output_user_root).free - free_before
     return _report_removals(
         results, _BASE_LABELS, summary_suffix=f"; free-space change {humanize.naturalsize(free_change, binary=True)}"
@@ -571,10 +566,94 @@ class _Options:
 
 
 @dataclass(frozen=True, slots=True)
+class _EarlyOutcome:
+    worktrees: list[RemovalResult[Path]]
+    bases: list[RemovalResult[Path]]
+    base_sizes: dict[Path, int | None]
+    base_free_before: int | None
+
+
+class _EarlyRemovals:
+    """Queue independent removals as the scanner discovers them."""
+
+    def __init__(self, options: _Options, progress: _ProgressReporter) -> None:
+        self.options = options
+        self.progress = progress
+        self.pool = ThreadPoolExecutor(max_workers=options.workers)
+        self.lock = threading.Lock()
+        self.context: _RunContext | None = None
+        self.main_path: Path | None = None
+        self.active_path: Path | None = None
+        self.worktree_futures: list[Future[RemovalResult[Path]]] = []
+        self.base_futures: list[Future[tuple[RemovalResult[Path], int | None]]] = []
+        self.base_free_before: int | None = None
+
+    def set_context(self, context: _RunContext) -> None:
+        self.context = context
+        self.main_path = git_repo.main_worktree(context.repo)
+        self.active_path = _active_worktree(context.repo)
+
+    def worktree(self, item: Classification) -> None:
+        if not isinstance(item, PrunableWorktree):
+            return
+        context, main_path = self.context, self.main_path
+        assert context is not None
+        assert main_path is not None
+
+        def remove() -> RemovalResult[Path]:
+            live = worktree_gc.processes_by_worktree([item.worktree.path])
+            result = worktree_gc.remove_if_still_prunable(
+                context.repo,
+                item.worktree,
+                main=item.main,
+                pr_states=context.prs,
+                main_path=main_path,
+                active_path=self.active_path,
+                live_pids=live.get(item.worktree.path, []),
+            )
+            self.progress.record("remove worktrees", _removal_outcome(result))
+            return result
+
+        with self.lock:
+            self.progress.enqueue("remove worktrees")
+            self.worktree_futures.append(self.pool.submit(remove))
+
+    def base(self, item: output_base_gc.Inspection) -> None:
+        if not isinstance(item, PrunableBase):
+            return
+
+        def remove() -> tuple[RemovalResult[Path], int | None]:
+            size = output_base_gc.allocated_bytes(item.path) if self.options.sizes else None
+            result = output_base_gc.delete_prunable_base(item)
+            self.progress.record("remove bases", _removal_outcome(result))
+            return result, size
+
+        with self.lock:
+            if self.base_free_before is None:
+                self.base_free_before = shutil.disk_usage(self.options.output_user_root).free
+            self.progress.enqueue("remove bases")
+            self.base_futures.append(self.pool.submit(remove))
+
+    def finish(self, *, cancel_pending: bool = False) -> _EarlyOutcome:
+        self.pool.shutdown(wait=True, cancel_futures=cancel_pending)
+        base_results = [future.result() for future in self.base_futures if not future.cancelled()]
+        return _EarlyOutcome(
+            [future.result() for future in self.worktree_futures if not future.cancelled()],
+            [result for result, _ in base_results],
+            {result.subject: size for result, size in base_results} if self.options.sizes else {},
+            self.base_free_before,
+        )
+
+    def cancel(self) -> None:
+        self.pool.shutdown(wait=False, cancel_futures=True)
+
+
+@dataclass(frozen=True, slots=True)
 class _Findings:
     scan: WorkspaceScan
     entries: list[EntryInspection]
     context: _RunContext | None  # None for the repo-cache view, which never touches git or PRs
+    early: _EarlyOutcome
 
 
 async def _collect(
@@ -585,6 +664,7 @@ async def _collect(
     pr_source: _PrSource,
     session_bases: Sequence[Path],
     progress: _ProgressReporter,
+    early: _EarlyRemovals | None,
 ) -> _Findings:
     """Scan what `command` shows. A view of worktrees, branches or foreign clones runs the joint
     scan. The bases views scan the filesystem alone: the only git input a base needs is whether
@@ -609,6 +689,8 @@ async def _collect(
         context = await resolve_context(
             workspace_scan.pr_branch_candidates(repo) | workspace_scan.foreign_clone_branch_candidates(foreign_roots)
         )
+        if early is not None:
+            early.set_context(context)
         with progress:
             scan = _scan(
                 context,
@@ -616,18 +698,25 @@ async def _collect(
                 session_bases=session_bases if shows_bases else (),
                 progress=progress,
                 foreign_clone_roots=foreign_roots,
+                classifications=early if early is not None else workspace_scan.NULL_CLASSIFICATIONS,
             )
+            early_outcome = early.finish() if early is not None else _EarlyOutcome([], [], {}, None)
             entries = (
                 repo_contents_cache_gc.scan_repo_contents_cache(contents, scan.bases, progress=progress)
                 if _Domain.REPO_CACHE in domains
                 else []
             )
-        return _Findings(scan, entries, context)
+        return _Findings(scan, entries, context, early_outcome)
 
     with progress:
-        bases = output_base_gc.scan_output_user_root(
+        bases = []
+        for base in output_base_gc.iter_output_user_root(
             options.output_user_root, session_bases=session_bases, progress=progress
-        )
+        ):
+            if early is not None and _Domain.BASES in domains:
+                early.base(base)
+            bases.append(base)
+        early_outcome = early.finish() if early is not None else _EarlyOutcome([], [], {}, None)
         entries = (
             repo_contents_cache_gc.scan_repo_contents_cache(contents, bases, progress=progress)
             if _Domain.REPO_CACHE in domains
@@ -645,7 +734,7 @@ async def _collect(
                 workers=options.workers,
                 progress=progress,
             )
-    return _Findings(WorkspaceScan(worktrees=[], branches=[], bases=bases), entries, context)
+    return _Findings(WorkspaceScan(worktrees=[], branches=[], bases=bases), entries, context, early_outcome)
 
 
 def _print_findings(command: _Command, options: _Options, findings: _Findings) -> None:
@@ -658,7 +747,10 @@ def _print_findings(command: _Command, options: _Options, findings: _Findings) -
             _Domain.BASES,
             "Bazel output bases",
             lambda: output_base_gc.render_report(
-                scan.bases, include_kept=options.show_all, include_sizes=options.sizes
+                scan.bases,
+                include_kept=options.show_all,
+                include_sizes=options.sizes,
+                measured_sizes=findings.early.base_sizes,
             ),
         ),
         (
@@ -704,19 +796,13 @@ async def _apply(
     session_bases: Sequence[Path],
     progress: _ProgressReporter,
 ) -> bool:
-    """Remove what `command` shows, in dependency order; returns whether every step succeeded.
-
-    Worktrees go first so branches they hold are freed and their bases orphan, and bases before the
-    repo cache so entries only they referenced become unreferenced. Worktrees reuse the scan
-    (`git worktree remove` itself refuses a tree that turned dirty); branches are re-classified
-    because the removals change who holds them. Every step runs regardless of an earlier one's
-    failures — each domain is independent.
-    """
+    """Finish dependency-sensitive removals after the independent removals have completed."""
     domains, scan, context = command.domains, findings.scan, findings.context
     oks: list[bool] = []
     if _Domain.WORKTREES in domains:
         assert context is not None
-        oks.append((await _apply_worktree_removals(context, scan.worktrees)).ok)
+        if findings.early.worktrees:
+            oks.append(_report_removals(findings.early.worktrees, _WORKTREE_LABELS).ok)
     if _Domain.BRANCHES in domains:
         assert context is not None
         pg = git_repo.open_repo(context.repo)
@@ -739,10 +825,13 @@ async def _apply(
             if _Domain.WORKTREES in domains
             else scan.bases
         )
+        attempted = {result.subject for result in findings.early.bases}
         outcome = await _apply_base_deletions(
-            [item for item in bases if isinstance(item, PrunableBase)],
+            [item for item in bases if isinstance(item, PrunableBase) and item.path not in attempted],
             output_user_root=options.output_user_root,
             workers=options.workers,
+            earlier=findings.early.bases,
+            free_before=findings.early.base_free_before,
         )
         oks.append(outcome.ok)
         bases_removed = outcome.removed
@@ -770,21 +859,41 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
 
     `repo` is None only for the repo-cache view, which needs no git.
     """
-    progress = _ProgressReporter.for_scans()
+    progress = _ProgressReporter.for_interleaved() if options.apply else _ProgressReporter.for_scans()
     domains = command.domains
     session_bases = (
         output_base_gc.session_env_output_bases()
         if domains & {_Domain.BASES, _Domain.REPO_CACHE, _Domain.FOREIGN_CLONES}
         else []
     )
+    early = _EarlyRemovals(options, progress) if options.apply else None
     try:
         findings = await _collect(
-            command, options, repo=repo, pr_source=pr_source, session_bases=session_bases, progress=progress
+            command,
+            options,
+            repo=repo,
+            pr_source=pr_source,
+            session_bases=session_bases,
+            progress=progress,
+            early=early,
         )
-    except (GitError, OSError, RuntimeError) as error:
-        print(error, file=sys.stderr)
-        raise SystemExit(1) from error
+    except Exception as error:
+        if early is not None:
+            partial = early.finish(cancel_pending=True)
+            if partial.worktrees:
+                _report_removals(partial.worktrees, _WORKTREE_LABELS)
+            if partial.bases:
+                _report_removals(partial.bases, _BASE_LABELS)
+        if isinstance(error, (*git_repo.INSPECTION_ERRORS, RuntimeError)):
+            print(error, file=sys.stderr)
+            raise SystemExit(1) from error
+        raise
+    finally:
+        if early is not None:
+            early.cancel()
 
+    if findings.early.worktrees or findings.early.bases:
+        print("Findings reflect each item when scanned; removals may already have completed.")
     _print_findings(command, options, findings)
     multiple = len(domains) > 1
     foreign_prunable = _Domain.FOREIGN_CLONES in domains and any(
@@ -816,7 +925,7 @@ _WorkersOption = Annotated[
     typer.Option(
         "--workers",
         min=1,
-        help="worker threads for worktree/branch/foreign-clone classification and for removing worktrees, output bases, repo-cache entries and foreign clones (the right count depends on the machine and disk)",
+        help="worker threads per classification or removal pool (scans and removals may run concurrently)",
     ),
 ]
 

@@ -30,7 +30,14 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
+from devinfra.gc.git_repo import (
+    INSPECTION_ERRORS,
+    Worktree,
+    content_in_main,
+    git,
+    list_worktrees,
+    patches_landed_in_main,
+)
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
@@ -300,6 +307,12 @@ def remove_if_still_prunable(
     The scan that found it may be seconds old: a process may have entered the tree, or a
     commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
     """
+    try:
+        current = next((item for item in list_worktrees(repo) if item.path == worktree.path), None)
+    except INSPECTION_ERRORS as error:
+        return Skipped(worktree.path, f"cannot list worktrees: {error}")
+    if current != worktree:
+        return Skipped(worktree.path, "worktree or checked-out branch changed since the scan")
     fresh = classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
     )

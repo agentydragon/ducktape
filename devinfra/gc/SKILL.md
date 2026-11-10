@@ -24,7 +24,10 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it, skipping (and exiting nonzero for) one that changed.
+immediately before removing it, skipping one that changed.
+With a deletion flag, independent worktrees and output bases can be removed while other items
+are still being scanned; the findings describe each item as observed, not a single snapshot.
+Branches and repo-cache entries wait for the removals their eligibility depends on.
 Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
 them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
 anything you would miss.

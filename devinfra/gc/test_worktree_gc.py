@@ -288,6 +288,25 @@ def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_s
     assert wt.path.exists()
 
 
+def test_remove_if_still_prunable_skips_a_worktree_that_detached_after_the_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    wt.commit("unique", "1\n", "unmerged")
+    wt.run("checkout", "--detach")
+
+    result = wg.remove_if_still_prunable(
+        repo.path,
+        Worktree(wt.path, "feature"),
+        main="main",
+        pr_states={"feature": PrInfo(1, PrState.MERGED)},
+        main_path=repo.path,
+        active_path=None,
+        live_pids=[],
+    )
+
+    assert isinstance(result, Skipped)
+    assert wt.path.exists()
+
+
 _MAIN = "origin/test-main"
 _PR = PrInfo(7421, PrState.MERGED)
 

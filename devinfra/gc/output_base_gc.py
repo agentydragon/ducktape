@@ -426,7 +426,7 @@ def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tupl
     return [*hashed, *((base, BaseLayout.SESSION_ENV) for base in session_bases)]
 
 
-def scan_output_user_root(
+def iter_output_user_root(
     root: Path,
     *,
     session_bases: Sequence[Path],
@@ -434,10 +434,9 @@ def scan_output_user_root(
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     progress: ProgressSink = NULL_PROGRESS,
-) -> list[Inspection]:
+) -> Iterator[Inspection]:
     uid = os.getuid() if uid is None else uid
     points = mount_points(mountinfo_path=mountinfo_path)
-    inspections: list[Inspection] = []
     candidates = list_output_bases(root, session_bases=session_bases)
     logger.info("Scanning %d output bases in %s and %d session-env bases", len(candidates), root, len(session_bases))
     if candidates:
@@ -452,10 +451,30 @@ def scan_output_user_root(
                 inspection = ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
         else:
             inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
-        inspections.append(inspection)
         progress.record("bases", verdict_of(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base)
-    return inspections
+        yield inspection
+
+
+def scan_output_user_root(
+    root: Path,
+    *,
+    session_bases: Sequence[Path],
+    uid: int | None = None,
+    proc_root: Path = Path("/proc"),
+    mountinfo_path: Path = Path("/proc/self/mountinfo"),
+    progress: ProgressSink = NULL_PROGRESS,
+) -> list[Inspection]:
+    return list(
+        iter_output_user_root(
+            root,
+            session_bases=session_bases,
+            uid=uid,
+            proc_root=proc_root,
+            mountinfo_path=mountinfo_path,
+            progress=progress,
+        )
+    )
 
 
 @contextmanager
@@ -637,7 +656,13 @@ def allocated_bytes(path: Path) -> int | None:
         return None
 
 
-def render_report(inspections: Sequence[Inspection], *, include_kept: bool, include_sizes: bool) -> str:
+def render_report(
+    inspections: Sequence[Inspection],
+    *,
+    include_kept: bool,
+    include_sizes: bool,
+    measured_sizes: dict[Path, int | None] | None = None,
+) -> str:
     visible = (
         list(inspections) if include_kept else [item for item in inspections if not isinstance(item, RetainedBase)]
     )
@@ -645,7 +670,11 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
     if include_sizes:
         for index, item in enumerate(visible, start=1):
             logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path)
-            sizes[item.path] = allocated_bytes(item.path)
+            sizes[item.path] = (
+                measured_sizes[item.path]
+                if measured_sizes is not None and item.path in measured_sizes
+                else allocated_bytes(item.path)
+            )
     headers = ["STATUS", "LAST ACTIVITY", "BASE", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

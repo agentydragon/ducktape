@@ -25,6 +25,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
 from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout
@@ -48,6 +49,25 @@ class WorkspaceScan:
     branches: list[BranchClassification]
     bases: list[Inspection]
     foreign_clones: list[ForeignCloneClassification] = field(default_factory=list)
+
+
+class ClassificationSink(Protocol):
+    """Receives completed classifications; worktree calls may run concurrently."""
+
+    def worktree(self, item: Classification) -> None: ...
+
+    def base(self, item: Inspection) -> None: ...
+
+
+class NullClassificationSink:
+    def worktree(self, item: Classification) -> None:
+        pass
+
+    def base(self, item: Inspection) -> None:
+        pass
+
+
+NULL_CLASSIFICATIONS: ClassificationSink = NullClassificationSink()
 
 
 def pr_branch_candidates(repo: Path) -> set[str]:
@@ -331,6 +351,7 @@ def scan_workspace(
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     workers: int = DEFAULT_CLASSIFY_WORKERS,
     progress: ProgressSink = NULL_PROGRESS,
+    classifications: ClassificationSink = NULL_CLASSIFICATIONS,
 ) -> WorkspaceScan:
     """`session_bases` (see `output_base_gc.session_env_output_bases`) are scanned with the
     root's bases; both are skipped when `output_user_root` is None."""
@@ -341,7 +362,7 @@ def scan_workspace(
     live = worktree_gc.processes_by_worktree((wt.path for wt in linked), proc_root=proc_root)
 
     def classify_worktree_one(wt: git_repo.Worktree) -> Classification:
-        return worktree_gc.classify_worktree(
+        result = worktree_gc.classify_worktree(
             wt,
             main=main,
             pr_states=pr_states,
@@ -349,6 +370,8 @@ def scan_workspace(
             active_path=active_path,
             live_pids=live.get(wt.path, []),
         )
+        classifications.worktree(result)
+        return result
 
     worktrees = parallel_classify(
         linked,
@@ -379,16 +402,15 @@ def scan_workspace(
         )
         logger.info("Scanning Bazel output bases in %s", output_user_root)
 
-        bases = [
-            _annotate_base(base, prunable_workspaces)
-            for base in output_base_gc.scan_output_user_root(
-                output_user_root,
-                session_bases=session_bases,
-                proc_root=proc_root,
-                mountinfo_path=mountinfo_path,
-                progress=progress,
-            )
-        ]
+        for base in output_base_gc.iter_output_user_root(
+            output_user_root,
+            session_bases=session_bases,
+            proc_root=proc_root,
+            mountinfo_path=mountinfo_path,
+            progress=progress,
+        ):
+            classifications.base(base)
+            bases.append(_annotate_base(base, prunable_workspaces))
         logger.info("Bazel output-base scan complete: %d bases", len(bases))
 
     logger.info("Scanning %d foreign clones", len(foreign_clone_roots))

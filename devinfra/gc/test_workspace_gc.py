@@ -4,14 +4,16 @@ import subprocess
 import sys
 import threading
 from io import StringIO
+from typing import Any
 
 import pytest
 import pytest_bazel
 from rich.console import Console
 
-from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
+from devinfra.gc import git_repo, output_base_gc, repo_contents_cache_gc, workspace_gc, workspace_scan, worktree_gc
 from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
 from devinfra.gc.pull_request import PrInfo
+from devinfra.gc.removal import RemovalResult, Skipped
 
 
 def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,6 +108,185 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     for entry in (freed_entry, unreferenced_entry):
         assert not entry.exists()
         assert not repo_contents_cache_gc.recorded_inputs_of(entry).exists()
+
+
+def test_worktree_pruning_starts_before_other_worktrees_finish_scanning(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    fast = checkout.worktree("a-fast", "landed-fast")
+    slow = checkout.worktree("z-slow", "landed-slow")
+    removed = threading.Event()
+    classify = worktree_gc.classify_worktree
+    remove = worktree_gc.remove_if_still_prunable
+
+    def classify_with_block(worktree: git_repo.Worktree, **kwargs: Any) -> worktree_gc.Classification:
+        if worktree.path == slow.path:
+            assert removed.wait(10), "the first worktree was not removed while the other was being scanned"
+        return classify(worktree, **kwargs)
+
+    def remove_and_signal(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
+        result = remove(*args, **kwargs)
+        if args[1].path == fast.path:
+            assert not fast.path.exists()
+            removed.set()
+        return result
+
+    monkeypatch.setattr(worktree_gc, "classify_worktree", classify_with_block)
+    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_and_signal)
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["worktrees", "--repo", str(checkout.path), "--no-prs", "--prune", "--workers", "2"])
+    assert exit_info.value.code == 0
+    assert removed.is_set()
+    assert not slow.path.exists()
+
+
+def test_base_deletion_starts_during_scan_and_preserves_reported_sizes(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checkout = repo.clone("checkout")
+    root = tmp_path / "output"
+    bases = sorted([make_base(root, tmp_path / "gone-a"), make_base(root, tmp_path / "gone-b")])
+    removed = threading.Event()
+    inspect = output_base_gc.inspect_output_base
+    delete = output_base_gc.delete_prunable_base
+
+    def inspect_with_block(base: pathlib.Path, **kwargs: Any) -> output_base_gc.Inspection:
+        if base == bases[1]:
+            assert removed.wait(10), "the first base was not removed while the other was being scanned"
+        return inspect(base, **kwargs)
+
+    def delete_and_signal(candidate: output_base_gc.PrunableBase, **kwargs: Any) -> RemovalResult[pathlib.Path]:
+        result = delete(candidate, **kwargs)
+        if candidate.path == bases[0]:
+            assert not candidate.path.exists()
+            removed.set()
+        return result
+
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(output_base_gc, "inspect_output_base", inspect_with_block)
+    monkeypatch.setattr(output_base_gc, "delete_prunable_base", delete_and_signal)
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(
+            [
+                "bazel-bases",
+                "--repo",
+                str(checkout.path),
+                "--output-user-root",
+                str(root),
+                "--no-prs",
+                "--delete",
+                "--sizes",
+                "--workers",
+                "1",
+            ]
+        )
+    assert exit_info.value.code == 0
+    assert all(not base.exists() for base in bases)
+    assert "prunable size unavailable" not in capsys.readouterr().out
+
+
+def test_joint_prune_removes_a_worktree_then_its_base_and_cache_entry(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    worktree = checkout.worktree("landed", "landed")
+    root = tmp_path / "output"
+    base = make_base(root, worktree.path.resolve())
+    entry = make_cache_entry(
+        repo_contents_cache_gc.repo_contents_cache(root), "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    )
+    link_external(base, "repo", entry)
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
+
+    with pytest.raises(SystemExit) as dry_exit:
+        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs"])
+    assert dry_exit.value.code == 0
+    assert worktree.path.exists()
+    assert base.exists()
+    assert entry.exists()
+
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
+    assert exit_info.value.code == 0
+    assert not worktree.path.exists()
+    assert not checkout.has_branch("landed")
+    assert not base.exists()
+    assert not entry.exists()
+
+
+def test_skipped_base_is_not_retried_after_the_scan(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    root = tmp_path / "output"
+    base = make_base(root, tmp_path / "gone")
+    attempts: list[pathlib.Path] = []
+
+    def skip(candidate: output_base_gc.PrunableBase) -> Skipped[pathlib.Path]:
+        attempts.append(candidate.path)
+        return Skipped(candidate.path, "busy")
+
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(output_base_gc, "delete_prunable_base", skip)
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
+    assert exit_info.value.code == 0
+    assert attempts == [base]
+    assert base.is_dir()
+
+
+def test_skipped_worktree_keeps_its_branch_without_failing_the_run(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    worktree = checkout.worktree("landed", "landed")
+    root = tmp_path / "output"
+    root.mkdir()
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(
+        worktree_gc, "remove_if_still_prunable", lambda _repo, item, **_kwargs: Skipped(item.path, "became busy")
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
+
+    assert exit_info.value.code == 0
+    assert worktree.path.exists()
+    assert checkout.has_branch("landed")
+
+
+def test_scan_failure_reports_removals_that_already_completed(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checkout = repo.clone("checkout")
+    worktree = checkout.worktree("landed", "landed")
+    root = tmp_path / "output"
+    root.mkdir()
+    removed = threading.Event()
+    remove = worktree_gc.remove_if_still_prunable
+
+    def remove_and_signal(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
+        result = remove(*args, **kwargs)
+        removed.set()
+        return result
+
+    def fail_scan(*args: Any, **kwargs: Any) -> None:
+        assert removed.wait(10)
+        raise RuntimeError("branch scan failed")
+
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_and_signal)
+    monkeypatch.setattr(workspace_scan, "scan_branches", fail_scan)
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
+
+    output = capsys.readouterr()
+    assert exit_info.value.code == 1
+    assert not worktree.path.exists()
+    assert "Worktrees: 1 removed" in output.out
+    assert "branch scan failed" in output.err
 
 
 @pytest.mark.parametrize("workers", [1, 4])
