@@ -3127,6 +3127,12 @@ type LiveWork struct {
 	Pending bool
 }
 
+// KeepsOwner reports whether a draining owner must keep serving: an effect in flight always, a
+// live cell or process handle only while the turn that can settle it is active.
+func (w LiveWork) KeepsOwner(turnActive bool) bool {
+	return w.UnresolvedIntents > 0 || w.Pending || turnActive && (w.LiveCells > 0 || w.LiveProcesses > 0)
+}
+
 func (s *Store) LiveWork(ctx context.Context, owner Owner) (LiveWork, error) {
 	var work LiveWork
 	err := s.transaction(ctx, func(tx *sql.Tx) error {

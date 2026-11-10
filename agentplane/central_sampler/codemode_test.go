@@ -979,6 +979,8 @@ type fakeCodeOperationRequest struct {
 	sessionID string
 }
 
+// receiveCodeOperationRequest returns the next request for method; an empty sessionID matches
+// any logical session, which lets a test learn the ID the host manager allocated.
 func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID, method string) fakeCodeOperationRequest {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
@@ -1003,7 +1005,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 			if err := decodeProtocolObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Method == method && request.SessionID == sessionID {
+			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
 				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID}
 			}
 		case <-deadline:
