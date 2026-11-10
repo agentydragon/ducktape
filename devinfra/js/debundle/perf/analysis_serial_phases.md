@@ -426,10 +426,11 @@ that point: the split editor chunk takes 14–16 s, against 260–390 s inlined.
 
 From the cost model above:
 
-1. **Stop nested opaque calls from re-running an active pool.** A pool
-   invocation already iterates every member to a fixpoint, so re-running the
-   same pool for an opaque call made inside it is redundant work. This removes
-   one factor of the pool from the per-owner cost.
+1. **Memoize the reentrant-pool fallback.** An opaque call inside an active
+   pool member takes a bounded fallback over the whole pool. A heavy owner
+   repeats about 870 near-identical fallbacks, and each re-walks the pool's
+   reach. Memoizing them removes one factor of the pool from the per-owner
+   cost.
 2. **Make callback promotion a per-owner worklist,** so each deferred callback
    is promoted once per state change, not once per opaque call.
 3. **Make `unsettle` incremental** with the per-element frontier above. It is

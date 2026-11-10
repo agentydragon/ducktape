@@ -65,21 +65,25 @@ Over-approximating options must also show, with the `DEBUNDLE_TV_AUDIT=1`
 base-vs-head comparison over the e2e suite, that no refusal turns into an
 acceptance, and must count every acceptance lost.
 
-1. **Subsume nested pool invocations** (representational if the argument
-   holds).
-   - The pool contract is already order- and count-insensitive: opaque code
-     may run each available callback any number of times, in any order. The
-     outer invocation repeats passes until nothing observable changes.
-   - An opaque call reached inside an active invocation of a pool that
-     already contains the inner call's candidates can therefore contribute
-     nothing new to the joined state. It should record its call site and
-     return the outer invocation's possible result, not start a nested pool
-     or a bounded fallback.
-   - Expected effect: removes one pool factor, so heavy owners go from about
-     850 passes to a few. That is about 10–50× on the proxy.
-   - Risk: effect provenance and fallback diagnostics are attributed per
-     nested call site. If those bytes change, the change is reviewed as
-     output-changing.
+1. **Memoize the reentrant-pool fallback within an owner** (representational
+   if bytes hold).
+   - Today, an opaque call made inside an active pool member does not re-run
+     the pool. `invoke_callback_pool_once` sees an active member
+     (`reentrant_pool`) and takes one `bounded_invocation_fallback` over the
+     whole pool (`RecursiveInvocation`, global reach).
+   - A heavy owner makes about 850 such nested calls with near-identical
+     requests. Each re-walks the pool's reach and calls `unsettle`, and 99.8%
+     of those calls change nothing. That repetition is the pool² term.
+   - Key the fallback like `InvocationSignature` does: pool, reason, reach,
+     top owner, assumption, and `revision.{prefix, reachability}`. Also
+     validate the non-world execution state the fallback reads, and check by
+     `ptr_eq` the world inputs the revisions are known not to version.
+   - On a hit, replay the cached outcome and rebinds. The fallback's world
+     effects are idempotent and still hold.
+   - What a hit drops is only per-site diagnostics: each nested call site and
+     its argument list, which feed the first-class-publication record
+     (`or_insert`) and fallback input paths.
+   - Measure the hit rate before landing. Expected 5–20× on the proxy.
 2. **Promotion worklist per owner** (representational).
    - `promote_deferred_callbacks` re-promotes the same deferred set (about 228
      per heavy owner) per opaque call.
@@ -97,13 +101,31 @@ acceptance, and must count every acceptance lost.
      the first havoc.
    - Fallback if 1 and 2 fall short of target; expected ≥ 1's factor
      regardless of pool structure.
-5. **Audited reentry-free contract for CommonJS-wrapped pure factories**
-   (author-side; no engine precision loss).
-   - The JSX runtime cannot synchronously invoke application callbacks. A
-     spec premise selecting such a module object would remove the icons'
-     opaque calls entirely.
-   - It needs a new premise kind with its own soundness tests. It is a
-     per-corpus fix, not an engine fix.
+5. **Model the CommonJS interop wrapper instead of treating it as opaque**
+   (no precision loss if derived).
+   - In the proxy, `f = ca(u1())`. Here `u1` is esbuild's `__commonJS` wrapper
+     around the JSX runtime's `module.exports`, and `ca` is `__toESM`,
+     imported from esbuild's shared runtime chunk.
+   - `__toESM` builds a namespace object with
+     `defineProperty(…, {get: () => b[d], enumerable: …})` for each own key of
+     the exports. So `f.jsx` is an accessor read through an imported helper,
+     and each icon makes opaque calls.
+   - **Asserted form.** A spec premise selects the wrapper call and asserts:
+     its property reads forward to the factory's `module.exports` own data
+     properties; the getters run no application code; and the exported
+     functions do not synchronously invoke callbacks they did not receive as
+     arguments. Audit it by reading the helper and factory source.
+   - **Derived form (preferred).** Recognize the exact esbuild runtime helper
+     bodies (`__commonJS`, `__toESM`, `__copyProps`) structurally, including
+     across chunks through the program summary. Then model `__toESM(x)` as a
+     namespace whose property reads forward to `x`'s own properties. `f.jsx`
+     resolves to the factory's function, and the interpreter analyzes it like
+     any local callable; the JSX runtime only reads props and allocates.
+   - Soundness rests on matching the helper bodies exactly. A mismatched body
+     stays opaque.
+   - React-style consumer corpora repeat this shape for every interop import,
+     so the derived rule can matter more than the proxy suggests. It removes
+     the opaque calls themselves, not just their cost.
 6. **Intra-chunk parallelism** (after 1 and 2).
    - Root execution is a source-order fold that threads one `World`; owners
      cannot run concurrently without speculation.
