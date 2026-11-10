@@ -3011,17 +3011,17 @@ What stays provisional, each tracked by the node that removes it: every `Workloa
 ServiceAccount subject and the resolver refuses an Identity one, so an SVID yields the same
 ServiceAccount `Principal` a TokenReview does (`SERVICES_IDENTITY_PRINCIPAL`,
 `EGRESS_IDENTITY_RULES`); a Sandbox sidecar forwards its Kubernetes-audience token beside the SVID
-for `kubectl` substitution (`SANDBOX_IDENTITY_SPEC`); the proxy's `forward` listener, the sidecar and the command-box templates
-keep a bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOVER`).
+for `kubectl` substitution (`SANDBOX_IDENTITY_SPEC`); the proxy's `forward` listener and the sidecar keep an
+unused bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOVER`).
 
 ```mermaid
 flowchart LR
-    WORKLOAD_AUTH_CUTOVER[In progress: lifecycle step 3, then bearer removal]
+    WORKLOAD_AUTH_CUTOVER[In progress: bearer removal]
     APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Done: Firecracker runners' control listener trusts the workload CA alone]
     EGRESS_IDENTITY_RULES[Ready: identity rules at the proxy]
     SERVICES_IDENTITY_PRINCIPAL[Ready: services act and record by identity]
-    WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox acts as its identity]
+    SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox acts as its identity]
     EGRESS_IDENTITY_RULES -->|consumers first| SANDBOX_IDENTITY_SPEC
     SERVICES_IDENTITY_PRINCIPAL -->|consumers first| SANDBOX_IDENTITY_SPEC
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
@@ -3037,13 +3037,14 @@ and `a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner` runs in the 
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
-**In progress (team lead, 2026-11-09): steps 1, 2 and 4 (standing workloads) of the
-[workload identity lifecycle](workload_identity_lifecycle.md) landed; step 3, Action boxes, is in
-flight; step 5, bearer removal, follows.**
+**In progress (team lead, 2026-11-09): steps 1 to 4 of the
+[workload identity lifecycle](workload_identity_lifecycle.md) landed, step 3 being Action boxes
+presenting their own `WorkloadCredential` SVIDs (#15192 and its template switch); step 5, bearer
+removal, follows.**
 The lifecycle plan holds each step's records, k3s proof and rollback; the issuer and resolver
 contract is in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
-Until step 5, keep the proxy's explicit `kubernetes_bearer` mode and the Action boxes' Pod-bound
-projections; Sandbox templates use SVIDs and do not project the hop bearer. Keep the
+Until step 5, keep the proxy's explicit `kubernetes_bearer` mode; no workload template projects
+the hop bearer. Keep the
 shared TLS listener and service-owned verification, without proxy identity assertions or insecure
 transport fallback. Haku's separate ActionClient migration remains deferred in the
 [task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).
@@ -3093,8 +3094,7 @@ principals, a retained Session with a deleted Sandbox reads as historical.
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
 **Blocked on `EGRESS_IDENTITY_RULES` and `SERVICES_IDENTITY_PRINCIPAL` being applied on staging
-(operator, 2026-11-09: consumers first), on `WORKLOAD_AUTH_CUTOVER`'s Action-box step, and on the
-open question of who creates a launched Sandbox's `Identity`
+(operator, 2026-11-09: consumers first) and on the open question of who creates a launched Sandbox's `Identity`
 ([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).**
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. The switch is one

@@ -9544,8 +9544,9 @@ data:
         mode: tls
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         auth:
-          mode: kubernetes_bearer
-          token_file: /var/run/agentplane-egress/token
+          mode: spiffe
+          cert_file: /run/agentplane/workload-svid/tls.crt
+          key_file: /run/agentplane/workload-svid/tls.key
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
     workload_routes: {}
@@ -9557,9 +9558,8 @@ data:
             - /agentplane.egress.EgressRules/
           upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
           transport:
-            mode: tls_bearer_connect
+            mode: tls_connect
             server_uri: spiffe://agentplane/egress-proxy
-            token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -9703,10 +9703,6 @@ template:
                 audience: https://localhost:7445
                 expirationSeconds: 600
                 path: kubernetes-token
-            - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
@@ -9855,10 +9851,6 @@ template:
                 audience: https://localhost:7445
                 expirationSeconds: 600
                 path: kubernetes-token
-            - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings

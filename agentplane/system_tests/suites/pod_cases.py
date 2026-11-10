@@ -23,6 +23,7 @@ from agentplane.system_tests.scenarios import (
     dispatcher_workload,
     egress,
     launch_presets,
+    mcp,
     runner_credentials,
     session_instructions,
     storage,
@@ -244,10 +245,14 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(resour
         )
 
 
-async def a_non_sandbox_command_box_keeps_its_bearer_egress(resources: Resources) -> None:
-    async with resources.open() as (_, sandboxes):
-        caller = await sandboxes("systest-bearer-caller")
-        await egress.a_non_sandbox_command_box_keeps_its_bearer_egress(resources.cluster, caller)
+async def a_command_box_presents_its_own_svid(resources: Resources) -> None:
+    policy_objects = mcp.PolicyObjects(cluster=resources.cluster)
+    try:
+        async with resources.open() as (_, sandboxes):
+            caller = await sandboxes("systest-box-caller")
+            await egress.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
+    finally:
+        await policy_objects.delete_all()
 
 
 async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources: Resources) -> None:
@@ -267,7 +272,7 @@ SCENARIOS = (
         agent_resumes_an_idle_suspended_pod_with_its_execution_account,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
-    pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
+    pytest.param(a_command_box_presents_its_own_svid),
     pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),

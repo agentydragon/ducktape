@@ -1,7 +1,7 @@
 """Pod shapes for the runner and command boxes.
 
-Runner Pods use the egress sidecar, its projected destination tokens, and the proxy environment.
-Caller-owned command boxes use a bearer sidecar over verified TLS; neither template exposes
+Runner Pods and command boxes use the egress sidecar, its projected destination tokens, and the
+proxy environment; the sidecar presents the Pod's SVID to the proxy. Neither template exposes
 credentials to its workload containers.
 
 The recipe speaks core Pod types (`cdk8s_plus_34.k8s`); `render_pod_template` turns them into the
@@ -33,8 +33,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
-# Non-Sandbox bearer hop only; Sandbox templates do not project this token.
-EGRESS_TOKEN_FILE = f"{_EGRESS_TOKEN_DIR}/token"
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
 # to under `_EGRESS_TOKEN_DIR`. The volume and sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. Platform service calls use SVID routes; the
@@ -277,12 +275,10 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
     ]
 
 
-def _egress_token_volume(
-    env: Environment, additional: Sequence[k8s.ServiceAccountTokenProjection]
-) -> k8s.Volume | None:
+def _egress_token_volume(env: Environment) -> k8s.Volume | None:
     # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar alone.
-    # Destination tokens may be substituted where policy names them; additional projections are explicit caller choices.
-    # All are bound to this Pod and rotated by kubelet. None when there is nothing to project.
+    # Destination tokens may be substituted where policy names them. All are bound to this Pod and
+    # rotated by kubelet. None when there is nothing to project.
     sources = [
         *(
             k8s.VolumeProjection(
@@ -291,8 +287,7 @@ def _egress_token_volume(
                 )
             )
             for audience, file in _substitutable_audience_files(env).items()
-        ),
-        *(k8s.VolumeProjection(service_account_token=projection) for projection in additional),
+        )
     ]
     if not sources:
         return None
@@ -312,7 +307,6 @@ def pod_spec(
     enable_telemetry: bool = False,
     disable_otel_sdk: bool = False,
     keep_sidecar_until_workload_exit: bool = False,
-    sidecar_token_projections: Sequence[k8s.ServiceAccountTokenProjection] = (),
     sidecar_mounts: Sequence[k8s.VolumeMount] = (),
     security_context: k8s.PodSecurityContext | None = None,
     restart_policy: str = "Always",
@@ -330,8 +324,8 @@ def pod_spec(
     placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
     hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
     tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle."""
-    if (keep_sidecar_until_workload_exit or sidecar_token_projections or sidecar_mounts) and sidecar_settings is None:
-        raise ValueError("sidecar settings are required for sidecar lifecycle, credentials or mounts")
+    if (keep_sidecar_until_workload_exit or sidecar_mounts) and sidecar_settings is None:
+        raise ValueError("sidecar settings are required for sidecar lifecycle or mounts")
     settings = (
         sidecar_settings.pod_wiring(
             volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
@@ -339,7 +333,7 @@ def pod_spec(
         if sidecar_settings is not None
         else None
     )
-    token_volume = _egress_token_volume(env, sidecar_token_projections) if settings is not None else None
+    token_volume = _egress_token_volume(env) if settings is not None else None
     sidecar = (
         _egress_sidecar(
             env,
