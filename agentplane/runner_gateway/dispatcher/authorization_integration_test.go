@@ -76,6 +76,7 @@ type authorityInventory struct {
 	sandbox      SandboxSnapshot
 	account      *ServiceAccountIdentity
 	accountFound bool
+	identity     *identitypb.Identity
 	sandboxErr   error
 }
 
@@ -95,6 +96,15 @@ func (i *authorityInventory) GetExecutionAccount(_ context.Context, sandbox Sand
 		return nil, false, nil
 	}
 	return i.account, i.accountFound, nil
+}
+
+func (i *authorityInventory) GetExecutionIdentity(_ context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if sandbox.Name != i.sandbox.Name || sandbox.UID != i.sandbox.UID {
+		return nil, false, nil
+	}
+	return i.identity, true, nil
 }
 
 func (i *authorityInventory) setAccount(account *ServiceAccountIdentity) {
@@ -734,6 +744,10 @@ type changingExecutionCatalog struct {
 	testCatalog
 	accounts []*ServiceAccountIdentity
 	calls    int
+}
+
+func (*changingExecutionCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
 }
 
 func (c *changingExecutionCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {

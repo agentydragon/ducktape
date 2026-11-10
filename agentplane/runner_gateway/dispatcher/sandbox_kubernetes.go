@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -97,6 +98,12 @@ func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox S
 		return nil, false, errors.New("Sandbox execution ServiceAccount identity is incomplete")
 	}
 	return account, true, nil
+}
+
+// GetExecutionIdentity returns the Identity the exact live Sandbox UID names, read uncached for the
+// reason GetExecutionAccount is.
+func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return k.reader.ExecutionIdentity(ctx, &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID})
 }
 
 func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnapshot, error) {

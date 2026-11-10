@@ -124,7 +124,9 @@ it, under its own token audience, and a historyless client needs only it.
    announcements must match the authenticated Runner ServiceAccount exactly. Central sampler
    announcements retain the Dispatcher-provided principal only when it matches the fixed executor
    account. Older or legacy records without that association remain unassociated; a later current
-   ServiceAccount identity is never inferred for them. Every call announces again; the first the ingress accepts adds
+   ServiceAccount identity is never inferred for them. `Attached.execution_identity`, when present, is the
+   Identity name/UID the Dispatcher recorded from the Sandbox's `spec.identity`, retained and announced the
+   same way beside `execution_principal`. Every call announces again; the first the ingress accepts adds
    the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
    has already committed for the Session, cursor zero for a new one.
    **Deviation:** `Attached.incarnation_uid` and `Sealed.incarnation_uid` name the incarnation that

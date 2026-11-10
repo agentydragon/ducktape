@@ -360,6 +360,9 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			principal.GetAccount().GetName() != request.GetExecutor().GetOwner().GetName()) {
 		return nil, protocol.ErrInvalid
 	}
+	if identity := request.GetExecutionIdentity(); identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
+		return nil, protocol.ErrInvalid
+	}
 	if _, err := newNativeContext(api); err != nil {
 		return nil, err
 	}
@@ -392,11 +395,20 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 				!proto.Equal(previous.GetExecutionPrincipal(), request.GetExecutionPrincipal()) {
 				return ErrConflict
 			}
-			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() == nil {
-				// Older retrying Dispatchers may omit the additive field. Compare as if it were present,
+			if previous.GetExecutionIdentity() == nil && request.GetExecutionIdentity() != nil {
+				return ErrConflict
+			}
+			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() == nil ||
+				previous.GetExecutionIdentity() != nil && request.GetExecutionIdentity() == nil {
+				// Older retrying Dispatchers may omit the additive fields. Compare as if they were present,
 				// while leaving the already retained configuration untouched.
 				incoming = proto.Clone(request).(*samplerpb.CreateSessionRequest)
-				incoming.ExecutionPrincipal = proto.Clone(previous.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
+				if request.GetExecutionPrincipal() == nil {
+					incoming.ExecutionPrincipal = cloneExecutionPrincipal(previous.GetExecutionPrincipal())
+				}
+				if request.GetExecutionIdentity() == nil {
+					incoming.ExecutionIdentity = cloneExecutionIdentity(previous.GetExecutionIdentity())
+				}
 			}
 			if !proto.Equal(previous, incoming) {
 				return ErrConflict
@@ -931,6 +943,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 		SessionId: session.ID, Spec: spec, LastCursor: session.Cursor,
 		HarnessState: state, SetupState: session.SetupState, LaunchOutcome: outcome,
 		ExecutionPrincipal: cloneExecutionPrincipal(request.GetExecutionPrincipal()),
+		ExecutionIdentity:  cloneExecutionIdentity(request.GetExecutionIdentity()),
 	}
 	if session.ActiveTurn != nil {
 		attached.ActiveTurnId = *session.ActiveTurn
@@ -956,6 +969,13 @@ func cloneExecutionPrincipal(identity *identitypb.ServiceAccountIdentity) *ident
 		return nil
 	}
 	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
+}
+
+func cloneExecutionIdentity(identity *identitypb.Identity) *identitypb.Identity {
+	if identity == nil {
+		return nil
+	}
+	return proto.Clone(identity).(*identitypb.Identity)
 }
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {

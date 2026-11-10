@@ -28,6 +28,7 @@ type Observation struct {
 	processID          string
 	processState       sessionpb.ProcessState
 	executionPrincipal *identitypb.ServiceAccountIdentity
+	executionIdentity  *identitypb.Identity
 	pid                *int64
 	shared             bool
 	ready              bool
@@ -61,6 +62,9 @@ func (s *Session) Observe() Observation {
 	if s.record.ExecutionPrincipal != nil {
 		result.executionPrincipal = proto.Clone(s.record.ExecutionPrincipal).(*identitypb.ServiceAccountIdentity)
 	}
+	if s.record.ExecutionIdentity != nil {
+		result.executionIdentity = proto.Clone(s.record.ExecutionIdentity).(*identitypb.Identity)
+	}
 	if live {
 		pid := int64(s.process.PID())
 		result.pid = &pid
@@ -76,7 +80,7 @@ func (o Observation) Attached() *sessionpb.Attached {
 	if o.pid != nil {
 		harness = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	}
-	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal}
+	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal, ExecutionIdentity: o.executionIdentity}
 }
 
 func (o Observation) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlocker {

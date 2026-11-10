@@ -80,6 +80,13 @@ It scopes existing Sessions and existing environments; it does not create enviro
   expected `<sandbox namespace>/<sandbox name>` account with a pending UID. Reconciliation binds the first UID
   only after reading the exact Sandbox UID and verifying the ServiceAccount's controlling OwnerReference names
   that Sandbox UID. The bind is conditional and cannot overwrite a UID already recorded.
+- Dispatcher is the authority for the Identity a Session executes as. Every new opening also records the
+  Identity its Sandbox names in `spec.identity`, read live with its UID, beside (never instead of) the execution
+  ServiceAccount; a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). Dispatcher
+  passes both to the runtime or central sampler when it places the Session. Placement and command delivery
+  require the Sandbox to still name that exact Identity incarnation, or none for a Session recorded with none;
+  otherwise the work fails `execution_identity_changed`, so an Identity changed while the Sandbox was stopped
+  strands its Sessions rather than re-attributing them.
 - Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
   same-named ServiceAccount is not retroactively granted those Sessions.
 
