@@ -14,7 +14,9 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -33,7 +35,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	service := &countedModelConfigService{delegate: &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	}}
-	grpcServer := newModelConfigServer(resolver, service)
+	grpcServer := newModelConfigServer(svidCallers(t, resolver, serverCredentials), service)
 	address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 	client := newWorkloadModelConfigGRPCClient(t, address, clientCredentials, clientCredentials)
 
@@ -48,6 +50,28 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	}
 	if got := service.calls.Load(); got != 1 {
 		t.Fatalf("ModelConfig handler calls = %d, want one after actual TLS peer admission", got)
+	}
+}
+
+func TestWorkloadModelConfigGRPCServesAnIdentityCaller(t *testing.T) {
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-model-config-identity", testPolicyNamespace)
+	ca := transporttesting.NewCA(t)
+	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
+	svid, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := newModelConfigServer(svidCallers(t, svid, serverCredentials), &modelConfigService{
+		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
+	})
+	client := newWorkloadModelConfigGRPCClient(t, serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials), clientCredentials, clientCredentials)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	response, err := modelconfigpb.NewModelConfigServiceClient(client).GetModelConfig(ctx, &modelconfigpb.GetModelConfigRequest{Model: "configured"})
+	if err != nil || response.GetTotalContextBudgetTokens() != 8192 {
+		t.Fatalf("Identity SVID model config = %v, %v; want configured budget", response, err)
 	}
 }
 
@@ -106,7 +130,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			service := &countedModelConfigService{delegate: &modelConfigService{models: map[string]modelConfig{
 				"configured": {Model: "configured", TotalContextBudgetTokens: 8192},
 			}}}
-			grpcServer := newModelConfigServer(resolver, service)
+			grpcServer := newModelConfigServer(svidCallers(t, resolver, serverCredentials), service)
 			address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 			client := newWorkloadModelConfigGRPCClient(t, address, trustedClientCredentials, invalidClientCredentials)
 			if test.mutate != nil {
@@ -130,6 +154,24 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			}
 		})
 	}
+}
+
+// svidCallers is the listener's resolver accepting SVIDs alone.
+func svidCallers(t *testing.T, svid *auth.SVIDResolver, serverCredentials environment_runtime_transport.Config) *auth.Resolver {
+	t.Helper()
+	callers, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers, err = callers.WithListenerAuthentication(listener.Config{
+		ListenAddress: ":443",
+		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile}},
+	}, svid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return callers
 }
 
 type countedModelConfigService struct {
