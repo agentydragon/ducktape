@@ -15,6 +15,9 @@ a complete history. The new-environment identity picker awaits the open creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
 Sandbox availability, an unconfirmed Session creation, Session materialization in progress, or model availability.
+When creating a Thread on an existing Sandbox, the form shows that Sandbox's Identity and current
+Identity bindings read-only. It distinguishes an unassigned Identity from a missing Identity resource,
+and keeps policy-watch loading and failures visible.
 
 ## Thread names
 

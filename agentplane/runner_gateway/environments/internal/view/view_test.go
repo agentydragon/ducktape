@@ -37,17 +37,23 @@ func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
 	}
 }
 
-func TestViewProjectsConfiguredIdentityName(t *testing.T) {
-	resource := testSandbox("worker", "sandbox-uid", sandboxapi.OperatingModeSuspended)
-	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "review-agent"}
-	descriptor, err := View(resource, nil)
-	if err != nil || descriptor.GetIdentityName() != "review-agent" {
-		t.Fatalf("identity name = %q, %v", descriptor.GetIdentityName(), err)
+func TestViewProjectsOptionalIdentityName(t *testing.T) {
+	resource := testSandbox("worker", "sandbox-uid", sandboxapi.OperatingModeRunning)
+	withoutIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	resource.Spec.Identity = nil
-	descriptor, err = View(resource, nil)
-	if err != nil || descriptor.GetIdentityName() != "" {
-		t.Fatalf("unbound identity name = %q, %v", descriptor.GetIdentityName(), err)
+	if withoutIdentity.IdentityName != nil {
+		t.Fatalf("identity name without spec.identity = %q; want absent", withoutIdentity.GetIdentityName())
+	}
+
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "visual-agent"}
+	withIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withIdentity.IdentityName == nil || withIdentity.GetIdentityName() != "visual-agent" {
+		t.Fatalf("identity name = %v; want visual-agent", withIdentity.IdentityName)
 	}
 }
 

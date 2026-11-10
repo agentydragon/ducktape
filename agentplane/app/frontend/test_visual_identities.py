@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from agentplane.app.frontend.testing.app import AgentplaneFixture
+from agentplane.app.frontend.testing.app import AgentplaneFixture, Flag
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
 from util.testing.frontend_visual.capture import VisualPage
 
@@ -64,6 +64,68 @@ async def test_credential_referenced_identity_delete_is_refused(view: VisualPage
         "WorkloadCredential agentplane-visual/standing-agent"
     )
     await view.check(context="the Policy Controller's credential refusal is shown")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_session_form_shows_the_selected_environment_identity(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
+    form = view.page.get_by_role("group", name="New thread")
+    identity = form.get_by_role("region", name="Environment identity")
+    await expect(identity).to_be_visible()
+    await expect(identity.get_by_text("referenced-identity ·")).to_be_visible()
+    grants = identity.get_by_role("table")
+    await expect(grants.get_by_text("referenced-identity-operator-grant")).to_be_visible()
+    await expect(identity.get_by_role("button", name="Revoke")).to_have_count(0)
+    await view.check(context="existing environment identity and grants loaded read-only")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_session_form_shows_when_the_environment_has_no_identity(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
+    await app.environment_identity(None)
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
+    form = view.page.get_by_role("group", name="New thread")
+    identity = form.get_by_role("region", name="Environment identity")
+    await expect(identity.get_by_text("No identity is assigned to this environment.")).to_be_visible()
+    await view.check(context="existing environment explicitly has no identity")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_session_form_reports_a_missing_environment_identity(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.environment_identity("missing-visual-identity")
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
+    identity = view.page.get_by_role("group", name="New thread").get_by_role("region", name="Environment identity")
+    await expect(identity.get_by_role("alert", name="Environment identity is missing")).to_be_visible()
+    await view.check(context="the configured environment Identity is missing")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_session_form_reports_an_identity_watch_error(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.IDENTITY_WATCH_UNAVAILABLE)
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
+    identity = view.page.get_by_role("group", name="New thread").get_by_role("region", name="Environment identity")
+    await expect(identity.get_by_role("alert", name="Could not load the environment identity")).to_be_visible()
+    await view.check(context="the Identity watch is unavailable")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_session_form_reports_an_identity_bindings_error(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.IDENTITY_BINDINGS_UNAVAILABLE)
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
+    identity = view.page.get_by_role("group", name="New thread").get_by_role("region", name="Environment identity")
+    await expect(identity.get_by_role("alert", name="Could not load identity bindings")).to_be_visible()
+    await view.check(context="the Identity bindings watch is unavailable")
     await view.capture(target=view.page.locator("#app"))
 
 

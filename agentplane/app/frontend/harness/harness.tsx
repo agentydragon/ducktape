@@ -207,6 +207,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
   visualSandbox(
     {
       target: { name: "ready-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000a1b2", namespace: "agentplane-visual" },
+      identityName: "referenced-identity",
       observedState: {
         createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
         operatingMode: OperatingMode.RUNNING,
@@ -2773,7 +2774,9 @@ type Flag =
   | "pushBrowserAdded"
   | "connectionRenamed"
   | "mcpLinkageChanged"
-  | "mcpHealthChanged";
+  | "mcpHealthChanged"
+  | "identityWatchUnavailable"
+  | "identityBindingsUnavailable";
 const flags = new Set<Flag>();
 
 function actionGroups(): ActionGroup[] {
@@ -3787,6 +3790,12 @@ routes.unshift(
     (_match, query, signal) => {
       const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
       const identity = query.get("identity");
+      if (identity !== null && flags.has("identityBindingsUnavailable")) {
+        return Response.json(
+          { code: 14, message: "the Policy Service identity bindings watch is unavailable" },
+          { status: 503 }
+        );
+      }
       const bindings =
         query.get("everyIdentity") === "true"
           ? identityBindings
@@ -3814,8 +3823,14 @@ routes.unshift(
   [
     "GET",
     /^\/upstream\/policy\/v1\/identities:watch$/,
-    (_match, _query, signal) =>
-      ndjsonWatch(
+    (_match, _query, signal) => {
+      if (flags.has("identityWatchUnavailable")) {
+        return Response.json(
+          { code: 14, message: "the Policy Service identity watch is unavailable" },
+          { status: 503 }
+        );
+      }
+      return ndjsonWatch(
         [
           toJson(
             WatchIdentitiesResponseSchema,
@@ -3827,7 +3842,8 @@ routes.unshift(
           ),
         ],
         signal
-      ),
+      );
+    },
   ],
   [
     "DELETE",
@@ -4015,6 +4031,11 @@ const visualHarness = {
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);
     else flags.delete(flag);
+  },
+  environmentIdentity(name: string | null): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
+    if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+    sandbox.identityName = name ?? undefined;
   },
   /** Sets `flag` and serves the open streams whose path ends in `pathSuffix` again. */
   publish(flag: Flag, pathSuffix: string): void {

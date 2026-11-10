@@ -101,6 +101,26 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert created.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_UNSPECIFIED
     assert not created.kubernetes_diagnostics.HasField("pod")
     assert created.configuration.wake_on_send is False
+
+    # Exercise the generated EnvironmentService facade after the Sandbox is configured with an
+    # Identity. This verifies that the browser-facing ProtoJSON descriptor carries the optional
+    # name through the existing GetEnvironment route.
+    await sandbox.custom_objects.patch_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        target.namespace,
+        sandbox_resource.SANDBOXES_PLURAL,
+        target.name,
+        {"spec": {"identity": {"name": "route-identity"}}},
+        _content_type="application/merge-patch+json",
+    )
+    identity_response = await http.get(route, params=params)
+    assert identity_response.status_code == 200, identity_response.text
+    assert identity_response.json()["identityName"] == "route-identity"
+    identity_descriptor = ParseDict(identity_response.json(), environment_service_pb2.EnvironmentDescriptor())
+    assert identity_descriptor.HasField("identity_name")
+    assert identity_descriptor.identity_name == "route-identity"
+
     missing = await http.get(
         f"/upstream/environments/v1/environments/{target.namespace}/missing", params={"target.uid": "missing-uid"}
     )
