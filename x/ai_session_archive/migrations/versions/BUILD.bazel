@@ -6,6 +6,7 @@ exports_files(
         "0002_codex_titles.py",
         "0003_session_kind.py",
         "0004_claude_title_projection.py",
+        "0005_codex_title_candidates.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
 )
@@ -17,6 +18,7 @@ filegroup(
         "0002_codex_titles.py",
         "0003_session_kind.py",
         "0004_claude_title_projection.py",
+        "0005_codex_title_candidates.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
 )
@@ -51,6 +53,15 @@ py_library(
 py_library(
     name = "0004_claude_title_projection",
     srcs = ["0004_claude_title_projection.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0005_codex_title_candidates",
+    srcs = ["0005_codex_title_candidates.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from util.testing.postgres import DatabaseNames, create_temporary_database
-from x.ai_session_archive.database import Base
+from x.ai_session_archive.database_migrate import RUNNER
 from x.ai_session_archive.restic import ResticRepository
 
 
@@ -19,7 +19,7 @@ def postgres_engine(postgres_admin_url: str, database_names: DatabaseNames) -> I
     with create_temporary_database(postgres_admin_url, database_names()) as database_url:
         engine = create_engine(database_url)
         try:
-            Base.metadata.create_all(engine)
+            RUNNER.apply(database_url)
             yield engine
         finally:
             engine.dispose()
