@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::Parser;
 use summary_effects::generate::FunctionHeap;
-use summary_effects::report::{Inputs, report, tier0_report};
+use summary_effects::report::{Inputs, report, tier0_report_indexed};
 use summary_effects::tier0;
 
 #[derive(Parser)]
@@ -170,6 +170,7 @@ fn run(cli: &Cli, jobs: &[Job]) -> Result<()> {
         let rendered = serde_json::to_string_pretty(&report(inputs(first, &chunk, cli)?)?)?;
         return write(first.out.as_deref(), rendered);
     }
+    let started = std::time::Instant::now();
     let program = cli
         .program_chunks
         .as_deref()
@@ -190,27 +191,50 @@ fn run(cli: &Cli, jobs: &[Job]) -> Result<()> {
         premises: Default::default(),
         derive: cli.derive,
     };
+    // What derivation works out about the program's chunks serves every
+    // job.
+    let mut index =
+        summary_effects::derive::ProgramIndex::new(options.program.as_ref().filter(|_| cli.derive));
+    let (program_ms, started) = (started.elapsed().as_millis(), std::time::Instant::now());
     // One chunk that cannot be analysed does not stop the others.
     let mut failed = 0;
     for job in jobs {
         let chunk = job.chunk.display().to_string();
-        let done = (|| -> Result<()> {
-            if let Some(program) = &mut options.program {
-                program.retarget(&job.chunk)?;
+        let premises = match &job.premises {
+            Some(path) => parsed(path),
+            None => Ok(Default::default()),
+        };
+        let done = match premises {
+            Ok(premises) => {
+                options.premises = premises;
+                let options = &options;
+                let index = &mut index;
+                // A panic leaves the index without what it had worked out,
+                // which the next chunk works out again.
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+                    if let Some(program) = &options.program {
+                        program.retarget(&job.chunk)?;
+                    }
+                    let inputs = inputs(job, &chunk, cli)?;
+                    let report = tier0_report_indexed(inputs, options, index)?;
+                    write(job.out.as_deref(), serde_json::to_string_pretty(&report)?)
+                }))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("the analysis panicked")))
             }
-            options.premises = match &job.premises {
-                Some(path) => parsed(path)?,
-                None => Default::default(),
-            };
-            let rendered =
-                serde_json::to_string_pretty(&tier0_report(inputs(job, &chunk, cli)?, &options)?)?;
-            write(job.out.as_deref(), rendered)
-        })();
+            Err(error) => Err(error),
+        };
         if let Err(error) = done {
             anyhow::ensure!(cli.manifest.is_some(), error);
             eprintln!("{chunk}: {error:#}");
             failed += 1;
         }
+    }
+    if cli.manifest.is_some() {
+        eprintln!(
+            "program read {program_ms} ms; {} chunks analysed in {} ms",
+            jobs.len(),
+            started.elapsed().as_millis()
+        );
     }
     anyhow::ensure!(failed == 0, "{failed} of {} chunks failed", jobs.len());
     Ok(())

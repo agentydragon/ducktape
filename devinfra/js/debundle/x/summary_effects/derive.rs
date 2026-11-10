@@ -1291,7 +1291,7 @@ impl Visit for MentionsEsModule {
 
 struct Resolver<'a> {
     /// The analysed chunk, then the program's chunks in order.
-    chunks: Vec<Chunk<'a>>,
+    chunks: Vec<&'a Chunk<'a>>,
     program: Option<&'a ProgramFacts>,
     roles: FxHashMap<(usize, Id), Role>,
     /// Per allocator binding or class.
@@ -1360,7 +1360,7 @@ impl<'a> Resolver<'a> {
     fn provider(&self, chunk: usize, specifier: &str) -> Option<usize> {
         let program = self.program?;
         let from = match chunk {
-            0 => &program.chunk,
+            0 => &program.chunk(),
             other => &program.modules[other - 1].0,
         };
         Some(program.resolve(from, specifier)? + 1)
@@ -1633,9 +1633,12 @@ impl<'a> Resolver<'a> {
     /// other object literals, why not.
     fn settled_literals(&self) -> SettledLiterals {
         let mut out = SettledLiterals::default();
-        let everywhere = if self.chunks.iter().any(|chunk| chunk.handled.loads_unknown) {
+        // The program holds the analysed chunk too: its own parse, first in
+        // `chunks`, would only repeat what that one says.
+        let program = || self.chunks.iter().enumerate().skip(1);
+        let everywhere = if program().any(|(_, chunk)| chunk.handled.loads_unknown) {
             Some(SettledRefusal::UnknownLoad)
-        } else if self.chunks.iter().any(|chunk| chunk.handled.evals) {
+        } else if program().any(|(_, chunk)| chunk.handled.evals) {
             Some(SettledRefusal::DirectEval)
         } else {
             None
@@ -1644,7 +1647,7 @@ impl<'a> Resolver<'a> {
         let mut opened: FxHashMap<usize, SettledRefusal> = FxHashMap::default();
         let mut handled: FxHashMap<(usize, Id), SettledRefusal> = FxHashMap::default();
         let mut unresolved = false;
-        for (index, chunk) in self.chunks.iter().enumerate() {
+        for (index, chunk) in program() {
             for specifier in &chunk.handled.loaded {
                 if let Some(provider) = self.provider(index, specifier) {
                     opened.insert(provider, SettledRefusal::ExporterLoadedWhole);
@@ -1740,7 +1743,7 @@ impl<'a> Resolver<'a> {
             }
         }
         let everywhere = everywhere.or(unresolved.then_some(SettledRefusal::UnresolvedImport));
-        for (index, chunk) in self.chunks.iter().enumerate() {
+        for (index, chunk) in program() {
             for (id, def) in &chunk.defs {
                 let Def::Value(Expr::Object(object)) = def else {
                     continue;
@@ -2599,22 +2602,89 @@ pub struct Derived {
     pub wrappers: Vec<Id>,
 }
 
+/// What derivation knows of a program's chunks whatever chunk is analysed:
+/// their declarations and mentions, and what it has worked out about their
+/// bindings so far.
+pub struct ProgramIndex<'p> {
+    chunks: Vec<Chunk<'p>>,
+    roles: FxHashMap<(usize, Id), Role>,
+    facts: FxHashMap<(usize, Id), Facts>,
+    primitive: FxHashMap<(usize, Id), bool>,
+    settled: Option<SettledLiterals>,
+}
+
+impl<'p> ProgramIndex<'p> {
+    pub fn new(program: Option<&'p ProgramFacts>) -> Self {
+        let chunks = program
+            .iter()
+            .flat_map(|program| &program.modules)
+            .map(|(_, parsed)| {
+                let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+                Chunk::new(&parsed.module, unresolved)
+            })
+            .collect();
+        Self {
+            chunks,
+            roles: FxHashMap::default(),
+            facts: FxHashMap::default(),
+            primitive: FxHashMap::default(),
+            settled: None,
+        }
+    }
+}
+
+/// Derives the contracts of `module`'s bindings. `index` must be of
+/// `program`; what it learns of the program's chunks is kept in it.
 pub fn derive(
     module: &Module,
     unresolved: SyntaxContext,
     program: Option<&ProgramFacts>,
+    index: &mut ProgramIndex<'_>,
 ) -> Derived {
-    let mut chunks = vec![Chunk::new(module, unresolved)];
-    for (_, parsed) in program.iter().flat_map(|program| &program.modules) {
-        let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
-        chunks.push(Chunk::new(&parsed.module, unresolved));
-    }
+    let own = Chunk::new(module, unresolved);
+    let (roles, facts, primitive) = (
+        std::mem::take(&mut index.roles),
+        std::mem::take(&mut index.facts),
+        std::mem::take(&mut index.primitive),
+    );
+    let cached = index.settled.take();
+    let (derived, roles, facts, primitive, settled) = {
+        let chunks: Vec<&Chunk<'_>> = std::iter::once(&own).chain(&index.chunks).collect();
+        derive_with(chunks, program, roles, facts, primitive, cached)
+    };
+    // What was learnt of the analysed chunk's own parse does not outlive it.
+    let kept = |key: &(usize, Id)| key.0 != 0;
+    index.roles = roles.into_iter().filter(|(key, _)| kept(key)).collect();
+    index.facts = facts.into_iter().filter(|(key, _)| kept(key)).collect();
+    index.primitive = primitive.into_iter().filter(|(key, _)| kept(key)).collect();
+    index.settled = settled;
+    derived
+}
+
+type Roles = FxHashMap<(usize, Id), Role>;
+type AllFacts = FxHashMap<(usize, Id), Facts>;
+type Primitives = FxHashMap<(usize, Id), bool>;
+
+fn derive_with<'a>(
+    chunks: Vec<&'a Chunk<'a>>,
+    program: Option<&'a ProgramFacts>,
+    roles: Roles,
+    facts: AllFacts,
+    primitive: Primitives,
+    cached: Option<SettledLiterals>,
+) -> (
+    Derived,
+    Roles,
+    AllFacts,
+    Primitives,
+    Option<SettledLiterals>,
+) {
     let mut resolver = Resolver {
         chunks,
         program,
-        roles: FxHashMap::default(),
-        facts: FxHashMap::default(),
-        primitive: FxHashMap::default(),
+        roles,
+        facts,
+        primitive,
         current: Facts::default(),
         namer: canonical(NAMER),
         exporter: canonical(EXPORTER),
@@ -2648,14 +2718,16 @@ pub fn derive(
             derived.stable_class_imports.push(id.clone());
         }
     }
+    let mut settled_literals = cached;
     if let Some(program) = program {
-        let SettledLiterals { settled, refused } = resolver.settled_literals();
+        let SettledLiterals { settled, refused } =
+            settled_literals.get_or_insert_with(|| resolver.settled_literals());
         // The program holds this chunk too, as another parse: its top-level
         // bindings correspond by name.
         let own = program
             .modules
             .iter()
-            .position(|(path, _)| *path == program.chunk)
+            .position(|(path, _)| *path == program.chunk())
             .map(|index| index + 1);
         let mut locals: Vec<Id> = resolver.chunks[0]
             .defs
@@ -2761,5 +2833,11 @@ pub fn derive(
             Role::CopyProps | Role::Unknown => {}
         }
     }
-    derived
+    let Resolver {
+        roles,
+        facts,
+        primitive,
+        ..
+    } = resolver;
+    (derived, roles, facts, primitive, settled_literals)
 }

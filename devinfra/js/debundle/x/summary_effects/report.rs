@@ -782,6 +782,18 @@ fn class_name(class: tier0::Conflict) -> String {
 }
 
 pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier0Report> {
+    let mut index =
+        crate::derive::ProgramIndex::new(options.program.as_ref().filter(|_| options.derive));
+    tier0_report_indexed(inputs, options, &mut index)
+}
+
+/// `tier0_report` with a derivation index of `options.program` that
+/// outlives the call.
+pub fn tier0_report_indexed(
+    inputs: Inputs<'_>,
+    options: &tier0::Options,
+    index: &mut crate::derive::ProgramIndex<'_>,
+) -> Result<Tier0Report> {
     let Inputs {
         chunk,
         source,
@@ -797,7 +809,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
     let parse_ms = elapsed_ms(start);
     let start = Instant::now();
     let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
-    let analysis = tier0::analyze(&parsed.module, unresolved, options);
+    let analysis = tier0::analyze_indexed(&parsed.module, unresolved, options, index);
     let analysis_ms = elapsed_ms(start);
     let n = analysis.units.len();
 
@@ -909,7 +921,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
     let cycle = options
         .program
         .as_ref()
-        .map(|program| program.on_import_cycle);
+        .map(|program| program.on_import_cycle());
     let preconditions = vec![
         Precondition {
             name: "no_eval_or_with",

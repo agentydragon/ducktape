@@ -911,7 +911,7 @@ fn on_cycle(directory: &std::path::Path, chunk: &str, roots: &[String]) -> bool 
     js_ast::with_swc_globals(|| {
         summary_effects::program::load(directory, &directory.join(chunk), None, roots)
             .expect("the program loads")
-            .on_import_cycle
+            .on_import_cycle()
     })
 }
 
@@ -1010,7 +1010,7 @@ fn program_reads_imported_var_strings_only_without_cycles() {
             let source = std::fs::read_to_string(&chunk).expect("reading the chunk");
             let parsed = js_ast::parse_js_module("a.js", &source).expect("it parses");
             program
-                .imported_strings(&program.chunk, &parsed.module)
+                .imported_strings(&program.chunk(), &parsed.module)
                 .len()
         });
         std::fs::remove_dir_all(directory).expect("removing the scratch directory");

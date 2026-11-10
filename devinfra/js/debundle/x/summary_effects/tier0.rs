@@ -2371,6 +2371,19 @@ fn resolve_premises(
 }
 
 pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) -> Tier0 {
+    let mut index =
+        crate::derive::ProgramIndex::new(options.program.as_ref().filter(|_| options.derive));
+    analyze_indexed(module, unresolved, options, &mut index)
+}
+
+/// `analyze` with a derivation index of `options.program` that outlives the
+/// call, for analysing several chunks of one program.
+pub fn analyze_indexed(
+    module: &Module,
+    unresolved: SyntaxContext,
+    options: &Options,
+    index: &mut crate::derive::ProgramIndex<'_>,
+) -> Tier0 {
     let mut sources = Vec::new();
     for item in &module.body {
         match js_ast::split_var_declarators(item) {
@@ -2630,14 +2643,14 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut derived_primitive_imports = 0;
     let found = options
         .derive
-        .then(|| crate::derive::derive(module, unresolved, options.program.as_ref()));
+        .then(|| crate::derive::derive(module, unresolved, options.program.as_ref(), index));
     // Off an import cycle the exporting chunk has run, and no code of the
     // program touches these objects except to read named members.
     let mut settled = Settled::default();
     let off_cycle = options
         .program
         .as_ref()
-        .is_some_and(|program| !program.on_import_cycle);
+        .is_some_and(|program| !program.on_import_cycle());
     if let (Some(found), true) = (&found, off_cycle) {
         for (id, keys) in &found.settled_imports {
             if let Some(binding) = bindings.get(id) {
@@ -2838,7 +2851,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let imported_strings = options
         .program
         .as_ref()
-        .map(|program| program.imported_strings(&program.chunk, module))
+        .map(|program| program.imported_strings(&program.chunk(), module))
         .unwrap_or_default();
     let mut census = census(module, unresolved, &object_aliases, &imported_strings);
     if let Some(program) = &options.program {
@@ -3111,7 +3124,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         || options
             .program
             .as_ref()
-            .is_some_and(|program| program.on_import_cycle);
+            .is_some_and(|program| program.on_import_cycle());
     // Per binding: the first impure ordinal whose reach holds it.
     let reach = |units: &[Unit]| {
         let mut reach_stamp = vec![NEVER; binding_count];

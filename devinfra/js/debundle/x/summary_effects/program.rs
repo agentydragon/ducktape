@@ -15,16 +15,16 @@ use crate::intrinsics::{Census, census};
 
 pub struct ProgramFacts {
     pub chunks: usize,
-    /// Another chunk can run while this one initializes and reach it: a
-    /// static import cycle through the chunk, or a dynamic `import()` in the
-    /// chunk's static dependencies that may load it.
-    pub on_import_cycle: bool,
+    /// The analysed chunk's path among `modules`, and whether another chunk
+    /// can run while it initializes and reach it: a static import cycle
+    /// through the chunk, or a dynamic `import()` in the chunk's static
+    /// dependencies that may load it. `retarget` changes these; every other
+    /// fact is the program's.
+    place: std::cell::RefCell<(PathBuf, bool)>,
     /// What any chunk of the program writes on globals.
     pub census: Census,
     /// Every chunk, parsed, by the path imports resolve to.
     pub modules: Vec<(PathBuf, js_ast::ParsedJsModule)>,
-    /// The analysed chunk's path among them.
-    pub chunk: PathBuf,
     /// Top-level `await` sites in any chunk of the program.
     pub top_level_awaits: usize,
     /// Chunks that did not parse. Each is taken to write every global, to
@@ -115,7 +115,7 @@ impl ProgramFacts {
 
     /// Makes `chunk` the analysed chunk: decides whether it is on an import
     /// cycle. The other facts are the program's and stay.
-    pub fn retarget(&mut self, chunk: &Path) -> Result<()> {
+    pub fn retarget(&self, chunk: &Path) -> Result<()> {
         let chunk = chunk
             .canonicalize()
             .with_context(|| format!("resolving {}", chunk.display()))?;
@@ -174,12 +174,21 @@ impl ProgramFacts {
                 .get(path)
                 .is_some_and(|imports| imports.unknown_requires > 0)
         });
-        self.on_import_cycle = static_cycle
+        let on_import_cycle = static_cycle
             || dynamic_cycle
             || unknown_require
             || self.unresolved_static_specifiers > 0;
-        self.chunk = chunk;
+        *self.place.borrow_mut() = (chunk, on_import_cycle);
         Ok(())
+    }
+
+    /// The analysed chunk's path.
+    pub fn chunk(&self) -> PathBuf {
+        self.place.borrow().0.clone()
+    }
+
+    pub fn on_import_cycle(&self) -> bool {
+        self.place.borrow().1
     }
 
     /// The imported bindings of `module`, the chunk at `from`, that only
@@ -601,12 +610,11 @@ pub fn load(
                 .collect::<Vec<_>>()
         })
         .collect();
-    let mut program = ProgramFacts {
+    let program = ProgramFacts {
         chunks: graph.len(),
-        on_import_cycle: true,
+        place: std::cell::RefCell::new((PathBuf::new(), true)),
         census: merged,
         modules,
-        chunk: PathBuf::new(),
         graph,
         root: root.to_path_buf(),
         top_level_awaits,
