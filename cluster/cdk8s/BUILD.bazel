@@ -1838,6 +1838,8 @@ py_library(
         "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

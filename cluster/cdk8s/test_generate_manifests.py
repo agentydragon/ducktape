@@ -143,6 +143,61 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
 
 
+def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    vm = next(doc for doc in documents if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"] == "cpap-gateway")
+    vm_template = vm["spec"]["template"]
+    interface = vm_template["spec"]["domain"]["devices"]["interfaces"][0]
+    assert {port["name"]: port["port"] for port in interface["ports"]} == {"http": 18080, "node-metrics": 9100}
+
+    service = next(
+        doc for doc in documents if doc["kind"] == "Service" and doc["metadata"]["name"] == "cpap-gateway-metrics"
+    )
+    monitor = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "cpap-gateway-metrics"
+    )
+    assert service["spec"]["selector"].items() <= vm_template["metadata"]["labels"].items()
+    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
+    assert monitor["spec"]["endpoints"] == [{"port": "node-metrics", "path": "/metrics"}]
+
+    policy = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "guest-metrics-ingress"
+    )["spec"]
+    assert policy["endpointSelector"]["matchLabels"].items() <= vm_template["metadata"]["labels"].items()
+    assert policy["ingress"] == [
+        {
+            "fromEndpoints": [
+                {
+                    "matchLabels": {
+                        "app.kubernetes.io/component": "sync",
+                        "app.kubernetes.io/name": "cpap-sync",
+                        "k8s:io.kubernetes.pod.namespace": "cpap-sync",
+                    }
+                }
+            ],
+            "toPorts": [{"ports": [{"port": "18080", "protocol": "TCP"}]}],
+        },
+        {
+            "fromEndpoints": [
+                {
+                    "matchLabels": {
+                        "app.kubernetes.io/name": "alloy-node",
+                        "k8s:io.kubernetes.pod.namespace": "monitoring",
+                    }
+                }
+            ],
+            "toPorts": [{"ports": [{"port": "9100", "protocol": "TCP"}]}],
+        },
+    ]
+    assert "egress" not in policy
+
+
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

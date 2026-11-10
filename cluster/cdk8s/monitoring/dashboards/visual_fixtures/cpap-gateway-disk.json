@@ -1,0 +1,152 @@
+{
+  "panels": {
+    "1": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "mountpoint": "/"
+                  },
+                  "config": {
+                    "displayNameFromDS": "Capacity"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [1738407600000, 1738411200000],
+                [2147483648, 2147483648]
+              ]
+            }
+          }
+        ]
+      },
+      "B": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "B",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "mountpoint": "/"
+                  },
+                  "config": {
+                    "displayNameFromDS": "Used"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [1738407600000, 1738411200000],
+                [644245094, 671088640]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "2": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "mountpoint": "/"
+                  },
+                  "config": {
+                    "displayNameFromDS": "Used"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [1738407600000, 1738411200000],
+                [30.0, 31.25]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
