@@ -914,6 +914,11 @@ const COMPOUND_CLASS_HERITAGE: &[(&str, &str, &[&str])] = &[
         "",
         &[],
     ),
+    (
+        "const factory = () => h; return class extends factory() {};",
+        "",
+        &[],
+    ),
     // These were already rejected: keep the unknown-property and unknown-syntax
     // controls beside the newly covered cases.
     (
@@ -984,6 +989,21 @@ fn a_constructor_created_in_the_heritage_keeps_its_effects() {
             "function make() {{ return class extends (0, function Base() {{ {body} }}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
         );
         assert_reader_split_diverges_with(&definitions, &["make"]);
+    }
+}
+
+#[test]
+fn a_local_heritage_factory_can_return_a_module_callback() {
+    for (value, effectful) in [("second", true), ("first", false)] {
+        let definitions = format!(
+            "function make() {{ const factory = () => {value}; return class extends factory() {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        if effectful {
+            assert_reader_split_diverges_with(&definitions, &["make"]);
+        } else {
+            let fixture = with_reader_split(&definitions, &["make"], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }
 
