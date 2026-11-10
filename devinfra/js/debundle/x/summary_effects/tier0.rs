@@ -31,7 +31,9 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::helpers::assigned_ids;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, clap::ValueEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ImpureCause {
     /// A call whose callee is a top-level binding of this chunk.
@@ -114,6 +116,9 @@ pub struct Tier0 {
     own_reach: FxHashMap<usize, FxHashSet<Binding>>,
     pub bindings: usize,
     pub refused: bool,
+    /// Per intrinsic family: the pure definitions that depend on it being
+    /// unmodified.
+    pub families_used: std::collections::BTreeMap<IntrinsicFamily, usize>,
 }
 
 const NEVER: u32 = u32::MAX;
@@ -140,11 +145,104 @@ impl Visit for Scan<'_> {
     }
 }
 
+/// A bounded widening of what counts as a pure definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Upgrade {
+    /// Operators and template interpolation over bindings that only ever
+    /// hold a primitive: defined once, never assigned, by a literal or by
+    /// such an expression. Converting a primitive runs no code, and no
+    /// operator throws on numbers, strings, booleans, `null` and
+    /// `undefined`.
+    PrimitiveBindings,
+    /// Allocations by intrinsic constructors and functions from a fixed
+    /// list, with arguments that cannot run code (`native_allocation`).
+    /// Each depends on its intrinsic family being unmodified.
+    NativeAllocators,
+}
+
+/// The intrinsic family a recognized native allocation depends on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntrinsicFamily {
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+    TypedArray,
+    Object,
+    Symbol,
+}
+
+const TYPED_ARRAYS: [&str; 9] = [
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+];
+
+/// A length a typed array accepts without a `RangeError`.
+fn small_length(expr: &Expr) -> bool {
+    matches!(expr, Expr::Lit(Lit::Num(number))
+        if number.value.fract() == 0.0 && (0.0..=65_536.0).contains(&number.value))
+}
+
 struct Classifier<'a> {
     bindings: &'a FxHashMap<Id, Binding>,
     imports: &'a FxHashSet<Binding>,
+    /// Bindings proven to only ever hold a primitive.
+    primitives: &'a FxHashSet<Binding>,
+    native_allocators: bool,
     unresolved: SyntaxContext,
     eager: Vec<Binding>,
+    families: Vec<IntrinsicFamily>,
+}
+
+/// Whether `expr` evaluates to a number, string, boolean, `null` or
+/// `undefined` without running code or throwing, given the primitive
+/// bindings; collects the bindings it reads.
+fn primitive(
+    expr: &Expr,
+    bindings: &FxHashMap<Id, Binding>,
+    primitives: &FxHashSet<Binding>,
+    reads: &mut Vec<Binding>,
+) -> bool {
+    let mut recurse = |expr: &Expr| primitive(expr, bindings, primitives, reads);
+    match expr {
+        Expr::Paren(paren) => recurse(&paren.expr),
+        Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
+        Expr::Ident(ident) => match bindings.get(&ident.to_id()) {
+            Some(binding) if primitives.contains(binding) => {
+                reads.push(*binding);
+                true
+            }
+            _ => false,
+        },
+        Expr::Tpl(template) => template.exprs.iter().all(|expr| recurse(expr)),
+        Expr::Unary(unary) => {
+            matches!(
+                unary.op,
+                UnaryOp::Minus
+                    | UnaryOp::Plus
+                    | UnaryOp::Bang
+                    | UnaryOp::Tilde
+                    | UnaryOp::Void
+                    | UnaryOp::TypeOf
+            ) && recurse(&unary.arg)
+        }
+        Expr::Bin(binary) => {
+            !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf)
+                && recurse(&binary.left)
+                && recurse(&binary.right)
+        }
+        Expr::Cond(cond) => recurse(&cond.test) && recurse(&cond.cons) && recurse(&cond.alt),
+        _ => false,
+    }
 }
 
 fn literal_only(expr: &Expr) -> bool {
@@ -203,6 +301,129 @@ impl Classifier<'_> {
         }
     }
 
+    fn global(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Ident(ident) if ident.ctxt == self.unresolved => Some(ident.sym.to_string()),
+            _ => None,
+        }
+    }
+
+    fn primitive_arg(&mut self, expr: &Expr) -> bool {
+        let mut reads = Vec::new();
+        let ok = primitive(expr, self.bindings, self.primitives, &mut reads);
+        if ok {
+            self.eager.extend(reads);
+        }
+        ok
+    }
+
+    /// An array literal without holes or spreads whose elements all pass.
+    fn array_of(&mut self, expr: &Expr, mut element: impl FnMut(&mut Self, &Expr) -> bool) -> bool {
+        let Expr::Array(array) = expr else {
+            return false;
+        };
+        array.elems.iter().all(|slot| match slot {
+            Some(ExprOrSpread { spread: None, expr }) => element(self, expr),
+            _ => false,
+        })
+    }
+
+    /// A `new` or call that only allocates, runs no user code and cannot
+    /// throw, provided its intrinsic family is unmodified:
+    ///
+    /// - `new Map()`, `new Set()`, `new WeakMap()`, `new WeakSet()`: an empty
+    ///   collection; no iterable is read.
+    /// - `new Set([p, …])` and `new Map([[p, e], …])` over primitive keys
+    ///   `p` and pure values `e`: iterate a fresh array literal with the
+    ///   intrinsic array iterator and call the intrinsic adder.
+    /// - `new <TypedArray>(n)` for a small non-negative integer literal `n`,
+    ///   or over an array literal of primitives: converts numbers only.
+    /// - `Object.freeze(<object or array literal>)`: defines no accessor and
+    ///   calls none; the literal is fresh.
+    /// - `Object.create(null)`: a fresh object without a prototype.
+    /// - `Symbol()`, `Symbol(p)`, `Symbol.for(p)` over a primitive `p`:
+    ///   `ToString` of a primitive.
+    fn native_allocation(&mut self, expr: &Expr) -> Option<IntrinsicFamily> {
+        if !self.native_allocators {
+            return None;
+        }
+        match expr {
+            Expr::New(new) => {
+                let name = self.global(&new.callee)?;
+                let args = new.args.as_deref().unwrap_or_default();
+                if args.iter().any(|arg| arg.spread.is_some()) {
+                    return None;
+                }
+                let args: Vec<&Expr> = args.iter().map(|arg| &*arg.expr).collect();
+                match (name.as_str(), args.as_slice()) {
+                    ("Map", []) => Some(IntrinsicFamily::Map),
+                    ("Set", []) => Some(IntrinsicFamily::Set),
+                    ("WeakMap", []) => Some(IntrinsicFamily::WeakMap),
+                    ("WeakSet", []) => Some(IntrinsicFamily::WeakSet),
+                    ("Set", [elements]) => self
+                        .array_of(elements, |this, element| this.primitive_arg(element))
+                        .then_some(IntrinsicFamily::Set),
+                    ("Map", [entries]) => self
+                        .array_of(entries, |this, entry| match entry {
+                            Expr::Array(pair) => match pair.elems.as_slice() {
+                                [
+                                    Some(ExprOrSpread {
+                                        spread: None,
+                                        expr: key,
+                                    }),
+                                    Some(ExprOrSpread {
+                                        spread: None,
+                                        expr: value,
+                                    }),
+                                ] => this.primitive_arg(key) && this.pure(value).is_ok(),
+                                _ => false,
+                            },
+                            _ => false,
+                        })
+                        .then_some(IntrinsicFamily::Map),
+                    (name, [arg]) if TYPED_ARRAYS.contains(&name) => (small_length(arg)
+                        || self.array_of(arg, |this, element| this.primitive_arg(element)))
+                    .then_some(IntrinsicFamily::TypedArray),
+                    _ => None,
+                }
+            }
+            Expr::Call(CallExpr {
+                callee: Callee::Expr(callee),
+                args,
+                ..
+            }) => {
+                if args.iter().any(|arg| arg.spread.is_some()) {
+                    return None;
+                }
+                let args: Vec<&Expr> = args.iter().map(|arg| &*arg.expr).collect();
+                let (object, method) = match &**callee {
+                    Expr::Member(MemberExpr {
+                        obj,
+                        prop: MemberProp::Ident(method),
+                        ..
+                    }) => (self.global(obj)?, Some(method.sym.to_string())),
+                    other => (self.global(other)?, None),
+                };
+                match (object.as_str(), method.as_deref(), args.as_slice()) {
+                    ("Object", Some("freeze"), [literal @ (Expr::Object(_) | Expr::Array(_))]) => {
+                        self.pure(literal)
+                            .is_ok()
+                            .then_some(IntrinsicFamily::Object)
+                    }
+                    ("Object", Some("create"), [Expr::Lit(Lit::Null(_))]) => {
+                        Some(IntrinsicFamily::Object)
+                    }
+                    ("Symbol", None, []) => Some(IntrinsicFamily::Symbol),
+                    ("Symbol", None | Some("for"), [description]) => self
+                        .primitive_arg(description)
+                        .then_some(IntrinsicFamily::Symbol),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// A class whose definition runs nothing: no `extends`, static block,
     /// static initializer, computed key or decorator.
     fn class(&self, class: &Class) -> Result<(), ImpureCause> {
@@ -234,6 +455,15 @@ impl Classifier<'_> {
     /// reading an uninitialized binding; collects the bindings it reads.
     fn pure(&mut self, expr: &Expr) -> Result<(), ImpureCause> {
         if literal_only(expr) {
+            return Ok(());
+        }
+        let mut reads = Vec::new();
+        if primitive(expr, self.bindings, self.primitives, &mut reads) {
+            self.eager.extend(reads);
+            return Ok(());
+        }
+        if let Some(family) = self.native_allocation(expr) {
+            self.families.push(family);
             return Ok(());
         }
         match expr {
@@ -450,6 +680,10 @@ pub struct Options {
     /// needed when another chunk that imports from this one can run during
     /// this chunk's initialization (an import cycle).
     pub exports_reachable: bool,
+    pub upgrades: FxHashSet<Upgrade>,
+    /// An estimate, not an analysis: count statements impure for these
+    /// causes as pure definitions, to size what refining a cause could buy.
+    pub what_if_pure: FxHashSet<ImpureCause>,
 }
 
 pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) -> Tier0 {
@@ -523,7 +757,60 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         }
     }
 
+    let mut assigned_anywhere: FxHashSet<Binding> = FxHashSet::default();
+    for source in &sources {
+        let assigned = match source {
+            Source::Item(item) => assigned_ids(*item),
+            Source::Declarator(declarator) => assigned_ids(*declarator),
+        };
+        assigned_anywhere.extend(assigned.iter().filter_map(|id| bindings.get(id)));
+    }
+    let mut declarations = vec![0u32; bindings.len()];
+    for binding in declared_by_unit.iter().flatten() {
+        declarations[*binding as usize] += 1;
+    }
+    let mut primitives: FxHashSet<Binding> = FxHashSet::default();
+    if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
+        // The initializer of each binding declared by one identifier
+        // declarator and never assigned.
+        let mut candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
+        for (source, declared) in sources.iter().zip(&declared_by_unit) {
+            let declarator = match source {
+                Source::Declarator(declarator) => Some(*declarator),
+                Source::Item(
+                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                    | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                        decl: Decl::Var(var),
+                        ..
+                    })),
+                ) => var.decls.first(),
+                Source::Item(_) => None,
+            };
+            if let (Some(declarator), [binding]) = (declarator, declared.as_slice())
+                && matches!(declarator.name, Pat::Ident(_))
+                && declarations[*binding as usize] == 1
+                && !assigned_anywhere.contains(binding)
+            {
+                candidates.push((*binding, declarator.init.as_deref()));
+            }
+        }
+        loop {
+            let before = primitives.len();
+            for (binding, init) in &candidates {
+                let holds_primitive = init
+                    .is_none_or(|init| primitive(init, &bindings, &primitives, &mut Vec::new()));
+                if holds_primitive {
+                    primitives.insert(*binding);
+                }
+            }
+            if primitives.len() == before {
+                break;
+            }
+        }
+    }
+
     let mut refused = false;
+    let mut families_used: std::collections::BTreeMap<IntrinsicFamily, usize> = Default::default();
     let mut units = Vec::with_capacity(sources.len());
     for (source, declared) in sources.iter().zip(declared_by_unit) {
         let mut scan = Scan {
@@ -535,8 +822,11 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         let mut classifier = Classifier {
             bindings: &bindings,
             imports: &imports,
+            primitives: &primitives,
+            native_allocators: options.upgrades.contains(&Upgrade::NativeAllocators),
             unresolved,
             eager: Vec::new(),
+            families: Vec::new(),
         };
         let (kind, assigned) = match source {
             Source::Item(item) => {
@@ -548,7 +838,16 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 (classifier.declarator(declarator), assigned_ids(*declarator))
             }
         };
+        let kind = match kind {
+            Kind::Impure(cause) if options.what_if_pure.contains(&cause) => Kind::Pure,
+            kind => kind,
+        };
         refused |= scan.refused;
+        if kind == Kind::Pure {
+            for family in &classifier.families {
+                *families_used.entry(*family).or_default() += 1;
+            }
+        }
         let mut mentions: Vec<Binding> = scan.mentions.into_iter().collect();
         mentions.sort_unstable();
         // A default export hands its value to other chunks.
@@ -653,6 +952,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         own_reach,
         bindings: binding_count,
         refused,
+        families_used,
     }
 }
 

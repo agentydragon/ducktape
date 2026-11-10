@@ -42,6 +42,13 @@ struct Cli {
     /// start (another chunk in an import cycle with this one).
     #[arg(long)]
     exports_reachable: bool,
+    /// Tier 0: bounded widenings of "pure definition" to enable.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    upgrade: Vec<tier0::Upgrade>,
+    /// Tier 0, estimate only (unsound): count statements impure for these
+    /// causes as pure definitions.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    what_if_pure: Vec<tier0::ImpureCause>,
     /// The heap abstraction for literals allocated inside function bodies.
     #[arg(long, value_enum, default_value = "function")]
     function_heap: FunctionHeap,
@@ -103,6 +110,8 @@ fn main() -> Result<()> {
     let pairs_out = cli.unproven_pairs;
     let options = tier0::Options {
         exports_reachable: cli.exports_reachable,
+        upgrades: cli.upgrade.iter().copied().collect(),
+        what_if_pure: cli.what_if_pure.iter().copied().collect(),
     };
     // Minified chunks nest expressions deeper than the default stack.
     let rendered = std::thread::Builder::new()

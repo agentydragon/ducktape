@@ -601,6 +601,9 @@ pub struct Tier0Comparison {
 pub struct Tier0Report {
     pub chunk: String,
     pub exports_reachable: bool,
+    pub upgrades: Vec<tier0::Upgrade>,
+    /// Non-empty marks the report an unsound estimate.
+    pub what_if_pure: Vec<ImpureCause>,
     pub parse_ms: f64,
     pub analysis_ms: f64,
     pub pair_check_ms: f64,
@@ -611,6 +614,8 @@ pub struct Tier0Report {
     pub refused: bool,
     pub kinds: KindCounts,
     pub impure_causes: BTreeMap<ImpureCause, usize>,
+    /// Pure definitions that depend on an intrinsic family being unmodified.
+    pub intrinsic_families_used: BTreeMap<tier0::IntrinsicFamily, usize>,
     pub all_pairs: u64,
     pub all_pairs_conflicting: u64,
     pub all_pairs_by_class: BTreeMap<String, u64>,
@@ -619,6 +624,8 @@ pub struct Tier0Report {
     pub current: Option<Tier0Comparison>,
     pub examples: Vec<Tier0Pair>,
     pub impure_examples: BTreeMap<ImpureCause, Vec<String>>,
+    /// With `--examples`: every impure statement's ordinal, cause and start.
+    pub impure_statements: Vec<(usize, ImpureCause, String)>,
 }
 
 fn class_name(class: tier0::Conflict) -> String {
@@ -660,6 +667,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
     let mut kinds = KindCounts::default();
     let mut impure_causes: BTreeMap<ImpureCause, usize> = BTreeMap::new();
     let mut impure_examples: BTreeMap<ImpureCause, Vec<String>> = BTreeMap::new();
+    let mut impure_statements = Vec::new();
     for (ordinal, unit) in analysis.units.iter().enumerate() {
         match unit.kind {
             Kind::Inert => kinds.inert += 1,
@@ -671,6 +679,9 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
                 let examples = impure_examples.entry(cause).or_default();
                 if with_examples && examples.len() < EXAMPLE_LIMIT {
                     examples.push(snippet(&source, spans[ordinal], 100));
+                }
+                if with_examples {
+                    impure_statements.push((ordinal, cause, snippet(&source, spans[ordinal], 80)));
                 }
             }
         }
@@ -752,6 +763,8 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
     Ok(Tier0Report {
         chunk: file_name(chunk),
         exports_reachable: options.exports_reachable,
+        upgrades: options.upgrades.iter().copied().collect(),
+        what_if_pure: options.what_if_pure.iter().copied().collect(),
         parse_ms,
         analysis_ms,
         pair_check_ms,
@@ -761,6 +774,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         refused: analysis.refused,
         kinds,
         impure_causes,
+        intrinsic_families_used: analysis.families_used.clone(),
         all_pairs: (n * n.saturating_sub(1) / 2) as u64,
         all_pairs_conflicting,
         all_pairs_by_class,
@@ -775,5 +789,6 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         current,
         examples,
         impure_examples,
+        impure_statements,
     })
 }
