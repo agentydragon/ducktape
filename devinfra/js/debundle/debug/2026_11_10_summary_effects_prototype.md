@@ -130,7 +130,8 @@ intrinsic is charged only with the stores the program makes through
 a premise (§ Preconditions). On this corpus the global object escapes in
 `main` and in `editor`, so every intrinsic counts as escaped; the program
 makes 89 distinctly named stores through an unfollowed `.prototype` and none
-under a computed key, and none of the names is one a rule depends on.
+under a computed key. One of the names is `toString` (a class giving itself
+one), which costs `editor` its two reads of `Object.prototype.toString`.
 
 A callee summary for local functions that only allocate was not built. The
 statements it was meant for are not allocator calls: in `editor`, 160 of 172
@@ -175,10 +176,10 @@ pattern; the census does not see those either way.
 On the Excalidraw corpus (79 chunks, read in about 0.3 s): no `eval`, `with`
 or top-level `await`; neither `main` nor `editor` is on an import cycle, so
 `editor`'s exports need not count as reachable. The program-wide census
-refuses 2 of `editor`'s 38 intrinsic uses (another chunk writes a property of
-`Object` that they read) and none of `main`'s 17; the unproven pairs and
-modules are those of the last upgrade row. Before the census followed aliases
-it refused all of them, and `editor` fell back to 2,107 unproven pairs.
+refuses 2 of `editor`'s 38 intrinsic uses (the `toString` reads above) and
+none of `main`'s 17; the unproven pairs and modules are those of the last
+upgrade row. Before the census followed aliases it refused all of them, and
+`editor` fell back to 2,107 unproven pairs.
 
 The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
 cycle precondition decides.
