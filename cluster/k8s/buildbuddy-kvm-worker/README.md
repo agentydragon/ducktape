@@ -8,9 +8,9 @@ vCPUs, 8 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cac
 The disk is a blank image on a filesystem volume from `piraeus-ssd-local`, created per VM by a CDI
 `DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
-copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node, and a template change
-replaces the VM and its volume. The class retains deleted volumes, so remove a leftover volume by hand when
-a worker is deleted. A member counts as ready once its executor has registered with BuildBuddy (the
+copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node. A template change
+restarts each member in place and keeps its volume, cache and image store; deleting a member deletes the
+volume claim, but the class retains the underlying volume, so remove a leftover by hand. A member counts as ready once its executor has registered with BuildBuddy (the
 executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
 and waits for each to register before the next.
 Cloud-init installs Ubuntu's Docker package and the native
