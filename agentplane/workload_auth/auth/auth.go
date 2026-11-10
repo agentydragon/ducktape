@@ -99,7 +99,7 @@ type Workload struct {
 	Owner           WorkloadOwner
 }
 
-// WorkloadOwner is a WorkloadCredential's controller: a ControllerOwner, or StandingWorkload.
+// WorkloadOwner is a WorkloadCredential's controller: a ControllerOwner, or NoController.
 type WorkloadOwner interface{ isWorkloadOwner() }
 
 // ControllerOwner is the record's controller owner reference, such as the Sandbox whose runner the
@@ -108,12 +108,12 @@ type ControllerOwner struct {
 	APIVersion, Kind, Name, UID string
 }
 
-// StandingWorkload is a record with no controller owner, which no owner revokes: a standing
+// NoController is a record with no controller owner, which no owner revokes: a standing
 // workload, or an Identity's sandbox box, which lives until it is disposed of.
-type StandingWorkload struct{}
+type NoController struct{}
 
-func (ControllerOwner) isWorkloadOwner()  {}
-func (StandingWorkload) isWorkloadOwner() {}
+func (ControllerOwner) isWorkloadOwner() {}
+func (NoController) isWorkloadOwner()    {}
 
 // Subject is a verified workload: a ServiceAccount Principal, or an IdentityPrincipal, which only
 // a workload SVID yields.

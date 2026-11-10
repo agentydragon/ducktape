@@ -125,7 +125,7 @@ An API server error fails closed. Headers, metadata and request bodies never sel
 Services see the record's subject and `spec.pod` as an `auth.Subject`: a ServiceAccount
 `Principal`, or an `IdentityPrincipal` naming the Identity and its UID, each with the Pod as the
 provenance Pod. An `IdentityPrincipal` also carries its record (`auth.Workload`: namespace, name and
-its controller owner, or `StandingWorkload` for an ownerless record), so a service can pin state to
+its controller owner, or `NoController` for an ownerless record), so a service can pin state to
 the Sandbox that owns the workload. Only a method whose rule is `AnySubject` or
 `ReviewedServiceAccountOrIdentity` admits an Identity caller, as an `IdentityAdmission`; every other
 rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only

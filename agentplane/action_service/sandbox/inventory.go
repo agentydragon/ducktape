@@ -445,7 +445,8 @@ func (i *Inventory) stamp(ctx context.Context, caller Caller, account *corev1.Se
 			}},
 		},
 		// TODO(sandbox-lifetime): a forgotten box keeps its share of the namespace's quota until someone disposes of
-		// it. Expire boxes nobody has exec'd into for a while.
+		// it. Expire boxes nobody has exec'd into for a while. An Identity box's record left behind by a Pod
+		// deleted out of band is not collected either, and blocks a same-named successor's create until it times out.
 		Spec: spec,
 	}
 	_, err = i.client.CoreV1().Pods(i.binding.Namespace).Create(ctx, pod, metav1.CreateOptions{})

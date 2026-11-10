@@ -115,7 +115,7 @@ func TestSVIDResolvesAnIdentitySubject(t *testing.T) {
 	}
 	leaf.URIs[0] = mustURL(t, workload.Issue(t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"))
 	standing := auth.IdentityPrincipal{Identity: workload.Subject.Identity, Workload: workload.Subject.Workload}
-	standing.Workload.Owner = auth.StandingWorkload{}
+	standing.Workload.Owner = auth.NoController{}
 	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != standing {
 		t.Fatalf("standing subject = %#v, %v; want %#v", got, err, standing)
 	}

@@ -2023,7 +2023,9 @@ a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sand
 `action_service/sandbox/inventory.go`; the closed draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expired agent-sandbox boxes the same way. It also revokes a box's `WorkloadCredential` whose bound
 Pod no longer exists, so a Pod deleted outside `dispose` or garbage collection leaves no resolvable
-record. Boxes and Sandboxes are to converge into one object type
+record. It also collects the boxes whose caller Identity is gone: they outlive the Identity with their
+credentials revoked, and no caller can dispose of them since their old Identity cannot authenticate.
+Boxes and Sandboxes are to converge into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)).
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
