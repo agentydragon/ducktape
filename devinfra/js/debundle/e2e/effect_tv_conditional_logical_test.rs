@@ -173,37 +173,50 @@ fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
     );
 }
 
-/// The split moving `observed` (a read of `counter`) after `result`. When
-/// `flag()` can hold a value its source-summary lane omits, `second` runs and
-/// writes `counter`: the source prints `0 1`, the split `1 1`.
-fn assert_reader_split_diverges(definitions: &str) {
+/// Runs `run` on the fixture both helpers split: `observed` (a read of
+/// `counter`) in its own module after `result`, so the split runs `result`
+/// first.
+fn with_reader_split<T>(
+    definitions: &str,
+    extra: &[&'static str],
+    run: impl FnOnce(FixtureOpts<'_>) -> T,
+) -> T {
     let source = format!(
         "let counter = 0;\nfunction first() {{ return 0; }}\nfunction second() {{ counter = 1; return 1; }}\nfunction noop() {{ return 0; }}\n{definitions}\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n"
     );
-    let rejected = run_emit_on_rejection_fixture(
-        FixtureOpts::new(
-            &source,
-            vec![
-                logical_module("reader", &[Member::new("observed")]),
-                logical_module(
-                    "run",
-                    &[
-                        Member::new("counter"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("noop"),
-                        Member::new("flag"),
-                        Member::new("run"),
-                        Member::new("result"),
-                    ],
-                ),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
+    let members: Vec<Member> = [
+        "counter", "first", "second", "noop", "flag", "run", "result",
+    ]
+    .iter()
+    .chain(extra)
+    .map(|name| Member::new(name))
+    .collect();
+    run(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module("reader", &[Member::new("observed")]),
+            logical_module("run", &members),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline()))
+}
+
+/// When `flag()` can hold a value the analysis omits, `second` runs and
+/// writes `counter`: the source prints `0 1`, the split `1 1`. The gate keeps
+/// `result` sequenced after the reader.
+fn assert_reader_split_diverges_with(definitions: &str, extra: &[&'static str]) {
+    let rejected = with_reader_split(definitions, extra, run_emit_on_rejection_fixture);
     let report = rejected.translation_validation();
     assert_eq!(report["gate_accepts"], false, "{definitions}: {report:#}");
     assert_eq!(report["accepts"], false, "{definitions}: {report:#}");
+    assert_eq!(
+        report["counts"]["conflicts_by_kind"],
+        serde_json::json!({ "sequenced": 1 }),
+        "{definitions}: {report:#}"
+    );
+    let conflict = &report["conflicts"]["examples"][0];
+    assert_eq!(conflict["runs_first"]["module"], "run", "{report:#}");
+    assert_eq!(conflict["runs_later"]["module"], "reader", "{report:#}");
     assert_node_output(
         &rejected
             .source_root
@@ -212,6 +225,17 @@ fn assert_reader_split_diverges(definitions: &str) {
         "",
     );
     assert_node_output(&rejected.entry_path(), "1 1\n", "");
+}
+
+fn assert_reader_split_diverges(definitions: &str) {
+    assert_reader_split_diverges_with(definitions, &[]);
+}
+
+/// Positive anchor: the same split where `flag()` reaches only effect-free
+/// functions is accepted, and the moved tree prints the source's `0 0`.
+fn assert_reader_split_commutes(definitions: &str) {
+    let fixture = with_reader_split(definitions, &[], run_fixture);
+    assert_preserved_entry_output(&fixture, "0 0\n");
 }
 
 /// Opposing control: a test on a call whose callee has no ordered plan (the
@@ -295,42 +319,99 @@ fn a_summarized_local_holds_every_value_any_read_can_see() {
     }
 }
 
-/// Opposing control: a local only a closure assigns has no assignment the
-/// source-summary lane evaluates. It stays on the lane's fallback for an
-/// absent binding rather than becoming `undefined` alone, so the truthy arm
-/// that runs `second` is kept.
+const CALL_FLAG: &str = "function run() { return flag()(); }";
+
+/// Opposing control: a closure's write of every form reaches the frame that
+/// declares the binding through a shared cell, on the kernel lane: called
+/// later in the body, returned, wrapped, or read by the caller.
 #[test]
-fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
-    let source = "let counter = 0;\nfunction first() { return 0; }\nfunction second() { counter = 1; return 1; }\nfunction flag() { let r; const set = () => { r = {}; }; if (first()) {} set(); return r; }\nfunction run() { return flag() ? second() : first(); }\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n";
-    let rejected = run_emit_on_rejection_fixture(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("reader", &[Member::new("observed")]),
-                logical_module(
-                    "run",
-                    &[
-                        Member::new("counter"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("flag"),
-                        Member::new("run"),
-                        Member::new("result"),
-                    ],
-                ),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
+fn a_closure_write_reaches_the_declaring_frame() {
+    let set = "let f = noop; const set = () => { f = second; };";
+    for (definitions, extra) in [
+        (format!("function flag() {{ {set} set(); return f; }}\n{CALL_FLAG}"), &[][..]),
+        (
+            format!("function flag() {{ {set} set(); return f; }}\nfunction run() {{ const picked = flag(); return picked(); }}"),
+            &[][..],
+        ),
+        (format!("function flag() {{ {set} set(); return f(); }}\nfunction run() {{ return flag(); }}"), &[][..]),
+        (
+            format!("function flag() {{ let f = noop; (() => {{ f = second; }})(); return f; }}\n{CALL_FLAG}"),
+            &[][..],
+        ),
+        (
+            format!("function flag() {{ let f = noop; const o = {{ set() {{ f = second; }} }}; o.set(); return f; }}\n{CALL_FLAG}"),
+            &[][..],
+        ),
+        (
+            "function flag() { let r = {}; const clear = () => { r = undefined; }; clear(); return r; }\nfunction run() { return flag() ? first() : second(); }".to_string(),
+            &[][..],
+        ),
+        (
+            format!("function flag() {{ let f = noop; const outer = () => {{ const inner = () => {{ f = second; }}; inner(); }}; outer(); return f; }}\n{CALL_FLAG}"),
+            &[][..],
+        ),
+        (
+            "function flag(p) { const set = () => { p = second; }; set(); return p; }\nfunction run() { return flag(noop)(); }".to_string(),
+            &[][..],
+        ),
+        (
+            format!("function flag() {{ let f = noop; const set = (v) => {{ f = v; }}; set(second); return f; }}\n{CALL_FLAG}"),
+            &[][..],
+        ),
+        (
+            format!("function flag() {{ {set} set(); return {{ f }}; }}\nfunction run() {{ return flag().f(); }}"),
+            &[][..],
+        ),
+        (format!("function flag() {{ {set} set(); return f || noop; }}\n{CALL_FLAG}"), &[][..]),
+        (
+            format!("function flag() {{ {set} set(); return f; }}\nconst got = flag();\nfunction run() {{ return got(); }}"),
+            &["got"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(&definitions, extra);
+    }
+}
+
+/// The top-level form of the closure-write control: the effect decision no
+/// longer accepts moving `got()`'s caller before the reader.
+#[test]
+fn a_closure_write_read_at_top_level_is_not_an_effect_acceptance() {
+    let rejected = with_reader_split(
+        "function flag() { let f = noop; const set = () => { f = second; }; set(); return f; }\nconst got = flag();\nfunction run() { return got(); }",
+        &["got"],
+        run_emit_on_rejection_fixture,
     );
-    let report = rejected.translation_validation();
-    assert_eq!(report["gate_accepts"], false, "{report:#}");
-    assert_eq!(report["accepts"], false, "{report:#}");
-    assert_node_output(
-        &rejected
-            .source_root
-            .join(format!("{}.js", rejected.chunk_id)),
-        "0 1\n",
-        "",
-    );
-    assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    let report = rejected.effect_translation_validation();
+    assert_ne!(report["decision"]["status"], "accepted", "{report:#}");
+}
+
+/// Opposing control: a parameter's incoming value enters the source-summary
+/// lane without a store. Where a closure captures the parameter and it is
+/// rebound, the closure reads it as unknown, so the incoming value is
+/// published as a store's would be.
+#[test]
+fn a_summarized_parameter_publishes_its_incoming_value() {
+    let get = "const get = () => p; if (first()) {} const r = get(); p = noop; return r;";
+    for definitions in [
+        format!("function flag(p) {{ {get} }}\nfunction run() {{ return flag(second)(); }}"),
+        format!("function flag(p = second) {{ {get} }}\n{CALL_FLAG}"),
+        format!("function flag({{ p }}) {{ {get} }}\nfunction run() {{ return flag({{ p: second }})(); }}"),
+        "function flag(p) { let g = noop; const swap = () => { g = p; p = noop; }; if (first()) {} swap(); return g; }\nfunction run() { return flag(second)(); }".to_string(),
+        "function flag(p) { const get = () => p; const set = () => { p = noop; }; if (first()) {} const r = get(); set(); return r; }\nfunction run() { return flag(second)(); }".to_string(),
+    ] {
+        assert_reader_split_diverges(&definitions);
+    }
+}
+
+/// Positive anchors for the controls above: the same shapes reaching only
+/// effect-free functions keep the split.
+#[test]
+fn summarized_locals_reaching_only_effect_free_functions_keep_the_split() {
+    for body in [
+        "let f = noop; const set = () => { f = first; }; if (first()) {} set(); return f;",
+        "if (first()) {} for (const h of [first]) { return h; } return noop;",
+        "let f = noop; let g = noop; for (const x of [1, 2]) { g = f; f = first; } if (first()) {} return g;",
+    ] {
+        assert_reader_split_commutes(&format!("function flag() {{ {body} }}\n{CALL_FLAG}"));
+    }
 }

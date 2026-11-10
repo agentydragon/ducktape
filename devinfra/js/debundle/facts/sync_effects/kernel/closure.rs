@@ -64,7 +64,13 @@ pub(in crate::facts::sync_effects) fn lexical_captures(
         home_object: index.callable_home_object(callable),
         ..Default::default()
     };
-    for id in reads.iter().chain(body.rebinds.iter()) {
+    // A nested closure's write needs the cell as much as a read does.
+    let writes = index.nested_callable_writes.get(&callable);
+    for id in reads
+        .iter()
+        .chain(body.rebinds.iter())
+        .chain(writes.into_iter().flatten())
+    {
         if body.declared_locals.contains(id)
             || body.local_functions.contains_key(id)
             || body

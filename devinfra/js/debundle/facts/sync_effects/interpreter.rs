@@ -735,7 +735,7 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
     // A nested callable's write must reach its owner's frame: the binding
     // gets a cell, which the writer's ordered lane requires and stores to.
     for (key, callable) in &index.callables {
-        for binding in &callable.rebinds {
+        for binding in callable.writes() {
             if let Some(owner) = owners.get(binding)
                 && owner != key
             {
@@ -10194,6 +10194,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
     }
 
+    /// A parameter's incoming value, or a captured value, enters the
+    /// environment without a store; publish it where the binding is
+    /// untracked, as a store would. A pattern parameter's bindings have no
+    /// environment entry: an untracked one reads unknown, and the whole
+    /// argument is published.
+    #[inline(never)]
+    fn escape_untracked_environment(
+        &mut self,
+        callable: &Callable,
+        args: &[Values],
+        env: &mut Context,
+    ) {
+        for (id, values) in env.iter() {
+            if self.inputs.untracked_locals.contains(id) {
+                self.escape_untracked_values(values);
+            }
+        }
+        for (parameter, values) in callable.params.iter().zip(args) {
+            if parameter.binding.is_some() {
+                continue;
+            }
+            let untracked: Vec<&Id> = parameter
+                .bindings
+                .iter()
+                .filter(|binding| self.inputs.untracked_locals.contains(*binding))
+                .collect();
+            if !untracked.is_empty() {
+                self.escape_untracked_values(values);
+                for binding in untracked {
+                    env.entry(binding.clone()).or_default().extend(unknown());
+                }
+            }
+        }
+    }
+
     /// A loop head binds the iterated value's elements, which no assignment
     /// records; publish what they can reach.
     #[inline(never)]
@@ -10612,6 +10647,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callable.local_assignments,
         );
         self.widen_untracked_locals(callable, &mut env);
+        self.escape_untracked_environment(callable, &args, &mut env);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
