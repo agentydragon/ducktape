@@ -219,6 +219,8 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: haku-sandbox-force-proxy-egress
 spec:
   egress:
