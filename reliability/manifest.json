@@ -1,14 +1,11 @@
 {
-  "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
-  "window_start_utc": "2026-10-30T22:10:00Z",
-  "window_end_utc": "2026-11-01T21:45:00Z",
-  "published_at_utc": "2026-11-01T22:13:41.565804+00:00",
+  "source_devel_commit": "17ed98e8ea69787689c908a3ed49749b6ee7e554",
+  "window_start_utc": "2026-11-03T00:00:00Z",
+  "window_end_utc": "2026-11-10T23:13:00Z",
+  "published_at_utc": "2026-11-10T23:20:51.886716+00:00",
   "attribution": "not collected",
-  "previous_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
-  "report_html_sha256": "2f494359fe8cf4d54883805a3107150e85c446268f951dc1d78f045613ea5799",
-  "evidence_sha256": "731f0079fdde9b9a23b562a32b36bf88e991c03e4b613c21b41a963542ae65d0",
-  "sampling_design": "Target tracker and merged-PR census since previous report; separate shorter Actions job-attempt subset; selected physical failure/retry examples.",
-  "presentation_updated_at_utc": "2026-11-09",
-  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
-  "presentation_validation": "../presentation-validation.json"
+  "previous_report_branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
+  "report_html_sha256": "4287a9ec4a69d9bdb096dc6f395597d8bbad69fe8f4833168199bcfec6c71909",
+  "evidence_sha256": "829d4c8ece7c918f9dc6bf44fb3711bf776bdb487d127bb51d2e3a018334b6b9",
+  "sampling_design": "Focused eight-day devel-filtered VM stats and branch-unverified target history through 23:04 UTC, plus selected #15493 PR attempts through 23:13 UTC; no repository-wide PR or fresh physical denominator."
 }
