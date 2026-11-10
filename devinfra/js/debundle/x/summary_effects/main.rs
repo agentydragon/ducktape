@@ -42,6 +42,11 @@ struct Cli {
     /// start (another chunk in an import cycle with this one).
     #[arg(long)]
     exports_reachable: bool,
+    /// Tier 0: a directory holding every chunk of the program, this one
+    /// included, to decide whether the chunk is on an import cycle and what
+    /// any chunk writes on globals.
+    #[arg(long)]
+    program_chunks: Option<PathBuf>,
     /// Tier 0: bounded widenings of "pure definition" to enable.
     #[arg(long, value_enum, value_delimiter = ',')]
     upgrade: Vec<tier0::Upgrade>,
@@ -108,11 +113,9 @@ fn main() -> Result<()> {
     };
     let (mode, examples) = (cli.mode, cli.examples);
     let pairs_out = cli.unproven_pairs;
-    let options = tier0::Options {
-        exports_reachable: cli.exports_reachable,
-        upgrades: cli.upgrade.iter().copied().collect(),
-        what_if_pure: cli.what_if_pure.iter().copied().collect(),
-    };
+    let (exports_reachable, upgrades, what_if_pure) =
+        (cli.exports_reachable, cli.upgrade, cli.what_if_pure);
+    let (program_chunks, chunk_path) = (cli.program_chunks, cli.chunk.clone());
     // Minified chunks nest expressions deeper than the default stack.
     let rendered = std::thread::Builder::new()
         .stack_size(STACK_BYTES)
@@ -129,7 +132,19 @@ fn main() -> Result<()> {
                     pairs_out,
                 };
                 Ok(match mode {
-                    Mode::Tier0 => serde_json::to_string_pretty(&tier0_report(inputs, &options)?)?,
+                    Mode::Tier0 => {
+                        let program = program_chunks
+                            .as_deref()
+                            .map(|root| summary_effects::program::load(root, &chunk_path))
+                            .transpose()?;
+                        let options = tier0::Options {
+                            exports_reachable,
+                            upgrades: upgrades.into_iter().collect(),
+                            what_if_pure: what_if_pure.into_iter().collect(),
+                            program,
+                        };
+                        serde_json::to_string_pretty(&tier0_report(inputs, &options)?)?
+                    }
                     Mode::PointsTo => serde_json::to_string_pretty(&report(inputs)?)?,
                 })
             })

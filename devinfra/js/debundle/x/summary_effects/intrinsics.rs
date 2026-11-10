@@ -22,7 +22,7 @@ pub struct Writes {
     pub props: FxHashSet<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Census {
     pub written: FxHashMap<String, Writes>,
     /// A store on the global object under an unknown key.
@@ -30,6 +30,16 @@ pub struct Census {
 }
 
 impl Census {
+    /// Adds what another chunk writes.
+    pub fn merge(&mut self, other: Census) {
+        self.all |= other.all;
+        for (global, writes) in other.written {
+            let mine = self.written.entry(global).or_default();
+            mine.any |= writes.any;
+            mine.props.extend(writes.props);
+        }
+    }
+
     /// Whether the chunk leaves the global binding and these properties of
     /// it (or of its `prototype`) untouched.
     pub fn untouched(&self, global: &str, props: &[&str]) -> bool {

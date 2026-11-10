@@ -598,9 +598,21 @@ pub struct Tier0Comparison {
 }
 
 #[derive(Serialize)]
+pub struct Precondition {
+    pub name: &'static str,
+    /// `None` when the tool had no way to check.
+    pub holds: Option<bool>,
+    pub violating_sites: usize,
+    /// What the analysis did instead where it is violated or unchecked.
+    pub fallback: &'static str,
+}
+
+#[derive(Serialize)]
 pub struct Tier0Report {
     pub chunk: String,
     pub exports_reachable: bool,
+    /// How many program chunks were read for cycle and census facts.
+    pub program_chunks: Option<usize>,
     pub upgrades: Vec<tier0::Upgrade>,
     /// Non-empty marks the report an unsound estimate.
     pub what_if_pure: Vec<ImpureCause>,
@@ -610,8 +622,8 @@ pub struct Tier0Report {
     pub peak_rss_kib: Option<u64>,
     pub statements: usize,
     pub top_level_bindings: usize,
-    /// The chunk uses `eval` or `with`: every statement is impure.
-    pub refused: bool,
+    /// What the verdicts rest on, and whether this input satisfies it.
+    pub preconditions: Vec<Precondition>,
     pub kinds: KindCounts,
     pub impure_causes: BTreeMap<ImpureCause, usize>,
     /// Pure definitions that depend on an intrinsic family being unmodified.
@@ -764,11 +776,56 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         }
         _ => None,
     };
+    let cycle = options
+        .program
+        .as_ref()
+        .map(|program| program.on_import_cycle);
+    let preconditions = vec![
+        Precondition {
+            name: "no_eval_or_with",
+            holds: Some(analysis.refused == 0),
+            violating_sites: analysis.refused,
+            fallback: "every statement is impure",
+        },
+        Precondition {
+            name: "no_top_level_await",
+            holds: Some(analysis.top_level_awaits == 0),
+            violating_sites: analysis.top_level_awaits,
+            fallback: "the awaiting statement is impure and exports count as reachable",
+        },
+        Precondition {
+            name: "not_on_import_cycle",
+            holds: cycle.map(|cycle| !cycle),
+            violating_sites: usize::from(cycle == Some(true)),
+            fallback: if cycle.is_none() && !options.exports_reachable {
+                "unchecked: assumed to hold; pass --program-chunks or --exports-reachable"
+            } else {
+                "exports count as reachable"
+            },
+        },
+        Precondition {
+            name: "intrinsics_unmodified_by_program_code",
+            holds: Some(analysis.intrinsics_denied == 0),
+            violating_sites: analysis.intrinsics_denied,
+            fallback: if options.program.is_some() {
+                "the intrinsic use is impure; census over every program chunk"
+            } else {
+                "the intrinsic use is impure; census over this chunk only"
+            },
+        },
+        Precondition {
+            name: "intrinsics_unmodified_by_unknown_code",
+            holds: None,
+            violating_sites: 0,
+            fallback: "assumed for the globals in intrinsic_families_used",
+        },
+    ];
     let mut sorted_degree = degree.clone();
     sorted_degree.sort_unstable();
     Ok(Tier0Report {
         chunk: file_name(chunk),
-        exports_reachable: options.exports_reachable,
+        exports_reachable: analysis.exports_reachable,
+        program_chunks: options.program.as_ref().map(|program| program.chunks),
         upgrades: options.upgrades.iter().copied().collect(),
         what_if_pure: options.what_if_pure.iter().copied().collect(),
         parse_ms,
@@ -777,7 +834,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         peak_rss_kib: peak_rss_kib(),
         statements: n,
         top_level_bindings: analysis.bindings,
-        refused: analysis.refused,
+        preconditions,
         kinds,
         impure_causes,
         intrinsic_families_used: analysis.families_used.clone(),

@@ -99,6 +99,7 @@ fn tier0_refuses_every_divergent_swap() {
                 exports_reachable,
                 upgrades: upgrades.into_iter().collect(),
                 what_if_pure: Default::default(),
+                program: None,
             };
             let accepted = accepted(|name, source| {
                 let parsed = js_ast::parse_js_module(name, source).expect("the fixture parses");
@@ -125,6 +126,7 @@ fn last_is_pure(source: &str) -> bool {
         exports_reachable: false,
         upgrades: ALL_UPGRADES.into_iter().collect(),
         what_if_pure: Default::default(),
+        program: None,
     };
     let analysis = tier0::analyze(&parsed.module, unresolved, &options);
     analysis.units.last().expect("a statement").kind == tier0::Kind::Pure
@@ -266,6 +268,7 @@ fn tier0(source: &str, exports_reachable: bool) -> tier0::Tier0 {
         exports_reachable,
         upgrades: ALL_UPGRADES.into_iter().collect(),
         what_if_pure: Default::default(),
+        program: None,
     };
     tier0::analyze(&parsed.module, unresolved, &options)
 }

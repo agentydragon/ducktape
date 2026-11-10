@@ -124,13 +124,31 @@ counts statements impure for a cause as pure), with the first two upgrades:
 | all three                          |                  123 / 35 |                    383 / 44 |
 | all three and `X.p = …` statements |                   18 / 10 |                    371 / 44 |
 
-### Import cycles
+### Preconditions
 
-`tier0` assumes no other chunk can call this chunk's exports while it
-initializes. That holds unless the chunk is in an import cycle (a static
-cycle, or a dynamic `import()` of it from code that runs during its
-initialization). `--exports-reachable` drops the assumption; the fixture
-`tier0_export_cycle_needs_the_precondition` shows the pair it then refuses.
+The report's `preconditions` block says, for the input at hand, whether each
+assumption holds and what the analysis fell back to.
+
+| Precondition                          | Check                                                                                                               | Fallback                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| No `eval` or `with`                   | syntax                                                                                                              | every statement is impure                  |
+| No top-level `await`                  | syntax                                                                                                              | the statement is impure; exports reachable |
+| Not on an import cycle                | `--program-chunks <dir>`: static cycle, or a dynamic `import()` in the chunk's static dependencies that may load it | exports reachable (`--exports-reachable`)  |
+| Intrinsics unmodified by program code | the census, over the chunk or over `--program-chunks`                                                               | the intrinsic use is impure                |
+| Intrinsics unmodified by unknown code | none: a stated premise for `intrinsic_families_used`                                                                |                                            |
+
+On the Excalidraw corpus (79 chunks, read in about 0.3 s): no `eval`, `with`
+or top-level `await`; neither `main` nor `editor` is on an import cycle, so
+`editor`'s exports need not count as reachable. The program-wide census,
+though, finds every intrinsic the upgrades rely on used as a value in some
+chunk, so with `--program-chunks` all intrinsic upgrades are refused (15 uses
+in `main`, 25 in `editor`) and `editor` falls back to the primitive-bindings
+row: 2,107 unproven pairs, 50 modules. The census's "used as a value means
+touched" rule is the conservative part; narrowing it means following aliases
+of intrinsic constructors.
+
+The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
+cycle precondition decides.
 
 ### Shapes from a large private consumer corpus
 

@@ -9,5 +9,6 @@ pub mod intrinsics;
 pub mod model;
 pub mod orders;
 pub mod pairs;
+pub mod program;
 pub mod report;
 pub mod tier0;

@@ -31,6 +31,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::helpers::assigned_ids;
 use crate::intrinsics::{Census, census};
+use crate::program::ProgramFacts;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, clap::ValueEnum,
@@ -116,7 +117,15 @@ pub struct Tier0 {
     /// Per impure unit: the closure of its own mentions.
     own_reach: FxHashMap<usize, FxHashSet<Binding>>,
     pub bindings: usize,
-    pub refused: bool,
+    /// `eval` and `with` sites; any makes every statement impure.
+    pub refused: usize,
+    /// `await` outside any function: other modules may run in between, so
+    /// exports count as reachable.
+    pub top_level_awaits: usize,
+    /// Whether exported bindings were treated as reachable from the start.
+    pub exports_reachable: bool,
+    /// Intrinsic uses left impure because the census found a write.
+    pub intrinsics_denied: usize,
     /// Per intrinsic global: the pure definitions that depend on it being
     /// unmodified.
     pub families_used: std::collections::BTreeMap<&'static str, usize>,
@@ -130,21 +139,52 @@ struct Scan<'a> {
     bindings: &'a FxHashMap<Id, Binding>,
     unresolved: SyntaxContext,
     mentions: FxHashSet<Binding>,
-    refused: bool,
+    /// `eval` and `with` sites.
+    refused: usize,
+    /// `await` and `for await` outside any function.
+    top_level_awaits: usize,
+    function_depth: usize,
 }
 
 impl Visit for Scan<'_> {
+    fn visit_function(&mut self, function: &Function) {
+        self.function_depth += 1;
+        function.visit_children_with(self);
+        self.function_depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.function_depth += 1;
+        arrow.visit_children_with(self);
+        self.function_depth -= 1;
+    }
+
+    fn visit_await_expr(&mut self, awaited: &AwaitExpr) {
+        if self.function_depth == 0 {
+            self.top_level_awaits += 1;
+        }
+        awaited.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, looped: &ForOfStmt) {
+        if looped.is_await && self.function_depth == 0 {
+            self.top_level_awaits += 1;
+        }
+        looped.visit_children_with(self);
+    }
+
     fn visit_ident(&mut self, ident: &Ident) {
         if let Some(binding) = self.bindings.get(&ident.to_id()) {
             self.mentions.insert(*binding);
         }
         if ident.ctxt == self.unresolved && &*ident.sym == "eval" {
-            self.refused = true;
+            self.refused += 1;
         }
     }
 
-    fn visit_with_stmt(&mut self, _: &WithStmt) {
-        self.refused = true;
+    fn visit_with_stmt(&mut self, with: &WithStmt) {
+        self.refused += 1;
+        with.visit_children_with(self);
     }
 }
 
@@ -228,6 +268,8 @@ struct Classifier<'a> {
     eager: Vec<Binding>,
     /// The globals the accepted intrinsic uses depend on.
     intrinsics: Vec<&'static str>,
+    /// Intrinsic uses the census refused.
+    denied: usize,
 }
 
 /// Whether `expr` evaluates to a number, string, boolean, `null` or
@@ -512,6 +554,8 @@ impl Classifier<'_> {
         if ok {
             self.intrinsics
                 .extend(dependencies.iter().map(|(global, _)| *global));
+        } else {
+            self.denied += 1;
         }
         ok
     }
@@ -797,6 +841,8 @@ pub struct Options {
     /// An estimate, not an analysis: count statements impure for these
     /// causes as pure definitions, to size what refining a cause could buy.
     pub what_if_pure: FxHashSet<ImpureCause>,
+    /// Facts about the program's other chunks, when they were read.
+    pub program: Option<ProgramFacts>,
 }
 
 pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) -> Tier0 {
@@ -922,17 +968,25 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         }
     }
 
-    let mut refused = false;
+    let mut refused = 0;
+    let mut top_level_awaits = 0;
+    let mut intrinsics_denied = 0;
     let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
     let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
-    let census = census(module, unresolved, &object_aliases);
+    let mut census = census(module, unresolved, &object_aliases);
+    if let Some(program) = &options.program {
+        // A write by any chunk of the program counts.
+        census.merge(program.census.clone());
+    }
     let mut units = Vec::with_capacity(sources.len());
     for (source, declared) in sources.iter().zip(declared_by_unit) {
         let mut scan = Scan {
             bindings: &bindings,
             unresolved,
             mentions: FxHashSet::default(),
-            refused: false,
+            refused: 0,
+            top_level_awaits: 0,
+            function_depth: 0,
         };
         let mut classifier = Classifier {
             bindings: &bindings,
@@ -943,6 +997,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             unresolved,
             eager: Vec::new(),
             intrinsics: Vec::new(),
+            denied: 0,
         };
         let (kind, assigned) = match source {
             Source::Item(item) => {
@@ -958,7 +1013,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             Kind::Impure(cause) if options.what_if_pure.contains(&cause) => Kind::Pure,
             kind => kind,
         };
-        refused |= scan.refused;
+        refused += scan.refused;
+        top_level_awaits += scan.top_level_awaits;
+        intrinsics_denied += classifier.denied;
         if kind == Kind::Pure {
             for global in &classifier.intrinsics {
                 *families_used.entry(*global).or_default() += 1;
@@ -987,7 +1044,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 .collect(),
         });
     }
-    if refused {
+    if refused > 0 {
         // `eval` or `with` can name any binding: nothing is a pure definition.
         for unit in &mut units {
             if unit.kind != Kind::Inert {
@@ -1015,7 +1072,13 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     };
 
     let mut reach_stamp = vec![NEVER; binding_count];
-    if options.exports_reachable {
+    let exports_reachable = options.exports_reachable
+        || top_level_awaits > 0
+        || options
+            .program
+            .as_ref()
+            .is_some_and(|program| program.on_import_cycle);
+    if exports_reachable {
         let seeds: Vec<Binding> = exported.iter().copied().collect();
         closure(&seeds, &mut |binding| {
             let fresh = reach_stamp[binding as usize] == NEVER;
@@ -1068,6 +1131,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         own_reach,
         bindings: binding_count,
         refused,
+        top_level_awaits,
+        exports_reachable,
+        intrinsics_denied,
         families_used,
         census,
     }
