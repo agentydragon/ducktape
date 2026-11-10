@@ -617,14 +617,17 @@ fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
 
     assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
     assert_eq!(
-        execution(&fixture, "result"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        result["precision_losses"],
+        serde_json::json!([]),
+        "{result:#}"
+    );
+    // The whole chain runs below the bound, so the root call seals its owner.
+    assert_eq!(
+        result["binding_effect_authority"]["authority"], "operation_receipt",
+        "{result:#}"
     );
 }
 

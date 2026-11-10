@@ -67,6 +67,14 @@ impl Identities {
     }
 }
 
+/// After an abandoned attempt left `attempted`, move the restored world past
+/// every cell id and revision the attempt minted, as a later sibling leaf is.
+pub(super) fn separate_from_abandoned(attempted: &World, restored: &mut World) {
+    let mut identities = Identities::default();
+    identities.observe(attempted);
+    identities.separate(restored);
+}
+
 /// Run every child from the adapter's current state. The first child keeps
 /// the fork point's identities, so it shares what was memoized before the
 /// fork; each later child starts past its earlier siblings.
