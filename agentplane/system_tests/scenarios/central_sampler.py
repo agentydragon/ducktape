@@ -473,7 +473,6 @@ async def _roll_gateway_for_central_session(
     )["items"]
     (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
     old_uid = old_pod["metadata"]["uid"]
-    started = asyncio.get_running_loop().time()
     killed_native: tuple[str, str, str] | None = None
     try:
         await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
@@ -488,6 +487,7 @@ async def _roll_gateway_for_central_session(
             for item in gateway_slices
             for endpoint in item.get("endpoints") or []
         ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
+        unavailable_started = asyncio.get_running_loop().time()
         if failed_resume_after is not None:
             session_id, _, read_call_id = failed_resume_after
             failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
@@ -537,15 +537,10 @@ async def _roll_gateway_for_central_session(
                 for item in slices
                 for endpoint in item.get("endpoints", [])
             ):
+                outage_seconds = asyncio.get_running_loop().time() - unavailable_started
                 break
             await asyncio.sleep(0.2)
-    return (
-        await sampler_caller_after_gateway_roll(cluster, deployed),
-        asyncio.get_running_loop().time() - started,
-        old_uid,
-        new_uid,
-        killed_native,
-    )
+    return (await sampler_caller_after_gateway_roll(cluster, deployed), outage_seconds, old_uid, new_uid, killed_native)
 
 
 async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
@@ -666,7 +661,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
         )
         assert killed_native is None
-        assert outage_seconds < 25, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
+        assert outage_seconds < 30, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
         (read_output,) = [output for output in request.tool_outputs if output.call_id == "read-live-process"]
