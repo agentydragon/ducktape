@@ -183,12 +183,12 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":action_service_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto"},
+    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto,rewrite_imports=./google/api/annotations_pb.js:./third_party/googleapis"},
     deps = [
         "//agentplane/proto:code_pb",
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )
 
@@ -228,9 +228,10 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":operator_action_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     deps = [
         ":action_service_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )
 
@@ -462,5 +463,6 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":web_push_service_proto",
-    deps = ["//google/api:annotations_pb"],
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
+    deps = ["//third_party/googleapis:annotations_pb"],
 )

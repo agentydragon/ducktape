@@ -215,9 +215,9 @@ does not require an HTTP facade.
 - **Browser:** the app serves `/upstream/<service>/v1/` through generated gateway handlers or typed
   adapters over generated stubs, calling backend gRPC directly. Go HTTP boundaries use generated gateway handlers. Neither
   makes an HTTP call to a backend RPC facade.
-  The browser decodes ProtoJSON into protobuf-es messages from `ts_proto_library`, which for an
-  annotated proto needs the root [`//google/api`](../../google/api/BUILD.bazel) package, and follows a
-  stream with [`followWatch`](../app/frontend/watch_stream.ts).
+  The browser decodes ProtoJSON into protobuf-es messages from `ts_proto_library`, using
+  [`//third_party/googleapis`](../../third_party/googleapis/BUILD.bazel) for HTTP annotations, and follows
+  a stream with [`followWatch`](../app/frontend/watch_stream.ts).
 - **Not RPCs, so hand-written HTTP:** OIDC login, callback and logout; `GET /sw.js`; the Electric shape
   proxy; the Sandbox console's WebSocket bridge; the MCP endpoint, OAuth metadata and MCP linkage
   callback; the signed GitHub webhook; LLM ingress; Prometheus metrics.

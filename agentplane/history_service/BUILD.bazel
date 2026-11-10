@@ -270,12 +270,13 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":history_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:session_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )

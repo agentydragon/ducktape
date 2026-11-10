@@ -289,10 +289,11 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":egress_admin_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         ":egress_rules_pb",
         "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )

@@ -42,10 +42,11 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":policy_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     deps = [
         "//agentplane/policy/api/v1alpha1:policy_types_pb",
         "//agentplane/proto:identity_pb",
         "//agentplane/proto:kubernetes_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )

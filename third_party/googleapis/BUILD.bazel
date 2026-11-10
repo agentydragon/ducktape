@@ -1,0 +1,29 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js/proto:stage.bzl", "stage_protobuf_es")
+
+package(default_visibility = ["//visibility:public"])
+
+stage_protobuf_es(
+    name = "http_generated",
+    proto = "@googleapis//google/api:http_proto",
+)
+
+js_library(
+    name = "http_pb",
+    srcs = [":http_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+stage_protobuf_es(
+    name = "annotations_generated",
+    proto = "@googleapis//google/api:annotations_proto",
+)
+
+js_library(
+    name = "annotations_pb",
+    srcs = [":annotations_generated"],
+    deps = [
+        ":http_pb",
+        "//:node_modules/@bufbuild/protobuf",
+    ],
+)

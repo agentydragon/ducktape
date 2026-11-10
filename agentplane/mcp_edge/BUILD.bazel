@@ -51,10 +51,11 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":connection_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     deps = [
         "//agentplane/action_service:action_service_pb",
         "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
+        "//third_party/googleapis:annotations_pb",
     ],
 )
 
