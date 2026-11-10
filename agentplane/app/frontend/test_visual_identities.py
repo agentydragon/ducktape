@@ -81,5 +81,72 @@ async def test_deleting_an_unreferenced_identity_returns_to_the_list(view: Visua
     await view.check(context="back on the list after the delete")
 
 
+async def test_sandbox_page_delete_offers_independent_identity_cleanup(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "unreferenced-identity")
+    await app.mount_app("/sandboxes/suspended-sandbox")
+    await view.page.get_by_role("button", name="More Sandbox actions").click()
+    await view.page.get_by_role("menuitem", name="Delete").click()
+    dialog = view.page.get_by_role("dialog", name="Delete suspended-sandbox?")
+    cleanup = dialog.get_by_role("checkbox", name="Delete identity unreferenced-identity too")
+    await expect(cleanup).to_be_enabled()
+    await expect(cleanup).not_to_be_checked()
+    await view.check(context="Sandbox page identity cleanup choice loaded")
+    await view.capture(target=dialog)
+
+
+async def test_sandbox_list_delete_shows_identity_cleanup(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "unreferenced-identity")
+    await app.mount_app("/sandboxes")
+    await view.page.get_by_role("button", name="More actions for suspended-sandbox").click()
+    await view.page.get_by_role("menuitem", name="Delete").click()
+    dialog = view.page.get_by_role("dialog", name="Delete suspended-sandbox?")
+    await expect(dialog.get_by_role("checkbox", name="Delete identity unreferenced-identity too")).to_be_enabled()
+    await view.check(context="Sandbox list identity cleanup choice loaded")
+    await view.capture(target=dialog)
+
+
+async def test_sandbox_delete_refuses_referenced_identity_cleanup(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "referenced-identity")
+    await app.mount_app("/sandboxes/suspended-sandbox")
+    await view.page.get_by_role("button", name="More Sandbox actions").click()
+    await view.page.get_by_role("menuitem", name="Delete").click()
+    dialog = view.page.get_by_role("dialog", name="Delete suspended-sandbox?")
+    await expect(dialog.get_by_role("checkbox", name="Delete identity referenced-identity too")).to_be_disabled()
+    await expect(dialog.get_by_text("PolicyBinding referenced-identity-operator-grant")).to_be_visible()
+    await expect(dialog.get_by_role("button", name="Delete", exact=True)).to_be_enabled()
+    await view.check(context="Sandbox delete offers no cleanup for a referenced identity")
+    await view.capture(target=dialog)
+
+
+async def test_sandbox_delete_reports_missing_identity(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "removed-identity")
+    await app.mount_app("/sandboxes/suspended-sandbox")
+    await view.page.get_by_role("button", name="More Sandbox actions").click()
+    await view.page.get_by_role("menuitem", name="Delete").click()
+    dialog = view.page.get_by_role("dialog", name="Delete suspended-sandbox?")
+    await expect(dialog.get_by_role("checkbox", name="Delete identity removed-identity too")).to_be_disabled()
+    await expect(dialog.get_by_text("The named identity is no longer present")).to_be_visible()
+    await view.check(context="Sandbox deletion explains missing Identity without blocking Sandbox deletion")
+    await view.capture(target=dialog)
+
+
+async def test_sandbox_delete_identity_cleanup_waits_for_controller(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "unreferenced-identity")
+    await app.mount_app("/sandboxes/suspended-sandbox")
+    await view.page.get_by_role("button", name="More Sandbox actions").click()
+    await view.page.get_by_role("menuitem", name="Delete").click()
+    dialog = view.page.get_by_role("dialog", name="Delete suspended-sandbox?")
+    await dialog.get_by_role("checkbox", name="Delete identity unreferenced-identity too").check()
+    await dialog.get_by_role("button", name="Delete", exact=True).click()
+    await expect(
+        dialog.get_by_text("Sandbox deletion was requested. The identity remains", exact=False)
+    ).to_be_visible()
+    await expect(dialog.get_by_role("button", name="Retry identity deletion")).to_be_enabled()
+    await view.check(context="asynchronous Sandbox removal leaves an explicit identity cleanup retry")
+    await view.capture(target=dialog)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

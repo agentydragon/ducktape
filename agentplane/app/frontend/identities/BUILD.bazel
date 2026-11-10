@@ -40,7 +40,12 @@ ts_library(
     name = "references",
     srcs = ["references.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//agentplane/policy/v1:policy_service_pb"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:identity_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+    ],
 )
 
 agentplane_vitest_test(
@@ -50,7 +55,10 @@ agentplane_vitest_test(
         ":references",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:identity_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -81,8 +89,10 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
         "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -94,6 +104,7 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 

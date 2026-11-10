@@ -3681,6 +3681,21 @@ routes.unshift([
 
 routes.unshift(
   [
+    "DELETE",
+    /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+)$/,
+    (match, query) => {
+      const sandbox = SANDBOXES.find(
+        (item) =>
+          item.target?.namespace === decodeURIComponent(match[1]!) &&
+          item.target.name === decodeURIComponent(match[2]!) &&
+          item.target.uid === query.get("target.uid")
+      );
+      if (!sandbox) return Response.json({ message: "Sandbox changed" }, { status: 409 });
+      // The controller removes a Sandbox asynchronously; keep it in the watch until the test advances it.
+      return {};
+    },
+  ],
+  [
     "GET",
     /^\/upstream\/egress\/v1\/decisions:watch$/,
     (_match, _query, signal) =>
@@ -3790,6 +3805,7 @@ routes.unshift(
     /^\/upstream\/policy\/v1\/identities\/agentplane-visual\/([^/]+)$/,
     (match, query) => deleteIdentity(decodeURIComponent(match[1]!), query.get("uid")),
   ],
+  ["GET", /^\/upstream\/dispatcher\/v1\/sessions$/, () => Response.json({ sessions: [] })],
   [
     "GET",
     /^\/upstream\/policy\/v1\/policy-sets:watch$/,
@@ -3925,6 +3941,11 @@ const visualHarness = {
         controller: true,
       }),
     ];
+  },
+  bindSandboxIdentity(sandboxName: string, identityName: string): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
+    if (!sandbox) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+    sandbox.identityName = identityName;
   },
   nameThread(threadId: string, name: string): void {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);

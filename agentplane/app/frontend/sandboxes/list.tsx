@@ -38,13 +38,7 @@ import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
-import {
-  createEnvironment,
-  deleteEnvironment,
-  listEnvironmentTemplates,
-  resumeSandbox,
-  suspendEnvironment,
-} from "./client";
+import { createEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";
 
 type NewSandboxForm = {
   name: string;
@@ -100,7 +94,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<string[]>([]);
   // Keep the exact UID selected when opening the confirmation, even if its name is reused.
-  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<{ target: EnvironmentTarget; identityName: string } | null>(
+    null
+  );
   const live = useRequiredSandboxesLive();
   const rows = live.snapshot ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
@@ -175,14 +171,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setError(failure ? displayableError(failure) : null);
   }
 
-  async function remove(target: EnvironmentTarget): Promise<void> {
-    const failure = await deleteEnvironment(target).then(
-      () => null,
-      (reason: unknown) => reason
-    );
-    setError(failure ? displayableError(failure) : null);
-  }
-
   async function create(): Promise<void> {
     const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
@@ -220,12 +208,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       </TopbarTitle>
       {confirmingDelete !== null && (
         <ConfirmDelete
-          name={confirmingDelete.name}
+          target={confirmingDelete.target}
+          identityName={confirmingDelete.identityName}
           onCancel={() => setConfirmingDelete(null)}
-          onConfirm={() => {
-            void remove(confirmingDelete);
-            setConfirmingDelete(null);
-          }}
+          onDeleted={() => setConfirmingDelete(null)}
         />
       )}
       {error && <Text c="red">{error}</Text>}
@@ -366,7 +352,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         <Menu.Item
                           color="red"
                           disabled={!deletable(row)}
-                          onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, row.target!))}
+                          onClick={() =>
+                            setConfirmingDelete({
+                              target: clone(EnvironmentTargetSchema, row.target!),
+                              identityName: row.identityName,
+                            })
+                          }
                         >
                           Delete
                         </Menu.Item>

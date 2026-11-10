@@ -83,6 +83,7 @@ const live = vi.hoisted(
 );
 vi.mock("../policy/watch", () => ({
   usePolicyResources: () => ({ resources: { bindings: [], sets: [] }, error: null }),
+  useIdentities: () => ({ identities: [], error: null }),
 }));
 
 vi.mock("../threads/live", () => ({

@@ -345,6 +345,40 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	}
 }
 
+func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
+	objects := baseReader(t)
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, ManagementOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &environmentpb.EnvironmentDescriptor{
+		Target:       &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		IdentityName: "old-agent",
+	}
+	resource := &sandboxapi.Sandbox{}
+	key := client.ObjectKey{Namespace: discoveryNamespace, Name: sandboxName}
+	if err := objects.Get(t.Context(), key, resource); err != nil {
+		t.Fatal(err)
+	}
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "new-agent"}
+	if err := objects.Update(t.Context(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.IdentityName != "new-agent" {
+		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.IdentityName, visible, err)
+	}
+	if err := objects.Get(t.Context(), key, resource); err != nil {
+		t.Fatal(err)
+	}
+	resource.Spec.Identity = nil
+	if err := objects.Update(t.Context(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.IdentityName != "" {
+		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want empty", descriptor.IdentityName, visible, err)
+	}
+}
+
 func TestDiscoverResumeAndReadThroughOneService(t *testing.T) {
 	sandbox := sandboxObject(sandboxUID)
 	sandbox.Spec.WakeGeneration = 7

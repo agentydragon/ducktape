@@ -1,5 +1,7 @@
+import { fromJson } from "@bufbuild/protobuf";
 import type { Identity } from "../../../policy/v1/policy_service_pb";
-import { displayableError, fetchText, HttpError } from "../client";
+import { ListSessionsResponseSchema, type Session } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { displayableError, fetchJson, fetchText, HttpError } from "../client";
 
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
 
@@ -64,4 +66,24 @@ export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome>
     return { case: "failed", error: typeof message === "string" ? message : error.message };
   }
   return { case: "deleted" };
+}
+
+/** Read every Dispatcher page before claiming that no other Session names an Identity. */
+export async function listIdentitySessions(): Promise<Session[]> {
+  const sessions: Session[] = [];
+  const visited = new Set<string>();
+  let token = "";
+  do {
+    const query = new URLSearchParams({ limit: "100" });
+    if (token) query.set("pageToken", token);
+    const response = fromJson(
+      ListSessionsResponseSchema,
+      await fetchJson(`/upstream/dispatcher/v1/sessions?${query}`, { headers: { Accept: "application/json" } })
+    );
+    sessions.push(...response.sessions);
+    token = response.nextPageToken;
+    if (token && visited.has(token)) throw new Error("Dispatcher repeated a Session page token");
+    visited.add(token);
+  } while (token);
+  return sessions;
 }

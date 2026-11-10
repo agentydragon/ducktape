@@ -332,6 +332,10 @@ func (s *Service) revalidateDescriptor(
 	if !broad && (!found || !callerMatches(caller, execution)) {
 		return nil, false, false, nil
 	}
+	descriptor.IdentityName = ""
+	if current.Resource.Spec.Identity != nil {
+		descriptor.IdentityName = current.Resource.Spec.Identity.Name
+	}
 	if found {
 		descriptor.ExecutionAccount = execution
 	} else {
