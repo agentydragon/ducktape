@@ -612,3 +612,44 @@ fn arguments_read_by_an_arrow_and_a_generator_return_are_published() {
         assert_reader_split_diverges_with(&format!("{definitions}\n{CALL_FLAG}"), extra);
     }
 }
+
+/// Opposing control: a value dropped to unknown keeps its capabilities, so
+/// calling it reaches `second`: a capture past the closure budget in an owner
+/// with no cells (`new Map()` keeps it off the ordered lane), and `new` of a
+/// plain function that returns `second`.
+#[test]
+fn a_value_dropped_to_unknown_keeps_its_capabilities() {
+    let locals: Vec<String> = (0..70).map(|index| format!("a{index}")).collect();
+    let budget = format!(
+        "function flag() {{ new Map(); let {} = 0; let zz = second; const get = () => ({}, zz); return get(); }}\n{CALL_FLAG}",
+        locals.join(" = 0, "),
+        locals.join(", ")
+    );
+    for definitions in [
+        budget,
+        format!(
+            "function F() {{ return second; }}\nfunction flag() {{ return new F(); }}\n{CALL_FLAG}"
+        ),
+    ] {
+        let extra: &[&'static str] = if definitions.contains("function F") {
+            &["F"]
+        } else {
+            &[]
+        };
+        assert_reader_split_diverges_with(&definitions, extra);
+    }
+}
+
+/// Positive anchor for the control above: `new` of a plain function that
+/// returns only the effect-free `first` keeps the split.
+#[test]
+fn a_constructed_plain_function_without_effects_keeps_the_split() {
+    let fixture = with_reader_split(
+        &format!(
+            "function F() {{ return first; }}\nfunction flag() {{ if (first()) {{}} return new F(); }}\n{CALL_FLAG}"
+        ),
+        &["F"],
+        run_fixture,
+    );
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}

@@ -2023,7 +2023,9 @@ a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sand
 `action_service/sandbox/inventory.go`; the closed draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expired agent-sandbox boxes the same way. It also revokes a box's `WorkloadCredential` whose bound
 Pod no longer exists, so a Pod deleted outside `dispose` or garbage collection leaves no resolvable
-record. Boxes and Sandboxes are to converge into one object type
+record. It also collects the boxes whose caller Identity is gone: they outlive the Identity with their
+credentials revoked, and no caller can dispose of them since their old Identity cannot authenticate.
+Boxes and Sandboxes are to converge into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)).
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
@@ -3163,8 +3165,9 @@ other noticing.
 resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
 methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`. The
 Action Service's Gate admits an Identity SVID caller by the bindings naming it and records requests
-and cancellations by the Identity incarnation, and gives it Action boxes it owns on the default
-ServiceAccount; launches, Session delegation and the MCP edge's delegated path still need a
+and cancellations by the Identity incarnation, and gives it Action boxes on the default
+ServiceAccount, in any group namespace, whose records nothing owns, so deleting the Identity revokes
+their credentials and deletes nothing; launches, Session delegation and the MCP edge's delegated path still need a
 ServiceAccount. Dispatcher records each Session's execution Identity from its Sandbox's
 `spec.identity`, places it on the wire and strands a Session whose Sandbox names another; its
 methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given its
@@ -3187,7 +3190,8 @@ re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark
 historical, as History migration 8 did. Action boxes run as the caller's Identity here, not in
 `SANDBOX_IDENTITY_SPEC`: `stamp` (`action_service/sandbox/inventory.go`) names the caller's
 Identity as the box record's subject and runs the box on the default ServiceAccount, which needs the
-Action Service to know its caller as an Identity. A caller with no Sandbox has its box records owned by its `Identity`; its
+Action Service to know its caller as an Identity. An Identity caller's box records have no owner
+(operator, 2026-11-10: acting as an Identity confers no authority over a box); its
 `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. **Exit:** the existing service tests pass with identity
 principals, a retained Session with a deleted Sandbox reads as historical.
 
@@ -3212,7 +3216,11 @@ derived them from acting-as and was closed unmerged: `resumePolicy.allowOwnIdent
 wake-on-send and its Dispatcher migration are rebuilt once an explicit environment rule type exists
 (its code is kept on branch `identity-consumers-environment-self-read-deferred`). The switch is one
 change, not a mode behind a setting or behind `Environment.identity_catalog` (operator,
-2026-11-09); draft #15239 holds the controller part and draft #15258 the template part:
+2026-11-09); draft #15239 holds the controller part. The template part landed early (#15258,
+operator, 2026-11-10): Sandbox, Firecracker and VM-relay Pods render no projected ServiceAccount
+token, unconditionally (undoing #15244's catalog gate), so Sandbox `kubectl` on staging has no path
+until this switch gives it Identity impersonation at egress; command boxes keep theirs while
+`identity_catalog` is off and they run as their caller's ServiceAccount. What remains:
 
 - The Sandbox Controller always acts as `spec.identity`, read live with its UID, as the
   `WorkloadCredential` subject. `ensureIdentity` and `ensureBinding` and `Sandbox.spec.policySets`
@@ -3231,9 +3239,6 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   authenticates a virt-launcher through the ServiceAccount the Sandbox controls and injects that
   account. It authenticates through the VM's controller owner (`vmOwner`) instead and injects
   `default`, so every runner kind switches.
-- Sandbox templates project no Kubernetes-audience token, unconditionally (undoing #15244's
-  catalog gate): Sandbox Pods render no projected ServiceAccount token. Command boxes keep theirs
-  while they run as their caller's ServiceAccount.
 - `EnvironmentService` creation takes an identity and binds its launch sets with a `PolicyBinding`
   naming that Identity and owned by it, because the policy reader fences only the Identity's UID.
   It refuses an identity change while any non-terminal Session is placed on or attached to the
@@ -3258,8 +3263,7 @@ rewrites those Sessions' execution identity or retires them. On staging no Sandb
 switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
 needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
 
-**Exit:** controller tests for a Sandbox with and without a live identity; Sandbox Pods render no
-projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
+**Exit:** controller tests for a Sandbox with and without a live identity; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
 
 ### `SESSION_SA_PRINCIPAL_REMOVAL` — Sessions carry no ServiceAccount

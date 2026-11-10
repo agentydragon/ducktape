@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	corev1 "k8s.io/api/core/v1"
@@ -63,9 +62,6 @@ const (
 // serviceAccountKind is the kind of a box record's subject, and of its owner when the caller has no Sandbox.
 var serviceAccountKind = corev1.SchemeGroupVersion.WithKind("ServiceAccount")
 
-// identityKind is the kind of an Identity caller's box record's subject and owner.
-var identityKind = policyapi.SchemeGroupVersion.WithKind("Identity")
-
 // defaultServiceAccount is what an Identity's box runs as: no account of its own, and no token, which every offered
 // template already refuses to mount.
 const defaultServiceAccount = "default"
@@ -76,9 +72,10 @@ type Caller interface{ isCaller() }
 // Account is a ServiceAccount of the group's namespace.
 type Account store.ServiceAccount
 
-// Identity is an Identity incarnation of the policy namespace, which must be the group's namespace: it owns its
-// boxes' records, and an owner reference cannot cross namespaces. Its boxes run on the namespace's default
-// ServiceAccount, and a later Identity of the same name reaches none of them.
+// Identity is an Identity incarnation of the policy namespace. Acting as it confers no authority over its boxes'
+// lifecycle: nothing owns their records, so deleting the Identity revokes their credentials and deletes nothing. Its
+// boxes run on the group namespace's default ServiceAccount, and a later Identity of the same name reaches none of
+// them.
 type Identity store.Identity
 
 func (Account) isCaller()  {}
@@ -140,15 +137,14 @@ type Condition struct {
 // stamped from a PodTemplate the group offers, running as its Account caller, or on the default ServiceAccount for an
 // Identity. Each box has a WorkloadCredential of its own name, subject its caller, bound to the box's Pod: its egress
 // sidecar presents that SVID. The record is the box Pod's owner. An Account's Session Sandbox, else the account, owns
-// the record, so a Session Sandbox's agent that created boxes loses them, and their credentials, with the Sandbox; an
-// Identity's boxes go with the Identity.
+// the record, so a Session Sandbox's agent that created boxes loses them, and their credentials, with the Sandbox. An
+// Identity's box record has no owner: the box lives until it is disposed of, and deleting the Identity only revokes
+// its credential.
 type Inventory struct {
-	binding catalog.PodBinding
-	// policyNamespace holds the Identities; only a group of that namespace gives an Identity a box.
-	policyNamespace string
-	client          kubernetes.Interface
-	exec            Exec
-	credentials     requester.Requester
+	binding     catalog.PodBinding
+	client      kubernetes.Interface
+	exec        Exec
+	credentials requester.Requester
 	// records reads WorkloadCredentials from the API server, uncached, to decide whether a box may be bound.
 	records client.Reader
 	// execGrace is how long an exec may run past its script's timeout, which `timeout` enforces in the container,
@@ -158,9 +154,9 @@ type Inventory struct {
 	issuance time.Duration
 }
 
-func NewInventory(binding catalog.PodBinding, policyNamespace string, client kubernetes.Interface, exec Exec, credentials requester.Requester, records client.Reader) *Inventory {
+func NewInventory(binding catalog.PodBinding, client kubernetes.Interface, exec Exec, credentials requester.Requester, records client.Reader) *Inventory {
 	return &Inventory{
-		binding: binding, policyNamespace: policyNamespace, client: client, exec: exec, credentials: credentials, records: records,
+		binding: binding, client: client, exec: exec, credentials: credentials, records: records,
 		execGrace: 15 * time.Second, issuance: 30 * time.Second,
 	}
 }
@@ -341,33 +337,32 @@ func (i *Inventory) Create(ctx context.Context, caller Caller, name, template st
 	return info(pod), nil
 }
 
-// credentialOwner is the request for a box's credential: the record takes the box's name and outlives nothing its
-// caller does not. An Account's record is owned by the account's controller, a Session Sandbox, else the account
+// credentialOwner is the request for a box's credential, whose record takes the box's name. An Account's record is
+// owned by the account's controller, a Session Sandbox, else the account
 // itself, so a Sandbox's boxes go with the Sandbox rather than with the account SANDBOX_IDENTITY_SPEC stops creating;
-// its subject is the account. An Identity's record names and is owned by the Identity incarnation, so deleting the
-// Identity takes its boxes. account is the Account caller's ServiceAccount, nil for an Identity.
+// its subject is the account. An Identity's record names the Identity incarnation and has no owner: the Identity's
+// caller labels tell it from another caller's, so a same-named successor neither adopts nor revokes it. account is
+// the Account caller's ServiceAccount, nil for an Identity.
 func credentialOwner(namespace string, caller Caller, account *corev1.ServiceAccount, name string) requester.Request {
-	var owner metav1.OwnerReference
+	owner := requester.Owner{Namespace: namespace, Name: objectName(caller, name)}
 	var subject requester.Subject
 	switch caller := caller.(type) {
 	case Account:
-		owner = metav1.OwnerReference{APIVersion: serviceAccountKind.GroupVersion().String(), Kind: serviceAccountKind.Kind, Name: account.Name, UID: account.UID}
+		reference := metav1.OwnerReference{APIVersion: serviceAccountKind.GroupVersion().String(), Kind: serviceAccountKind.Kind, Name: account.Name, UID: account.UID}
 		if controller := metav1.GetControllerOfNoCopy(account); controller != nil {
 			// Without blockOwnerDeletion, which would need the Sandbox's finalizers.
-			owner = metav1.OwnerReference{APIVersion: controller.APIVersion, Kind: controller.Kind, Name: controller.Name, UID: controller.UID}
+			reference = metav1.OwnerReference{APIVersion: controller.APIVersion, Kind: controller.Kind, Name: controller.Name, UID: controller.UID}
 		}
+		reference.Controller = new(true)
+		owner.Holder = requester.Controller{Reference: reference}
 		subject = requester.ServiceAccount{Name: account.Name}
 	case Identity:
-		owner = metav1.OwnerReference{APIVersion: identityKind.GroupVersion().String(), Kind: identityKind.Kind, Name: caller.Name, UID: types.UID(caller.UID)}
+		owner.Holder = requester.Unowned{Labels: callerLabels(caller)}
 		subject = requester.Identity{Name: caller.Name, UID: types.UID(caller.UID)}
 	default:
 		panic(fmt.Sprintf("unknown caller %T", caller))
 	}
-	owner.Controller = new(true)
-	return requester.Request{
-		Owner:   requester.Owner{Namespace: namespace, Name: objectName(caller, name), Reference: owner},
-		Subject: subject,
-	}
+	return requester.Request{Owner: owner, Subject: subject}
 }
 
 // issue waits until the box's record issues an unbound credential, the one a new Pod starts with: a record still
@@ -450,7 +445,8 @@ func (i *Inventory) stamp(ctx context.Context, caller Caller, account *corev1.Se
 			}},
 		},
 		// TODO(sandbox-lifetime): a forgotten box keeps its share of the namespace's quota until someone disposes of
-		// it. Expire boxes nobody has exec'd into for a while.
+		// it. Expire boxes nobody has exec'd into for a while. An Identity box's record left behind by a Pod
+		// deleted out of band is not collected either, and blocks a same-named successor's create until it times out.
 		Spec: spec,
 	}
 	_, err = i.client.CoreV1().Pods(i.binding.Namespace).Create(ctx, pod, metav1.CreateOptions{})
@@ -556,7 +552,7 @@ func (i *Inventory) Dispose(ctx context.Context, caller Caller, name string) (bo
 	if err != nil || pod == nil {
 		return false, err
 	}
-	if err := i.revoke(ctx, pod); err != nil {
+	if err := i.revoke(ctx, caller, pod); err != nil {
 		return false, err
 	}
 	err = i.client.CoreV1().Pods(i.binding.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
@@ -568,18 +564,32 @@ func (i *Inventory) Dispose(ctx context.Context, caller Caller, name string) (bo
 
 // revoke deletes the record pod runs under, if it still does: a record of the name that does not own pod is another
 // box's.
-func (i *Inventory) revoke(ctx context.Context, pod *corev1.Pod) error {
+func (i *Inventory) revoke(ctx context.Context, caller Caller, pod *corev1.Pod) error {
 	var record workloadapi.WorkloadCredential
 	if err := i.records.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, &record); apierrors.IsNotFound(err) {
 		return nil
 	} else if err != nil {
 		return err
 	}
-	box, owner := metav1.GetControllerOfNoCopy(pod), metav1.GetControllerOfNoCopy(&record)
-	if box == nil || box.UID != record.UID || owner == nil {
+	if box := metav1.GetControllerOfNoCopy(pod); box == nil || box.UID != record.UID {
 		return nil
 	}
-	return i.credentials.Revoke(ctx, requester.Owner{Namespace: record.Namespace, Name: record.Name, Reference: *owner})
+	owner := requester.Owner{Namespace: record.Namespace, Name: record.Name}
+	switch caller := caller.(type) {
+	case Account:
+		// Dispose holds no ServiceAccount to derive the owner from; the record's controller is the one it was
+		// requested under.
+		controller := metav1.GetControllerOfNoCopy(&record)
+		if controller == nil {
+			return nil
+		}
+		owner.Holder = requester.Controller{Reference: *controller}
+	case Identity:
+		owner.Holder = requester.Unowned{Labels: callerLabels(caller)}
+	default:
+		panic(fmt.Sprintf("unknown caller %T", caller))
+	}
+	return i.credentials.Revoke(ctx, owner)
 }
 
 // Run runs script in the caller's box, which must be ready. The caps are this group's at most: submission already

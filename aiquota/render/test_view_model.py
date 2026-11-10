@@ -12,6 +12,7 @@ from aiquota.models import (
     AnthropicPlatformProduct,
     AnthropicPlatformScope,
     AnthropicPlatformTranche,
+    ClaudeResetGrant,
     ExtraSpend,
     FetchError,
     FetchSuccess,
@@ -31,6 +32,30 @@ if __name__ == "__main__":
 
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+
+
+def test_claude_reset_rows_group_counts_keep_scope_and_hide_expired() -> None:
+    expiry = _NOW + timedelta(days=2)
+    result = FetchSuccess(
+        claude_reset_grants=[
+            ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=expiry, usable_now=False),
+            ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=expiry, usable_now=True),
+            ClaudeResetGrant(label="Full resets", remaining=1, original=1, expires_at=expiry, paused=True),
+            ClaudeResetGrant(label="Fable resets", remaining=0, original=1, expires_at=expiry),
+            ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=_NOW - timedelta(seconds=1)),
+        ]
+    )
+    quotas = AllQuotas(
+        fetched_at=_NOW,
+        providers=[ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))],
+    )
+    view = to_view(quotas, _NOW).providers[0]
+    assert [(grant.label, grant.remaining, grant.original, grant.status) for grant in view.grants] == [
+        ("Fable resets", "2", "2", None),
+        ("Full resets", "1", "1", "paused"),
+    ]
+    assert refresh_view(to_view(quotas, _NOW), expiry).providers[0].grants == []
+    assert len(result.claude_reset_grants or []) == 5
 
 
 def _fetch(

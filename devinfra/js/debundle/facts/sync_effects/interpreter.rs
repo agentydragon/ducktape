@@ -9853,6 +9853,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Unavailable) => {
                         results.insert(AbstractValue::Value(Value::Unavailable));
                     }
+                    // `new` of a plain function yields the instance, unknown
+                    // here, or an object the body returns. Unknown alone
+                    // reaches no unescaped callable: keep what the body can
+                    // return and what the arguments can reach.
+                    AbstractValue::Value(Value::Alloc(Kind::Function, function))
+                    | AbstractValue::Closure(
+                        HeapAddress {
+                            callable: function, ..
+                        },
+                        _,
+                    ) if self.inputs.index.callables.contains_key(&function) => {
+                        let captured = match &target {
+                            AbstractValue::Closure(_, captured) => Some(captured.clone()),
+                            _ => None,
+                        };
+                        let returned = self
+                            .invoke(function, successful_args.clone(), captured, false)
+                            .returns;
+                        results.extend(returned.into_iter().filter(|value| !value.is_primitive()));
+                        results.extend(self.refused_construction_values(&successful_args));
+                    }
                     _ => {
                         results.insert(AbstractValue::Value(Value::Top));
                     }

@@ -74,7 +74,6 @@ py_test(
         "//aiquota/testing:quota_fixtures",
         "//devinfra/oci",
         "//devinfra/testing:output_writer",
-        "//devinfra/testing:undeclared_outputs",
         "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",

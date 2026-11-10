@@ -25,7 +25,7 @@ NAMESPACE = session_backup.NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
-DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
@@ -55,13 +55,14 @@ def _database(chart: Chart) -> None:
             "description": "Disposable, Restic-derived view of workstation AI session history.",
             "cnpg.io/skipWalArchiving": "enabled",
         },
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        profile=cluster.OVH_PIRAEUS_HDD,
         size="100Gi",
         resize_in_use_volumes=False,
         instances=1,
         # The default 5s replication timeouts disconnect the HDD standby during
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
+        # Created by pg_basebackup; initdb names the cloned app role CNPG reconciles.
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,

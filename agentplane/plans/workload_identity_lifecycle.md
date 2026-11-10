@@ -85,8 +85,9 @@ the box as it, names it as the record's subject, and makes its controller, the c
 record's owner, which owns the box. `SANDBOX_IDENTITY_SPEC` stops creating that account. A Sandbox
 caller's boxes already hang off the Sandbox, not the account; with `SERVICES_IDENTITY_PRINCIPAL`,
 which gives the Action Service its caller as an Identity, a box names that Identity as its subject
-and runs on the default ServiceAccount, and a caller with no Sandbox has its records owned by its
-`Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the cutover,
+and runs on the default ServiceAccount; its record has no owner (operator, 2026-11-10: acting as an
+Identity confers no authority over a box), so deleting the Identity revokes the box's credential and
+deletes nothing. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the cutover,
 requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches every
 requester's `subject` to an identity, and cdk8s renders `haku-ui` and the `haku-ci` relay's account
 as `Identity`s. The resolver already reads `spec.subject.identity` live with its UID, in the policy

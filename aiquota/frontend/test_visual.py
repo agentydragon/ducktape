@@ -1,4 +1,4 @@
-"""Dashboard fixtures across themes, plus the two narrow layout cases."""
+"""Dashboard fixture screenshots, render health, and focused behavior checks."""
 
 import json
 import os
@@ -23,6 +23,14 @@ _SCENES = tuple(_FIXTURES)
 if not _SCENES:
     raise ValueError("the dashboard fixture catalog is empty")
 
+_DESKTOP_VIEWPORT = Viewport(width=1200, height=900, device_scale_factor=2)
+_NARROW_VIEWPORT = Viewport(width=420, height=900, device_scale_factor=2)
+_DESKTOP_THEME_VIEWPORTS = [pytest.param(scheme, _DESKTOP_VIEWPORT, id=scheme) for scheme in ("light", "dark")]
+_OBSERVED_ACCOUNT_THEME_VIEWPORTS = [
+    *_DESKTOP_THEME_VIEWPORTS,
+    pytest.param("dark", _NARROW_VIEWPORT, id="dark-narrow"),
+]
+
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def view(
@@ -35,98 +43,149 @@ async def view(
 @pytest.mark.parametrize(
     ("scene", "color_scheme", "viewport"),
     [
-        pytest.param(scene, scheme, Viewport(width=1200, height=900, device_scale_factor=2), id=f"{scene}-{scheme}")
+        pytest.param(scene, scheme, _DESKTOP_VIEWPORT, id=f"{scene}-{scheme}")
         for scene in _SCENES
         for scheme in ("light", "dark")
     ]
     + [
-        pytest.param(scene, "dark", Viewport(width=420, height=900, device_scale_factor=2), id=f"{scene}-dark-narrow")
+        pytest.param(scene, "dark", _NARROW_VIEWPORT, id=f"{scene}-dark-narrow")
         for scene in ("hot", "paid_credits", "observed_account_2026_11_04")
     ],
 )
-async def test_dashboard(view: VisualPage, scene: str) -> None:
+async def test_dashboard(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
     await expect(view.page.get_by_role("status")).to_have_text("Live updates connected")
-    if scene == "reset_credit_expiry_unavailable":
-        await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
-            "Banked resets: 2 · expiry lookup failed"
-        )
-    if scene == "openai_platform_credits":
-        card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
-        await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
-        await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
-        await expect(card.get_by_text("$125.75", exact=True)).to_be_visible()
-        await expect(card.get_by_text("$100.00 remaining", exact=True)).to_be_visible()
-        await expect(card.get_by_text("$25.75 remaining", exact=True)).to_be_visible()
-    if scene == "claude_prepaid_balance":
-        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-        await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
-        await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
-    if scene == "claude_prepaid_balance_unavailable":
-        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-        await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
-        await expect(card.get_by_text("unavailable", exact=True)).to_be_visible()
-    if scene == "claude_prepaid_balance_stale":
-        card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-        await expect(card.get_by_text("Balance stale · 1h", exact=True)).to_be_visible()
-        await expect(card.locator(".aiquota-badge-stale")).to_have_count(0)
-    if scene == "stale_fallback":
-        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(claude.get_by_role("heading")).to_have_text("Claude")
-        await expect(claude.get_by_text("Data stale · 1d", exact=True)).to_be_visible()
-    if scene == "anthropic_platform_credits":
-        card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-        await expect(card.get_by_role("heading", name="Anthropic API")).to_be_visible()
-        await expect(card.get_by_text("Main org", exact=True)).to_be_visible()
-        await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
-        await expect(card.get_by_text("Promo grant", exact=True).first).to_be_visible()
-        await expect(card.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
-    if scene == "platform_credits_with_subscription_resets":
-        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(claude.get_by_role("heading")).to_have_text("Claude")
-        await expect(claude.get_by_text("$25.75", exact=True)).to_be_visible()
-        await expect(claude.locator(".aiquota-window")).to_have_count(2)
-        codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
-        await expect(codex.get_by_role("heading")).to_contain_text("Codex")
-        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text(
-            "Banked resets: 3 · next known expiry"
-        )
-        await expect(codex.locator(".aiquota-window")).to_have_count(2)
-        openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
-        await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
-        await expect(openai.get_by_text("$60.00", exact=True)).to_be_visible()
-        anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-        await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
-        await expect(anthropic.get_by_text("$75.00", exact=True)).to_be_visible()
-        await expect(anthropic.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
-    if scene == "reset_pending":
-        codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
-        await expect(codex.get_by_text("Reset time passed · awaiting updated usage", exact=True)).to_be_visible()
-        await expect(codex.get_by_text("Awaiting updated usage", exact=True)).to_be_visible()
-        await expect(codex.get_by_text("Numeric pace", exact=False)).to_have_count(0)
-    if scene == "stale_observation":
-        claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-        await expect(claude.get_by_text("Data stale", exact=False)).to_be_visible()
-        await expect(claude.locator(".aiquota-error-details")).to_have_count(0)
-    if scene == "observed_account_2026_11_04":
-        await expect(view.page.locator(".aiquota-window")).to_have_count(2)
-        await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
-        card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-        await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
-        await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
-        openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
-        for date in ("Dec 1", "Jan 1, 2027", "Feb 1, 2027"):
-            await expect(openai.get_by_text(f"Expires {date}", exact=True)).to_be_visible()
-        await expect(card.locator(".aiquota-reading-note").filter(has_text="Scope:")).to_have_count(0)
-        promo = card.locator(".aiquota-reading-row").filter(has=view.page.get_by_text("Promo grant", exact=True))
-        await promo.get_by_text("Grant details", exact=True).click()
-        await expect(promo.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
-        await view.capture("promo-details", target=view.page.locator("#app"))
-        await promo.get_by_text("Grant details", exact=True).click()
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("scene", ["reset_credit_expiry_unavailable"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_reset_credit_expiry_lookup_unavailable(view: VisualPage) -> None:
+    await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
+        "Banked resets: 2 · expiry lookup failed"
+    )
+
+
+@pytest.mark.parametrize("scene", ["claude_reset_grants"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_claude_reset_grants(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(card.get_by_text("Fable resets", exact=True)).to_be_visible()
+    await expect(card.get_by_text("2 remaining", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Full resets", exact=True)).to_be_visible()
+    await expect(card.get_by_text("paused", exact=False)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["openai_platform_credits"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_openai_platform_credits(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+    await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
+    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$125.75", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$100.00 remaining", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$25.75 remaining", exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize(
+    ("scene", "expected_balance"),
+    [
+        pytest.param("claude_prepaid_balance", "$123.45", id="available"),
+        pytest.param("claude_prepaid_balance_unavailable", "unavailable", id="unavailable"),
+    ],
+)
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_claude_prepaid_balance_states(view: VisualPage, expected_balance: str) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
+    await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text(expected_balance, exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["claude_prepaid_balance_stale"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_claude_prepaid_balance_stale(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
+    await expect(card.get_by_text("Balance stale · 1h", exact=True)).to_be_visible()
+    await expect(card.locator(".aiquota-badge-stale")).to_have_count(0)
+
+
+@pytest.mark.parametrize("scene", ["stale_fallback"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_stale_fallback(view: VisualPage) -> None:
+    claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(claude.get_by_role("heading")).to_have_text("Claude")
+    await expect(claude.get_by_text("Data stale · 1d", exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["anthropic_platform_credits"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_anthropic_platform_credits(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+    await expect(card.get_by_role("heading", name="Anthropic API")).to_be_visible()
+    await expect(card.get_by_text("Main org", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Promo grant", exact=True).first).to_be_visible()
+    await expect(card.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["platform_credits_with_subscription_resets"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_platform_credits_with_subscription_resets(view: VisualPage) -> None:
+    claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(claude.get_by_role("heading")).to_have_text("Claude")
+    await expect(claude.get_by_text("$25.75", exact=True)).to_be_visible()
+    await expect(claude.locator(".aiquota-window")).to_have_count(2)
+    codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
+    await expect(codex.get_by_role("heading")).to_contain_text("Codex")
+    await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text(
+        "Banked resets: 3 · next known expiry"
+    )
+    await expect(codex.locator(".aiquota-window")).to_have_count(2)
+    openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+    await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
+    await expect(openai.get_by_text("$60.00", exact=True)).to_be_visible()
+    anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+    await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
+    await expect(anthropic.get_by_text("$75.00", exact=True)).to_be_visible()
+    await expect(anthropic.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["reset_pending"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_reset_pending(view: VisualPage) -> None:
+    codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
+    await expect(codex.get_by_text("Reset time passed · awaiting updated usage", exact=True)).to_be_visible()
+    await expect(codex.get_by_text("Awaiting updated usage", exact=True)).to_be_visible()
+    await expect(codex.get_by_text("Numeric pace", exact=False)).to_have_count(0)
+
+
+@pytest.mark.parametrize("scene", ["stale_observation"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_stale_observation(view: VisualPage) -> None:
+    claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(claude.get_by_text("Data stale", exact=False)).to_be_visible()
+    await expect(claude.locator(".aiquota-error-details")).to_have_count(0)
+
+
+@pytest.mark.parametrize("scene", ["observed_account_2026_11_04"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _OBSERVED_ACCOUNT_THEME_VIEWPORTS)
+async def test_observed_account_expiries_and_promo_details(view: VisualPage) -> None:
+    await expect(view.page.locator(".aiquota-window")).to_have_count(2)
+    await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
+    card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+    await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
+    openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+    for date in ("Dec 1", "Jan 1, 2027", "Feb 1, 2027"):
+        await expect(openai.get_by_text(f"Expires {date}", exact=True)).to_be_visible()
+    await expect(card.locator(".aiquota-reading-note").filter(has_text="Scope:")).to_have_count(0)
+    promo = card.locator(".aiquota-reading-row").filter(has=view.page.get_by_text("Promo grant", exact=True))
+    await promo.get_by_text("Grant details", exact=True).click()
+    await expect(promo.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
+    await view.capture("promo-details", target=view.page.locator("#app"))
+    await promo.get_by_text("Grant details", exact=True).click()
 
 
 async def test_system_color_preference_changes(visual: VisualHarness) -> None:
