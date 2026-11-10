@@ -1,0 +1,128 @@
+"""The accepted debundled Excalidraw app loads and responds in headless Chromium."""
+
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
+
+import json
+import os
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+import pytest_bazel
+from playwright.async_api import ConsoleMessage, Error, Page, Playwright, Request, Response, expect
+from python.runfiles import Runfiles
+from starlette.applications import Starlette
+from starlette.requests import Request as StarletteRequest  # Playwright also names a Request.
+from starlette.responses import HTMLResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
+
+from util.testing.asgi import serve_app
+from util.testing.frontend_visual.context import deterministic_browser_context
+
+pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+PACKAGES_PREFIX = "/__packages"
+
+
+def resolve(runfiles: Runfiles, env_var: str) -> Path:
+    return Path(str(runfiles.Rlocation(os.environ[env_var])))
+
+
+def harness_app(runfiles: Runfiles) -> Starlette:
+    """Serve the harness, with an import map for the packages vendor swaps import."""
+    out = resolve(runfiles, "DEBUNDLE_OUT")
+    package_roots = {
+        name: Path(str(runfiles.Rlocation(path))) for name, path in json.loads(os.environ["PACKAGE_ROOTS"]).items()
+    }
+    swaps = json.loads((out / "reports/vendor_swaps.json").read_text())
+    subpaths = {swap["package"]: swap["subpath"] for swap in swaps["full"].values()} | {
+        package: coordinates["subpath"]
+        for swap in swaps["partial"].values()
+        for package, coordinates in swap["packages"].items()
+    }
+    import_map = {
+        "imports": {package: f"{PACKAGES_PREFIX}/{package}/{subpath}" for package, subpath in subpaths.items()}
+    }
+    index_html = (out / "app/index.html").read_text()
+    head = "<head>"
+    page = index_html.replace(head, f'{head}\n<script type="importmap">{json.dumps(import_map)}</script>', 1)
+
+    async def index(_: StarletteRequest) -> HTMLResponse:
+        return HTMLResponse(page)
+
+    return Starlette(
+        routes=[
+            Route("/", index),
+            Route("/index.html", index),
+            *(
+                Mount(f"{PACKAGES_PREFIX}/{package}", app=StaticFiles(directory=package_roots[package]))
+                for package in subpaths
+            ),
+            Mount("/fonts", app=StaticFiles(directory=resolve(runfiles, "EXCALIDRAW_PACKAGE") / "dist/prod/fonts")),
+            Mount("/", app=StaticFiles(directory=out / "app")),
+        ]
+    )
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def origin(runfiles: Runfiles) -> AsyncIterator[str]:
+    async with serve_app(harness_app(runfiles)) as served:
+        yield served
+
+
+async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page: Page = await context.new_page()
+        console_errors: list[str] = []
+        failed_requests: list[str] = []
+
+        def on_console(message: ConsoleMessage) -> None:
+            if message.type == "error":
+                console_errors.append(message.text)
+
+        def on_response(response: Response) -> None:
+            if response.status >= 400:
+                failed_requests.append(f"{response.url} {response.status}")
+
+        def on_request_failed(request: Request) -> None:
+            failed_requests.append(f"{request.url} {request.failure}")
+
+        def on_page_error(error: Error) -> None:
+            console_errors.append(str(error))
+
+        page.on("console", on_console)
+        page.on("pageerror", on_page_error)
+        page.on("requestfailed", on_request_failed)
+        page.on("response", on_response)
+
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
+        undo = page.get_by_test_id("button-undo")
+        await expect(undo).to_be_disabled()
+
+        # The tool is a visually hidden radio input; users click its label's icon.
+        rectangle = page.get_by_test_id("toolbar-rectangle")
+        await page.locator("label", has=rectangle).click()
+        await expect(rectangle).to_be_checked()
+        canvas = page.locator("canvas.excalidraw__canvas.interactive")
+        await canvas.hover(position={"x": 400, "y": 300})
+        await page.mouse.down()
+        await page.mouse.move(600, 450, steps=5)
+        await page.mouse.up()
+        # Drawing records a history entry, which enables undo.
+        await expect(undo).to_be_enabled()
+
+        await page.wait_for_load_state("networkidle")
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+        assert console_errors == []
+        assert failed_requests == []
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

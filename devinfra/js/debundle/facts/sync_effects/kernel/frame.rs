@@ -1,7 +1,7 @@
 //! One activation of the kernel and the values that cross its boundary.
 
 use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
-use super::super::array_transfer::ArrayPushSelection;
+use super::super::array_transfer::ArrayMethodSelection;
 use super::super::completion::{AbruptAlternative, Completion, TransferLedger};
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::value_model::{AbstractValue, Context, Values};
@@ -217,7 +217,7 @@ pub(in crate::facts::sync_effects) enum EvaluatedCallee {
         receiver: Values,
         targets: Values,
         selection_dependencies: Option<Box<ProofDependencies>>,
-        array_push: Option<Box<ArrayPushSelection>>,
+        array_method: Option<Box<ArrayMethodSelection>>,
     },
 }
 

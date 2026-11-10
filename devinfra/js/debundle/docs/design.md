@@ -3977,6 +3977,21 @@ policy difference is a trait method: which bindings get cells, capture
 snapshots, closure admission, the native rows, and the disposition of an
 unproved operation (summarize or refuse).
 
+**Array methods are selected at GetValue and executed by the call.**
+`NativeContext::array_method_callee` selects an original `Array.prototype`
+method on a literal array before the arguments run: `push`, or an iteration
+row (`forEach`, `map`, `filter`, `reduce`). The selection proves the method
+slot intact and the receiver free of an own property of that name; the
+adapter's `call` rechecks the rest of the row (element reads,
+`ArraySpeciesCreate`, the receiver's exact length and dense slots) after the
+arguments. An iteration row invokes its callback through `Executor::invoke`
+once per element, so a callback with an ordered plan and no live captures
+runs in the kernel, and rechecks the receiver after every invocation. Its
+fresh result commits through the native `plan`/`commit` path. A refusal at any
+check keeps the effects of the callbacks that already ran and summarizes the
+remainder. Only depth-zero invocations take the kernel prologue, so a row
+inside the callback of a legacy array-iteration row stays legacy.
+
 **Stores are mutated, observations are returned.** Heap, lexical cells,
 object surface and descriptors are mutated in place through `&mut World`; a
 missed store write shows up as a wrong value. Effects, completion, touched

@@ -41,11 +41,11 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:app.kubernetes.io/name: haku-egress-proxy
-            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            app.kubernetes.io/name: haku-ci-egress
+            k8s:io.kubernetes.pod.namespace: haku-ci
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3128"
               protocol: TCP
   endpointSelector:
     matchExpressions:

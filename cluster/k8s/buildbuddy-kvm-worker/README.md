@@ -6,7 +6,7 @@ two on different nodes without naming a node, so one node failure or its disk co
 reaches only one worker. Each VM runs the configuration below. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
 vCPUs, 16 GiB RAM and an 80 GiB block volume from `piraeus-ssd-local` for Docker layers, action workspaces and cache.
 The claim is one unreplicated copy on the node's SSD pool: the contents rebuild, the volume survives
-a VM restart, and it keeps the VM on its node. The class retains deleted volumes, so remove a
+a VM restart, and it keeps the VM on its node. Pool members instead get a disk image on a filesystem volume of the same class, because CDI's importer cannot open a raw block device. The class retains deleted volumes, so remove a
 leftover volume by hand when deleting a worker.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
