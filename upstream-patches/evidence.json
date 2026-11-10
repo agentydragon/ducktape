@@ -358,31 +358,6 @@
       ]
     },
     {
-      "id": "tofu-external",
-      "project": "tofu-controller",
-      "title": "ExternalArtifact source support",
-      "kind": "Fork",
-      "status": "Merged, no release",
-      "priority": "Medium",
-      "impact": "Our controller image and CRD are built from a fork to consume per-module artifacts.",
-      "upstream": "Our PR #1901 merged on 28 October; the latest stable release checked predates it.",
-      "next_step": "Review the open PR to build from the upstream commit, then switch to an upstream release once one containing the change is available and validated.",
-      "links": [
-        {
-          "label": "Upstream PR",
-          "url": "https://github.com/flux-iac/tofu-controller/pull/1901"
-        },
-        {
-          "label": "Local package",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/tofu_controller/README.md"
-        },
-        {
-          "label": "Upstream-source PR",
-          "url": "https://github.com/agentydragon/ducktape/pull/15294"
-        }
-      ]
-    },
-    {
       "id": "openclaw-sqlite",
       "project": "OpenClaw",
       "title": "SQLite startup integrity and lease",
