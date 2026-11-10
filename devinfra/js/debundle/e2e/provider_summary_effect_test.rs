@@ -332,21 +332,20 @@ fn retained_callback_invoked_after_the_swap_point_is_refused_and_diverges() {
 }
 
 /// `counted` retains its callback but also reads the provider cell `next`
-/// writes, so its summary is no receipt: the effect verdict stays incomplete,
-/// and the emitted program reads the counter before the increment (the source
-/// prints `1 1`). The legacy gate accepts this split today
-/// (`debug/2026_11_09_l4c_discrepancy_audit.md` § Unsafe legacy acceptance).
+/// writes, so its summary is no receipt: both gates refuse, and the emitted
+/// order reads the counter before the increment (the source prints `1 1`).
 #[test]
 fn retaining_factory_reading_a_provider_cell_has_no_effect_receipt() {
     let peers = [("static/peer", CALLBACK_PEER)];
     let source = "import { counted, next } from './peer.js';\nconst first = next();\nconst second = counted(() => 0);\nconsole.log(first, second());\n";
-    let reordered = run_fixture(second_first(source, &peers));
-    assert_entry_output(&reordered, "1 0\n");
-    let assessment = candidate_relocation_assessment(&reordered);
+    let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
+    assert_node_output(&reordered.entry_path(), "1 0\n", "");
+    let assessment = reordered.candidate_relocation_assessment();
     assert!(
         assessment["swapped_pairs"].as_u64().unwrap() > 0,
         "{assessment:#}"
     );
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
     assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
 }
 
