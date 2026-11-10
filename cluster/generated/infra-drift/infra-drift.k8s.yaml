@@ -97,6 +97,7 @@ spec:
     name: infra-drift
     namespace: flux-system
   storeReadablePlan: human
+  suspend: true
   targets:
     - ovh_dedicated_server.kimsufi
     - ovh_dedicated_server.kimsufi_cp

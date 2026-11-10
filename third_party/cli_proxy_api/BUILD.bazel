@@ -1,3 +1,4 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_cross_binary")
 load("@npm_cli_proxy_webui//:defs.bzl", "npm_link_all_packages")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
@@ -6,9 +7,10 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 npm_link_all_packages(name = "node_modules")
 
-alias(
+go_cross_binary(
     name = "server",
-    actual = "@com_github_router_for_me_cliproxyapi_v8//cmd/server",
+    sdk_version = "1.26.10",
+    target = "@com_github_router_for_me_cliproxyapi_v8//cmd/server",
     visibility = ["//visibility:public"],
 )
 
@@ -46,6 +48,7 @@ test_suite(
     name = "tests",
     tests = [
         ":frontend_tests",
+        "@com_github_router_for_me_cliproxyapi_v8//internal/api:management_v8_test",
         "@com_github_router_for_me_cliproxyapi_v8//internal/api/handlers/management:oidc_test",
         "@com_github_router_for_me_cliproxyapi_v8//internal/api/middleware:middleware_test",
         "@com_github_router_for_me_cliproxyapi_v8//internal/logging:upstream_timing_test",

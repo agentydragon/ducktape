@@ -1,14 +1,14 @@
 # CLIProxyAPI with management OIDC
 
-Builds the backend and management UI from pinned commits of the open OIDC PRs:
+Builds the backend from our OIDC branch rebased on CLIProxyAPI v8.0.63 and the
+management UI from our OIDC fork. The OIDC changes originated in the now-closed
 [CLIProxyAPI #6761](https://github.com/router-for-me/CLIProxyAPI/pull/6761) and
 [Management Center #505](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505).
-Source archives come from the author forks; exact revisions and checksums are in
-`MODULE.bazel`. The OIDC implementation and tests start from those commits, with
-downstream changes documented below. The backend uses `rules_go`; the frontend uses
-Vite through `rules_js`; `rules_oci`
-packages both into a Debian 13 distroless image with CA certificates and CGO runtime
-libraries. Go and npm dependencies are isolated from Ducktape's application graphs.
+Exact revisions and checksums are in
+`MODULE.bazel`. The backend uses `rules_go`; the frontend uses Vite through `rules_js`;
+`rules_oci` packages both into a Debian 13 distroless image with CA certificates and
+CGO runtime libraries. Go and npm dependencies are isolated from Ducktape's application
+graphs.
 
 ```bash
 bbr test //third_party/cli_proxy_api_tests:tests
@@ -16,8 +16,7 @@ bbr build @ducktape_cli_proxy_api//:image
 ```
 
 The image publication roster publishes `cli-proxy-api` to the Forgejo registry.
-The existing deployment is not switched by this package; the migration is described
-in <../../cluster/k8s/cli-proxy-api/README.md>.
+The deployment is described in <../../cluster/k8s/cli-proxy-api/README.md>.
 
 ## Patch ownership
 
@@ -25,6 +24,8 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
   downloads and replacement, including when the file is missing.
 - `patches/bazel.patch`: BUILD additions applied after Gazelle generates upstream
   package definitions. This build glue is separate from the upstream feature.
+- `patches/zstd-fixture.patch`: make the oversized single-segment zstd test fixture
+  explicit for the newer compression library.
 - `patches/upstream-timing.patch`: the access log line ends with
   `| upstream attempts=N sent=… headers=… first_chunk=… first_byte=…`, offsets from the
   request's arrival to the upstream request going out, its response headers, its first body
@@ -36,13 +37,11 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
   Management OIDC endpoints also expire any legacy root-scoped `__Host-` cookies they
   receive, using the original root path so browsers remove the matching entries.
 
-The OIDC source pins track open PRs, not released upstream support. Move both pins
-to upstream releases when those releases include the feature. Remove `bundled-panel.patch` when the upstream panel has an equivalent
+Both source pins track forks because upstream has not merged OIDC support. Move the
+backend and UI pins to upstream once equivalent support is available. Remove `bundled-panel.patch` when the upstream panel has an equivalent
 read-only/no-download contract or the deployment no longer requires it. Remove
 `bazel.patch` when the pinned upstream sources provide compatible BUILD metadata. Remove
 `upstream-timing.patch` when upstream logs per-request upstream timing to stdout.
-Remove `oidc-cookie-path.patch` when upstream scopes both OIDC cookies to their management
-routes with compatible cookie prefixes.
 Each removal requires the test suite and image build below to pass.
 
 Source revisions and checksums are in `MODULE.bazel`. The binary is installed at
@@ -82,7 +81,7 @@ the server's process-local session store is revoked on restart.
 
 ## Updating upstream
 
-Update each PR commit pin and checksum, then rebase the remaining downstream
+Update the release or UI source pin and checksum, then rebase the remaining downstream
 patches. Refresh
 `go.mod`/`go.sum` from the patched backend, retaining the build module name, and
 refresh the isolated pnpm lock with Bazel-managed pnpm when frontend dependencies

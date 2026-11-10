@@ -951,6 +951,9 @@ pub enum ClassMembersPublicationWriter {
     ThrowValuePublication,
     /// A store to a local the source-summary lane reads as unknown.
     UntrackedLocalStore,
+    /// A generator call: whoever later resumes the generator object runs
+    /// the body.
+    GeneratorCreation,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

@@ -1,0 +1,20 @@
+diff --git a/internal/api/middleware/request_logging_test.go b/internal/api/middleware/request_logging_test.go
+--- a/internal/api/middleware/request_logging_test.go
++++ b/internal/api/middleware/request_logging_test.go
+@@ -923,11 +923,15 @@
+ // window is past the bound, so the raw bytes are logged and nothing large is allocated.
+ func TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb(t *testing.T) {
+ 	gin.SetMode(gin.TestMode)
+-	encoder, errNewWriter := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
++	encoder, errNewWriter := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression), zstd.WithSingleSegment(true))
+ 	if errNewWriter != nil {
+ 		t.Fatal(errNewWriter)
+ 	}
+ 	bomb := encoder.EncodeAll(make([]byte, 64<<20), nil)
++	var header zstd.Header
++	if err := header.Decode(bomb); err != nil || !header.SingleSegment {
++		t.Fatalf("fixture must be a single-segment zstd frame: header=%+v err=%v", header, err)
++	}
+ 	if int64(len(bomb)) > maxErrorOnlyCapturedRequestBodyBytes {
+ 		t.Fatalf("the probe body is %d bytes", len(bomb))
+ 	}

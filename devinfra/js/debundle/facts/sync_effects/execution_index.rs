@@ -1036,6 +1036,9 @@ pub(super) struct Parameter {
     /// of it only as unknown.
     pub(super) pattern_assignments: Vec<(Id, ValueExpr)>,
     pub(super) pattern_loses_values: bool,
+    /// The pattern destructures an array, so binding it runs the iterator
+    /// protocol on the incoming value (or on a part of it).
+    pub(super) pattern_iterates: bool,
 }
 
 /// The binding a pattern parameter's projections read its incoming value
@@ -1062,6 +1065,22 @@ fn pattern_loses_values(pattern: &Pat) -> bool {
     }
 }
 
+/// Whether destructuring `pattern` runs the iterator protocol on the value
+/// or on a part of it.
+fn pattern_iterates(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+        Pat::Assign(assign) => pattern_iterates(&assign.left),
+        Pat::Rest(rest) => pattern_iterates(&rest.arg),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => pattern_iterates(&property.value),
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(rest) => pattern_iterates(&rest.arg),
+        }),
+        Pat::Array(_) => true,
+    }
+}
+
 impl Parameter {
     fn from_pattern(pattern: &Pat) -> Self {
         let mut assignments = Vec::new();
@@ -1083,6 +1102,7 @@ impl Parameter {
             _ => (None, None, Some(pattern)),
         };
         let mut pattern_assignments = Vec::new();
+        let pattern_iterates = destructured.is_some_and(pattern_iterates);
         let pattern_loses_values = match destructured.filter(|_| binding.is_none()) {
             Some(destructured) => {
                 collect_pattern_assignments(
@@ -1100,6 +1120,7 @@ impl Parameter {
             default,
             pattern_assignments,
             pattern_loses_values,
+            pattern_iterates,
         }
     }
 }
@@ -1396,6 +1417,11 @@ pub(super) struct Callable {
     /// values (a `catch` parameter) and yielded values (a generator's
     /// consumer).
     pub(super) published_sources: Vec<ValueExpr>,
+    /// Operands this callable runs the iterator protocol on: `for`-`of`
+    /// iterables, array-destructured values, spread operands and `yield*`
+    /// operands. Over anything but a proven native iterable, the protocol
+    /// calls user code (`[Symbol.iterator]`, `next`).
+    pub(super) iterated_sources: Vec<ValueExpr>,
     /// Bindings an update expression (`x++`) of this callable writes; neither
     /// `rebinds` nor `local_assignments` records them.
     pub(super) update_targets: BTreeSet<Id>,
@@ -1714,6 +1740,7 @@ impl Default for Callable {
             undefined_before_assignment: BTreeSet::new(),
             head_bindings: BTreeSet::new(),
             published_sources: Vec::new(),
+            iterated_sources: Vec::new(),
             update_targets: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
@@ -6233,6 +6260,9 @@ pub(super) struct ExecutionIndex {
     /// Per top-level owner, what `Callable::published_sources` lists for a
     /// callable: values whose parts reach a binding only as unknown.
     pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
+    /// Per top-level owner, what `Callable::iterated_sources` lists for a
+    /// callable.
+    pub(super) top_iterated_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
@@ -6453,6 +6483,7 @@ impl Default for ExecutionIndex {
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_published_sources: BTreeMap::new(),
+            top_iterated_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
@@ -11722,6 +11753,23 @@ impl ExecutionIndex {
         }
     }
 
+    fn record_iterated_source(&mut self, value: &Expr) {
+        let value = ValueExpr::from_expr(value);
+        match self.current {
+            Some(key) => self
+                .callables
+                .get_mut(&key)
+                .unwrap()
+                .iterated_sources
+                .push(value),
+            None => self
+                .top_iterated_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
+        }
+    }
+
     fn record_nested_write(&mut self, binding: Id) {
         for key in &self.prototype_capture_stack {
             self.nested_callable_writes
@@ -11884,6 +11932,7 @@ impl Visit for ExecutionIndex {
                             default: None,
                             pattern_assignments: Vec::new(),
                             pattern_loses_values: false,
+                            pattern_iterates: false,
                         },
                     })
                     .collect();
@@ -12505,6 +12554,7 @@ impl Visit for ExecutionIndex {
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         self.record_published_source(&node.right);
+        self.record_iterated_source(&node.right);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -13014,6 +13064,11 @@ impl Visit for ExecutionIndex {
                 && pattern_loses_values(&declarator.name)
             {
                 self.record_published_source(init);
+            }
+            if let Some(init) = &declarator.init
+                && pattern_iterates(&declarator.name)
+            {
+                self.record_iterated_source(init);
             }
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
@@ -13542,6 +13597,14 @@ impl Visit for ExecutionIndex {
             if loses_values {
                 self.record_published_source(&assignment.right);
             }
+            let iterates = match pattern {
+                AssignTargetPat::Array(_) => true,
+                AssignTargetPat::Object(object) => pattern_iterates(&Pat::Object(object.clone())),
+                AssignTargetPat::Invalid(_) => false,
+            };
+            if iterates {
+                self.record_iterated_source(&assignment.right);
+            }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(
                 pattern,
@@ -13714,8 +13777,18 @@ impl Visit for ExecutionIndex {
     fn visit_yield_expr(&mut self, yielded: &YieldExpr) {
         if let Some(argument) = &yielded.arg {
             self.record_published_source(argument);
+            if yielded.delegate {
+                self.record_iterated_source(argument);
+            }
         }
         yielded.visit_children_with(self);
+    }
+
+    fn visit_expr_or_spread(&mut self, element: &ExprOrSpread) {
+        if element.spread.is_some() {
+            self.record_iterated_source(&element.expr);
+        }
+        element.visit_children_with(self);
     }
 
     fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {

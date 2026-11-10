@@ -143,6 +143,20 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # SF Public Library credentials: Flux applies the Secret, and the user's
+  # workstations can decrypt it to update the card number and PIN.
+  - path_regex: cluster/k8s/external-creds/sfpl-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
   # Flux applies it only for the litellm-keys Terraform runner; admin and
   # personal machine user keys derived from ~/.ssh/id_ed25519 can also decrypt it.

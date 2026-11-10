@@ -864,6 +864,10 @@ pub(super) struct ExecutionInputs<'source> {
     /// a callable nested in them (an arrow's `arguments` is its enclosing
     /// function's). Over-approximates for a nested function's own.
     reads_arguments: BTreeSet<u32>,
+    /// Per class, the enclosing scope's bindings its members read. A class
+    /// value carries no captured context, so a member (a constructor's
+    /// `super(...)` operands) reads them as unknown later.
+    pub(super) class_captured_reads: BTreeMap<u32, BTreeSet<Id>>,
     /// Locals a source-summary lane reads as unknown in addition to its own
     /// assignments: another callable writes them, or an assignment reads
     /// them before a later one assigns them.
@@ -10224,10 +10228,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// A class value created now: its members read the enclosing scope's
+    /// bindings as unknown later, so publish what those hold here. A local
+    /// binding as the heritage (`class extends h`) is the base a later
+    /// construction runs on unknown arguments; publish it too.
+    pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
+        let heritage = self
+            .inputs
+            .index
+            .class_values
+            .get(&class)
+            .and_then(|facts| match &facts.super_class {
+                Some(ValueExpr::Binding(binding)) => Some(binding),
+                _ => None,
+            });
+        let values: Values = self
+            .inputs
+            .class_captured_reads
+            .get(&class)
+            .into_iter()
+            .flatten()
+            .chain(heritage)
+            .filter(|binding| !self.inputs.top_bindings.contains(*binding))
+            .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
+            .flatten()
+            .cloned()
+            .collect();
+        if !values.is_empty() {
+            self.escape_untracked_values(&values);
+        }
+    }
+
     /// Values flowing where a later read sees only unknown. Unknown reaches
     /// only published callbacks, so a value may leave a tracked set only once
     /// what it can reach is published.
-    fn escape_untracked_values(&mut self, values: &Values) {
+    pub(super) fn escape_untracked_values(&mut self, values: &Values) {
         self.publish_values(
             values,
             ClassMembersPublicationWriter::UntrackedLocalStore,
@@ -10300,6 +10335,146 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+    }
+
+    /// Binding an array-destructuring parameter runs the iterator protocol
+    /// on its incoming value, the default included.
+    #[inline(never)]
+    fn iterate_parameters(
+        &mut self,
+        callable: &Callable,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for (index, parameter) in callable.params.iter().enumerate() {
+            if !parameter.pattern_iterates {
+                continue;
+            }
+            let mut values = args
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+            if let Some(default) = &parameter.default
+                && may_be_undefined(&values)
+            {
+                values.remove(&AbstractValue::UNDEFINED);
+                values.extend(self.evaluate(default, env, env));
+            }
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+        }
+    }
+
+    /// The iterator protocol a top-level owner runs on its
+    /// `top_iterated_sources`.
+    pub(super) fn iterate_top_sources(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let Some(sources) = self.inputs.index.top_iterated_sources.get(&owner) else {
+            return;
+        };
+        for source in sources {
+            let values = self.evaluate(source, env, captures);
+            self.run_iterator_protocol(&values, owner, outcome);
+        }
+    }
+
+    /// Calling generator `key` creates an opaque generator object. Its body
+    /// runs when some later code resumes the object (`next()`, `for`-`of`,
+    /// spread, destructuring): the body is a published callback, so each
+    /// resumption, an unknown call, promotes the body's effects to the
+    /// resuming owner. What the body can reach (the arguments and captures,
+    /// which the frame's environment holds) is published with it.
+    #[inline(never)]
+    fn create_generator(
+        &mut self,
+        key: u32,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let reached: Values = args.iter().chain(env.values()).flatten().cloned().collect();
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+        );
+        let body = self.deferred_callbacks(Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Function,
+            key,
+        ))]));
+        self.insert_escaped_callback_values(
+            &Values::from([body]),
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+            None,
+        );
+        outcome.returns.insert(AbstractValue::Value(Value::Top));
+    }
+
+    /// The iterator protocol a callable's body runs on its
+    /// `iterated_sources`.
+    #[inline(never)]
+    fn iterate_callable_sources(
+        &mut self,
+        callable: &Callable,
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for iterated in &callable.iterated_sources {
+            let values = self.evaluate(iterated, env, env);
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+        }
+    }
+
+    /// Iterating `values` calls their `[Symbol.iterator]` and the iterator's
+    /// `next`. Unless every value is a proven native iterable, those are
+    /// unknown callees: the iterated value is published and the operation
+    /// may run any published callback (a generator body, a hand-written
+    /// `next`), charged to the operation's owner.
+    #[inline(never)]
+    fn run_iterator_protocol(
+        &mut self,
+        values: &Values,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        if self.iterates_natively(values) {
+            return;
+        }
+        outcome.lose_call_target(owner, DUMMY_SP);
+        outcome.unknown_call = true;
+        self.invoke_possible_callbacks_at(std::slice::from_ref(values), false, None, outcome);
+    }
+
+    /// Every value iterates without user code: a primitive (a string yields
+    /// its code points; any other primitive throws), a throwing read, or an
+    /// array allocation no opaque code reached, under intact Array
+    /// intrinsics.
+    fn iterates_natively(&mut self, values: &Values) -> bool {
+        if values.is_empty() {
+            return false;
+        }
+        let mut arrays = false;
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(_) | Value::Unavailable) => {}
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if (*kind == Kind::Array
+                        || (*kind == Kind::Object
+                            && self.inputs.index.array_elements.contains_key(object)))
+                        && !self.state.world.surface.tainted_objects.contains(object) =>
+                {
+                    arrays = true;
+                }
+                _ => return false,
+            }
+        }
+        !arrays || self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
     }
 
     /// A top-level owner's values whose parts reach a binding only as
@@ -10778,6 +10953,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ..Outcome::default()
         };
         outcome.executed_owners.insert(callable.owner);
+        self.iterate_parameters(callable, &args, &env, &mut outcome);
         if callable.generator {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
@@ -10787,6 +10963,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 callable.owner,
                 DUMMY_SP,
             );
+            self.create_generator(key, &args, &env, &mut outcome);
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
             self.remember_invocation(signature, &outcome);
@@ -10813,6 +10990,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
+        self.iterate_callable_sources(callable, &env, &mut outcome);
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
@@ -12819,6 +12997,20 @@ pub(crate) fn annotate_synchronous_calls(
                 })
             })
             .map(|(key, _)| *key)
+            .collect(),
+        class_captured_reads: index
+            .class_spans
+            .iter()
+            .map(|(class, span)| {
+                let reads = index
+                    .callable_spans
+                    .iter()
+                    .filter(|(_, callable)| span.lo <= callable.lo && callable.hi <= span.hi)
+                    .filter_map(|(key, _)| index.callables.get(key))
+                    .flat_map(|callable| callable.captured_reads().into_iter().cloned())
+                    .collect();
+                (*class, reads)
+            })
             .collect(),
         mutable_captures: index
             .callables

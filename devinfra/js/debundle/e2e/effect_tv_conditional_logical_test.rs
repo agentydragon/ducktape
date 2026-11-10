@@ -654,6 +654,244 @@ fn a_constructed_plain_function_without_effects_keeps_the_split() {
     assert_preserved_entry_output(&fixture, "0 0\n");
 }
 
+/// Opposing control: calling a generator runs nothing, and its body runs
+/// when later code resumes the generator object, by `next()`, `for`-`of`,
+/// destructuring (declaration, assignment, parameter), spread or `yield*`,
+/// also from another statement than the one that created it. A hand-written
+/// iterator's `next` runs the same way. Each resumption reaches `second`,
+/// whether `run` discards `flag()` or calls what it returns, and whether or
+/// not a test keeps `flag` on the source-summary lane.
+#[test]
+fn resuming_a_generator_or_an_iterator_runs_its_body() {
+    const GEN: &str = "function* gen() { second(); yield 0; }";
+    const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
+    for (definitions, resume, extra) in [
+        (GEN, "gen().next();", &["gen"][..]),
+        (
+            "function* gen(f) { f(); yield 0; }",
+            "gen(second).next();",
+            &["gen"][..],
+        ),
+        (
+            "function* gen() { counter = 1; yield 0; }",
+            "gen().next();",
+            &["gen"][..],
+        ),
+        (GEN, "for (const x of gen()) {}", &["gen"][..]),
+        (GEN, "const [x] = gen();", &["gen"][..]),
+        (GEN, "let x; [x] = gen();", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction take([x]) { return x; }",
+            "take(gen());",
+            &["gen", "take"][..],
+        ),
+        (GEN, "[...gen()];", &["gen"][..]),
+        (GEN, "Math.max(...gen());", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction* outer() { yield* gen(); }",
+            "outer().next();",
+            &["gen", "outer"][..],
+        ),
+        (
+            "const holder = { *items() { second(); yield 0; } };",
+            "holder.items().next();",
+            &["holder"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst box = { it: null };",
+            "box.it = gen(); box.it.next();",
+            &["gen", "box"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst g = gen();",
+            "g.next();",
+            &["gen", "g"][..],
+        ),
+        (MK, "for (const x of mk()) {}", &["mk"][..]),
+        (MK, "[...mk()];", &["mk"][..]),
+        (MK, "const [x] = mk();", &["mk"][..]),
+    ] {
+        for guard in ["", "if (first()) {} "] {
+            for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+                assert_reader_split_diverges_with(
+                    &format!(
+                        "{definitions}\nfunction flag() {{ {guard}{resume} return noop; }}\n{run}"
+                    ),
+                    extra,
+                );
+            }
+        }
+    }
+}
+
+/// Opposing control: a generator result read at top level, and an async
+/// generator, whose first `next()` runs the body up to its first `await` or
+/// `yield` synchronously. Each reaches `second`.
+#[test]
+fn a_top_level_generator_result_and_an_async_generator_reach_their_body() {
+    for (definitions, extra) in [
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["ag"][..],
+        ),
+        (
+            "async function* ag() { second(); yield 0; }\nfunction flag() { ag().next(); return noop; }\nfunction run() { return flag()(); }",
+            &["ag"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = gen().next().value;\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function* gen() { yield second; }\nconst h = [...gen()][0];\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["gen", "h"][..],
+        ),
+        (
+            "function mk() { return [second]; }\nconst [h] = mk();\nfunction flag() { return h; }\nfunction run() { return flag()(); }",
+            &["mk", "h"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
+/// Positive anchor: code after an async function's first `await` runs from
+/// a job, after the synchronous module body, so it keeps the split.
+#[test]
+fn an_async_function_after_its_first_await_keeps_the_split() {
+    let fixture = with_reader_split(
+        "async function a() { await 0; second(); }\nfunction flag() { a(); return noop; }\nfunction run() { flag(); return 0; }",
+        &["a"],
+        run_fixture,
+    );
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}
+
+/// Positive anchor for the control above: iterating native arrays of
+/// effect-free values keeps the split.
+#[test]
+fn iterating_native_arrays_keeps_the_split() {
+    for body in [
+        "for (const x of [first]) {}",
+        "const [y] = [1];",
+        "let z; [z] = [2];",
+        "return [...[1, 2]].length;",
+    ] {
+        let fixture = with_reader_split(
+            &format!("function flag() {{ {body} }}\nfunction run() {{ flag(); return 0; }}"),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+const SUPER_BASES: &[&str] = &[
+    "function Base(f) { f(); }",
+    "class Base { constructor(f) { f(); } }",
+];
+
+fn super_capture_definitions(base: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{base}\nfunction make(h) {{ {guard}return class extends Base {{ constructor() {{ super(h); }} }}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make({value}); return new C(); }}"
+    )
+}
+
+/// Opposing control: a class value carries no captured context, so its
+/// constructor's `super(h)` runs the base on unknown arguments later. The
+/// class's creation publishes the enclosing locals its members read, so the
+/// base calling its argument reaches `second`.
+#[test]
+fn a_class_publishes_the_enclosing_locals_its_members_read() {
+    for base in SUPER_BASES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &super_capture_definitions(base, guard, "second"),
+                &["Base", "make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor: the same classes passing only the effect-free `first`
+/// keep the split.
+#[test]
+fn a_class_capturing_only_effect_free_functions_keeps_the_split() {
+    for base in SUPER_BASES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &super_capture_definitions(base, guard, "first"),
+                &["Base", "make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+/// `make` returning a class that reaches `h` through its heritage or a
+/// member, and `run` reaching that member.
+const CLASS_CAPTURE_SHAPES: &[(&str, &str)] = &[
+    (
+        "return class extends h {};",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class extends h { constructor() { super(); } };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "return class { static m() { return h(); } };",
+        "return make({value}).m();",
+    ),
+    (
+        "return class { f = h(); };",
+        "const C = make({value}); return new C();",
+    ),
+    (
+        "class C { m() { return h(); } } return C;",
+        "const C = make({value}); return new C().m();",
+    ),
+];
+
+fn class_capture_definitions(make: &str, run: &str, guard: &str, value: &str) -> String {
+    let run = run.replace("{value}", value);
+    format!(
+        "function make(h) {{ {guard}{make} }}\nfunction flag() {{ return 0; }}\nfunction run() {{ {run} }}"
+    )
+}
+
+/// Opposing control: a class reaching a captured `h` through its heritage,
+/// a static method, a field initializer, or a declared class's method
+/// reaches `second` when `run` constructs or calls it.
+#[test]
+fn a_class_publishes_its_heritage_and_member_captures() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &class_capture_definitions(make, run, guard, "second"),
+                &["make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same classes over the
+/// effect-free `first` keep the split.
+#[test]
+fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
+    for (make, run) in CLASS_CAPTURE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &class_capture_definitions(make, run, guard, "first"),
+                &["make"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
 /// Opposing control: a direct `eval` runs string code that can read and
 /// write any binding visible by name, which no summary sees: refused at
 /// admission (A1) at any depth.
