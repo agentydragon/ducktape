@@ -426,11 +426,10 @@ that point: the split editor chunk takes 14–16 s, against 260–390 s inlined.
 
 From the cost model above:
 
-1. **Memoize the reentrant-pool fallback.** An opaque call inside an active
-   pool member takes a bounded fallback over the whole pool. A heavy owner
-   repeats about 870 near-identical fallbacks, and each re-walks the pool's
-   reach. Memoizing them removes one factor of the pool from the per-owner
-   cost.
+1. **Make interop calls analyzable.** The icons' `f.jsx` calls are opaque only
+   through esbuild's interop wrapper. If that is fixed, they stop invoking
+   the pool. A memo of the reentrant-pool fallback was measured at a ceiling
+   of about 1.5× (fallbacks are 34% of owner time), so it is not the lever.
 2. **Make callback promotion a per-owner worklist,** so each deferred callback
    is promoted once per state change, not once per opaque call.
 3. **Make `unsettle` incremental** with the per-element frontier above. It is

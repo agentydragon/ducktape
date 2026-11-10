@@ -65,25 +65,21 @@ Over-approximating options must also show, with the `DEBUNDLE_TV_AUDIT=1`
 base-vs-head comparison over the e2e suite, that no refusal turns into an
 acceptance, and must count every acceptance lost.
 
-1. **Memoize the reentrant-pool fallback within an owner** (representational
-   if bytes hold).
-   - Today, an opaque call made inside an active pool member does not re-run
-     the pool. `invoke_callback_pool_once` sees an active member
-     (`reentrant_pool`) and takes one `bounded_invocation_fallback` over the
-     whole pool (`RecursiveInvocation`, global reach).
-   - A heavy owner makes about 850 such nested calls with near-identical
-     requests. Each re-walks the pool's reach and calls `unsettle`, and 99.8%
-     of those calls change nothing. That repetition is the pool² term.
-   - Key the fallback like `InvocationSignature` does: pool, reason, reach,
-     top owner, assumption, and `revision.{prefix, reachability}`. Also
-     validate the non-world execution state the fallback reads, and check by
-     `ptr_eq` the world inputs the revisions are known not to version.
-   - On a hit, replay the cached outcome and rebinds. The fallback's world
-     effects are idempotent and still hold.
-   - What a hit drops is only per-site diagnostics: each nested call site and
-     its argument list, which feed the first-class-publication record
-     (`or_insert`) and fallback input paths.
-   - Measure the hit rate before landing. Expected 5–20× on the proxy.
+1. **Memoize the reentrant-pool fallback within an owner: measured, not
+   worth building as the main lever.**
+   - An opaque call made inside an active pool member takes one
+     `bounded_invocation_fallback` over the whole pool (`reentrant_pool`,
+     `RecursiveInvocation`, global reach).
+   - On the proxy: 215,105 fallbacks, taking 96.7 s of 288 s of owner time
+     (34%), so a perfect memo gives at most about 1.5×.
+   - 90% of fallbacks repeat an earlier revision-keyed key, carrying 88% of
+     fallback cost. 98.7% add no new possible value.
+   - Revisions stayed unchanged between same-owner fallbacks 93% of the time,
+     while `ptr_eq` on the collections the walk reads held only 61% of the
+     time. So world state changes without bumping the revisions, and a sound
+     memo must validate those reads, which lowers the hit rate further.
+   - The other 66% of pool cost is member invocation for opaque calls made
+     outside an active member, which this memo does not touch.
 2. **Promotion worklist per owner** (representational).
    - `promote_deferred_callbacks` re-promotes the same deferred set (about 228
      per heavy owner) per opaque call.
@@ -138,16 +134,63 @@ acceptance, and must count every acceptance lost.
    - Honest expectation on 6 cores: ≤ 2× on what remains, because passes are
      short after 1 and 2 and joins serialize.
 
+### Monotone delta for opaque-call pools
+
+Within one top owner, after an opaque call's pool invocation reaches its
+fixpoint, a later opaque call needs to process only what changed since:
+
+- newly escaped values, such as its own new arguments (a mean of 1.3 new
+  values per fallback on the proxy);
+- newly reachable owners;
+- rebinds;
+- heap writes that add edges from already-havocked values.
+
+Everything the earlier invocation applied is monotone and still holds.
+
+Two ways to find heap deltas:
+
+| Approach                                           | Cost                                                                                       | Risk                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Per-owner write log                                | An append per heap write: properties, accessors, cell stores, descriptor maps, dense slots | Every write site must log; one missed site is unsound                                            |
+| A write to an unsettled object is a new delta root | One membership probe per write, against `unsettled_objects` (and havocked cells)           | Same write-site coverage, simpler data; re-expands the whole written object rather than one edge |
+
+Prefer delta roots, with every heap write routed through the
+`ObjectSurfaceStore`, `LexicalCells` and `DenseArrays` methods, so coverage
+is checked in a few functions instead of at call sites.
+
+Reset the per-owner frontier, and run the next opaque call in full, on any
+operation that can narrow state the frontier assumed widened:
+
+- `LexicalCells::store_declared`, which replaces a cell's values on its
+  declaring activation;
+- dense-array slot replacement, which is a strong update;
+- a `writable_prefix` proof, `InProgress → Proven`;
+- world restore or join: `checkpoint_root_attempt` rewinds and alternative
+  joins.
+
+Everything else the pool touches only accumulates within a prefix:
+
+- `prefix_values` (extend);
+- `prefix_object_properties`;
+- `applied_accessors`;
+- `unsettled_objects`;
+- revoked results;
+- the escaped and exported value sets;
+- reachability owners.
+
+Before building, list every write method in the PR and classify each as
+accumulating or narrowing.
+
 ### PR order
 
-| Step | PR                                            | Gate                                           |
-| ---: | --------------------------------------------- | ---------------------------------------------- |
-|    1 | Option 1, nested-pool subsumption             | identical bytes, or the output-changing review |
-|    2 | Option 2, promotion worklist                  | identical bytes                                |
-|    3 | Budget (below)                                | —                                              |
-|    4 | Re-measure; then option 4 or 5 if still short | TV audit                                       |
-|    5 | Option 3, `unsettle` frontier, if still hot   | identical bytes                                |
-|    6 | Option 6, intra-chunk parallelism             | identical bytes                                |
+| Step | PR                                                                                     | Gate                                           |
+| ---: | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
+|    1 | Diagnose why interop calls are opaque (option 5); general kernel rules or a recognizer | TV audit and controls                          |
+|    2 | Monotone delta for opaque-call pools (below), with option 2 folded in                  | identical bytes, or the output-changing review |
+|    3 | Budget (below)                                                                         | —                                              |
+|    4 | Re-measure; then option 4 if still short                                               | TV audit                                       |
+|    5 | Option 3, `unsettle` frontier, if still hot                                            | identical bytes                                |
+|    6 | Option 6, intra-chunk parallelism                                                      | identical bytes                                |
 
 ### Budget
 
