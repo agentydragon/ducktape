@@ -636,9 +636,16 @@ pub struct Tier0Report {
     pub program_top_level_awaits: Option<usize>,
     /// Program chunks that did not parse; each is taken to do anything.
     pub program_unparsed_chunks: Option<usize>,
-    /// Relative or rooted import specifiers that name no chunk read. Each is
-    /// an edge the cycle verdict and derivation do not see.
-    pub program_unresolved_specifiers: Option<usize>,
+    /// Relative or rooted specifiers that name no chunk read. With a static
+    /// one the program is taken to write every global and the chunk to be
+    /// on an import cycle; a dynamic one is a chunk that runs after the
+    /// module graph loading it has evaluated.
+    pub program_unresolved_static_specifiers: Option<usize>,
+    pub program_unresolved_dynamic_specifiers: Option<usize>,
+    /// Exports, in any chunk, that only ever hold one string, and the
+    /// analysed chunk's imports of one: they name census keys.
+    pub program_string_exports: Option<usize>,
+    pub imported_string_bindings: Option<usize>,
     pub upgrades: Vec<tier0::Upgrade>,
     /// Non-empty marks the report an unsound estimate.
     pub what_if_pure: Vec<ImpureCause>,
@@ -904,10 +911,19 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .program
             .as_ref()
             .map(|program| program.unparsed_chunks),
-        program_unresolved_specifiers: options
+        program_unresolved_static_specifiers: options
             .program
             .as_ref()
-            .map(|program| program.unresolved_specifiers),
+            .map(|program| program.unresolved_static_specifiers),
+        program_unresolved_dynamic_specifiers: options
+            .program
+            .as_ref()
+            .map(|program| program.unresolved_dynamic_specifiers),
+        program_string_exports: options
+            .program
+            .as_ref()
+            .map(|program| program.string_exports),
+        imported_string_bindings: options.program.as_ref().map(|_| analysis.imported_strings),
         upgrades: options.upgrades.iter().copied().collect(),
         what_if_pure: options.what_if_pure.iter().copied().collect(),
         parse_ms,

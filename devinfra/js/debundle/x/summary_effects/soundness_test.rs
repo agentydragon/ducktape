@@ -956,6 +956,48 @@ fn program_resolves_rooted_specifiers_and_reads_any_bytes() {
     std::fs::remove_dir_all(directory).expect("removing the scratch directory");
 }
 
+/// An imported `var` names a key only when no chunk can run before a chunk
+/// it imports has: on a cycle the importer may read it as `undefined`.
+#[test]
+fn program_reads_imported_var_strings_only_without_cycles() {
+    let strings = |files: &[(&str, &[u8])]| {
+        let directory = scratch("strings", files);
+        let chunk = directory.join("a.js");
+        let count = js_ast::with_swc_globals(|| {
+            let program = summary_effects::program::load(&directory, &chunk, None, &[])
+                .expect("the program loads");
+            let source = std::fs::read_to_string(&chunk).expect("reading the chunk");
+            let parsed = js_ast::parse_js_module("a.js", &source).expect("it parses");
+            program
+                .imported_strings(&program.chunk, &parsed.module)
+                .len()
+        });
+        std::fs::remove_dir_all(directory).expect("removing the scratch directory");
+        count
+    };
+    let importer: &[u8] = b"import { viaVar, viaLet } from './b.js';\nexport const a = 1;\n";
+    assert_eq!(
+        strings(&[
+            ("a.js", importer),
+            (
+                "b.js",
+                b"export var viaVar = 'x';\nexport let viaLet = 'y';\n"
+            ),
+        ]),
+        2
+    );
+    assert_eq!(
+        strings(&[
+            ("a.js", importer),
+            (
+                "b.js",
+                b"import './a.js';\nexport var viaVar = 'x';\nexport let viaLet = 'y';\n"
+            ),
+        ]),
+        1
+    );
+}
+
 /// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.
 const EXTENSION_FIXTURES: &str = include_str!("extension_fixtures.txt");
 

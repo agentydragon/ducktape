@@ -154,6 +154,27 @@ impl Visit for Stores {
     }
 }
 
+struct Updated(FxHashSet<Id>);
+
+impl Visit for Updated {
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        if let Expr::Ident(target) = &*update.arg {
+            self.0.insert(target.to_id());
+        }
+        update.visit_children_with(self);
+    }
+}
+
+/// The bindings `module` assigns anywhere after their declaration.
+pub fn assigned_bindings(module: &Module) -> FxHashSet<Id> {
+    let mut stores = Stores::default();
+    module.visit_with(&mut stores);
+    let mut updated = Updated(stores.plain);
+    module.visit_with(&mut updated);
+    updated.0.extend(stores.other);
+    updated.0
+}
+
 enum Export {
     Local(Id),
     From(String, String),

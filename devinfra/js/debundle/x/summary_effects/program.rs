@@ -30,9 +30,18 @@ pub struct ProgramFacts {
     /// Chunks that did not parse. Each is taken to write every global, to
     /// await at its top level, and to load any chunk.
     pub unparsed_chunks: usize,
-    /// Relative or rooted import specifiers, in any chunk, that name no
-    /// chunk read: each is an edge the cycle verdict does not see.
-    pub unresolved_specifiers: usize,
+    /// Relative or rooted static import specifiers, in any chunk, that name
+    /// no chunk read. Such a chunk runs before its importer and was not
+    /// seen: with any, the program is taken to write every global and the
+    /// chunk to be on an import cycle.
+    pub unresolved_static_specifiers: usize,
+    /// The same for literal `import()` specifiers. A chunk loaded that way
+    /// runs in a later job than the module graph that loads it, which
+    /// without a top-level `await` has finished evaluating by then: it is
+    /// not part of what the facts here describe.
+    pub unresolved_dynamic_specifiers: usize,
+    /// Exports, in any chunk, that only ever hold one string.
+    pub string_exports: usize,
     /// Per chunk path, the exports that are a `const` initialized with a
     /// string literal, and the string.
     exported_strings: FxHashMap<PathBuf, FxHashMap<String, String>>,
@@ -63,25 +72,51 @@ impl ProgramFacts {
     }
 }
 
-/// The exports of `module` that are a `const` initialized with a string
-/// literal. Before its declaration runs such a binding cannot be read, so a
-/// reader in any chunk sees that string.
-fn exported_strings(module: &Module) -> FxHashMap<String, String> {
-    let string = |declarator: &VarDeclarator| match (&declarator.name, declarator.init.as_deref()) {
-        (Pat::Ident(name), Some(Expr::Lit(Lit::Str(value)))) => {
-            Some((name.id.to_id(), js_ast::str_value(value)))
-        }
-        _ => None,
-    };
-    let constants = |var: &VarDecl| {
-        let decls = if var.kind == VarDeclKind::Const {
-            var.decls.as_slice()
-        } else {
-            &[]
+/// The exports of `module` that are a `const`, or a `let` the module never
+/// assigns, initialized with a string literal. Before its declaration runs
+/// such a binding cannot be read, so a reader in any chunk sees that string.
+/// A `var` reads as `undefined` until then: it counts only with
+/// `settled_vars`, when no chunk can run before a chunk it imports has.
+///
+/// `imported` holds the module's imports already known to be such strings:
+/// re-exporting one exports the string.
+fn exported_strings(
+    module: &Module,
+    imported: &FxHashMap<Id, String>,
+    settled_vars: bool,
+) -> FxHashMap<String, String> {
+    let string = |declarator: &VarDeclarator| {
+        let value = match declarator.init.as_deref()? {
+            Expr::Lit(Lit::Str(value)) => js_ast::str_value(value),
+            // A template without substitutions.
+            Expr::Tpl(template) if template.exprs.is_empty() => template
+                .quasis
+                .first()?
+                .cooked
+                .as_ref()?
+                .as_str()?
+                .to_string(),
+            _ => return None,
         };
-        decls.iter().filter_map(string).collect::<Vec<_>>()
+        match &declarator.name {
+            Pat::Ident(name) => Some((name.id.to_id(), value)),
+            _ => None,
+        }
     };
-    let mut locals: FxHashMap<Id, String> = FxHashMap::default();
+    let assigned = crate::derive::assigned_bindings(module);
+    let constants = |var: &VarDecl| {
+        let decls = if var.kind == VarDeclKind::Var && !settled_vars {
+            &[]
+        } else {
+            var.decls.as_slice()
+        };
+        decls
+            .iter()
+            .filter_map(string)
+            .filter(|(id, _)| !assigned.contains(id))
+            .collect::<Vec<_>>()
+    };
+    let mut locals: FxHashMap<Id, String> = imported.clone();
     let mut out = FxHashMap::default();
     for item in &module.body {
         match item {
@@ -358,10 +393,43 @@ pub fn load(
         graph.insert(path.clone(), imports);
         modules.push((path, parsed));
     }
-    let exported: FxHashMap<PathBuf, FxHashMap<String, String>> = modules
-        .iter()
-        .map(|(path, parsed)| (path.clone(), exported_strings(&parsed.module)))
-        .collect();
+    // Without a static import cycle, a chunk that did not parse, an unknown
+    // synchronous load or an import of a chunk not read, every chunk a
+    // chunk imports has finished evaluating before the importer starts.
+    let mut cyclic = unparsed_chunks > 0;
+    for (path, imports) in &graph {
+        cyclic |= imports.unknown_requires > 0;
+        let mut seen: FxHashSet<PathBuf> = FxHashSet::default();
+        let mut pending = vec![path.clone()];
+        while let Some(next) = pending.pop() {
+            for specifier in graph.get(&next).map_or(&[][..], |imports| &imports.statics) {
+                if let Some(target) = resolve(&next, specifier, &resolution) {
+                    cyclic |= target == *path || !graph.contains_key(&target);
+                    if seen.insert(target.clone()) {
+                        pending.push(target);
+                    }
+                }
+            }
+        }
+    }
+    // A chunk may re-export a string it imports: read until none is new.
+    let mut exported: FxHashMap<PathBuf, FxHashMap<String, String>> = FxHashMap::default();
+    loop {
+        let next: FxHashMap<PathBuf, FxHashMap<String, String>> = modules
+            .iter()
+            .map(|(path, parsed)| {
+                let imported = imported_strings(path, &parsed.module, &exported, &resolution);
+                (
+                    path.clone(),
+                    exported_strings(&parsed.module, &imported, !cyclic),
+                )
+            })
+            .collect();
+        if next == exported {
+            break;
+        }
+        exported = next;
+    }
     for (index, (path, parsed)) in modules.iter().enumerate() {
         let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
         let object_aliases = prepass(&parsed.module, unresolved).object_aliases;
@@ -423,29 +491,44 @@ pub fn load(
             .get(path)
             .is_some_and(|imports| imports.unknown_requires > 0)
     });
-    Ok(ProgramFacts {
-        chunks: graph.len(),
-        on_import_cycle: static_cycle || dynamic_cycle || unknown_require,
-        census: merged,
-        modules,
-        chunk,
-        top_level_awaits,
-        unparsed_chunks,
-        unresolved_specifiers: graph
+    let unresolved = |dynamic: bool| {
+        graph
             .iter()
             .flat_map(|(path, imports)| {
-                let dynamics = imports.dynamics.iter().flatten();
-                imports
-                    .statics
-                    .iter()
-                    .chain(dynamics)
+                let specifiers: Vec<&String> = if dynamic {
+                    imports.dynamics.iter().flatten().collect()
+                } else {
+                    imports.statics.iter().collect()
+                };
+                specifiers
+                    .into_iter()
                     .map(move |specifier| (path, specifier))
             })
             .filter(|(path, specifier)| {
                 resolve(path, specifier, &resolution)
                     .is_some_and(|target| !graph.contains_key(&target))
             })
-            .count(),
+            .count()
+    };
+    let (unresolved_static_specifiers, unresolved_dynamic_specifiers) =
+        (unresolved(false), unresolved(true));
+    if unresolved_static_specifiers > 0 {
+        merged.refuse_everything();
+    }
+    Ok(ProgramFacts {
+        chunks: graph.len(),
+        on_import_cycle: static_cycle
+            || dynamic_cycle
+            || unknown_require
+            || unresolved_static_specifiers > 0,
+        census: merged,
+        modules,
+        chunk,
+        top_level_awaits,
+        unparsed_chunks,
+        unresolved_static_specifiers,
+        unresolved_dynamic_specifiers,
+        string_exports: exported.values().map(FxHashMap::len).sum(),
         exported_strings: exported,
         resolution,
     })

@@ -28,7 +28,7 @@ export const TOUCHED = { color: 'red' };
 export function recolor() { TOUCHED.color = 'blue'; }
 var require_third = __commonJS((exports) => { exports.box = function (v) { return { v }; }; exports.peek = function (o) { return o.v; }; });
 const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
-export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
+const before = 1, LISTED = '__listed__', after = 2; export { before, LISTED, after }; export let LOOSE = 'Set'; export function loosen() { LOOSE = 'Map'; } export var HOISTED = '__hoisted__'; export var CHANGED = 'Set'; export function change() { CHANGED = 'Map'; } export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -232,5 +232,29 @@ console.log(s.fake);
 -
 import { RENAMED } from './dep.js';
 globalThis[RENAMED] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### commutes same: a record store through a shorthand-default parameter and an imported, re-exported constant from a declarator list (census)
+-
+import { LISTED } from './dep.js'; const hosts = new Set(); function register(w) { hosts.add(w); } function cleanup(ref) { return () => { const t = ref.deref(); try { delete t[LISTED]; } catch {} }; } function setup({ target = globalThis } = {}) { let h = target; register(h); let g = h[LISTED] ??= {}; return (u, v) => { g[u] = v; }; } export { LISTED };
+setup()('n', 1);
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[LISTED].n);
+### ordered differs: a store under an imported binding its exporter can reassign (census)
+-
+import { LOOSE } from './dep.js';
+globalThis[LOOSE] = class { constructor() { this.fake = true; } };
+const s = new Set();
+console.log(s.fake);
+### commutes same: a record store under an imported never-assigned var of a program without cycles (census)
+-
+import { HOISTED } from './dep.js'; const name = 'n';
+(globalThis[HOISTED] ??= {})[name] = 1;
+const m = new Map([['k', 1]]);
+console.log(m.get('k'), globalThis[HOISTED].n);
+### ordered differs: a store under an imported var its exporter can reassign (census)
+-
+import { CHANGED } from './dep.js';
+globalThis[CHANGED] = class { constructor() { this.fake = true; } };
 const s = new Set();
 console.log(s.fake);

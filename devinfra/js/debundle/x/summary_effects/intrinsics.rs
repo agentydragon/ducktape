@@ -902,6 +902,14 @@ impl Visit for FlowPass<'_> {
         pattern.visit_children_with(self);
     }
 
+    // `{ name = value }`.
+    fn visit_assign_pat_prop(&mut self, prop: &AssignPatProp) {
+        if let Some(value) = &prop.value {
+            self.bind(prop.key.to_id(), value);
+        }
+        prop.visit_children_with(self);
+    }
+
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         if let AssignTarget::Simple(SimpleAssignTarget::Ident(target)) = &assign.left
             && target.id.ctxt != self.flow.unresolved
@@ -1207,6 +1215,13 @@ impl Visit for Visitor<'_> {
             self.consume(&pattern.right);
         }
         pattern.visit_children_with(self);
+    }
+
+    fn visit_assign_pat_prop(&mut self, prop: &AssignPatProp) {
+        if let Some(value) = &prop.value {
+            self.consume(value);
+        }
+        prop.visit_children_with(self);
     }
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {

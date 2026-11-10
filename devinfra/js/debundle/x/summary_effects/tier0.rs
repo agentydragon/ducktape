@@ -165,6 +165,8 @@ pub struct Tier0 {
     /// `await` outside any function: other modules may run in between, so
     /// exports count as reachable.
     pub top_level_awaits: usize,
+    /// Imports that only ever hold one string, by the program's chunks.
+    pub imported_strings: usize,
     /// Whether exported bindings were treated as reachable from the start.
     pub exports_reachable: bool,
     /// Intrinsic uses left impure because the census found a write.
@@ -2467,6 +2469,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         declared_names,
         refused,
         top_level_awaits,
+        imported_strings: imported_strings.len(),
         exports_reachable,
         intrinsics_denied,
         families_used,

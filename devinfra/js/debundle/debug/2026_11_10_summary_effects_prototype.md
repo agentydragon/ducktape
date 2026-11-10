@@ -179,9 +179,13 @@ binding initialized with `x[K] ??= {}`, is charged to the one global `K`
 names when `K` resolves to a string (a literal, a binding that only ever
 holds one, a concatenation of those); `x` may be a destructured parameter
 whose default is the global object. An import names a key the same way when
-its exporting chunk declares it `const` with a string literal (directly or
-under `export { local as name }`); a `const` cannot be read before its
-declaration runs, so this needs no cycle verdict. With a name the census
+its exporting chunk declares it with a string literal (directly, under
+`export { local as name }`, or re-exported by a chunk that imports it): a
+`const`, or a `let` the chunk never assigns, cannot be read before its
+declaration runs, so those need no cycle verdict; a never-assigned `var`
+reads as `undefined` until then and counts only when the program has no
+static import cycle, no chunk that did not parse, no unknown synchronous
+load and no static import of a chunk that was not read. With a name the census
 cannot resolve the record may be any intrinsic and the store stays unnamed.
 
 A callee summary for local functions that only allocate was not built. The
@@ -202,6 +206,17 @@ counts statements impure for a cause as pure), with the first two upgrades:
 | all three and `X.p = …` statements |                   18 / 10 |                    331 / 42 |
 
 ### Preconditions
+
+The program facts describe the chunks that were read. A static import
+specifier that names no chunk read is a chunk that runs before its importer
+and was not seen: with any, the program is taken to write every global and
+the analysed chunk to be on an import cycle
+(`program_unresolved_static_specifiers`). A literal `import()` of a chunk
+that was not read (`program_unresolved_dynamic_specifiers`) is not refused:
+that chunk runs in a later job than the module graph loading it, which
+without a top-level `await` anywhere in the program has finished evaluating
+by then. What such a chunk does afterwards is outside what a reordering of
+this chunk's top-level statements can observe.
 
 The report's `preconditions` block says, for the input at hand, whether each
 assumption holds and what the analysis fell back to.
@@ -472,9 +487,9 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 34 two-chunk programs run under Node in both
-orders (17 admitted with Node agreeing, 17 refused with Node showing the
-divergence); three of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
+`derive_fixtures.txt` holds 38 two-chunk programs run under Node in both
+orders (19 admitted with Node agreeing, 19 refused with Node showing the
+divergence); seven of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
 per callee family of the large private consumer corpus with the class
