@@ -205,11 +205,24 @@ func (h admissionHealth) Check(ctx context.Context, _ *healthpb.HealthCheckReque
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
-// An AnySubject method admits an Identity caller as an IdentityAdmission and a ServiceAccount caller
-// as before; a method that has not opted in refuses the Identity caller.
-func TestAnySubjectAdmitsIdentityCallers(t *testing.T) {
+// An AnySubject or ReviewedServiceAccountOrIdentity method admits an Identity caller as an
+// IdentityAdmission and a ServiceAccount caller as before; a method that has not opted in refuses the
+// Identity caller.
+func TestIdentityAdmittingRulesAdmitIdentityCallers(t *testing.T) {
+	for _, rule := range []struct {
+		name  string
+		admit func(*auth.Resolver) auth.Rule
+	}{
+		{"AnySubject", func(r *auth.Resolver) auth.Rule { return auth.AnySubject(r) }},
+		{"ReviewedServiceAccountOrIdentity", auth.ReviewedServiceAccountOrIdentity},
+	} {
+		t.Run(rule.name, func(t *testing.T) { testIdentityAdmittingRule(t, rule.admit) })
+	}
+}
+
+func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rule) {
 	accountWorkload, _ := svidWorkload(t)
-	identityWorkload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox", testPolicyNamespace)
+	identityWorkload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox-"+uuid.NewString()[:8], testPolicyNamespace)
 	namespaces := []string{accountWorkload.Sandbox.Namespace, identityWorkload.Sandbox.Namespace}
 	svids, err := auth.NewSVIDResolver(accountWorkload.Objects, namespaces, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
@@ -233,7 +246,7 @@ func TestAnySubjectAdmitsIdentityCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 	methods := auth.Methods{
-		healthpb.Health_Check_FullMethodName: auth.AnySubject(resolves),
+		healthpb.Health_Check_FullMethodName: admit(resolves),
 		healthpb.Health_List_FullMethodName:  auth.AnyAccount(resolves),
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)

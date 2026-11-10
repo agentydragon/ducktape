@@ -12,4 +12,7 @@ message TerminalNotificationPart {
   string execution_account_namespace = 5;
   string execution_account_name = 6;
   string execution_account_uid = 7;
+  // The Session's execution Identity, empty when it has none.
+  string execution_identity_name = 8;
+  string execution_identity_uid = 9;
 }

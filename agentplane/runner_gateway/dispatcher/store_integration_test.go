@@ -1302,12 +1302,12 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	actorIdentity := proto.Clone(actor).(*ServiceAccountIdentity)
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
 	opening, err := store.CreateSessionForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
-		callerIdentity, CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		callerIdentity, ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
 	dispatch, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
-		CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2223,7 +2223,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				t.Fatalf("opening resurrected: %v", err)
 			}
 			if existing {
-				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, CallerIdentity{Privileged: true})
+				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, ServiceAccountCaller{Privileged: true})
 				if err != nil || len(retained) != 1 || retained[0].EnvironmentDeletedAt == nil || retained[0].State != SessionFailedState {
 					t.Fatalf("Session lost during cleanup: %+v %v", retained, err)
 				}
@@ -2659,7 +2659,7 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 			t.Fatalf("missing Session command: %v", err)
 		}
 	}
-	for _, identity := range []*CallerIdentity{nil, {Privileged: true}, {ServiceAccountIdentity: serviceAccountIdentityFor(Account(caller), "test-account-uid")}} {
+	for _, identity := range []Caller{nil, ServiceAccountCaller{Privileged: true}, ServiceAccountCaller{ServiceAccountIdentity: serviceAccountIdentityFor(Account(caller), "test-account-uid")}} {
 		if _, err := store.enqueue(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, identity); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("store missing Session: %v", err)
 		}
@@ -2711,7 +2711,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			identity := serviceAccountIdentityFor(Account(caller), "test-owner-uid")
-			admission := CallerIdentity{Privileged: privileged, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+			admission := ServiceAccountCaller{Privileged: privileged, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 			sessionID := uuid.NewString()
 			if _, err := store.CreateSessionForCaller(ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
 				t.Fatal(err)
@@ -2795,7 +2795,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
-	admission := CallerIdentity{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+	admission := ServiceAccountCaller{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 	sessionID := uuid.NewString()
 	if _, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
 		t.Fatal(err)
@@ -2871,7 +2871,7 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 			if _, err := fixture.store.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 				t.Fatal(err)
 			}
 			for range 2 {
@@ -2919,7 +2919,7 @@ func TestCancellationDuringWakeRetainsUncertaintyForSession(t *testing.T) {
 	if err != nil || row.State != CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
 		t.Fatalf("lost in-flight wake marker: %+v %v", row, err)
 	}
-	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 		t.Fatal(err)
 	}
 	worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}

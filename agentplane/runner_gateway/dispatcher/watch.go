@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -24,12 +25,14 @@ type watchSubscription struct {
 }
 
 type terminalAssembly struct {
-	started   time.Time
-	count     int
-	parts     map[int][]byte
-	ownerNS   string
-	ownerName string
-	ownerUID  string
+	started      time.Time
+	count        int
+	parts        map[int][]byte
+	ownerNS      string
+	ownerName    string
+	ownerUID     string
+	identityName string
+	identityUID  string
 }
 
 // WatchHub transports committed PostgreSQL invalidations and terminal
@@ -205,7 +208,8 @@ func (h *WatchHub) terminalPart(payload string) error {
 		return errors.New("terminal part is too large")
 	}
 	ownerNS, ownerName, ownerUID := item.GetExecutionAccountNamespace(), item.GetExecutionAccountName(), item.GetExecutionAccountUid()
-	if (ownerNS == "") != (ownerName == "") || ownerUID != "" && ownerNS == "" {
+	identityName, identityUID := item.GetExecutionIdentityName(), item.GetExecutionIdentityUid()
+	if (ownerNS == "") != (ownerName == "") || ownerUID != "" && ownerNS == "" || (identityName == "") != (identityUID == "") {
 		return errors.New("terminal notification has an incomplete Session principal association")
 	}
 	h.mu.Lock()
@@ -217,11 +221,12 @@ func (h *WatchHub) terminalPart(payload string) error {
 		}
 		assembly = &terminalAssembly{
 			started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{},
-			ownerNS: ownerNS, ownerName: ownerName, ownerUID: ownerUID,
+			ownerNS: ownerNS, ownerName: ownerName, ownerUID: ownerUID, identityName: identityName, identityUID: identityUID,
 		}
 		h.pending[item.GetEventId()] = assembly
 	}
-	if assembly.count != int(item.GetPartCount()) || assembly.ownerNS != ownerNS || assembly.ownerName != ownerName || assembly.ownerUID != ownerUID {
+	if assembly.count != int(item.GetPartCount()) || assembly.ownerNS != ownerNS || assembly.ownerName != ownerName || assembly.ownerUID != ownerUID ||
+		assembly.identityName != identityName || assembly.identityUID != identityUID {
 		h.mu.Unlock()
 		return errors.New("terminal part count changed")
 	}
@@ -257,6 +262,10 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if assembly.ownerNS != "" && assembly.ownerName != "" {
 		owner = serviceAccountIdentityFor(Account{Namespace: assembly.ownerNS, Name: assembly.ownerName}, assembly.ownerUID)
 	}
-	h.notifyTerminal(TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner})
+	event := TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner}
+	if assembly.identityName != "" {
+		event.OwnerIdentity = &identitypb.Identity{Name: assembly.identityName, Uid: assembly.identityUID}
+	}
+	h.notifyTerminal(event)
 	return nil
 }

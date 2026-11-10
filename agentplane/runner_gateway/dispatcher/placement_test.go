@@ -19,6 +19,6 @@ func (s *Store) CreateSession(ctx context.Context, sessionID, sandboxName, sandb
 	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID), spec, setupScript, wakeCaller, SessionExecution{}, nil)
 }
 
-func (s *Store) CreateSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Session, error) {
+func (s *Store) CreateSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller ServiceAccountCaller) (*Session, error) {
 	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID), spec, setupScript, wakeCaller, SessionExecution{Principal: executionPrincipal}, caller)
 }
