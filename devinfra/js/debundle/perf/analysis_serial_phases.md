@@ -475,6 +475,18 @@ are owner-time sums from the counter build.
   `promote_lazy_effects` at 15%. The trigger is the `f.jsx` read on an object
   that every pool pass unsettles.
 
+**Conclusion.** A sound delta on this engine is bounded at about 3–5× on the
+proxy (60–92 s against a 20 s target). Reaching the target needs fewer
+opaque events: what a bounded pool pass unsettles, and the sticky
+possible-setter path. Narrowing either turns refusals into acceptances, so it
+takes the output-changing review. Design: <../plans/analysis_performance.md>
+§ Fewer opaque events.
+
+With `program_premises.intrinsics_never_written: {families: [Object]}` added
+to the original and v2 configs (`all` is refuted by census writes on `Error`
+and `Array`), all 160 heavy owners still pool (287 s and 289 s). The
+possible-setter and possible-getter paths do not consult the premise today.
+
 ## Candidate optimizations, ranked
 
 From the cost model above:
@@ -488,8 +500,8 @@ From the cost model above:
    sticky possible-setter path (§ Interop wrapper: not the cause). Narrowing
    either changes output, so it needs the output-changing review.
 
-Making the interop wrapper analyzable was measured as no gain
-(§ Interop wrapper: not the cause).
+Making the interop wrapper analyzable gains nothing alone (§ Interop wrapper:
+not the cause), but item 2 needs it to reach the icons.
 
 Earlier candidates, from the package build:
 

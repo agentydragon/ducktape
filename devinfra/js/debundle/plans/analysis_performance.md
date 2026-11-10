@@ -102,10 +102,11 @@ acceptance, and must count every acceptance lost.
      the first havoc.
    - Fallback if 1 and 2 fall short of target; expected ≥ 1's factor
      regardless of pool structure.
-5. **Model the CommonJS interop wrapper: measured, no gain.** Hand-resolving
+5. **Model the CommonJS interop wrapper: no gain alone.** Hand-resolving
    the wrapper, or even routing every JSX call to a stable top-level
    function, leaves all 160 heavy owners invoking the pool
-   (<../perf/analysis_serial_phases.md> § Interop wrapper: not the cause).
+   (<../perf/analysis_serial_phases.md> § Interop wrapper: not the cause). It
+   is still needed for § Fewer opaque events to reach the icons.
 6. **Intra-chunk parallelism** (after 1 and 2).
    - Root execution is a source-order fold that threads one `World`; owners
      cannot run concurrently without speculation.
@@ -165,7 +166,110 @@ Everything else the pool touches only accumulates within a prefix:
 Before building, list every write method in the PR and classify each as
 accumulating or narrowing.
 
+### Fewer opaque events (design only)
+
+Even a perfect delta leaves the proxy at 60–92 s
+(<../perf/analysis_serial_phases.md> § Delta ceilings), so reaching the target
+on this engine takes fewer opaque events. The v2 scratch build, with the
+interop wrapper hand-resolved and `Symbol.for` removed, left exactly two
+refusals in front of the icons: (i) and (ii) below. Both narrowings turn
+refusals into acceptances, so each needs the output-changing review and Node
+controls. Neither is built.
+
+The wrapper still matters. In the real source, `f` is the result of the
+imported `__toESM`/`__commonJS` calls, so `f` is unknown however (i) and (ii)
+are decided. Modeling the wrapper (option 5) is necessary but not sufficient:
+it pays off only together with (i) and (ii).
+
+**(ii) What a bounded pool pass must unsettle.** Today
+`bounded_invocation_fallback_transfer` unsettles its arguments and every
+callback reached. For each reached callable, `unsettle` follows the prefix
+values of every binding the callable reads, and it havocs every captured cell.
+The components read `f`, so every pass unsettles `f`'s object, and each later
+`f.jsx` read takes `promote_possible_getter`.
+
+Soundness needs less. A summarized body can mutate an object (write, define or
+delete a property, change its prototype, prevent extensions) only if it
+obtains a reference to that object, directly or through code it calls. A
+static-key data read `b.p` on a settled object runs no code and hands out the
+property's value, never the object itself.
+
+- Classify each occurrence of a read binding in each callable body, from
+  syntax in `ExecutionIndex`:
+  - **Read-only:** a static, non-`__proto__` member read `b.p`, a
+    destructuring of `b` without rest, `typeof b`, a comparison, an `in` or
+    `instanceof` operand, a `for…in` head. The result of `b.p` is a new value
+    and is classified separately; `(0, b.p)(…)` passes no receiver.
+  - **Escaping:** anything else. That includes a method call `b.p(…)` (the
+    receiver is `b`), an argument to any call or `new`, a write, delete or
+    update receiver, a computed key, a store, return, throw or yield of `b`.
+- `unsettle` then follows `callable.reads` into prefix values only for
+  bindings with an escaping occurrence in a reached body.
+- For a binding that is only read, unsettle the values stored under the keys
+  read, not the receiver: `b.p.q = 1` mutates `b.p`'s value, not `b`.
+- Captured snapshots and cells use the same classification.
+- Havoc only the captured cells that some reached body rebinds (its
+  `rebinds`), not every captured cell.
+
+Preconditions, all checked per pass:
+
+- `b`'s object is settled when the pass starts.
+- `b` has no applied accessor for a key read: a getter receives `this = b`.
+- A key read that is not an own data property reads the prototype chain, and
+  an inherited getter also receives `this = b`. So that read is read-only only
+  when (i)'s premise covers the prototype; otherwise it is escaping.
+- `reachability.incomplete` (`eval`, `with`) keeps today's full unsettle.
+
+Stored-reference edges out of an object that is unsettled stay complete.
+
+**(i) Possible setters after an unknown call.** Today
+`promote_property_writes` treats every write after
+`reachability.unknown_call_seen`, which is sticky, as a possible setter call:
+it promotes every available accessor owner and records `property_write`. That
+includes `Cr.jsx = c1` into a fresh `{}`.
+
+Freshness alone does not justify dropping this. An assignment to a key the
+object lacks walks the prototype chain, and unknown code can define a setter
+on `%Object.prototype%`. So the exemption needs all of the following:
+
+1. Every receiver value is an allocation whose accessors are settled
+   (`object_accessors_are_settled`: never tainted or unsettled, so only known
+   code has held it).
+2. Its prototype is the ordinary intrinsic for its kind. A literal with a
+   `__proto__:` key, `Object.create`, or a class instance stays refused in a
+   first version.
+3. The key is static and not `__proto__`, with no applied accessor on the
+   receiver.
+4. Either the key is already an own data property of the receiver, or
+   `program_premises.intrinsics_never_written` names the prototype's family
+   (`Object` for literals; the proxy's census refutes `Array`). That premise
+   means no code installs a slot, a setter included, on that prototype.
+
+Under these conditions the write is an ordinary own data store and runs no
+code. The same premise makes absent-key reads and `in` on fresh argument
+objects exact, which are v3's `t.key`, `a.ref` and `"key" in t` refusals.
+Today, adding the premise alone changes nothing on the proxy
+(<../perf/analysis_serial_phases.md> § Delta ceilings), because neither path
+consults it.
+
+Node controls for both, each a case where skipping the refusal would be
+unsound:
+
+- Unknown code installs a setter on `Object.prototype`, then known code writes
+  a fresh literal, without the premise.
+- A fresh object passed to unknown code, then written.
+- A pool member writes through a read-only binding's property value
+  (`b.p.q = 1`).
+- A pool member calls a method on a read binding (`b.m()`).
+- An accessor on a read key, both own and inherited.
+
 ### PR order
+
+Implementation on the execution-based engine is paused until the stage 2
+producer is decided (<target_architecture.md> § Open decision). The delta's
+measured ceilings and § Fewer opaque events are inputs to that decision. If
+this engine is kept, step 1 covers every opaque-call path, and (i) and (ii)
+come next, with option 5.
 
 | Step | PR                                                                    | Gate                                           |
 | ---: | --------------------------------------------------------------------- | ---------------------------------------------- |
