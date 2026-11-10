@@ -1,4 +1,4 @@
-"""Keep the BuildBuddy live-test credential synced from Crossplane's LiteLLM key."""
+"""Retire Terraform's ownership of the BuildBuddy live-test secret."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         auto_apply=False,
         store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
     )
-    # Review the forget-only plan before allowing the ownership handoff.
-    writer.add_json_patch(JsonPatch.add("/spec/planOnly", True))
+    # Approve only the reviewed module revision; the controller replans on approval.
+    writer.add_json_patch(JsonPatch.add("/spec/approvePlan", "plan-latest-62a5ac5453"))
     return chart
 
 
@@ -38,6 +38,7 @@ def resources(
         NAME,
         directory,
         timeout="20m",
+        wait=False,
         depends_on=flux_kustomization_depends_on_many(tofu_controller, crossplane_keys),
-        description="Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.",
+        description="Forget Terraform's ownership of the BuildBuddy live-test secret without destroying it.",
     )

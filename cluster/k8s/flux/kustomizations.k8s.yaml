@@ -4493,7 +4493,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.
+    description: Forget Terraform's ownership of the BuildBuddy live-test secret without destroying it.
   name: litellm-buildbuddy-sync
   namespace: ducktape-flux
 spec:
@@ -4511,7 +4511,7 @@ spec:
     name: litellm-buildbuddy-sync
     namespace: ducktape-flux
   timeout: 20m
-  wait: true
+  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

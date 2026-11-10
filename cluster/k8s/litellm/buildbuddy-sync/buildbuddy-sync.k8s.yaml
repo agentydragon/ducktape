@@ -4,6 +4,7 @@ metadata:
   name: litellm-buildbuddy-sync
   namespace: flux-system
 spec:
+  approvePlan: plan-latest-62a5ac5453
   backendConfig:
     customConfiguration: |
       backend "pg" {
@@ -12,7 +13,6 @@ spec:
       }
   interval: 15m
   path: ./tf/gitops/litellm-buildbuddy-sync
-  planOnly: true
   refreshBeforeApply: true
   runnerPodTemplate:
     spec:
