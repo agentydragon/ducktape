@@ -328,6 +328,25 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: zot-cache-image-pulls
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: zot-cache-image-pulls.json
+    name: zot-cache-image-pulls-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+    - datasourceName: Loki
+      inputName: DS_LOKI
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: cpap-gateway-disk
   namespace: monitoring
 spec:

@@ -7,6 +7,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - buildbuddy-executor-pool.json
+  - name: zot-cache-image-pulls-dashboard
+    namespace: monitoring
+    files:
+      - zot-cache-image-pulls.json
   - name: cpap-gateway-disk-dashboard
     namespace: monitoring
     files:

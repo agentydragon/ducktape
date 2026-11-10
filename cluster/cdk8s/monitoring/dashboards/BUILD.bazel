@@ -119,3 +119,9 @@ grafana_dashboard_visual_test(
     dashboard = ":aiquota-history.json",
     fixture_data = ":visual_fixtures/aiquota-history.json",
 )
+
+grafana_dashboard_visual_test(
+    name = "zot_cache_image_pulls_dashboard_visual_test",
+    dashboard = ":zot-cache-image-pulls.json",
+    fixture_data = ":visual_fixtures/zot-cache-image-pulls.json",
+)
