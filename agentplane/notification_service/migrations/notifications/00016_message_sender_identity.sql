@@ -1,7 +1,7 @@
 -- +goose Up
 -- The Identity incarnation a workload SVID naming an Identity sent the message as. Such a message has
--- no sender_uid, and its sender_namespace and sender_name name the Sandbox it was sent from, the
--- ServiceAccount a Sandbox ran as before it ran as an Identity. Additive: a replica predating it
+-- no sender_uid: sender_namespace and sender_name name the sending Sandbox (the ServiceAccount is
+-- named after it), and sender_identity_{name,uid} say who sent it. Additive: a replica predating it
 -- reads such a message as one with an unestablished sender UID, which no sender can read back.
 ALTER TABLE message
     ADD COLUMN sender_identity_name text,
