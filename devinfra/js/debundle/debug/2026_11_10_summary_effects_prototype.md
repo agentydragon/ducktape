@@ -408,12 +408,12 @@ Two points differ from what was asked, both for soundness:
   decorator statements pass each other.
 
 `premise_fixtures.txt` holds 41 programs, each run under Node in both orders:
-17 where a premise lets a swap through and Node agrees, 18 where the premises
-hold but the swap is observable and tier 0 refuses, and 4 where a premise is
+18 where a premise lets a swap through and Node agrees, 18 where the premises
+hold but the swap is observable and tier 0 refuses, and 5 where a premise is
 false (a `pure_call` that counts, a `callback_factory` that calls its
 callback, a `decorator` that writes a shared registry, a `decorator` that
-reads outside state) and tier 0 accepts a swap Node observes. Without
-premises tier 0 refuses all 39.
+reads outside state, an `immutable_bindings` entry whose object is changed)
+and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
 
 ### Derived contracts
 
