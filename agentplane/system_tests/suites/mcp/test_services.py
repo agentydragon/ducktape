@@ -103,11 +103,14 @@ async def test_gateway_roll_keeps_live_central_read_and_turn(
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_gateway_expiry_notifies_active_central_turn(
+async def test_gateway_exec_server_loss_notifies_active_central_turn(
     cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:
-    await central_sampler.gateway_outage_expires_native_session_then_notifies_model(
-        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-expiry")
+    await central_sampler.gateway_outage_restarts_exec_server_then_notifies_model(
+        cluster,
+        tmp_path,
+        scripted,
+        Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-native-loss"),
     )
 
 

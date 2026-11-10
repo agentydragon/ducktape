@@ -211,7 +211,9 @@ async def _wait_for_turn_status(
             events.cancel()
 
 
-async def _started_gateway_roll_process(deployed: CentralStack, session_id: str) -> tuple[int, str, str]:
+async def _started_gateway_roll_process(
+    deployed: CentralStack, session_id: str, marker: str = "gateway-roll-marker"
+) -> tuple[int, str, str]:
     stream = deployed.sampler.FollowEvents(
         sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
     )
@@ -239,7 +241,7 @@ async def _started_gateway_roll_process(deployed: CentralStack, session_id: str)
         elif (
             boundary.direction == "dispatch"
             and payload.get("method") == "process/start"
-            and "gateway-roll-marker" in json.dumps(payload.get("params"))
+            and marker in json.dumps(payload.get("params"))
         ):
             process_ids.append(payload["params"]["processId"])
     (process_id,) = process_ids
@@ -278,8 +280,80 @@ async def _assert_original_native_session_resumed(
     pytest.fail(f"original native executor session {native_session_id} was not successfully resumed")
 
 
+async def _assert_replacement_native_session_started(
+    deployed: CentralStack, session_id: str, after_cursor: int, original_session_id: str
+) -> str:
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
+    )
+    initialize_intents: set[str] = set()
+    async for frame in stream:
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            initialize_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in initialize_intents
+            and payload.get("outcome") == "completed"
+            and (new_session_id := payload.get("execution_session_id"))
+            and new_session_id != original_session_id
+        ):
+            return new_session_id
+    pytest.fail(f"no replacement native executor session followed {original_session_id}")
+
+
+async def _sandbox_executor_pod(cluster: Cluster, sandbox: str) -> tuple[str, str]:
+    pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", f"agentplane.allegedly.works/sandbox={sandbox}", "-o", "json")
+    )["items"]
+    (pod,) = [item for item in pods if not item["metadata"].get("deletionTimestamp")]
+    return pod["metadata"]["name"], pod["metadata"]["uid"]
+
+
+_EXEC_SERVER_PROCESS_SCRIPT = """
+mode="$1"
+for process in /proc/[0-9]*; do
+  args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
+  case "$args" in
+    "/bin/codex exec-server --listen "*)
+      pid="${process##*/}"
+      started=$(awk '{print $22}' "$process/stat")
+      if [ "$mode" = kill ]; then kill -KILL "$pid"; fi
+      printf '%s:%s\\n' "$pid" "$started"
+      exit 0
+      ;;
+  esac
+done
+exit 1
+"""
+
+
+async def _exec_server_process(cluster: Cluster, pod: str, mode: str) -> str:
+    return await cluster.kubectl(
+        "exec",
+        pod,
+        "-c",
+        "codex-executor",
+        "--",
+        "/bin/sh",
+        "-c",
+        _EXEC_SERVER_PROCESS_SCRIPT,
+        "--",
+        mode,
+        timeout_s=10,
+    )
+
+
 async def _wait_for_executor_dispatch_after(
-    deployed: CentralStack, session_id: str, cursor: int, process_id: str
+    deployed: CentralStack, session_id: str, cursor: int, process_id: str, call_id: str = "read-live-process"
 ) -> str:
     """Follow the model cell into its delegated write_stdin and blocking process read."""
     stream = deployed.sampler.FollowEvents(
@@ -299,7 +373,7 @@ async def _wait_for_executor_dispatch_after(
                 continue
             payload = json.loads(boundary.payload)
             if boundary.boundary == "javascript" and boundary.direction == "send":
-                model_cell_sent |= '"tool_call_id":"read-live-process"' in json.dumps(payload, separators=(",", ":"))
+                model_cell_sent |= f'"tool_call_id":"{call_id}"' in json.dumps(payload, separators=(",", ":"))
             elif boundary.boundary == "tool" and boundary.direction == "dispatch" and model_cell_sent:
                 delegated_read |= payload.get("tool_name", {}).get("name") == "write_stdin" and bool(
                     payload.get("cell_id")
@@ -387,7 +461,8 @@ async def _roll_gateway_for_central_session(
     *,
     failed_resume_after: tuple[str, int] | None = None,
     hold_down_seconds: float = 0,
-) -> tuple[CentralStack, float, str, str]:
+    kill_native_server: bool = False,
+) -> tuple[CentralStack, float, str, str, tuple[str, str, str] | None]:
     """Roll only the disposable k3s Gateway, proving an actual service outage."""
     old_pods = json.loads(
         await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
@@ -395,6 +470,7 @@ async def _roll_gateway_for_central_session(
     (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
     old_uid = old_pod["metadata"]["uid"]
     started = asyncio.get_running_loop().time()
+    killed_native: tuple[str, str, str] | None = None
     try:
         await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
@@ -408,6 +484,10 @@ async def _roll_gateway_for_central_session(
             for item in gateway_slices
             for endpoint in item.get("endpoints") or []
         ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
+        if kill_native_server:
+            executor_pod, executor_pod_uid = await _sandbox_executor_pod(cluster, deployed.sandbox)
+            old_process = await _exec_server_process(cluster, executor_pod, "kill")
+            killed_native = (executor_pod, executor_pod_uid, old_process)
         if failed_resume_after is not None:
             session_id = failed_resume_after[0]
             failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
@@ -460,6 +540,7 @@ async def _roll_gateway_for_central_session(
         asyncio.get_running_loop().time() - started,
         old_uid,
         new_uid,
+        killed_native,
     )
 
 
@@ -571,9 +652,14 @@ async def gateway_roll_keeps_live_central_read_and_turn(
                 ).events
             )
         read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
-        recovered, outage_seconds, old_gateway_uid, new_gateway_uid = await _roll_gateway_for_central_session(
-            cluster, deployed, failed_resume_after=(session_id, cursor)
-        )
+        (
+            recovered,
+            outage_seconds,
+            old_gateway_uid,
+            new_gateway_uid,
+            killed_native,
+        ) = await _roll_gateway_for_central_session(cluster, deployed, failed_resume_after=(session_id, cursor))
+        assert killed_native is None
         assert outage_seconds < 25, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
@@ -647,10 +733,10 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         )
 
 
-async def gateway_outage_expires_native_session_then_notifies_model(
+async def gateway_outage_restarts_exec_server_then_notifies_model(
     cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
 ) -> None:
-    """A detached native session that expires is replaced visibly, with no old mutation replay."""
+    """An in-flight read loses its native server during Gateway outage and the model sees the loss."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
@@ -686,6 +772,7 @@ async def gateway_outage_expires_native_session_then_notifies_model(
             + json.dumps("printf 'once\\n' >> gateway-loss-marker; sleep 120")
             + ", yield_time_ms: 1000});\n"
             'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-loss-handle", started.session_id);\n'
             "text(JSON.stringify(started));"
         )
         async with request._exchange as exchange:
@@ -699,26 +786,47 @@ async def gateway_outage_expires_native_session_then_notifies_model(
             output.call_id == "start-expiring-process" and "session_id" in "\n".join(output.blocks)
             for output in request.tool_outputs
         )
-        # Keep this model request unanswered: the original turn remains active throughout the outage.
-        recovered, outage_seconds, old_gateway_uid, new_gateway_uid = await _roll_gateway_for_central_session(
-            cluster, deployed, hold_down_seconds=40
+        await _wait_for_execution_progress(
+            deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
         )
-        assert outage_seconds >= 40, outage_seconds
-        first_attempt = (
-            "try { text(await tools.exec_command({cmd: "
-            + json.dumps("printf 'attempted\\n' >> gateway-loss-marker")
-            + '})); } catch (error) { text("old-session-error=" + String(error)); }'
+        cursor, process_id, original_native_session_id = await _started_gateway_roll_process(
+            deployed, session_id, "gateway-loss-marker"
+        )
+        read_cell = (
+            'const handle = load("gateway-loss-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
         )
         async with request._exchange as exchange:
             await exchange.send(
                 *responses_sse.response_stream(
-                    [responses_sse.CustomToolCall("observe-expired-session", "exec", first_attempt)], model=MODEL
+                    [responses_sse.CustomToolCall("read-expiring-process", "exec", read_cell)], model=MODEL
                 ).events
             )
-        request = await asyncio.wait_for(model.request(), timeout=30)
+        read_intent = await _wait_for_executor_dispatch_after(
+            deployed, session_id, cursor, process_id, "read-expiring-process"
+        )
+        (
+            recovered,
+            outage_seconds,
+            old_gateway_uid,
+            new_gateway_uid,
+            killed_native,
+        ) = await _roll_gateway_for_central_session(cluster, deployed, kill_native_server=True)
+        assert killed_native is not None
+        executor_pod, executor_pod_uid, old_exec_server = killed_native
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        (read_output,) = [output for output in request.tool_outputs if output.call_id == "read-expiring-process"]
+        read_text = "\n".join(read_output.blocks)
         visible = "\n".join(
             [*request.user_texts, *(block for output in request.tool_outputs for block in output.blocks)]
         )
+        if "retained exec-server session was definitively lost" not in visible:
+            await model.reply(request, ShellCall("observe-replacement", "true"))
+            request = await asyncio.wait_for(model.request(), timeout=30)
+            visible = "\n".join(
+                [*request.user_texts, *(block for output in request.tool_outputs for block in output.blocks)]
+            )
         assert "retained exec-server session was definitively lost" in visible, visible
         assert "no mutation was replayed" in visible, visible
         await model.reply(
@@ -733,6 +841,21 @@ async def gateway_outage_expires_native_session_then_notifies_model(
         fresh_result = json.loads(fresh_json.strip())
         assert fresh_result["exit_code"] == 0, fresh_result
         assert fresh_result["output"] == "once\nfresh\n", fresh_result
+        replacement_native_session_id = await _assert_replacement_native_session_started(
+            recovered, session_id, cursor, original_native_session_id
+        )
+        current_executor_pod, current_executor_pod_uid = await _sandbox_executor_pod(cluster, recovered.sandbox)
+        assert (current_executor_pod, current_executor_pod_uid) == (executor_pod, executor_pod_uid)
+        async with asyncio.timeout(15):
+            while True:
+                try:
+                    replacement_exec_server = await _exec_server_process(cluster, executor_pod, "inspect")
+                except RuntimeError:
+                    await asyncio.sleep(0.1)
+                    continue
+                if replacement_exec_server != old_exec_server:
+                    break
+                await asyncio.sleep(0.1)
         await model.reply(request, Text("The new executor continued without replaying the old operation."))
         await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(recovered, session_id, first_command)
@@ -753,13 +876,21 @@ async def gateway_outage_expires_native_session_then_notifies_model(
         await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(recovered, session_id, second_command)
         await _assert_projected_ready_for_input(recovered, session_id)
-        (undeclared_outputs_dir() / "central-sampler-gateway-expiry.json").write_text(
+        (undeclared_outputs_dir() / "central-sampler-gateway-native-loss.json").write_text(
             json.dumps(
                 {
                     "session_id": session_id,
                     "old_gateway_uid": old_gateway_uid,
                     "new_gateway_uid": new_gateway_uid,
                     "outage_seconds": outage_seconds,
+                    "executor_pod_uid": executor_pod_uid,
+                    "original_process_id": process_id,
+                    "original_native_session_id": original_native_session_id,
+                    "replacement_native_session_id": replacement_native_session_id,
+                    "old_exec_server_process": old_exec_server,
+                    "replacement_exec_server_process": replacement_exec_server,
+                    "in_flight_read_intent": read_intent,
+                    "in_flight_read_output": read_text,
                     "model_visible_notice": visible,
                     "fresh_output": fresh_text,
                 },
