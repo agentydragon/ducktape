@@ -16,6 +16,12 @@ async def _open_json_disclosures(request: Locator) -> None:
         await summary.click()
     await request.locator("summary").filter(has_text="Request params").click()
     await request.locator("summary").filter(has_text="Response details").click()
+    # Pick the last block by its `JsonCode` wrapper: the response details editor mounts a frame after
+    # its disclosure opens, and until then `.ui-code-block` resolves to the Raw editor above it, whose
+    # own `overflow-auto` box the scroll would then shift by its padding.
+    last_json = request.locator(".props-json-code").last
+    await last_json.scroll_into_view_if_needed()
+    await expect(last_json.locator(".cm-content")).to_be_visible()
 
 
 @pytest.mark.parametrize(
@@ -46,9 +52,6 @@ async def test_llm_request_json_disclosures(visual: VisualHarness) -> None:
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
-        last_block = request.locator(".ui-code-block").last
-        await last_block.scroll_into_view_if_needed()
-        await expect(last_block.locator(".cm-content")).to_be_visible()
         await view.capture("LLMRequestsToolCallJsonDisclosures", target=view.page.locator("#shot"))
 
 
@@ -57,9 +60,6 @@ async def test_llm_request_json_dark(visual: VisualHarness) -> None:
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
-        last_block = request.locator(".ui-code-block").last
-        await last_block.scroll_into_view_if_needed()
-        await expect(last_block.locator(".cm-content")).to_be_visible()
         await view.capture("LLMRequestsToolCallDark", target=view.page.locator("#shot"))
 
 
