@@ -104,13 +104,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner + job-container images
     # from code.forgejo.org.
     ("code.forgejo.org", "data.forgejo.org"),
-    # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus the
-    # shard hosts it 308-redirects to -- Anki's own firewall guidance is to allow *.ankiweb.net
-    # because hostnames change. Client is rslib's reqwest: it honors HTTPS_PROXY and
-    # rustls-native-certs reads SSL_CERT_FILE. Kyverno injects the trust-manager bundle
-    # (default roots + haku proxy CA) into every haku-sandbox container, so AnkiWeb stays
-    # TLS-intercepted.
-    ("*.ankiweb.net",),
 )
 
 

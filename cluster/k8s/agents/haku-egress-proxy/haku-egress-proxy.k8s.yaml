@@ -292,7 +292,6 @@ spec:
           rules:
             dns:
               - matchPattern: "**.cluster.local"
-              - matchPattern: "*.ankiweb.net"
               - matchName: alloy-otlp.allegedly.works
               - matchName: api.coinbase.com
               - matchName: bcr.bazel.build
@@ -370,12 +369,6 @@ spec:
     - toFQDNs:
         - matchName: code.forgejo.org
         - matchName: data.forgejo.org
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-    - toFQDNs:
-        - matchPattern: "*.ankiweb.net"
       toPorts:
         - ports:
             - port: "443"

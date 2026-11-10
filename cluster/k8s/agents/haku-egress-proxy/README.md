@@ -19,10 +19,9 @@ manifests depend on.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`
   **and `haku-ci`** (the `Bundle`
   `namespaceSelector` in `cluster/cdk8s/haku_egress_proxy.py`).
-- Kyverno mounts that ConfigMap into haku sandbox pods and points common TLS
-  clients at `/egress-proxy-ca/ca-certificates.crt`; `haku-ci` mounts it via its
-  own Deployment/runner config (not Kyverno) — see
-  <../../../cdk8s/haku_ci/runner.py>.
+- `haku-ci` mounts that ConfigMap at `/egress-proxy-ca/ca-certificates.crt` via its runner
+  config — see <../../../cdk8s/haku_ci/runner.py>. Nothing in `haku-sandbox` uses this proxy:
+  its workloads egress through Agentplane egress sidecars.
 
 Keep haku CA rotation separate from the main sandbox mitmproxy CA. For planned
 root rollover, trust both old and new roots before restarting the egress proxy
