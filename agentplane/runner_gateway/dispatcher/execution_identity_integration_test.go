@@ -183,6 +183,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 
 // An Identity SVID caller acts on the Sessions whose execution identity is its exact Identity
 // incarnation, and on no other: not another Identity's, nor one its own Sandbox's ServiceAccount owns.
+// It creates none, even on a Sandbox acting as it.
 func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
@@ -212,18 +213,16 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}
 
 	ownerClient := client(owner.URI)
-	owned := uuid.NewString()
-	if _, err := ownerClient.CreateSession(ctx, createRequest(owned)); err != nil {
-		t.Fatalf("Identity caller CreateSession on its Sandbox: %v", err)
+	if _, err := ownerClient.CreateSession(ctx, createRequest(uuid.NewString())); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Identity caller CreateSession on a Sandbox acting as it: %v, want PermissionDenied", err)
+	}
+	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
+	if _, err := store.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
+		testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID), ownedSpec, nil, nil,
+		SessionExecution{Principal: ownerAccount, Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity}); err != nil {
+		t.Fatalf("seed the Identity's Session: %v", err)
 	}
 	ownerAttribution := &IdentityAttribution{Identity: ownerIdentity, Pod: &PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
-	stored, err := store.GetSession(ctx, owned)
-	if err != nil || !proto.Equal(stored.ExecutionIdentity, ownerIdentity) || !proto.Equal(stored.ExecutionPrincipal, ownerAccount) {
-		t.Fatalf("Identity caller's Session executes as %v / %v (%v), want %v beside %v", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, ownerIdentity, ownerAccount)
-	}
-	if recorded, ok := stored.Attribution.(*IdentityAttribution); !ok || !proto.Equal(recorded.Identity, ownerIdentity) || *recorded.Pod != *ownerAttribution.Pod {
-		t.Fatalf("Session created by %#v, want %#v", stored.Attribution, ownerAttribution)
-	}
 	if _, err := ownerClient.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
 		CommandId: "identity-owned-input", SessionId: owned, ExpectedSandboxUid: ownerSandbox.UID, Text: "owned",
 	}); err != nil {
@@ -276,16 +275,13 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if _, err := otherClient.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: "identity-owned-input"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("another Identity cancelled the Session's command: %v", err)
 	}
-	if _, err := otherClient.CreateSession(ctx, createRequest(uuid.NewString())); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("another Identity opened a Session on a Sandbox naming a different Identity: %v", err)
-	}
 	if _, err := ownerClient.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: "identity-owned-input"}); err != nil {
 		t.Fatalf("Identity caller CancelDispatch of its own command: %v", err)
 	}
 }
 
 // A Sandbox naming an Identity whose managed ServiceAccount is absent runs its Sessions as that
-// Identity alone: its Identity opens and writes to them, the Dispatcher places and delivers them
+// Identity alone: its Identity writes to them, the Dispatcher places and delivers them
 // recording no ServiceAccount, and strands them once the Sandbox names another Identity.
 func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	api, err := kubeapiserver.Start()
@@ -306,15 +302,10 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 
-	sessionID := uuid.NewString()
-	if _, err := ownerClient.CreateSession(ctx, &dispatcherpb.CreateSessionRequest{
-		SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}},
-	}); err != nil {
-		t.Fatalf("CreateSession on a Sandbox without its ServiceAccount: %v", err)
-	}
-	stored, err := store.GetSession(ctx, sessionID)
-	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) || stored.ExecutionPrincipal != nil {
-		t.Fatalf("Session executes as %v / %v (%v), want %v alone", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, named)
+	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
+	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
+		testPlacement(spec, sandbox.Name, sandbox.UID), spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named}); err != nil {
+		t.Fatalf("seed an Identity-run Session: %v", err)
 	}
 	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {
 		if _, err := ownerClient.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
