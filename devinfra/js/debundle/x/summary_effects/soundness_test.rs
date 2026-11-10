@@ -404,7 +404,7 @@ fn tier0_premises_are_trusted_and_bounded() {
         for block in PREMISE_FIXTURES.split("### ").skip(2) {
             let (head, rest) = block.split_once('\n').expect("a head line");
             let (premises, source) = rest.split_once('\n').expect("a premises line");
-            let conflict = |callees: &str| {
+            let conflict = |premises: &str| {
                 let parsed = js_ast::parse_js_module("fixture", source).expect("it parses");
                 let unresolved =
                     swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
@@ -413,15 +413,14 @@ fn tier0_premises_are_trusted_and_bounded() {
                     upgrades: ALL_UPGRADES.into_iter().collect(),
                     what_if_pure: Default::default(),
                     program: None,
-                    premises: serde_json::from_str(&format!("{{\"callees\":{callees}}}"))
-                        .expect("the premises parse"),
+                    premises: serde_json::from_str(premises).expect("the premises parse"),
                 };
                 let analysis = tier0::analyze(&parsed.module, unresolved, &options);
                 let units = analysis.units.len();
                 assert_eq!(analysis.premises_matched, analysis.premises_given, "{head}");
                 analysis.conflict(units - 3, units - 2)
             };
-            assert!(conflict("[]").is_some(), "{head}: refused without premises");
+            assert!(conflict("{}").is_some(), "{head}: refused without premises");
             assert_eq!(
                 conflict(premises).is_none(),
                 head.starts_with("commutes"),

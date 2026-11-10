@@ -1,10 +1,11 @@
-//! Author premises about callees, as tier 0 consumes them.
+//! Author premises, as tier 0 consumes them.
 //!
-//! A premise is trusted, not checked: it states a contract of a function
-//! the analysis cannot or does not look into. The kinds mirror the spec's
+//! A premise is trusted, not checked: it states a contract the analysis
+//! cannot or does not establish. The callee kinds mirror the spec's
 //! `chunk_export_purity` vocabulary (`pure_exports`, `pure_new_exports`,
-//! `pure_members`, `callback_factory_exports`, `callback_factory_members`);
-//! `decorator_helper` has no counterpart there.
+//! `pure_members`, `callback_factory_exports`, `callback_factory_members`)
+//! and its decorator-helper effect family; the site kinds mirror
+//! `initializer_purity: pure` and `native_operation_inputs`.
 
 use serde::Deserialize;
 
@@ -20,13 +21,23 @@ pub enum PremiseKind {
     PureCall,
     /// The same for `new F(args)`.
     PureNew,
-    /// A pure call that also never invokes the functions among its
-    /// arguments: it retains them in its result.
+    /// `f(args)` retains its arguments in a fresh result: it neither calls
+    /// the functions among them nor reads the objects among them, cannot
+    /// throw, and reads and writes nothing of the importer. It may read and
+    /// write state private to its provider.
     CallbackFactory,
-    /// `f(decorators, target, …)` changes only the object passed at
-    /// `target_arg`, including whatever the decorator functions do when
-    /// applied; it may return a replacement for the target.
+    /// `f(decorators, target, …)` applies each decorator to the object at
+    /// `target_arg` and otherwise writes only that object; it invokes no
+    /// method, accessor or constructor of the target, publishes nothing and
+    /// may return a replacement for the target.
     DecoratorHelper,
+    /// The function, or the function it returns when called, is a
+    /// decorator: applied by a helper, it cannot throw, writes only the
+    /// target it is given and reads only that target and its arguments.
+    Decorator,
+    /// A decorator that may also read and write state private to its
+    /// provider.
+    ContainedDecorator,
 }
 
 /// How the chunk names the callee.
@@ -62,9 +73,37 @@ fn default_target_arg() -> usize {
     1
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SiteKind {
+    /// The statement has no observable effect and cannot throw. It reads
+    /// the bindings it mentions outside function bodies, and what they
+    /// reference.
+    Pure,
+    /// The intrinsic operations of the statement behave as specified,
+    /// whatever the census found.
+    NativeOperation,
+}
+
+/// A premise about one source unit.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Site {
+    pub unit: usize,
+    pub kind: SiteKind,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Premises {
     #[serde(default)]
     pub callees: Vec<Premise>,
+    #[serde(default)]
+    pub sites: Vec<Site>,
+    /// Globals no code of the program modifies, whatever the census found.
+    #[serde(default)]
+    pub intrinsics_never_written: Vec<String>,
+    /// Pairs of source units certified to commute.
+    #[serde(default)]
+    pub commuting: Vec<(usize, usize)>,
 }

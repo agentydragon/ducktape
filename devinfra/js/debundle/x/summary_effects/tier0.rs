@@ -31,7 +31,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::helpers::assigned_ids;
 use crate::intrinsics::{Census, census};
-use crate::premises::{Callee as PremisedCallee, PremiseKind, Premises};
+use crate::premises::{Callee as PremisedCallee, PremiseKind, Premises, SiteKind};
 use crate::program::ProgramFacts;
 
 #[derive(
@@ -76,6 +76,10 @@ pub enum Kind {
     /// statement runs.
     Hoisted,
     Pure,
+    /// A definition that calls into a provider with state of its own: it
+    /// reads and writes nothing of this chunk beyond its eager reads, but
+    /// keeps its order among statements that may run the same provider.
+    Contained,
     /// A premised helper call whose effects are confined to its target
     /// object: it leaks nothing and writes no binding but a replaced target.
     Confined,
@@ -104,6 +108,9 @@ pub enum Conflict {
     /// Two confined statements share a target, or one involves a binding the
     /// other replaces.
     SharedTarget,
+    /// Both statements may run code of one provider that keeps private
+    /// state, or one is impure and may call any provider.
+    ProviderState,
 }
 
 type Binding = u32;
@@ -125,6 +132,9 @@ pub struct Unit {
     /// the bindings it replaces.
     targets: Vec<Binding>,
     replaces: Vec<Binding>,
+    /// Providers with private state the statement may run: `0` is this
+    /// chunk, the rest are import sources.
+    providers: Vec<u32>,
 }
 
 pub struct Tier0 {
@@ -153,6 +163,9 @@ pub struct Tier0 {
     /// Premised statements that read an import, and so stay ordered against
     /// every impure statement.
     pub premised_reading_imports: usize,
+    /// Site premises that changed a statement's class.
+    pub site_premise_uses: usize,
+    commuting: FxHashSet<(usize, usize)>,
     /// Per intrinsic global: the pure definitions that depend on it being
     /// unmodified.
     pub families_used: std::collections::BTreeMap<&'static str, usize>,
@@ -202,6 +215,8 @@ struct Scan<'a> {
     bindings: &'a FxHashMap<Id, Binding>,
     unresolved: SyntaxContext,
     mentions: FxHashSet<Binding>,
+    /// Those outside any function body.
+    eager: FxHashSet<Binding>,
     /// `eval` and `with` sites.
     refused: usize,
     /// `await` and `for await` outside any function.
@@ -239,6 +254,9 @@ impl Visit for Scan<'_> {
     fn visit_ident(&mut self, ident: &Ident) {
         if let Some(binding) = self.bindings.get(&ident.to_id()) {
             self.mentions.insert(*binding);
+            if self.function_depth == 0 {
+                self.eager.insert(*binding);
+            }
         }
         if ident.ctxt == self.unresolved && &*ident.sym == "eval" {
             self.refused += 1;
@@ -343,6 +361,10 @@ struct Classifier<'a> {
     callee_slots: FxHashSet<usize>,
     /// Nesting depth in the arguments of premised calls.
     premised_args: usize,
+    providers: Vec<u32>,
+    /// A site premise waives the census for this statement.
+    native_site: bool,
+    never_written: &'a FxHashSet<String>,
 }
 
 /// Premises resolved to this chunk's bindings.
@@ -350,8 +372,17 @@ struct Classifier<'a> {
 pub struct ResolvedPremises {
     callees: FxHashMap<Binding, (PremiseKind, usize)>,
     members: FxHashMap<(Binding, String), (PremiseKind, usize)>,
+    /// Per imported binding: its source, numbered from 1.
+    providers: FxHashMap<Binding, u32>,
     pub given: usize,
     pub matched: usize,
+}
+
+impl ResolvedPremises {
+    /// Whose private state a call of `binding` may touch.
+    fn provider(&self, binding: Binding) -> u32 {
+        self.providers.get(&binding).copied().unwrap_or(0)
+    }
 }
 
 /// Whether `expr` evaluates to a number, string, boolean, `null` or
@@ -631,7 +662,9 @@ impl Classifier<'_> {
         let ok = dependencies.iter().all(|(global, props)| {
             let mut props: Vec<&str> = props.to_vec();
             props.extend(extra_prop);
-            self.census.untouched(global, &props)
+            self.native_site
+                || self.never_written.contains(*global)
+                || self.census.untouched(global, &props)
         });
         if ok {
             self.intrinsics
@@ -692,7 +725,9 @@ impl Classifier<'_> {
         let applies = match kind {
             PremiseKind::PureNew => constructs,
             PremiseKind::PureCall | PremiseKind::CallbackFactory => !constructs,
-            PremiseKind::DecoratorHelper => false,
+            PremiseKind::DecoratorHelper
+            | PremiseKind::Decorator
+            | PremiseKind::ContainedDecorator => false,
         };
         if !applies || args.iter().any(|arg| arg.spread.is_some()) {
             return false;
@@ -704,8 +739,12 @@ impl Classifier<'_> {
         if impure {
             return false;
         }
-        if kind != PremiseKind::CallbackFactory {
-            // The callee may call its function arguments at once.
+        if kind == PremiseKind::CallbackFactory {
+            self.providers.push(self.premises.provider(callee_binding));
+        } else {
+            // The callee may call its function arguments at once, and read
+            // the objects its arguments reference. The callees of nested
+            // premised calls are not arguments.
             let mut bodies = Bodies {
                 bindings: self.bindings,
                 depth: 0,
@@ -713,16 +752,54 @@ impl Classifier<'_> {
             };
             args.visit_with(&mut bodies);
             self.eager.extend(bodies.mentions);
+            let read: Vec<Binding> = (before..self.eager.len())
+                .filter(|slot| !self.callee_slots.contains(slot))
+                .map(|slot| self.eager[slot])
+                .collect();
+            self.deep.extend(read);
         }
-        // The callee may read the objects its arguments reference. The
-        // callees of nested premised calls are not arguments.
-        let read: Vec<Binding> = (before..self.eager.len())
-            .filter(|slot| !self.callee_slots.contains(slot))
-            .map(|slot| self.eager[slot])
-            .collect();
-        self.deep.extend(read);
         self.callee_slots.insert(self.eager.len());
         self.eager.push(callee_binding);
+        self.premise_uses.push(kind);
+        true
+    }
+
+    /// An argument that is itself a pure definition; it may read an import.
+    fn premised_argument(&mut self, expr: &Expr) -> bool {
+        self.premised_args += 1;
+        let pure = self.pure(expr).is_ok();
+        self.premised_args -= 1;
+        pure
+    }
+
+    /// `dec` or `dec(args)` under a decorator premise on `dec`.
+    fn decorator(&mut self, expr: &Expr) -> bool {
+        let (callee, args) = match expr {
+            Expr::Paren(paren) => return self.decorator(&paren.expr),
+            Expr::Call(CallExpr {
+                callee: Callee::Expr(callee),
+                args,
+                ..
+            }) => (&**callee, args.as_slice()),
+            other => (other, &[] as &[ExprOrSpread]),
+        };
+        let Some((kind, _, binding)) = self.premise(callee) else {
+            return false;
+        };
+        match kind {
+            PremiseKind::Decorator => {}
+            PremiseKind::ContainedDecorator => {
+                self.providers.push(self.premises.provider(binding));
+            }
+            _ => return false,
+        }
+        if args
+            .iter()
+            .any(|arg| arg.spread.is_some() || !self.premised_argument(&arg.expr))
+        {
+            return false;
+        }
+        self.eager.push(binding);
         self.premise_uses.push(kind);
         true
     }
@@ -754,7 +831,6 @@ impl Classifier<'_> {
         if call.args.iter().any(|arg| arg.spread.is_some()) {
             return false;
         }
-        let before = self.eager.len();
         for (position, arg) in call.args.iter().enumerate() {
             if position == target_arg {
                 // `Target` or `Target.prototype`.
@@ -776,20 +852,21 @@ impl Classifier<'_> {
                     return false;
                 }
                 self.targets.push(*binding);
-            } else {
-                self.premised_args += 1;
-                let impure = self.pure(&arg.expr).is_err();
-                self.premised_args -= 1;
-                if impure {
+            } else if position == 0 {
+                // The decorators: each must have a premise of its own.
+                let Expr::Array(decorators) = &*arg.expr else {
                     return false;
-                }
-                let mut bodies = Bodies {
-                    bindings: self.bindings,
-                    depth: 0,
-                    mentions: FxHashSet::default(),
                 };
-                arg.expr.visit_with(&mut bodies);
-                self.eager.extend(bodies.mentions);
+                for decorator in &decorators.elems {
+                    let Some(ExprOrSpread { spread: None, expr }) = decorator else {
+                        return false;
+                    };
+                    if !self.decorator(expr) {
+                        return false;
+                    }
+                }
+            } else if !self.premised_argument(&arg.expr) {
+                return false;
             }
         }
         if self.targets.is_empty() {
@@ -801,13 +878,6 @@ impl Classifier<'_> {
                 None => return false,
             }
         }
-        // The helper applies the decorators, which run with whatever they
-        // reference.
-        let read: Vec<Binding> = (before..self.eager.len())
-            .filter(|slot| !self.callee_slots.contains(slot))
-            .map(|slot| self.eager[slot])
-            .collect();
-        self.deep.extend(read);
         self.eager.push(helper);
         self.premise_uses.push(PremiseKind::DecoratorHelper);
         true
@@ -1117,6 +1187,8 @@ fn resolve_premises(
     declared_by_unit: &[Vec<Binding>],
 ) -> ResolvedPremises {
     let mut imported: FxHashMap<(String, String), Vec<Binding>> = FxHashMap::default();
+    let mut sources: FxHashMap<String, u32> = FxHashMap::default();
+    let mut providers = FxHashMap::default();
     for item in &module.body {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -1136,6 +1208,8 @@ fn resolve_premises(
                 ImportSpecifier::Namespace(namespace) => ("*".to_string(), &namespace.local),
             };
             if let Some(binding) = bindings.get(&local.to_id()) {
+                let next = sources.len() as u32 + 1;
+                providers.insert(*binding, *sources.entry(specifier.clone()).or_insert(next));
                 imported
                     .entry((specifier.clone(), export))
                     .or_default()
@@ -1145,6 +1219,7 @@ fn resolve_premises(
     }
     let mut resolved = ResolvedPremises {
         given: premises.callees.len(),
+        providers,
         ..ResolvedPremises::default()
     };
     for premise in &premises.callees {
@@ -1330,11 +1405,26 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         census.merge(program.census.clone());
     }
     let mut units = Vec::with_capacity(sources.len());
-    for (source, declared) in sources.iter().zip(declared_by_unit) {
+    let never_written: FxHashSet<String> = options
+        .premises
+        .intrinsics_never_written
+        .iter()
+        .cloned()
+        .collect();
+    let sites: FxHashMap<usize, SiteKind> = options
+        .premises
+        .sites
+        .iter()
+        .map(|site| (site.unit, site.kind))
+        .collect();
+    let mut site_premise_uses = 0;
+    for (ordinal, (source, declared)) in sources.iter().zip(declared_by_unit).enumerate() {
+        let site = sites.get(&ordinal).copied();
         let mut scan = Scan {
             bindings: &bindings,
             unresolved,
             mentions: FxHashSet::default(),
+            eager: FxHashSet::default(),
             refused: 0,
             top_level_awaits: 0,
             function_depth: 0,
@@ -1356,6 +1446,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             premise_uses: Vec::new(),
             callee_slots: FxHashSet::default(),
             premised_args: 0,
+            providers: Vec::new(),
+            native_site: site == Some(SiteKind::NativeOperation),
+            never_written: &never_written,
         };
         let (kind, assigned) = match source {
             Source::Item(item) => {
@@ -1371,10 +1464,23 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             Kind::Impure(cause) if options.what_if_pure.contains(&cause) => Kind::Pure,
             kind => kind,
         };
+        let kind = match kind {
+            Kind::Impure(_) if site == Some(SiteKind::Pure) => {
+                site_premise_uses += 1;
+                classifier.eager = scan.eager.iter().copied().collect();
+                classifier.deep = classifier.eager.clone();
+                classifier.providers.clear();
+                Kind::Pure
+            }
+            Kind::Pure if !classifier.providers.is_empty() => Kind::Contained,
+            kind => kind,
+        };
+        site_premise_uses +=
+            usize::from(classifier.native_site && !classifier.intrinsics.is_empty());
         refused += scan.refused;
         top_level_awaits += scan.top_level_awaits;
         intrinsics_denied += classifier.denied;
-        if kind == Kind::Pure {
+        if matches!(kind, Kind::Pure | Kind::Contained) {
             for global in &classifier.intrinsics {
                 *families_used.entry(*global).or_default() += 1;
             }
@@ -1391,7 +1497,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         if default_export {
             exported.extend(mentions.iter().copied());
         }
-        if matches!(kind, Kind::Pure | Kind::Confined) {
+        if matches!(kind, Kind::Pure | Kind::Contained | Kind::Confined) {
             for used in &classifier.premise_uses {
                 *premise_uses.entry(*used).or_default() += 1;
             }
@@ -1409,6 +1515,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             deep_stamp: NEVER,
             targets: classifier.targets,
             replaces: classifier.replaces,
+            providers: classifier.providers,
         });
     }
     if refused > 0 {
@@ -1500,7 +1607,8 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     // another chunk's, which any impure statement may change.
     let mut premised_reading_imports = 0;
     for unit in &mut units {
-        if !matches!(unit.kind, Kind::Pure | Kind::Confined) {
+        if !matches!(unit.kind, Kind::Pure | Kind::Contained | Kind::Confined) {
+            unit.providers.clear();
             unit.deep.clear();
         }
         let seeds: Vec<Binding> = unit.deep.drain().collect();
@@ -1522,6 +1630,13 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     }
     Tier0 {
         premised_reading_imports,
+        site_premise_uses,
+        commuting: options
+            .premises
+            .commuting
+            .iter()
+            .map(|(a, b)| (*a.min(b), *a.max(b)))
+            .collect(),
         premises_given: premises.given,
         premises_matched: premises.matched,
         premise_uses,
@@ -1543,7 +1658,7 @@ impl Tier0 {
     fn impure_with_definition(&self, impure: usize, definition: usize) -> Option<Conflict> {
         let at = impure as u32;
         let unit = &self.units[definition];
-        let initializes = unit.kind == Kind::Pure;
+        let initializes = matches!(unit.kind, Kind::Pure | Kind::Contained);
         if initializes {
             for binding in &unit.declared {
                 if self.reach_stamp[*binding as usize] <= at {
@@ -1654,7 +1769,26 @@ impl Tier0 {
     /// Why the two units are not proven to commute, if they are not.
     pub fn conflict(&self, a: usize, b: usize) -> Option<Conflict> {
         let (first, second) = (&self.units[a], &self.units[b]);
-        match (first.kind, second.kind) {
+        if self.commuting.contains(&(a.min(b), a.max(b))) {
+            return None;
+        }
+        // A contained statement is a definition that also runs a provider.
+        let impure = |unit: &Unit| matches!(unit.kind, Kind::Impure(_));
+        let shares_provider = first
+            .providers
+            .iter()
+            .any(|provider| second.providers.contains(provider));
+        if (impure(first) && !second.providers.is_empty())
+            || (impure(second) && !first.providers.is_empty())
+            || shares_provider
+        {
+            return Some(Conflict::ProviderState);
+        }
+        let definition = |kind: Kind| match kind {
+            Kind::Contained => Kind::Pure,
+            kind => kind,
+        };
+        match (definition(first.kind), definition(second.kind)) {
             (Kind::Inert, _) | (_, Kind::Inert) => None,
             (Kind::Impure(_), Kind::Impure(_)) => Some(Conflict::BothImpure),
             (Kind::Impure(_), Kind::Confined) => self.impure_with_confined(a, b),
@@ -1666,7 +1800,7 @@ impl Tier0 {
             (_, Kind::Confined) => self.confined_with_definition(b, a),
             _ => {
                 let reads = |reader: &Unit, definition: &Unit| {
-                    definition.kind == Kind::Pure
+                    matches!(definition.kind, Kind::Pure | Kind::Contained)
                         && reader
                             .eager
                             .iter()

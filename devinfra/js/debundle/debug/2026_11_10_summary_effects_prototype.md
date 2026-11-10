@@ -184,10 +184,10 @@ upgrade row. Before the census followed aliases it refused all of them, and
 The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
 cycle precondition decides.
 
-### Premises
+### Premises and the contained class
 
-`--premises <json>` gives tier 0 trusted contracts about callees. Tier 0 does
-not check them. A premise names its callee the way the chunk does:
+`--premises <json>` gives tier 0 trusted contracts. Tier 0 does not check
+them.
 
 ```json
 {
@@ -214,50 +214,92 @@ not check them. A premise names its callee the way the chunk does:
       "callee": { "by": "local", "unit": 4 },
       "kind": "decorator_helper",
       "target_arg": 1
+    },
+    {
+      "callee": { "by": "import", "specifier": "./dep.js", "export": "field" },
+      "kind": "decorator"
     }
-  ]
+  ],
+  "sites": [
+    { "unit": 40, "kind": "pure" },
+    { "unit": 41, "kind": "native_operation" }
+  ],
+  "intrinsics_never_written": ["Map", "Set"],
+  "commuting": [[17, 230]]
 }
 ```
 
-`export` is the exported name, `default`, or `*` for a namespace import;
-`unit` is the source-unit ordinal that declares the binding. The callee may be
-written `f`, `ns.member` or `(0, ns.member)`. The report gives
-`premises_given`, `premises_matched` (those that named a binding of this
-chunk), `premise_uses` per kind, and `premised_reading_imports`.
+A callee is named the way the chunk names it: `export` is the exported name,
+`default`, or `*` for a namespace import; `unit` is the source-unit ordinal
+that declares the binding. The call may be written `f(…)`, `ns.member(…)` or
+`(0, ns.member)(…)`. Every field but `callee` and `kind` is optional
+(`target_arg` defaults to 1); unknown fields are rejected. The report gives
+`premises_given`, `premises_matched` (callees that named a binding of this
+chunk), `premise_uses` per kind, `site_premise_uses` and
+`premised_reading_imports`.
 
-A premise applies only where every argument is itself a pure definition
-(literals, functions, bindings, nested premised calls) and none is spread.
-What each kind asserts, and what tier 0 still orders:
+A callee premise applies only where every argument is itself a pure
+definition (literals, functions, bindings, nested premised calls) and none is
+spread.
 
-| Kind               | Spec counterpart                                       | The author asserts, for every such call at the chunk's top level                                                                                                                                                                                                       | Tier 0 then                                                                                                                                                                                                                                                            |
-| ------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pure_call`        | `pure_exports`, `pure_members`                         | The call cannot throw, writes nothing but its fresh result, keeps no reference to its arguments outside the result, and reads only its arguments, what they reference, and state nothing in this chunk's initialization changes. A function it is given it may call.   | Treats the statement as a pure definition that reads every binding its arguments can reference, including those the bodies of function arguments mention: it stays ordered against any impure statement that can reach or write one, and after their definitions.      |
-| `pure_new`         | `pure_new_exports`                                     | The same for `new F(…)`. It says nothing of `F(…)`.                                                                                                                                                                                                                    | The same.                                                                                                                                                                                                                                                              |
-| `callback_factory` | `callback_factory_exports`, `callback_factory_members` | `pure_call`, and the functions written inline as arguments are retained in the result, never called during the call.                                                                                                                                                   | The same, except that the bodies of inline function arguments are not read: the definition may precede what they mention.                                                                                                                                              |
-| `decorator_helper` | none                                                   | `f(decorators, target, …)` cannot throw; it and the decorators it applies write only the object at `target_arg` (and objects created during the call), read only that object, their arguments and what those reference, and return the target or a replacement for it. | Treats `f([…], T, …)`, `f([…], T.prototype, …)` and `T = f([…], T)` as confined to `T`: ordered after `T`'s definition, against any impure statement that can reach `T` or what the decorators reference, and against any other confined or premised statement on `T`. |
+| Kind                  | Spec counterpart                                       | The author asserts, for every such call at the chunk's top level                                                                                                                                                                                                      | Class                                                            |
+| --------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `pure_call`           | `pure_exports`, `pure_members`, `purity: pure`         | The call cannot throw, writes nothing but its fresh result, keeps no reference to its arguments outside the result, and reads only its arguments, what they reference, and state nothing in the program's initialization changes. A function it is given it may call. | pure definition                                                  |
+| `pure_new`            | `pure_new_exports`, `purity: pure_new`                 | The same for `new F(…)`. It says nothing of `F(…)`.                                                                                                                                                                                                                   | pure definition                                                  |
+| `callback_factory`    | `callback_factory_exports`, `callback_factory_members` | The call cannot throw and returns a fresh result that retains its arguments: it calls none of the functions among them and reads none of the objects among them. It reads and writes nothing of the importer. It may read and write state private to its provider.    | contained                                                        |
+| `decorator_helper`    | the decorator-helper effect family                     | `f(decorators, target, …)` cannot throw, applies each decorator to the object at `target_arg`, and otherwise writes only that object. It invokes no method, accessor or constructor of the target, publishes nothing, and returns the target or a replacement.        | target-local, if every decorator has a premise; otherwise impure |
+| `decorator`           | none                                                   | The function, or the function it returns when called, is a decorator: applied by a helper it cannot throw, writes only the target it is given, and reads only that target and its arguments.                                                                          | lets a helper statement be target-local                          |
+| `contained_decorator` | none                                                   | A decorator that may also read and write state private to its provider.                                                                                                                                                                                               | target-local and contained                                       |
 
-An argument that reads an import keeps the statement ordered against every
-impure statement: another chunk's code may change what the import holds.
-`premised_reading_imports` counts these.
+Site kinds: `pure` (`initializer_purity: pure`) makes the unit a pure
+definition that reads every binding it mentions outside function bodies and
+what those reference; `native_operation` (`native_operation_inputs`) waives
+the intrinsic census for the unit. `intrinsics_never_written` waives it for a
+global everywhere; `commuting` certifies a pair (`commuting_statements`).
 
-`decorator_helper` is a proposal. The spec vocabulary has no kind for "this
-call's effects are confined to one argument"; the nearest,
-`commuting_statements`, certifies one pair at a time. A production form would
-need the same audit as a callback factory (every decorator reaching the
-helper, in every chunk) and a decision on whether the premise belongs to the
-helper or to each decorator.
+What tier 0 still orders, per class:
 
-`callback_factory` here is weaker than the spec's contract of that name. The
-spec admits one inline callback and tracks the retained callback through the
-result; tier 0 needs neither, since anything that later calls the result is
-an impure statement whose reach already includes what the callback mentions.
+- **Pure definition by premise.** It reads the bindings its arguments can
+  reference, including those the bodies of function arguments mention (the
+  callee may call them). It stays after their definitions and ordered against
+  any impure statement that can reach or write one. An argument that reads an
+  import keeps it ordered against every impure statement
+  (`premised_reading_imports`): another chunk's code may change what the
+  import holds.
+- **Contained.** A definition whose call may touch state private to a
+  provider: the import source of the callee, or this chunk for a local
+  callee. Against definitions it behaves as a pure definition whose eager
+  reads are those of its arguments, without the bodies of function arguments;
+  reach does not apply, because the call runs no code of this chunk. It stays
+  ordered against every impure statement, which may call into any provider,
+  and against every contained or target-local statement of the same provider
+  (`provider_state`). Its result holding a callback is not a leak: the
+  callback can only run through the result binding, and a statement that
+  mentions that binding has the callback's mentions in its reach.
+- **Target-local.** `f([…], T, …)`, `f([…], T.prototype, …)` and
+  `T = f([…], T)`, with the decorators as the first argument. Ordered after
+  `T`'s definition, against any impure statement that can reach `T`, against
+  any definition that reads `T` eagerly or through a premised call, and
+  against any other target-local statement on `T` (`shared_target`). With a
+  `contained_decorator` it is also contained in that decorator's provider.
 
-`premise_fixtures.txt` holds 27 programs, each run under Node in both orders:
-9 where a premise lets a swap through and Node agrees, 15 where the premise
-holds but the swap is observable and tier 0 refuses, and 3 where the premise
-is false (a `pure_call` that counts, a `callback_factory` that calls its
-callback, a decorator that writes a shared registry) and tier 0 accepts a
-swap Node observes. Without premises tier 0 refuses all 27.
+Two points differ from what was asked, both for soundness:
+
+- A helper statement with a decorator that has no premise stays fully impure.
+  The helper premise says the helper invokes nothing of the target; an
+  unknown decorator may, so the statement keeps the target's whole closure in
+  its reach.
+- Decorator statements that share a `contained_decorator` provider stay
+  mutually ordered. Only `decorator` (no private state) lets two classes'
+  decorator statements pass each other.
+
+`premise_fixtures.txt` holds 37 programs, each run under Node in both orders:
+15 where a premise lets a swap through and Node agrees, 18 where the premises
+hold but the swap is observable and tier 0 refuses, and 4 where a premise is
+false (a `pure_call` that counts, a `callback_factory` that calls its
+callback, a `decorator` that writes a shared registry, a `decorator` that
+reads outside state) and tier 0 accepts a swap Node observes. Without
+premises tier 0 refuses all 37.
 
 ### Shapes from a large private consumer corpus
 
