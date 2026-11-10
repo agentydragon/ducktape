@@ -38,25 +38,27 @@ def test_live_wire_contract(monkeypatch: pytest.MonkeyPatch) -> None:
         return subprocess.CompletedProcess(
             args,
             0,
-            stdout=json.dumps({
-                "policies": [
-                    {
-                        "name": "test",
-                        "rules": [
-                            {
-                                "hosts": ["db.example.test"],
-                                "methods": {"values": ["POST"]},
-                                "paths": None,
-                                "credential": {
-                                    "name": "test-reader",
-                                    "placeholder": "inert-test-placeholder",
-                                    "targets": [{"method": "METHOD_BASIC_PASSWORD", "header": "Authorization"}],
-                                },
-                            }
-                        ],
-                    }
-                ]
-            }),
+            stdout=json.dumps(
+                {
+                    "policies": [
+                        {
+                            "name": "test",
+                            "rules": [
+                                {
+                                    "hosts": ["db.example.test"],
+                                    "methods": {"values": ["POST"]},
+                                    "paths": None,
+                                    "credential": {
+                                        "name": "test-reader",
+                                        "placeholder": "inert-test-placeholder",
+                                        "targets": [{"method": "METHOD_BASIC_PASSWORD", "header": "Authorization"}],
+                                    },
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
         )
 
     monkeypatch.setattr(subprocess, "run", run)

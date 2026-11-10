@@ -115,14 +115,10 @@ def load_rules() -> Rules:
     """Ask the Agentplane CLI for the current workload's rules over gRPC."""
     try:
         result = subprocess.run(
-            ["agentplane", "egress", "rules", "--json"],
-            capture_output=True,
-            check=True,
-            text=True,
-            timeout=30,
+            ["agentplane", "egress", "rules", "--json"], capture_output=True, check=True, text=True, timeout=30
         )
         return Rules.model_validate_json(result.stdout)
-    except (OSError, subprocess.SubprocessError, ValidationError):
+    except OSError, subprocess.SubprocessError, ValidationError:
         # A failed command or response may contain details not intended for logs.
         raise RulesError("Unable to load Agentplane egress rules") from None
 
