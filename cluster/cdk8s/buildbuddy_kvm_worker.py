@@ -85,6 +85,17 @@ _GUEST_FILES = (
     "modprobe.conf",
     "sysctl.conf",
 )
+_JOURNALD_DROPIN = """# KubeVirt's guest-console-log collector forwards ttyS0 output to Kubernetes logs.
+# Do not type credentials into the root-autologin serial console; echoed input and
+# journal messages are included in that existing stream.
+[Journal]
+ForwardToConsole=yes
+TTYPath=/dev/ttyS0
+MaxLevelConsole=info
+SystemMaxUse=32M
+SystemKeepFree=192M
+RuntimeMaxUse=16M
+"""
 
 
 def _cloud_init() -> str:
@@ -102,7 +113,15 @@ def _cloud_init() -> str:
                 ["/dev/disk/by-id/virtio-bbkey", "/run/buildbuddy-key", "iso9660", "ro", "0", "0"],
                 ["/dev/disk/by-id/virtio-bbconfig", "/run/buildbuddy-config", "iso9660", "ro", "0", "0"],
             ],
+            "write_files": [
+                {
+                    "path": "/etc/systemd/journald.conf.d/90-buildbuddy-kvm-worker.conf",
+                    "permissions": "0644",
+                    "content": _JOURNALD_DROPIN,
+                }
+            ],
             "runcmd": [
+                ["systemctl", "restart", "systemd-journald.service"],
                 ["apt-get", "install", "-y", "--no-install-recommends", "prometheus-node-exporter"],
                 ["bash", "/run/buildbuddy-config/bootstrap.sh"],
             ],
