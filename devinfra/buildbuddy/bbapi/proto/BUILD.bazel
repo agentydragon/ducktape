@@ -1,4 +1,4 @@
-# gazelle:resolve proto proto/build_event_stream.proto @buildbuddy_protos//:build_event_stream_proto
+# gazelle:resolve proto proto/build_event_stream.proto //third_party/buildbuddy:build_event_stream_proto
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
@@ -6,7 +6,7 @@ proto_library(
     name = "bbapi_proto",
     srcs = ["bbapi.proto"],
     visibility = ["//visibility:public"],
-    deps = ["@buildbuddy_protos//:build_event_stream_proto"],
+    deps = ["//third_party/buildbuddy:build_event_stream_proto"],
 )
 
 go_proto_library(

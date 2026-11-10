@@ -2,9 +2,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 # Generated Python modules are emitted outside their proto source package.
 # gazelle:proto file
-# gazelle:resolve proto google/api/annotations.proto //third_party/googleapis:api_proto
-# gazelle:resolve proto google/rpc/code.proto //third_party/googleapis:rpc_proto
-# gazelle:resolve proto google/rpc/status.proto //third_party/googleapis:rpc_proto
 # gazelle:resolve py agentplane.egress.egress_admin_pb2 //agentplane/egress:egress_admin_pb2
 # gazelle:resolve py agentplane.egress.egress_admin_pb2_grpc //agentplane/egress:egress_admin_pb2_grpc
 # gazelle:resolve py agentplane.egress.egress_rules_pb2 //agentplane/egress:egress_rules_pb2

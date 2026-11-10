@@ -1,0 +1,21 @@
+--- a/js/private/proto.bzl
++++ b/js/private/proto.bzl
+@@ -28,2 +28,5 @@
+-def _replacement(package, name):
+-    return ("./" + package if package else ".") + "/_virtual_imports/" + name
++def _replacement(package, name, importer_root):
++    # protoc-gen-es resolves the rewritten path from the importer's logical
++    # proto root, while generated files live under its actual output root.
++    prefix = "../" * len(importer_root.split("/")) if importer_root else "./"
++    return prefix + (package + "/" if package else "") + "_virtual_imports/" + name
+@@ -31 +34,3 @@
+-def _get_import_rewrites(deps, js_extension):
++def _get_import_rewrites(deps, js_extension, proto_info, output_root):
++    output_dir = proto_common.output_directory(proto_info, output_root)
++    importer_root = output_dir.removeprefix(output_root.path).removeprefix("/")
+@@ -40 +45 @@
+-                rewrites.append(_original_import(canonical_path, js_extension) + ":" + _replacement(dep.label.package, dep.label.name))
++                rewrites.append(_original_import(canonical_path, js_extension) + ":" + _replacement(dep.label.package, dep.label.name, importer_root))
+@@ -63 +68 @@
+-            for r in _get_import_rewrites(ctx.rule.attr.deps, js_proto_toolchain_info.out_js_extension)
++            for r in _get_import_rewrites(ctx.rule.attr.deps, js_proto_toolchain_info.out_js_extension, proto_info, js_outputs[0].root)

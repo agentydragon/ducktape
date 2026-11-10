@@ -1,51 +1,20 @@
-load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/js/proto:virtual_proto.bzl", "virtual_proto_library")
 
 # gazelle:proto disable
 
 package(default_visibility = ["//visibility:public"])
 
-copy_file(
-    name = "annotations_source",
-    src = "@googleapis//google/api:annotations.proto",
-    out = "google/api/annotations.proto",
-)
-
-copy_file(
-    name = "http_source",
-    src = "@googleapis//google/api:http.proto",
-    out = "google/api/http.proto",
-)
-
-copy_file(
-    name = "code_source",
-    src = "@googleapis//google/rpc:code.proto",
-    out = "google/rpc/code.proto",
-)
-
-copy_file(
-    name = "status_source",
-    src = "@googleapis//google/rpc:status.proto",
-    out = "google/rpc/status.proto",
-)
-
-# Keep upstream logical import names while the JS aspect generates under this package.
-proto_library(
+virtual_proto_library(
     name = "api_proto",
-    srcs = [
-        ":annotations_source",
-        ":http_source",
-    ],
-    strip_import_prefix = "/third_party/googleapis",
+    protos = ["@googleapis//google/api:annotations_proto"],
     deps = ["@protobuf//:descriptor_proto"],
 )
 
-proto_library(
+virtual_proto_library(
     name = "rpc_proto",
-    srcs = [
-        ":code_source",
-        ":status_source",
+    protos = [
+        "@googleapis//google/rpc:code_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
-    strip_import_prefix = "/third_party/googleapis",
     deps = ["@protobuf//:any_proto"],
 )

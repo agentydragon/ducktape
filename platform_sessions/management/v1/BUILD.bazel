@@ -11,7 +11,7 @@ proto_library(
     srcs = ["management.proto"],
     deps = [
         "//platform_sessions/provider/v1:session_provider_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
     ],
 )
@@ -21,7 +21,7 @@ py_proto_library_with_mypy_stubs(
     deps = [
         ":management_proto",
         "//platform_sessions/provider/v1:session_provider_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
     ],
 )
 
