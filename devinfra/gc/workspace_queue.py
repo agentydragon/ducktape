@@ -118,6 +118,7 @@ class _Run:
         self.bases: dict[Path, Inspection] = {}
         self.base_attempted: set[Path] = set()
         self.base_reinspected: set[Path] = set()
+        self.base_reinspection_pending: set[Path] = set()
         self.deleted_worktrees: set[Path] = set()
         self.deleted_bases: set[Path] = set()
         self.annotation_scheduled = False
@@ -160,6 +161,24 @@ class _Run:
 
     def waiting(self) -> int:
         pending_bases = self.base_attempted - {result.subject for result in self.base_removals}
+        if self.options.apply and Domain.BASES in self.options.domains:
+            pending_bases |= set(self.base_order) - self.bases.keys()
+            pending_bases |= self.base_reinspection_pending
+            pending_worktrees = {
+                resolved
+                for path, item in self.worktrees.items()
+                if Domain.WORKTREES in self.options.domains
+                and isinstance(item, PrunableWorktree)
+                and path not in self.worktree_outcomes
+                if (resolved := _resolved(path)) is not None
+            }
+            pending_bases |= {
+                base.path
+                for base in self.bases.values()
+                if isinstance(base, RetainedBase)
+                and base.workspace is not None
+                and _resolved(base.workspace) in pending_worktrees
+            }
         cache = sum(
             isinstance(item, RetainedEntry)
             and bool(item.referrers & pending_bases)
@@ -215,6 +234,7 @@ class _Run:
         if layout is None:
             return
         self.base_reinspected.add(item.path)
+        self.base_reinspection_pending.add(item.path)
         self.queue.submit(jobs.InspectBase(item.path, layout, self.base_points, initial=False), followup=True)
 
     def _after_initial_bases(self) -> None:
@@ -337,6 +357,8 @@ class _Run:
                 self.bases[base.path] = base
                 if initial:
                     self.base_initial_pending -= 1
+                else:
+                    self.base_reinspection_pending.discard(base.path)
                 if isinstance(base, PrunableBase) and self.options.apply and Domain.BASES in self.options.domains:
                     if base.path not in self.base_attempted:
                         self.base_attempted.add(base.path)

@@ -24,7 +24,7 @@ from devinfra.gc import (
 from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.removal import RemovalResult, Skipped
-from devinfra.gc.work_queue import WorkQueue
+from devinfra.gc.work_queue import Phase, WorkQueue
 
 
 def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -554,6 +554,61 @@ async def test_progress_counts_cache_entries_waiting_for_a_batch(
     report = await workspace_queue.run(options, observer)
     assert observer.max_waiting > 0
     assert len(report.cache_removals) == 3
+
+
+async def test_progress_counts_cache_entry_waiting_for_worktree_and_base_removal(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    worktree = checkout.worktree("landed", "landed")
+    root = tmp_path / "output"
+    base = make_base(root, worktree.path.resolve())
+    entry = make_cache_entry(
+        repo_contents_cache_gc.repo_contents_cache(root), "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    )
+    link_external(base, "repo", entry)
+    release = threading.Event()
+    remove = worktree_gc.remove_if_still_prunable
+
+    def remove_after_waiting(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
+        assert release.wait(10), "cache dependency was not reported as waiting"
+        return remove(*args, **kwargs)
+
+    class Observer:
+        saw_dependency = False
+
+        def update(self, queue: WorkQueue[workspace_jobs.Event], *, waiting: int) -> None:
+            phases = queue.phases
+            if (
+                waiting
+                and phases.get("remove worktrees", Phase()).running
+                and phases.get("inspect bases", Phase()).finished
+                and phases.get("inspect repo-cache entries", Phase()).finished
+            ):
+                self.saw_dependency = True
+                release.set()
+
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
+    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_after_waiting)
+    observer = Observer()
+    options = workspace_queue.Options(
+        domains=frozenset(
+            {workspace_queue.Domain.WORKTREES, workspace_queue.Domain.BASES, workspace_queue.Domain.REPO_CACHE}
+        ),
+        root=root,
+        session_bases=(),
+        workers=4,
+        apply=True,
+        sizes=False,
+        delete_foreign_clones=False,
+        repo=checkout.path,
+        pr_source=workspace_gc._without_prs,
+    )
+
+    await workspace_queue.run(options, observer)
+    assert observer.saw_dependency
+    assert not entry.exists()
 
 
 def test_queue_discovers_and_deletes_session_output_bases(
