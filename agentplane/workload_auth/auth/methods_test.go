@@ -88,7 +88,7 @@ func delegationContext(t *testing.T, token string, caller auth.Account, uid stri
 		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		}},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -344,8 +344,8 @@ func TestMethodsWithDelegationRequiresUniqueServedMethodsAndAnIdentityReader(t *
 			wantErr: `delegated method "` + healthpb.Health_Watch_FullMethodName + `" is not served`,
 		},
 		{
-			name: "missing identity reader", names: []string{method},
-			wantErr: `delegated method "` + method + `": ServiceAccount reader and delegators are required`,
+			name: "missing ServiceAccount reader", names: []string{method},
+			wantErr: `delegated method "` + method + `": delegator may assert ServiceAccounts, but the receiver resolves none`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -632,7 +632,7 @@ func identityDelegationContext(t *testing.T, token string, identity auth.Identit
 	t.Helper()
 	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	})
 	if err != nil {
 		t.Fatal(err)

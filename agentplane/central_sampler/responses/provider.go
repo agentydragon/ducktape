@@ -198,7 +198,8 @@ func Headers(config Config, compaction bool) map[string]string {
 	return headers
 }
 
-func Sample(ctx context.Context, client *http.Client, baseURL, credential string, body Request, config Config,
+// Sample posts body with the given Authorization value and attribution headers.
+func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, body Request, config Config,
 	evidence protocol.EvidenceSink, attribution map[string]string, compaction bool,
 ) (*Response, error) {
 	encoded, err := json.Marshal(body)
@@ -210,7 +211,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+credential)
+	request.Header.Set("Authorization", authorization)
 	for name, value := range Headers(config, compaction) {
 		if name != "content-type" {
 			request.Header.Set(name, value)

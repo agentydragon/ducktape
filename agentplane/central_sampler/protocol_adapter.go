@@ -3,14 +3,58 @@ package centralsampler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/protobuf/proto"
 )
+
+// providerAttribution is what a provider call is attributed to: the Session, and the Identity the
+// Dispatcher recorded it as executing as, when it did.
+type providerAttribution struct {
+	SessionID string
+	Identity  *identitypb.Identity
+}
+
+// executionIdentity is the Identity the Dispatcher recorded the Session as executing as, or nil for
+// a Session whose Sandbox named none.
+func executionIdentity(session *Session) (*identitypb.Identity, error) {
+	request := &samplerpb.CreateSessionRequest{}
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
+		return nil, fmt.Errorf("decode stored session configuration: %w", err)
+	}
+	return cloneExecutionIdentity(request.GetExecutionIdentity()), nil
+}
+
+// providerAuthorization is the Authorization value and the attribution headers of one provider
+// call. Agentplane's LLM ingress is called as a delegating actor for a Session executing as an
+// Identity, which the ingress then attributes the call to. A Session without an Identity, on any
+// connection, is called as the sampler itself with the Session claimed by header, exactly as before
+// Identities existed; a bearer connection is never delegated to.
+func providerAuthorization(connection ConnectionConfig, attribution providerAttribution) (string, map[string]string, error) {
+	credential, err := readProviderCredential(connection)
+	if err != nil {
+		return "", nil, err
+	}
+	if connection.Auth.Type != AuthTypeAgentplaneIngress || attribution.Identity == nil {
+		return "Bearer " + credential, map[string]string{"x-agentplane-session-id": attribution.SessionID}, nil
+	}
+	encoded, err := auth.EncodeDelegationHeader(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: attribution.Identity},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: attribution.SessionID}},
+	})
+	if err != nil {
+		return "", nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "delegation envelope invalid", "error": err.Error(), "dispatched": false}}
+	}
+	return auth.DelegatedScheme + " " + credential, map[string]string{auth.DelegationMetadataKey: encoded}, nil
+}
 
 type sampleResult struct {
 	Records []json.RawMessage
@@ -30,7 +74,7 @@ type compactionPlan struct {
 type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution) (any, error)
-	Sample(context.Context, *http.Client, ConnectionConfig, any, []byte, protocol.EvidenceSink, map[string]string, bool) (*sampleResult, error)
+	Sample(context.Context, *http.Client, ConnectionConfig, any, []byte, protocol.EvidenceSink, providerAttribution, bool) (*sampleResult, error)
 	AutoCompactTokens(*int) *int
 	PrepareCompaction(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
@@ -87,12 +131,12 @@ func (a anthropicAdapter) Prepare(c *Conversation, s *Session, _ *ExecutionState
 	return anthropic.BuildRequest(params, *a.config.AnthropicMessages, anthropic.PreviousMessageID(c.Archive.(*anthropic.Context)))
 }
 
-func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, body any, _ []byte, evidence protocol.EvidenceSink, headers map[string]string, compaction bool) (*sampleResult, error) {
-	credential, err := readProviderCredential(connection)
+func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, body any, _ []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
+	authorization, headers, err := providerAuthorization(connection, attribution)
 	if err != nil {
 		return nil, err
 	}
-	response, err := responses.Sample(ctx, client, connection.BaseURL, credential, body.(responses.Request), a.config.Responses, evidence, headers, compaction)
+	response, err := responses.Sample(ctx, client, connection.BaseURL, authorization, body.(responses.Request), a.config.Responses, evidence, headers, compaction)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +151,8 @@ func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, conne
 	return &sampleResult{Records: records, Audit: response.Audit(), ContextTokens: response.Terminal.TotalTokens()}, nil
 }
 
-func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, _ any, wire []byte, evidence protocol.EvidenceSink, _ map[string]string, compaction bool) (*sampleResult, error) {
+// The direct Anthropic API is called with its own key; it attributes nothing to the Session.
+func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, _ any, wire []byte, evidence protocol.EvidenceSink, _ providerAttribution, compaction bool) (*sampleResult, error) {
 	credential, err := readProviderCredential(connection)
 	if err != nil {
 		return nil, err

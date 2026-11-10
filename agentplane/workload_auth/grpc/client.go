@@ -83,7 +83,7 @@ func (c delegatedCredentials) GetRequestMetadata(ctx context.Context, _ ...strin
 		return nil, &tokenFileError{message: "the delegated bearer token file is empty or invalid"}
 	}
 	return map[string]string{
-		"authorization":            "Agentplane-Delegated " + token,
+		"authorization":            auth.DelegatedScheme + " " + token,
 		auth.DelegationMetadataKey: string(encoded),
 	}, nil
 }

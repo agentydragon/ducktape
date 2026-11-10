@@ -207,7 +207,7 @@ func delegatedAuthorityContext(
 		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		}},
-		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {

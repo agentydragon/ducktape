@@ -130,6 +130,10 @@ container limits stop meeting the production resource contract.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.
+  A Responses connection with `auth.type: agentplane_ingress` (its `credential_file` the projected
+  workload token) is Agentplane's LLM ingress: the sampler samples a Session executing as an
+  Identity as a delegating actor for it, which the ingress attributes the call to given
+  `central_sampler_identity_callers`. `bearer` connections are never delegated to.
 
 Readiness for the first open still requires a running executor. Binding is fixed to the Sandbox UID. After suspend/resume or replacement of its execution Pod,
 initialization can adopt the authenticated new incarnation, abandon old execution handles, and

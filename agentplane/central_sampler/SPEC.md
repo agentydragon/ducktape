@@ -14,6 +14,17 @@ journal producer identity and is retained separately by History. The Dispatcher 
 configured central sampler target; callers select the V1 placement, not a service endpoint. Model and
 effort must be server-configured. Every RPC uses TokenReview and the allowed-account policy; Session
 UUID knowledge grants no authority.
+
+The Dispatcher also supplies `execution_identity`, the Identity the executor's Sandbox names, when it
+names one; it is retained with the configuration like the execution principal. The sampler acts for
+that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
+authenticates as itself with its own projected token and holds no agent key, and each LLM ingress
+call for the Session names the retained Identity as effective caller and the Session as
+provenance. Neither JavaScript nor tool arguments can name or override it, and the receiver
+refuses an Identity incarnation that no longer exists, as it refuses a Sandbox whose Identity is
+gone. A Session whose Sandbox named no Identity has none to act for: the sampler samples it as
+itself, exactly as before Identities existed. Direct Anthropic connections carry no attribution
+either way. History export, executor and Gateway calls stay the sampler's own.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 
@@ -588,9 +599,11 @@ archives retain no streams or tasks. History unavailability delays display while
 retains its outbox.
 
 Public Session ID is the inference correlation key. Executor Sandbox/incarnation are distinct
-metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse;
-arbitrary workload identity metadata remains rejected/stripped. Credentials and auth headers are
-not evidence payloads. Existing History reader authorization continues to govern retained reads.
+metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse,
+and a Session executing as an Identity is attributed to that Identity through the delegated call
+(§ Identity and admission); arbitrary workload identity metadata remains rejected/stripped.
+Credentials and auth headers are not evidence payloads. Existing History reader authorization
+continues to govern retained reads.
 
 ## Implementation and database ownership
 

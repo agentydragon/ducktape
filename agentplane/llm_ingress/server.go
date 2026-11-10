@@ -40,7 +40,9 @@ var (
 )
 
 type ingressHandler struct {
-	resolver        *auth.Resolver
+	// admission admits every inference request: a workload subject directly, or a configured
+	// central sampler acting for an Identity.
+	admission       auth.Rule
 	transport       *http.Transport
 	roundTripper    http.RoundTripper
 	baseURL         *url.URL
@@ -55,10 +57,26 @@ type ingressHandler struct {
 	centralSamplerAccounts []string
 }
 
-func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
+// newIngressHandler serves inference for the subjects resolver authenticates. identities, required
+// by central_sampler_identity_callers, reads the live Identities the central samplers may act for.
+func newIngressHandler(c config, resolver *auth.Resolver, identities auth.IdentityUIDReader, logger *slog.Logger) (*ingressHandler, error) {
 	baseURL, err := url.Parse(c.LiteLLMURL)
 	if err != nil {
 		return nil, errors.New("invalid LiteLLM URL")
+	}
+	admission := auth.AnySubject(resolver)
+	if c.CentralSamplerIdentityCallers {
+		delegators := make([]auth.Delegator, 0, len(c.CentralSamplerAccounts))
+		for _, name := range c.CentralSamplerAccounts {
+			var account auth.Account
+			if err := account.UnmarshalText([]byte(name)); err != nil {
+				return nil, fmt.Errorf("central_sampler_accounts: %w", err)
+			}
+			delegators = append(delegators, auth.Delegator{Account: account, IdentityCallers: true})
+		}
+		if admission, err = admission.AllowDelegationFrom(delegators, nil, identities); err != nil {
+			return nil, fmt.Errorf("central_sampler_identity_callers: %w", err)
+		}
 	}
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -85,7 +103,7 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 	}
 	return &ingressHandler{
-		resolver:        resolver,
+		admission:       admission,
 		transport:       transport,
 		roundTripper:    observability.HTTPTransport(transport),
 		baseURL:         baseURL,
@@ -125,11 +143,11 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
-	subject, okay := h.authenticate(writer, request)
+	caller, okay := h.authenticate(writer, request)
 	if !okay {
 		return
 	}
-	h.serveAuthenticated(writer, request, subject)
+	h.serveAuthenticated(writer, request, caller)
 }
 
 func writeHealth(writer http.ResponseWriter) {
@@ -138,7 +156,7 @@ func writeHealth(writer http.ResponseWriter) {
 	_, _ = io.WriteString(writer, `{"status":"ok"}`)
 }
 
-func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request *http.Request, subject auth.Subject) {
+func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request *http.Request, caller verifiedCaller) {
 	if request.URL.Path == codexCatalogPath && request.Method == http.MethodGet {
 		if h.codex == nil {
 			writeJSONError(writer, http.StatusNotFound, "Codex model catalog is not configured", "")
@@ -149,14 +167,25 @@ func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request 
 		_, _ = writer.Write(h.codex.body)
 		return
 	}
-	h.forward(writer, request, subject)
+	h.forward(writer, request, caller)
 }
 
 func allowedMethod(method string) bool {
 	return slices.Contains(proxyMethods, method)
 }
 
-func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.Request) (auth.Subject, bool) {
+// verifiedCaller is who an admitted request is attributed to.
+type verifiedCaller struct {
+	claims   map[verifiedClaim]string
+	logAttrs []any
+	// account is a direct ServiceAccount caller, which alone may claim a Session by header.
+	account *auth.Principal
+	// sessionID is the central Session a delegating sampler named in its envelope; its Identity is
+	// the subject, so no header claim applies.
+	sessionID string
+}
+
+func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.Request) (verifiedCaller, bool) {
 	// Preserve the HTTP API's case-insensitive Bearer spelling. Credential
 	// presence still selects one configured mode; malformed or combined
 	// credentials never enable a second authentication attempt.
@@ -167,19 +196,64 @@ func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.
 			request.Header.Set("Authorization", "Bearer "+match[1])
 		}
 	}
-	subject, err := h.resolver.ResolveSubjectRequest(request)
-	if errors.Is(err, auth.ErrInvalidBearer) || status.Code(err) == codes.Unauthenticated {
+	admitted, err := h.admission.AdmitRequest(request, 0)
+	var caller verifiedCaller
+	if err == nil {
+		caller, err = admittedCaller(admitted)
+	}
+	switch {
+	case err == nil:
+		return caller, true
+	case errors.Is(err, auth.ErrInvalidBearer) || status.Code(err) == codes.Unauthenticated:
 		writeJSONError(writer, http.StatusUnauthorized, "invalid workload bearer", "Bearer")
-		return nil, false
-	}
-	if err != nil {
+	case status.Code(err) == codes.PermissionDenied:
+		writeJSONError(writer, http.StatusForbidden, "delegated caller refused", "")
+	default:
 		writeJSONError(writer, http.StatusInternalServerError, "workload authentication unavailable", "")
-		return nil, false
 	}
-	return subject, true
+	return verifiedCaller{}, false
 }
 
-func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Request, subject auth.Subject) {
+// admittedCaller attributes the admitted call: a direct subject by its own claims; a trusted
+// central sampler acting for an Identity by that Identity, with the sampler's Pod as the Pod that
+// called, and the Session its envelope names.
+func admittedCaller(ctx context.Context) (verifiedCaller, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return verifiedCaller{}, err
+	}
+	switch admission := admission.(type) {
+	case auth.DirectAdmission:
+		principal, err := auth.Caller(ctx)
+		if err != nil {
+			return verifiedCaller{}, err
+		}
+		return verifiedCaller{claims: subjectClaims(principal), logAttrs: callerLogAttrs(principal), account: &principal}, nil
+	case auth.IdentityAdmission:
+		return verifiedCaller{claims: subjectClaims(admission.Caller), logAttrs: callerLogAttrs(admission.Caller)}, nil
+	case auth.DelegatedIdentityAdmission:
+		session := admission.Provenance.GetSession()
+		if session == nil {
+			return verifiedCaller{}, status.Error(codes.PermissionDenied, "a delegated inference call names the Session it serves")
+		}
+		actor := admission.Actor
+		return verifiedCaller{
+			claims: map[verifiedClaim]string{
+				verifiedIdentity: admission.EffectiveCaller.Name, verifiedIdentityUID: admission.EffectiveCaller.UID,
+				verifiedPodName: actor.PodName, verifiedPodUID: actor.PodUID,
+			},
+			logAttrs: append([]any{
+				"subject_kind", "identity", "subject_name", admission.EffectiveCaller.Name,
+				"actor", actor.Account.Namespace + "/" + actor.Account.Name,
+			}, podLogAttrs(actor.PodName, actor.PodUID)...),
+			sessionID: session.GetSessionId(),
+		}, nil
+	default:
+		return verifiedCaller{}, status.Error(codes.PermissionDenied, "the admitted caller kind is not served")
+	}
+}
+
+func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Request, caller verifiedCaller) {
 	requestID := rand.Text()
 	select {
 	case h.pool <- struct{}{}:
@@ -187,7 +261,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	case <-incoming.Context().Done():
 		return
 	case <-time.After(h.poolWaitTimeout):
-		attrs := requestLogAttrs(requestID, incoming, subject)
+		attrs := requestLogAttrs(requestID, incoming, caller)
 		attrs = append(attrs, "timeout", h.poolWaitTimeout.String())
 		h.logger.Warn("llm forwarding slot acquisition timed out", attrs...)
 		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
@@ -195,10 +269,15 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	}
 
 	sessionID := incoming.Header.Get("x-agentplane-session-id")
-	if sessionID != "" {
+	switch {
+	case caller.sessionID != "" && sessionID != "":
+		writeJSONError(writer, http.StatusForbidden, "a delegated call names its Session in the envelope, not a header", "")
+		return
+	case caller.sessionID != "":
+		sessionID = caller.sessionID
+	case sessionID != "":
 		// Central samplers are ServiceAccounts; an Identity caller never attributes a Session.
-		principal, isAccount := subject.(auth.Principal)
-		if !isAccount || !slices.Contains(h.centralSamplerAccounts, principal.Account.Namespace+"/"+principal.Account.Name) {
+		if caller.account == nil || !slices.Contains(h.centralSamplerAccounts, caller.account.Account.Namespace+"/"+caller.account.Account.Name) {
 			writeJSONError(writer, http.StatusForbidden, "Session attribution requires an authorized central sampler", "")
 			return
 		}
@@ -208,7 +287,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			return
 		}
 	}
-	verified, err := verifiedRequestHeaders(subject, h.key, h.attribution, sessionID)
+	verified, err := verifiedRequestHeaders(caller.claims, h.key, h.attribution, sessionID)
 	if err != nil {
 		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
 		return
@@ -251,7 +330,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		ErrorLog: slog.NewLogLogger(h.logger.Handler(), slog.LevelWarn),
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
 			if request.Context().Err() == nil {
-				attrs := requestLogAttrs(requestID, incoming, subject)
+				attrs := requestLogAttrs(requestID, incoming, caller)
 				var urlErr *url.Error
 				if errors.As(err, &urlErr) {
 					err = urlErr.Err
@@ -267,7 +346,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			if requestBody == nil {
 				return
 			}
-			attrs := append([]any{"id", requestID}, callerLogAttrs(subject)...)
+			attrs := append([]any{"id", requestID}, caller.logAttrs...)
 			h.logger.Info("llm request", append(attrs, "method", incoming.Method,
 				"path", incoming.URL.Path, "body", fmt.Sprintf("%q", requestBody.captured.Bytes()),
 				"body_bytes", requestBody.total, "body_truncated", requestBody.total > requestBody.captured.Len())...)
@@ -276,32 +355,32 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	proxy.ServeHTTP(writer, incoming)
 }
 
-func requestLogAttrs(requestID string, incoming *http.Request, subject auth.Subject) []any {
-	return append([]any{"id", requestID, "method", incoming.Method, "path", incoming.URL.Path}, callerLogAttrs(subject)...)
+func requestLogAttrs(requestID string, incoming *http.Request, caller verifiedCaller) []any {
+	return append([]any{"id", requestID, "method", incoming.Method, "path", incoming.URL.Path}, caller.logAttrs...)
 }
 
 // callerLogAttrs names the verified caller by subject kind and name (a ServiceAccount also by
 // namespace), and its Pod when known, so an Identity caller never logs as an empty account.
 func callerLogAttrs(subject auth.Subject) []any {
-	var attrs []any
-	var podName, podUID string
 	switch subject := subject.(type) {
 	case auth.Principal:
-		attrs = append(attrs, "subject_kind", "service_account", "subject_name", subject.Account.Name)
+		attrs := []any{"subject_kind", "service_account", "subject_name", subject.Account.Name}
 		if subject.Account.Namespace != "" {
 			attrs = append(attrs, "namespace", subject.Account.Namespace)
 		}
-		podName, podUID = subject.PodName, subject.PodUID
+		return append(attrs, podLogAttrs(subject.PodName, subject.PodUID)...)
 	case auth.IdentityPrincipal:
-		attrs = append(attrs, "subject_kind", "identity", "subject_name", subject.Identity.Name)
-		podName, podUID = subject.PodName, subject.PodUID
+		return append([]any{"subject_kind", "identity", "subject_name", subject.Identity.Name}, podLogAttrs(subject.PodName, subject.PodUID)...)
 	default:
 		panic(fmt.Sprintf("unknown subject %T", subject))
 	}
-	if podName != "" {
-		attrs = append(attrs, "pod", podName, "pod_uid", podUID)
+}
+
+func podLogAttrs(podName, podUID string) []any {
+	if podName == "" {
+		return nil
 	}
-	return attrs
+	return []any{"pod", podName, "pod_uid", podUID}
 }
 
 // maxLoggedRequestBody bounds the request body prefix kept for `log_llm_requests`; the body itself
@@ -357,7 +436,7 @@ func dropUntrustedRequestHeaders(headers http.Header, attribution attributionCon
 		lower := strings.ToLower(name)
 		_, credential := credentialHeaders[lower]
 		_, untrusted := untrustedMetadataHeaders[lower]
-		if credential || untrusted || hasIdentityHeaderPrefix(lower) ||
+		if credential || untrusted || hasIdentityHeaderPrefix(lower) || lower == auth.DelegationMetadataKey ||
 			lower == "host" || lower == "content-length" || lower == "baggage" {
 			delete(headers, name)
 		}
@@ -392,17 +471,16 @@ func subjectClaims(subject auth.Subject) map[verifiedClaim]string {
 }
 
 // verifiedRequestHeaders are the headers LiteLLM trusts: the server-held key and attribution
-// derived from the authenticated subject, plus the Session claim of an authorized central
-// sampler (sessionID != ""). A field whose claim the subject lacks is omitted.
+// derived from the admitted caller's verified claims, plus the central Session (sessionID != "")
+// an authorized sampler claimed or delegated for. A field whose claim the caller lacks is omitted.
 func verifiedRequestHeaders(
-	subject auth.Subject,
+	claims map[verifiedClaim]string,
 	key string,
 	attribution attributionConfig,
 	sessionID string,
 ) (http.Header, error) {
 	forwarded := make(http.Header)
 	forwarded.Set("Authorization", "Bearer "+key)
-	claims := subjectClaims(subject)
 	for _, header := range attribution.JSONHeaders {
 		members := make(map[string]string, len(header.Fields))
 		for _, field := range header.Fields {

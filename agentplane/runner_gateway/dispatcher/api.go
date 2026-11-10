@@ -265,7 +265,7 @@ func delegatedIdentityCaller(admission auth.DelegatedIdentityAdmission) (Identit
 			Actor:    serviceAccountIdentityFor(actor.Account, actor.ServiceAccountUID),
 			ActorPod: PodIdentity{Name: actor.PodName, UID: actor.PodUID},
 			Action: ActionCorrelation{
-				RequestID: admission.Provenance.GetActionRequestId(), ExecutionID: admission.Provenance.GetActionExecutionId(),
+				RequestID: admission.Provenance.GetAction().GetRequestId(), ExecutionID: admission.Provenance.GetAction().GetExecutionId(),
 			},
 		},
 	}
@@ -318,7 +318,7 @@ func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCalle
 		attribution.EffectiveCaller = delegated.EffectiveCaller
 		attribution.ActorPod = &PodIdentity{Name: delegated.Actor.PodName, UID: delegated.Actor.PodUID}
 		attribution.Action = &ActionCorrelation{
-			RequestID: delegated.Provenance.GetActionRequestId(), ExecutionID: delegated.Provenance.GetActionExecutionId(),
+			RequestID: delegated.Provenance.GetAction().GetRequestId(), ExecutionID: delegated.Provenance.GetAction().GetExecutionId(),
 		}
 	default:
 		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")

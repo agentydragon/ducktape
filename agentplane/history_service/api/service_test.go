@@ -195,7 +195,7 @@ func delegated(t *testing.T, token string, caller auth.Account, uid string) cont
 		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		}},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -583,7 +583,7 @@ func TestDelegatedIdentityReadsOnlyItsIdentitysSessions(t *testing.T) {
 	actingFor := func(identity storage.Identity) context.Context {
 		encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
 			EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-			ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+			Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 		})
 		if err != nil {
 			t.Fatal(err)

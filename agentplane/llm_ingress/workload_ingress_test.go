@@ -184,7 +184,7 @@ func newWorkloadIngressTestServer(
 		LiteLLMURL:  backendURL,
 		LiteLLMKey:  testBackendKey,
 		Attribution: defaultAttribution(),
-	}, tokenResolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, tokenResolver, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

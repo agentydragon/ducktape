@@ -148,7 +148,7 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	if err := proto.Unmarshal([]byte(values[0]), &envelope); err != nil {
 		b.testing.Fatalf("unmarshal delegation envelope: %v", err)
 	}
-	if envelope.GetActionRequestId() != wantRequest.String() || envelope.GetActionExecutionId() != wantExecution.String() {
+	if envelope.GetAction().GetRequestId() != wantRequest.String() || envelope.GetAction().GetExecutionId() != wantExecution.String() {
 		b.testing.Fatalf("delegation envelope = %v", &envelope)
 	}
 	if b.identity != nil {

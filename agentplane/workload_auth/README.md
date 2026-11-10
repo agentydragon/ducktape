@@ -76,6 +76,12 @@ match the live ServiceAccount UID. An asserted Identity needs the actor's separa
 the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read); otherwise it is
 `PERMISSION_DENIED`. A method with no delegation policy rejects the delegated scheme and any
 delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a direct call.
+Each UID reader is required only by the grants that use it: a receiver whose delegators assert
+Identities alone passes no ServiceAccount reader. The envelope's provenance is one typed profile,
+an Action's records or a central Session; the handler consumes the one its method serves.
+`Rule.AdmitRequest` admits an HTTP request by the same Rule and middleware, reading the
+`Authorization` header, the verified TLS peer and the `agentplane-delegation-bin` header in
+standard base64 (`EncodeDelegationHeader`), the form gRPC itself transports `-bin` metadata in.
 
 Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for ordinary account
 checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;

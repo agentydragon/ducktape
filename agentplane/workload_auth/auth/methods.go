@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"time"
 
 	"google.golang.org/grpc"
@@ -349,6 +350,16 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
 	callerContext := withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal})
 	return WithCaller(callerContext, principal), nil
+}
+
+// httpMethodName keys the one Rule AdmitRequest applies; an HTTP request has no gRPC method name.
+const httpMethodName = "/http"
+
+// AdmitRequest admits an HTTP request by this Rule exactly as the interceptors admit an RPC, from
+// its Authorization header, its base64 delegation header and its verified TLS peer. The returned
+// context carries the same typed Admitted result and, for a direct ServiceAccount, Caller.
+func (r Rule) AdmitRequest(request *http.Request, admissionTimeout time.Duration) (context.Context, error) {
+	return Methods{httpMethodName: r}.admit(requestContext(request), httpMethodName, admissionTimeout)
 }
 
 // admittedStream is a stream whose context carries the admitted principal.

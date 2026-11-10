@@ -1017,8 +1017,11 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
-	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
-	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, headers, false)
+	identity, err := executionIdentity(session)
+	if err != nil {
+		return "", err
+	}
+	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
 	if err != nil {
 		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
@@ -1109,13 +1112,16 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
+	identity, err := executionIdentity(session)
+	if err != nil {
+		return err
+	}
 	client, err := connection.HTTPClient(&http.Client{})
 	if err != nil {
 		return err
 	}
 	defer client.CloseIdleConnections()
-	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
+	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}
