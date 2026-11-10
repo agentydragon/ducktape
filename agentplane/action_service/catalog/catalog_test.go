@@ -68,6 +68,42 @@ func TestSessionDelegationBindingIsStrictAndTyped(t *testing.T) {
 	}
 }
 
+func TestJSONObjectChecksMapKeysInsideSequences(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		value   map[string]any
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "non-string key",
+			value:   map[string]any{"items": []any{map[any]any{1: "sample"}}},
+			wantErr: true,
+		},
+		{
+			name:  "string key",
+			value: map[string]any{"items": []any{map[string]any{"key": "value"}}},
+			want:  `{"items":[{"key":"value"}]}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := jsonObject(test.value)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("accepted a non-string map key inside a sequence")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("jsonObject() error = %v", err)
+			}
+			if string(got) != test.want {
+				t.Errorf("jsonObject() = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
 // New's own refusals of what yaml.v3 decodes; config_test holds yaml.v3's.
 func TestRefusalsDoNotEchoValues(t *testing.T) {
 	for name, document := range map[string]string{

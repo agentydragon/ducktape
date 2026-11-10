@@ -485,7 +485,7 @@ func jsonObject(value map[string]any) (json.RawMessage, error) {
 	}
 	document, err := json.Marshal(value)
 	if err != nil {
-		// Such as a nested mapping whose keys are not strings.
+		// Such as a cycle or a value with no JSON representation.
 		return nil, errors.New("must be a JSON object")
 	}
 	return document, nil
