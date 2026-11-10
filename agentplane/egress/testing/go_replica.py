@@ -27,12 +27,6 @@ class GoReplica:
     process: GoProcess
     admin_listener: Listener
 
-    def terminate(self) -> None:
-        self.process.terminate()
-
-    async def health(self, *, serving: bool) -> None:
-        await self.process.health(serving=serving)
-
 
 @asynccontextmanager
 async def go_replica(settings: Settings, *, directory: Path, tunnel_rules: bool = False) -> AsyncIterator[GoReplica]:
