@@ -692,23 +692,15 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
         doc["metadata"]["name"]: doc
         for doc in documents
         if doc.get("kind") == "Kustomization"
-        and doc.get("metadata", {}).get("name")
-        in {"litellm-keys-tf", "litellm-crossplane-keys", "litellm-buildbuddy-sync"}
+        and doc.get("metadata", {}).get("name") in {"litellm-keys-tf", "litellm-crossplane-keys"}
     }
 
-    assert kustomizations["litellm-keys-tf"]["spec"]["dependsOn"] == [
-        {"name": "tofu-controller", "namespace": "ducktape-flux"},
-        {"name": "litellm", "namespace": "ducktape-flux"},
-    ]
+    assert kustomizations["litellm-keys-tf"]["spec"]["dependsOn"] == [{"name": "litellm", "namespace": "ducktape-flux"}]
     assert kustomizations["litellm-crossplane-keys"]["spec"]["dependsOn"] == [
         {"name": "crossplane-provider-litellm", "namespace": "ducktape-flux"},
         {"name": "litellm", "namespace": "ducktape-flux"},
     ]
     assert kustomizations["litellm-crossplane-keys"]["spec"]["wait"] is True
-    assert kustomizations["litellm-buildbuddy-sync"]["spec"]["dependsOn"] == [
-        {"name": "tofu-controller", "namespace": "ducktape-flux"},
-        {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
-    ]
 
     keys = {
         doc["spec"]["forProvider"]["keyAlias"]: doc
@@ -764,23 +756,20 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_litellm_buildbuddy_terraform_runner_no_longer_receives_admin_key(
+def test_litellm_buildbuddy_terraform_resources_are_retired(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
-    terraform_resources = {
-        doc["metadata"]["name"]: doc
-        for doc in documents
-        if doc.get("kind") == "Terraform"
+    assert not any(
+        doc.get("kind") == "Terraform"
         and doc.get("metadata", {}).get("name") in {"litellm-keys", "litellm-buildbuddy-sync"}
-    }
-    assert set(terraform_resources) == {"litellm-buildbuddy-sync"}
-
-    for resource in terraform_resources.values():
-        env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
-        assert not any(variable["name"] == "BUILDBUDDY_API_KEY" for variable in env)
-        assert not resource["spec"].get("vars")
-        assert not any(variable["name"].startswith("TF_VAR_") for variable in env)
+        for doc in documents
+    )
+    assert not any(
+        doc.get("kind") in {"Kustomization", "ExternalArtifact", "ArtifactGenerator"}
+        and doc.get("metadata", {}).get("name") in {"litellm-buildbuddy-sync", "tf-gitops-litellm-buildbuddy-sync"}
+        for doc in documents
+    )
 
 
 def test_piraeus_controller_network_policy_only_admits_api_tls(
@@ -1076,7 +1065,7 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_buildbuddy_secret_is_managed_by_crossplane_with_terraform_suspended(
+def test_buildbuddy_secret_is_managed_by_crossplane(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -1085,15 +1074,5 @@ def test_buildbuddy_secret_is_managed_by_crossplane_with_terraform_suspended(
         for doc in documents
         if doc.get("apiVersion") == "buildbuddy.m.allegedly.works/v1alpha1" and doc.get("kind") == "Secret"
     )
-    terraform = next(
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
-        and doc.get("kind") == "Terraform"
-        and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
-    )
-    assert terraform["metadata"]["namespace"] == "flux-system"
-    assert terraform["spec"]["suspend"] is True
-    assert "approvePlan" not in terraform["spec"]
     assert "crossplane.io/paused" not in secret["metadata"]["annotations"]
     assert secret["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]

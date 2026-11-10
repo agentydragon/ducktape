@@ -1744,7 +1744,6 @@ py_library(
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/litellm:buildbuddy_crossplane",
-        "//cluster/cdk8s/litellm:buildbuddy_sync",
         "//cluster/cdk8s/litellm:crossplane_keys",
         "//cluster/cdk8s/litellm:database",
         "//cluster/cdk8s/litellm:keys",

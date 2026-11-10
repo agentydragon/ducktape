@@ -129,7 +129,7 @@ just today's synthetic starting states.
 
 Operator's instinct (2026-07-11) is correct: today's "existing litellm level markings" —
 `litellm_key` Terraform resources with a `key_alias`/`metadata` map
-(`tf/gitops/litellm-keys/main.tf`) — are key-level attribution (which lane/consumer a key
+(`cluster/cdk8s/litellm/crossplane_keys.py`) — are key-level attribution (which lane/consumer a key
 belongs to), not per-call traces. Actual prompt/completion/tool-call traces need Langfuse, and
 the workers-LiteLLM the zai/oai zones route through doesn't have it wired yet — this is a
 pre-existing gap, not new: see `2026_08_multi_agent.md`'s "Langfuse `haku-workers` project + viewer

@@ -166,7 +166,7 @@ in
   sops.secrets =
     lib.optionalAttrs (gatewayEnabled "tana-claude") {
       litellm_tana_key = {
-        sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
+        sopsFile = ../../secrets/litellm-tana-clients-key.yaml;
         key = "litellm_tana_key";
       };
     }
