@@ -1,5 +1,70 @@
 # Bazel integration
 
+## Standard target family for a corpus
+
+`debundle_product.bzl`'s `debundle_product` declares every standard Debundle
+target of one tree-shaped corpus from one call, composing the
+[`debundle_pipeline` rule](#pipeline-rule) and the
+[`debundle_cli` launcher](#graph-command-launchers):
+
+```python
+load("@ducktape//devinfra/js/debundle:debundle_product.bzl", "debundle_product")
+
+debundle_product(
+    name = "debundle",
+    spec = "spec",
+    # Target holding the chunk the spec reads (`tree_source_root`).
+    source = "//path/to:bundle_inputs",
+    input_data = ["//path/to:vendor_bundles"],
+    package_roots = {"//:node_modules/react/dir": "react"},
+    readable = True,
+    ownership_subset = "spec/passing_subset.json",
+    residual_baseline = "spec/residual_baseline",
+    cli_main_chunk = "main",
+    cli_chunks = ["settings", "worker"],
+    cli_source_root = "path/to/extracted",
+    analysis_threads = 2,
+)
+```
+
+| Target                                | Declared when       | What it is                                                                   |
+| ------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `debundle`                            | always              | Gated pipeline with `split_dependency_graphs`                                |
+| `debundle_analysis`                   | always              | Its `analysis` output group (projection and analysis)                        |
+| `debundle_graphs`                     | always              | Its `dependency_graphs` output group                                         |
+| `debundle_readable`                   | `readable`          | `emit_on_rejection` reading-only tree; reuses `debundle_analysis`            |
+| `debundle_passing`                    | `ownership_subset`  | Ownership-subset run; reuses `debundle_analysis`                             |
+| `debundle_residual_baseline`          | `residual_baseline` | Gated pipeline over the baseline spec; own analysis unless reusing           |
+| `debundle_residual_baseline_analysis` | `residual_baseline` | Its `analysis` output group                                                  |
+| `debundle_cli`                        | `cli_main_chunk`    | Launcher on `reports/tree/<cli_main_chunk>/dependency_graph.json.gz`         |
+| `debundle_cli_<chunk>`                | each `cli_chunks`   | Launcher on that chunk's graph, or `cli_chunk_graphs[<chunk>]`'s if remapped |
+
+Launchers share the `<name>_cli` prefix so they sort together in `bazel query`
+output and `bazel run :debundle_cli<TAB>` completes exactly the launchers; no
+other family member starts with it. Every launcher reads the gated target's
+graphs; `cli_chunk_graphs = {"lazy": "main"}` points `debundle_cli_lazy` at the
+main chunk's graph.
+
+`spec` is a package-relative directory holding `spec_config.yaml`, `modules/`
+and `sources/vendor/vendor_marks.yaml`; its spec tree inputs are every `.yaml`
+below it and `modules`, excluding a residual baseline nested inside it. Pass
+`debundle_spec(dir, config = ..., modules = ..., vendor_marks = ..., srcs = ...)`
+for a corpus whose files live elsewhere, e.g.
+`debundle_spec("spec", vendor_marks = "spec/vendor_marks.yaml")`;
+`residual_baseline` accepts the same forms. `residual_baseline_reuses_analysis`
+makes the baseline reuse `debundle_analysis` (its projection must match). All
+variants read the same `source`, `input_data` and `package_roots`; `tags`,
+`testonly` and `visibility` apply to every target, `exec_properties` to every
+pipeline, `analysis_threads` to every target that runs Analyze.
+
+Drop to the raw rule for a flat spec, a variant with its own sources or package
+roots, a custom `debundler`/`analyzer`/`projector` attribute (the label flags
+still apply to the family), or diagnostic attrs (`full_reports`,
+`effect_conflicts_jsonl`, `fail_fast`). A raw target can still reuse a family's
+analysis with `analysis = ":debundle_analysis"`.
+
+## Pipeline rule
+
 `pipeline.bzl` provides a Bazel rule for running `debundle run` as a normal
 build action:
 
@@ -90,15 +155,11 @@ identities. Module assignments and renames may differ when the projection permit
 it; changing an analysis-relevant author contract requires fresh analysis.
 
 ```python
-filegroup(
-    name = "shared_analysis",
-    srcs = [":debundle"],
-    output_group = "analysis",
-)
-
 debundle_pipeline(
     name = "debundle_variant",
-    analysis = ":shared_analysis",
+    # A family's `<name>_analysis`, or any filegroup selecting a pipeline's
+    # `analysis` output group.
+    analysis = ":debundle_analysis",
     input_data = ["//path/to:bundle_inputs"],
     spec_tree_inputs = [":variant_spec_data"],
     tree_config = ":generated_variant_config",
@@ -128,7 +189,7 @@ rejection is the only failure — with a `GATE_REJECTED` marker, as well as 0.
 Every other failure still fails
 the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
-output on gate rejection), so name the target for it, e.g. `debundle_readable`.
+output on gate rejection); the family declares it as `<name>_readable`.
 
 Default builds write small reports and emitted modules without full graph
 serialization, including when `split_dependency_graphs = True`. That attr
@@ -145,15 +206,16 @@ the detailed rejection report follows the materializer's existing selection.
 Graph selection does not enable full effect-conflict JSONL or other full-detail
 evidence. The default output group never depends on this export action.
 
-A graph-consuming filegroup selects `output_group = "dependency_graphs"`.
-Adapters should request that group only for graph refresh/query work; normal
+The family's `<name>_graphs` selects that group; adapters should request that group only for graph refresh/query work; normal
 validation and source regeneration remain small. Gate-rejected reading trees
 retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
 graph their diagnostics explain how to request one instead of naming a
 nonexistent graph file.
 
+### Graph command launchers
+
 Use `debundle_cli.bzl` to run graph-backed commands with the graph output and
-relocation roots in runfiles:
+relocation roots in runfiles (the family declares these as `<name>_cli*`):
 
 ```python
 load("@ducktape//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
@@ -232,7 +294,8 @@ at the valid roots in the relocated input tree.
 
 ## Integration boundary
 
-Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
+Corpus integrations use `debundle_product.bzl`, `pipeline.bzl`'s
+`debundle_pipeline`, `debundle_cli.bzl`, the public
 `:debundler`, `:analyzer`, and `:projector` label flags, or the public CLI
 executables.
 `README.md`, `SPEC.md`, and `perf_wrapper.sh` are exported resources.

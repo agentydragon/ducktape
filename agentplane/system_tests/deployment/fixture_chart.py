@@ -43,7 +43,7 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
+from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
@@ -289,7 +289,10 @@ def environment(
                         kind="pod",
                         description="Created and exec'd by this service, as the caller, in its own namespace.",
                         namespace=NAMESPACE,
-                        templates=command_sandbox.TEMPLATES,
+                        templates={
+                            **command_sandbox.TEMPLATES,
+                            svid_box.TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
+                        },
                     ),
                 )
             },
@@ -390,6 +393,7 @@ def synthesize(chart: Chart, *, vm_sandboxes: bool) -> list[dict[str, Any]]:
     synthesized = list(Testing.synth(chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
+    _add_svid_box_template(synthesized)
     _add_fixture_server_dns_names(synthesized)
     # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
     # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
@@ -789,6 +793,28 @@ def build_chart(
         app_login=app_login,
         mcp_linkage=mcp_linkage,
     )
+
+
+def _add_svid_box_template(objects: list[dict[str, Any]]) -> None:
+    """`svid_box.TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
+    the runner's workload image and with the runner disk mounted where a runner has it."""
+    box = deepcopy(
+        one(doc for doc in objects if doc["kind"] == "PodTemplate" and doc["metadata"]["name"] == command_sandbox.NAME)
+    )
+    box["metadata"]["name"] = svid_box.TEMPLATE
+    spec = box["template"]["spec"]
+    workload = one(c for c in spec["containers"] if c["name"] == command_sandbox.CONTAINER)
+    # The tag the runner's own reference carries, under which stack.py imports it.
+    workload["image"] = f"{ENVIRONMENT_TOOLS_IMAGE}:unset"
+    workload["imagePullPolicy"] = "IfNotPresent"
+    # Where a runner mounts its disk (cluster/cdk8s/agentplane/environment_sandbox.py, `_ENVIRONMENT_DIR`).
+    workload["volumeMounts"].append(
+        {"name": "environment", "mountPath": "/run/agentplane/environment", "readOnly": True}
+    )
+    spec["volumes"].append(
+        {"name": "environment", "image": {"reference": environment_vm.RUNNER_DISK_IMAGE, "pullPolicy": "IfNotPresent"}}
+    )
+    objects.append(box)
 
 
 def _boot_test_guest(objects: list[dict[str, Any]]) -> None:

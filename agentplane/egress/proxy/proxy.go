@@ -57,7 +57,9 @@ type Proxy struct {
 	producer uuid.UUID
 	flights  *flights
 	tunnels  tunnels
-	server   *http.Server
+	// upstreams pools upstream connections by the pin they were dialed for.
+	upstreams *upstreams
+	server    *http.Server
 }
 
 // New returns a Proxy. The interception CA must be able to sign.
@@ -73,7 +75,10 @@ func New(options Options) (*Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Proxy{options: options, leaves: leaves, producer: uuid.New(), flights: newFlights()}
+	p := &Proxy{
+		options: options, leaves: leaves, producer: uuid.New(), flights: newFlights(),
+		upstreams: newUpstreams(options.UpstreamRoots),
+	}
 	p.server = &http.Server{
 		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
 		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
@@ -95,6 +100,7 @@ func (p *Proxy) Drain(ctx context.Context) error {
 	// waited for separately, and then each tunnel is shut down to let what they answered be written.
 	err := errors.Join(p.server.Shutdown(ctx), p.flights.wait(ctx), p.tunnels.shutdown(ctx))
 	p.tunnels.closeAll()
+	p.upstreams.closeIdle()
 	return errors.Join(err, p.server.Close())
 }
 
@@ -295,26 +301,14 @@ func (p *Proxy) relay(w http.ResponseWriter, req *http.Request, admitted policy.
 		req.ContentLength = int64(len(admitted.BodyRewrite.Content))
 		req.TransferEncoding = nil
 	}
-	dialed := net.JoinHostPort(pin.Address.Unmap().String(), strconv.Itoa(pin.Port))
-	transport := &http.Transport{
-		Proxy: nil, DisableKeepAlives: true, DisableCompression: true,
-		ForceAttemptHTTP2: req.Header.Get("Upgrade") == "",
-		TLSClientConfig:   &tls.Config{RootCAs: p.options.UpstreamRoots, MinVersion: tls.VersionTLS12},
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			// The transport lowercases the host it dials; the target was admitted as written.
-			if !strings.EqualFold(address, target) {
-				return nil, errors.New("unadmitted dial target")
-			}
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, network, dialed)
-		},
-	}
-	// A normal http.Transport speaks HTTP/1 to plaintext upstreams. h2c needs prior-knowledge HTTP/2
-	// selected explicitly, with HTTP/1 off.
-	if req.URL.Scheme == "http" && req.ProtoMajor == 2 {
-		transport.Protocols = new(http.Protocols)
-		transport.Protocols.SetUnencryptedHTTP2(true)
-	}
+	transport := p.upstreams.transport(upstreamKey{
+		target: strings.ToLower(target),
+		dialed: net.JoinHostPort(pin.Address.Unmap().String(), strconv.Itoa(pin.Port)),
+		scheme: req.URL.Scheme,
+		h2c:    req.URL.Scheme == "http" && req.ProtoMajor == 2,
+		// An upgrade (WebSocket) is HTTP/1.1 only.
+		attemptHTTP2: req.Header.Get("Upgrade") == "",
+	})
 	authority := req.URL.Host
 	(&httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) { out.Out.Host = "" },

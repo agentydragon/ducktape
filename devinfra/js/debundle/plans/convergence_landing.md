@@ -272,12 +272,12 @@ audit's missing-coverage classes (<../debug/2026_11_09_l4c_discrepancy_audit.md>
 the flip as much as rows 2–7 do. "Evaluations" is the audit's e2e count
 touching the rule.
 
-| Order | Slice                                                                                                                                                       | Evaluations | Needs                 |
-| ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------: | --------------------- |
-|     9 | Anonymous-statement owner coverage (`unsupported_owner_kind`: global publications, heap writes, bare assignments; <abstract_interpreter.md> step 7)         |         110 | none                  |
-|    10 | Whole-owner seal of a completed call initializer (local calls, IIFEs, destructured call results, comma initializers with no execution loss)                 |          75 | none                  |
-|    11 | Non-invoking literal coverage                                                                                                                               |  unmeasured | measure in next audit |
-|    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks |  unmeasured | forks                 |
+| Order | Slice                                                                                                                                                                                                | Evaluations | Needs                 |
+| ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------: | --------------------- |
+|     9 | Anonymous-statement owner coverage (`unsupported_owner_kind`: global publications, heap writes, bare assignments; <abstract_interpreter.md> step 7)                                                  |         110 | none                  |
+|    10 | **Landed** for local calls with arguments, IIFEs and comma initializers: an unsealed kernel attempt rewinds to the flat lane. Left: destructured call results (pattern initialization in the kernel) |          75 | none                  |
+|    11 | Non-invoking literal coverage                                                                                                                                                                        |  unmeasured | measure in next audit |
+|    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks                                          |  unmeasured | forks                 |
 
 **Order from here.** Wave 3 is ordered by what the canonical inputs need, not
 by reference-head case counts: at `fa49ae5ed1` the flip would refuse Tana Web,

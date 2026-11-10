@@ -11,14 +11,13 @@ from cdk8s import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.kyverno import policies, proxy_injection
+from cluster.cdk8s.kyverno import policies
 
 _POLICY_BUILDERS = {
     "default-vpa-requests-only": policies.default_vpa_requests_only_chart,
     "default-disable-service-links": policies.default_disable_service_links_chart,
     "restrict-agent-gateway-routes": policies.restrict_agent_gateway_routes_chart,
     "require-secret-store-conditions": policies.require_secret_store_conditions_chart,
-    "inject-haku-egress-proxy": proxy_injection.inject_haku_egress_proxy_chart,
 }
 
 

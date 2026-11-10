@@ -655,15 +655,16 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
     )
 }
 
-/// Run `debundle spec lint --spec <path> --format json` and parse its report;
-/// panics on a non-zero exit.
-pub fn spec_lint_json(spec_path: &Path) -> Value {
+/// Run `debundle spec lint --spec <path> --format json <extra_args>` and parse
+/// its report; panics on a non-zero exit.
+pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
     let out = command_result(
         Command::new(&bin)
             .args(["spec", "lint", "--spec"])
             .arg(spec_path)
             .args(["--format", "json"])
+            .args(extra_args)
             .output()
             .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
     );
