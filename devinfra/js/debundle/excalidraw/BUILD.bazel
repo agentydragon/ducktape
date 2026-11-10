@@ -181,8 +181,8 @@ rust_test(
     ],
 )
 
-# The public half of plans/convergence_landing.md § Canonical-spec check:
-# a slice diffs this file between its `devel` base and its head.
+# Per-chunk verdicts and emitted-file hashes; an engine change diffs this file
+# between its base and its head.
 run_binary(
     name = "canonical_summary",
     srcs = [":debundle"],
@@ -207,7 +207,7 @@ py_library(
     srcs = ["summarize_tree.py"],
 )
 
-# Browser smoke over the accepted tree (plans/excalidraw_live_smoke.md).
+# Browser smoke over the accepted tree.
 py_test(
     name = "test_smoke",
     srcs = ["test_smoke.py"],
