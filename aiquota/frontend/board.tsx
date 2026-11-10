@@ -11,6 +11,7 @@ import {
   formatAge,
   formatExtraSpend,
   refreshWindowTiming,
+  showResetCredits,
   staleObservationAt,
   formatClock,
   formatDeadline,
@@ -98,7 +99,10 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
     grants.length > 0 ||
     quota.extraSpend !== null ||
     (quota.resetCredits ?? 0) > 0;
-  const quotaExhausted = windows.some(({ window, resetPending: pending }) => window.exhausted && !pending);
+  const showResetSummary = showResetCredits(
+    quota.resetCredits,
+    windows.map(({ window, resetPending: pending }) => ({ exhausted: window.exhausted, resetPending: pending }))
+  );
 
   return (
     <Paper
@@ -131,8 +135,8 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {errorSummary !== null && errorDetail !== null && <ErrorDetails summary="Error details" detail={errorDetail} />}
       {status && <p className="aiquota-status-row">{status}</p>}
       {(balances.length > 0 || grants.length > 0) && <Readings balances={balances} grants={grants} now={now} />}
-      {quota.resetCredits !== null && (quota.resetCredits > 0 || quotaExhausted) && (
-        <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} />
+      {quota.resetCredits !== null && (
+        <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} showSummary={showResetSummary} />
       )}
       {provider.burn && hasReadings && <BurnSummary burn={provider.burn} now={now} />}
       {quota.extraSpend && provider.extra_status !== "none" && (
@@ -369,21 +373,32 @@ function Meter({
   );
 }
 
-function ResetCredits({ count, quota, now }: { count: number; quota: EffectiveQuota; now: Date }): JSX.Element {
+function ResetCredits({
+  count,
+  quota,
+  now,
+  showSummary,
+}: {
+  count: number;
+  quota: EffectiveQuota;
+  now: Date;
+  showSummary: boolean;
+}): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
-      <p className="aiquota-strip-line">
-        Banked resets:{" "}
-        {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now)}
-      </p>
-      {count > 0 && (
-        <details className="aiquota-details">
-          <summary>Reset expiry details</summary>
-          <p>
-            {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
-          </p>
-        </details>
+      {showSummary && (
+        <p className="aiquota-strip-line">
+          Banked resets:{" "}
+          {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now)}
+        </p>
       )}
+      <details className="aiquota-details">
+        <summary>{count > 0 ? "Reset expiry details" : "Details"}</summary>
+        <p>
+          {count === 0 && "Banked resets: "}
+          {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
+        </p>
+      </details>
     </div>
   );
 }

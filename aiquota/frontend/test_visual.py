@@ -49,13 +49,36 @@ async def view(
     ]
     + [
         pytest.param(scene, "dark", _NARROW_VIEWPORT, id=f"{scene}-dark-narrow")
-        for scene in ("hot", "paid_credits", "observed_account_2026_11_04")
+        for scene in ("hot", "paid_credits", "observed_account_2026_11_04", "banked_resets_ordinary")
     ],
 )
 async def test_dashboard(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
     await expect(view.page.get_by_role("status")).to_have_text("Live updates connected")
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize(
+    ("scene", "default_visible", "known"),
+    [
+        ("banked_resets_ordinary", False, True),
+        ("banked_resets_exhausted", True, True),
+        ("banked_resets_pending", False, True),
+        ("banked_resets_unknown", False, False),
+    ],
+)
+@pytest.mark.parametrize(
+    ("color_scheme", "viewport"), [*_DESKTOP_THEME_VIEWPORTS, pytest.param("dark", _NARROW_VIEWPORT, id="dark-narrow")]
+)
+async def test_banked_reset_visibility(view: VisualPage, default_visible: bool, known: bool) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
+    await expect(card.locator(".aiquota-strip-line")).to_have_count(int(default_visible))
+    details = card.locator(".aiquota-strip details")
+    await expect(details).to_have_count(int(known))
+    if known:
+        await details.get_by_text("Details", exact=True).click()
+        await expect(details.get_by_text("Banked resets: 0", exact=True)).to_be_visible()
+        await view.capture("reset-details", target=view.page.locator("#app"))
 
 
 @pytest.mark.parametrize("scene", ["reset_credit_expiry_unavailable"])

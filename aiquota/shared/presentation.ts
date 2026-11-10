@@ -68,6 +68,20 @@ export function formatDeadline(expiry: string | Date, now: Date, details = false
   return date.getTime() - now.getTime() > DEADLINE_DATE_ONLY_AFTER_MS ? label : `${label}, ${clock} ${zone}`;
 }
 
+// Keep the default visibility rule in sync with render/view_model.py.
+export function showResetCredits(
+  count: number | null,
+  windows: { exhausted: boolean; resetPending: boolean }[],
+  details = false
+): boolean {
+  return (
+    count !== null &&
+    (count > 0 ||
+      details ||
+      (windows.some((window) => window.exhausted) && !windows.some((window) => window.resetPending)))
+  );
+}
+
 export function formatResetCreditSummary(
   count: number,
   expiries: (string | Date)[],

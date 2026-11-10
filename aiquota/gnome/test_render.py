@@ -31,6 +31,7 @@ import re
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -180,6 +181,41 @@ def test_render(session: GnomeSession, fixture_name: str, capture_menu: GnomeMen
         capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
     finally:
         session.close_menu()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "default_visible", "known"),
+    [("ordinary", False, True), ("exhausted", True, True), ("pending", False, True), ("unknown", False, False)],
+)
+def test_banked_reset_visibility(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, scenario: str, default_visible: bool, known: bool
+) -> None:
+    _reload_fixture(session, f"banked_resets_{scenario}")
+    popup = _ProviderPopup(session, "codex")
+    assert (popup.reset == "Banked resets: 0") == default_visible
+    assert ("Banked resets: 0" in popup.details) == known
+    if known:
+        session.open_menu()
+        try:
+            session.call("SetDetailsOpen", "codex", "true")
+            session.wait_for_paint()
+            capture_menu.capture(
+                session.open_menu(), label=f"{scenario} zero reset details", checkpoint="reset-details"
+            )
+        finally:
+            session.close_menu()
+
+
+def test_zero_resets_move_into_details_when_a_different_window_passes_reset(session: GnomeSession) -> None:
+    _reload_fixture(session, "banked_resets_exhausted")
+    popup = _ProviderPopup(session, "codex")
+    assert popup.reset == "Banked resets: 0"
+    session.call("SetPresentationTime", str(datetime.fromisoformat("2026-01-15T12:01:00Z").timestamp() * 1000))
+    assert not popup.reset
+    assert "Banked resets: 0" in popup.details
+    session.call("SetPresentationTime", str(datetime.fromisoformat("2026-01-15T12:11:00Z").timestamp() * 1000))
+    assert "Stale" in popup.status
+    assert "Banked resets: 0" in popup.details
 
 
 def test_claude_prepaid_balance(session: GnomeSession) -> None:

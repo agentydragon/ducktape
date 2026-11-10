@@ -11,6 +11,10 @@ from aiquota.render.view_model import to_view
 
 FIXTURE_NAMES = (
     "empty",
+    "banked_resets_ordinary",
+    "banked_resets_exhausted",
+    "banked_resets_pending",
+    "banked_resets_unknown",
     "tints",
     "binding_summary",
     "zai_peak",
