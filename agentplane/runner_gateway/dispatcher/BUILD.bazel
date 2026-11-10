@@ -167,6 +167,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//util/workqueue",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
