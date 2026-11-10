@@ -3162,7 +3162,9 @@ methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given
 an Identity runner's Sessions to the Identity incarnation pinned to its Sandbox and retains their
 execution Identity, and its read API serves an Identity SVID that Identity incarnation's Sessions. Notification's inboxes
 are also owned by the Session's Dispatcher-recorded Identity, which reads and manages them; creating
-subscriptions and messaging still need a ServiceAccount. EnvironmentService and wake-on-send still
+subscriptions and messaging still need a ServiceAccount. A Sandbox naming an Identity without a
+managed ServiceAccount runs Identity-run Sessions, which Dispatcher places and delivers and Notification's
+worker delivers to by the Identity alone. EnvironmentService and wake-on-send still
 need a ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
@@ -3219,6 +3221,9 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   launch sets binding an Identity) become unconditional here; the standing callers' binding subjects
   and the Kubernetes-rule-to-role-set move stay behind it until `IDENTITY_CUTOVER` flips it.
 - The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
+
+Dispatcher and Notification already serve a Sandbox that names an Identity and has no managed
+ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (#15360), a precondition for deleting the per-Sandbox ServiceAccount here.
 
 Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
 a Session whose recorded execution identity differs), so the switch needs a step that either

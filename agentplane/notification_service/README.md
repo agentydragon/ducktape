@@ -34,6 +34,11 @@ SVID whose WorkloadCredential names an Identity (resolved in `namespace`, which 
 service watches) reads, acknowledges and retires the inboxes and manages the subscriptions of its Sandbox that
 are established for its Identity incarnation; the Sandbox is the credential's controller owner. Creating a
 subscription and sending or reading messages still need a ServiceAccount caller.
+A Session the Dispatcher recorded as executing as an Identity alone (an Identity-run Sandbox, which has no
+managed ServiceAccount) has an inbox owned by that Identity incarnation and no ServiceAccount; its
+`owner_namespace` and `owner_name` still name the destination Sandbox, so inbox keys and the per-account inbox
+quota stay per Sandbox. Workers deliver to it while the Session's recorded Identity is the inbox's, and treat a
+different one as an owner mismatch.
 
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
 subscriptions active. Workers continue reconciling subscription sources and store unread

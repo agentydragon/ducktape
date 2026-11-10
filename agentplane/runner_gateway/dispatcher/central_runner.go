@@ -31,6 +31,12 @@ type SessionExecution struct {
 	Identity  *identitypb.Identity
 }
 
+// recordsExecution reports whether the Session recorded what it executes as: a ServiceAccount, an
+// Identity, or both. A legacy row recorded neither, and delivery checks nothing for it.
+func (s *Session) recordsExecution() bool {
+	return s.ExecutionPrincipal != nil || s.ExecutionIdentity != nil
+}
+
 func (s *Session) execution() SessionExecution {
 	result := SessionExecution{}
 	if s.ExecutionPrincipal != nil {
