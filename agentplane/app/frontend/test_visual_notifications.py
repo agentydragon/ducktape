@@ -5,7 +5,7 @@ import pytest_bazel
 from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Flag
-from agentplane.app.frontend.testing.visual_assertions import _open_settings
+from agentplane.app.frontend.testing.visual_assertions import _expect_notice_badges, _open_settings
 from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
 from util.testing.frontend_visual.capture import VisualPage
 
@@ -126,7 +126,16 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await page.keyboard.press("Escape")
     await expect(page.get_by_text("Loading notification status…")).to_have_count(0)
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
+    # The drawer's three watches open afresh, and any of them can land before the others.
+    await expect(page.get_by_text("Notice covered through #7 · 2 awaiting notice below")).to_be_visible()
+    await expect(
+        page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
+    ).to_be_visible()
+    await expect(page.get_by_text("Disconnected; showing last snapshot")).to_have_count(0)
+    # The sidebar's and topbar's inbox watches were left retrying through the outage. Each comes back
+    # once its unanswered request times out and its jittered backoff runs, so wait for every badge.
+    await _expect_notice_badges(page, stale=False)
+    await expect(page.locator(".agentplane-thread-list-row-notices")).to_have_count(7)
     await view.capture(name="notification_status_reconnected")
 
 
