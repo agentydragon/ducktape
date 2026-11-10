@@ -732,6 +732,17 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
         .flat_map(|(key, body)| body.bindings.keys().map(move |binding| (binding, key)))
         .collect();
     let mut captured = FxHashSet::default();
+    // A nested callable's write must reach its owner's frame: the binding
+    // gets a cell, which the writer's ordered lane requires and stores to.
+    for (key, callable) in &index.callables {
+        for binding in &callable.rebinds {
+            if let Some(owner) = owners.get(binding)
+                && owner != key
+            {
+                captured.insert(binding.clone());
+            }
+        }
+    }
     for (key, reads) in &index.prototype_callable_reads {
         let Some(span) = index.callable_spans.get(key) else {
             continue;
@@ -10166,17 +10177,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Values flowing where a later read sees only unknown. Unknown reaches
+    /// only published callbacks, so a value may leave a tracked set only once
+    /// what it can reach is published.
+    fn escape_untracked_values(&mut self, values: &Values) {
+        self.publish_values(
+            values,
+            ClassMembersPublicationWriter::UntrackedLocalStore,
+            None,
+        );
+    }
+
     /// A loop head binds the iterated value's elements, which no assignment
     /// records; publish what they can reach.
     #[inline(never)]
     fn publish_iterated_values(&mut self, callable: &Callable, env: &Context) {
         for iterated in &callable.iterated_values {
             let values = self.evaluate(iterated, env, env);
-            self.publish_values(
-                &values,
-                ClassMembersPublicationWriter::UntrackedLocalStore,
-                None,
-            );
+            self.escape_untracked_values(&values);
         }
     }
 
@@ -10612,11 +10630,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             if self.inputs.untracked_locals.contains(id) {
-                self.publish_values(
-                    &values,
-                    ClassMembersPublicationWriter::UntrackedLocalStore,
-                    None,
-                );
+                self.escape_untracked_values(&values);
             }
             env.entry(id.clone()).or_default().extend(values);
         }

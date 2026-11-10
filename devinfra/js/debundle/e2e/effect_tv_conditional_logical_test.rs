@@ -243,11 +243,12 @@ fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
     );
 }
 
-/// Opposing control: where the source-summary lane cannot follow a value
-/// into a local (a closure's write, a value carried around a loop, a
-/// closure reading a later write, a loop head's elements), the read is
-/// unknown and the stored value is published, so a test (`?:`) keeps both
-/// arms and a call through the local (`flag()()`) reaches `second`.
+/// Opposing control: a closure's write to its owner's local reaches the
+/// owner's frame through a shared cell. Where the source-summary lane cannot
+/// follow a value into a local (a closure's write, a value carried around a
+/// loop, a closure reading a later write, a loop head's elements), the read
+/// is unknown and the stored value is published. Either way a test (`?:`)
+/// keeps both arms and a call through the local (`flag()()`) reaches `second`.
 #[test]
 fn a_summarized_local_holds_every_value_any_read_can_see() {
     let test = "function run() { return flag() ? first() : second(); }";
@@ -283,6 +284,10 @@ fn a_summarized_local_holds_every_value_any_read_can_see() {
         ),
         (
             "if (first()) {} for (const h of [second]) { return h; } return noop;",
+            call,
+        ),
+        (
+            "let f = noop; const set = () => { f = second; }; set(); return f;",
             call,
         ),
     ] {
