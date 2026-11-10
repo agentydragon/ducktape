@@ -35,6 +35,22 @@ in
   boot.kernelParams = [ "console=ttyS0,115200" ];
   services.journald.console = "/dev/ttyS0";
 
+  # Expose only root filesystem capacity/usage, without default collectors,
+  # other mountpoints, or exporter self-metrics.
+  # The ServiceMonitor and Cilium policy restrict scrapes to monitoring/alloy-node.
+  services.prometheus.exporters.node = {
+    enable = true;
+    enabledCollectors = [ "filesystem" ];
+    extraFlags = [
+      "--collector.disable-defaults"
+      "--collector.filesystem.mount-points-include=^/$"
+      "--web.disable-exporter-metrics"
+    ];
+  };
+  # The VMI guest reports its KubeVirt virtio pod interface as enp1s0. Restrict the
+  # exporter to that ingress interface; the passed-through card WiFi stays closed.
+  networking.firewall.interfaces.enp1s0.allowedTCPPorts = [ 9100 ];
+
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [ 18080 ];
   environment.systemPackages = with pkgs; [

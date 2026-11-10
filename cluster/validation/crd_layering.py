@@ -24,6 +24,10 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-environment": set(),
     "cluster-ca": set(),
     "crossplane": {"Provider.pkg.crossplane.io", "DeploymentRuntimeConfig.pkg.crossplane.io"},
+    "crossplane-provider-buildbuddy": {
+        "Secret.buildbuddy.m.allegedly.works",
+        "ProviderConfig.buildbuddy.m.allegedly.works",
+    },
     "crossplane-provider-litellm": {
         "Key.litellm.m.crossplane.io",
         "Organization.litellm.m.crossplane.io",
@@ -31,7 +35,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ProviderConfig.litellm.m.crossplane.io",
     },
     "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
-    "keda": {"ScaledJob", "TriggerAuthentication"},
+    "keda": {"ScaledJob", "ScaledObject", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),
     "tofu-controller": {"Terraform"},

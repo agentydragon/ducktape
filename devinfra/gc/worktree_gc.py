@@ -23,7 +23,7 @@ import enum
 import logging
 import os
 import subprocess
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -117,12 +117,6 @@ def describe_reason(item: Classification) -> str:
             return f"commits not in {main} and no merged PR"
         case _:
             raise ValueError(f"{item=} lacks the data its reason cites")
-
-
-def _dirty(status: Sequence[str]) -> bool:
-    # status() reports tracked changes and untracked files (ignored excluded by default);
-    # any entry means the tree is not clean.
-    return bool(status)
 
 
 def _status(path: Path) -> list[str]:
@@ -251,7 +245,7 @@ def _classify_worktree(
     if live_pids:
         return keep(RetainedWorktreeReason.LIVE_PROCESS, pid=live_pids[0])
     pr = pr_states.get(worktree.branch) if worktree.branch else None
-    if _dirty(status):
+    if status:
         # Uncommitted work is never auto-pruned, but surface the branch's PR so a dirty
         # tree whose PR already merged reads as stale scratch, not live work.
         return keep(RetainedWorktreeReason.UNCOMMITTED_CHANGES, pr=pr)

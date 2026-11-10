@@ -139,6 +139,13 @@ enum NativeCallIdentity {
     FailedGuard(&'static [IntrinsicSlot]),
 }
 
+/// What iterating a value can run; see `Executor::iteration_proof`.
+enum IterationProof {
+    Native,
+    PrototypeLookup,
+    Unknown,
+}
+
 /// An ordinary call's local target, for `Executor::execute_local_call_target`.
 struct LocalCallTarget<'a> {
     key: u32,
@@ -10463,6 +10470,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 values.extend(self.evaluate(default, env, env));
             }
             self.run_iterator_protocol(&values, callable.owner, outcome);
+            if parameter.pattern_iterates_part {
+                self.run_iterator_protocol(&unknown(), callable.owner, outcome);
+            }
+            for default in &parameter.iterated_defaults {
+                let values = self.evaluate(default, env, env);
+                self.run_iterator_protocol(&values, callable.owner, outcome);
+            }
         }
     }
 
@@ -10533,10 +10547,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Iterating `values` calls their `[Symbol.iterator]` and the iterator's
-    /// `next`. Unless every value is a proven native iterable, those are
-    /// unknown callees: the iterated value is published and the operation
-    /// may run any published callback (a generator body, a hand-written
-    /// `next`), charged to the operation's owner.
+    /// `next`. Over anything but a proven native iterable those are unknown
+    /// callees: the iterated value is published and the operation may run
+    /// any published callback (a generator body, a hand-written `next`),
+    /// charged to the operation's owner. A primitive's method comes from its
+    /// prototype, where only a published function can have been installed:
+    /// the operation may run the published callbacks, and nothing else.
     #[inline(never)]
     fn run_iterator_protocol(
         &mut self,
@@ -10544,26 +10560,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        if self.iterates_natively(values) {
-            return;
+        match self.iteration_proof(values) {
+            IterationProof::Native => {}
+            IterationProof::PrototypeLookup => {
+                self.invoke_possible_callbacks_at(&[], false, None, outcome);
+            }
+            IterationProof::Unknown => {
+                outcome.lose_call_target(owner, DUMMY_SP);
+                outcome.unknown_call = true;
+                self.invoke_possible_callbacks_at(
+                    std::slice::from_ref(values),
+                    false,
+                    None,
+                    outcome,
+                );
+            }
         }
-        outcome.lose_call_target(owner, DUMMY_SP);
-        outcome.unknown_call = true;
-        self.invoke_possible_callbacks_at(std::slice::from_ref(values), false, None, outcome);
     }
 
-    /// Every value iterates without user code: a primitive (a string yields
-    /// its code points; any other primitive throws), a throwing read, or an
-    /// array allocation no opaque code reached, under intact Array
-    /// intrinsics.
-    fn iterates_natively(&mut self, values: &Values) -> bool {
+    /// Which user code iterating `values` can run. `Native`: none, for
+    /// `null`/`undefined` (which throw), a throwing read, or an array
+    /// allocation no opaque code reached under intact Array intrinsics.
+    /// `PrototypeLookup`: what another primitive's prototype holds.
+    fn iteration_proof(&mut self, values: &Values) -> IterationProof {
         if values.is_empty() {
-            return false;
+            return IterationProof::Unknown;
         }
         let mut arrays = false;
+        let mut primitives = false;
         for value in values {
             match value {
-                AbstractValue::Value(Value::Prim(_) | Value::Unavailable) => {}
+                AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(PrimKinds::UNDEFINED.union(PrimKinds::NULL)) => {}
+                AbstractValue::Value(Value::Prim(_)) => primitives = true,
+                AbstractValue::Value(Value::Unavailable) => {}
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if (*kind == Kind::Array
                         || (*kind == Kind::Object
@@ -10572,10 +10602,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     arrays = true;
                 }
-                _ => return false,
+                _ => return IterationProof::Unknown,
             }
         }
-        !arrays || self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+        if arrays && !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS) {
+            return IterationProof::Unknown;
+        }
+        if primitives {
+            IterationProof::PrototypeLookup
+        } else {
+            IterationProof::Native
+        }
     }
 
     /// A top-level owner's values whose parts reach a binding only as

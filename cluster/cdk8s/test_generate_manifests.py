@@ -73,6 +73,27 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    # /scale cannot read the pool if replicas is absent, even though its controller defaults to one.
+    assert pool["spec"]["replicas"] == 1
+    flux = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "kustomize.toolkit.fluxcd.io/v1"
+        and doc.get("kind") == "Kustomization"
+        and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    assert flux["spec"]["ignore"] == [
+        {
+            "paths": ["/spec/replicas"],
+            "target": {
+                "group": "pool.kubevirt.io",
+                "version": "v1beta1",
+                "kind": "VirtualMachinePool",
+                "name": "buildbuddy-kvm-worker",
+                "namespace": "buildbuddy-executor",
+            },
+        }
+    ]
     template = pool["spec"]["virtualMachineTemplate"]
     labels = pool["spec"]["selector"]["matchLabels"]
     # A template change must not replace every worker at once, which would leave the pool without an executor.
@@ -95,7 +116,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert {"name": "server-type", "value": "buildbuddy-executor"} in probe["httpHeaders"]
     (work,) = template["spec"]["dataVolumeTemplates"]
     storage = work["spec"]["storage"]
-    assert storage["storageClassName"] == "piraeus-ssd-local"
+    assert storage["storageClassName"] == "piraeus-ssd-local-delete"
     assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
@@ -141,6 +162,61 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
             {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
         ]
         assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
+
+
+def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    vm = next(doc for doc in documents if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"] == "cpap-gateway")
+    vm_template = vm["spec"]["template"]
+    interface = vm_template["spec"]["domain"]["devices"]["interfaces"][0]
+    assert {port["name"]: port["port"] for port in interface["ports"]} == {"http": 18080, "node-metrics": 9100}
+
+    service = next(
+        doc for doc in documents if doc["kind"] == "Service" and doc["metadata"]["name"] == "cpap-gateway-metrics"
+    )
+    monitor = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "cpap-gateway-metrics"
+    )
+    assert service["spec"]["selector"].items() <= vm_template["metadata"]["labels"].items()
+    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
+    assert monitor["spec"]["endpoints"] == [{"port": "node-metrics", "path": "/metrics"}]
+
+    policy = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "guest-metrics-ingress"
+    )["spec"]
+    assert policy["endpointSelector"]["matchLabels"].items() <= vm_template["metadata"]["labels"].items()
+    assert policy["ingress"] == [
+        {
+            "fromEndpoints": [
+                {
+                    "matchLabels": {
+                        "app.kubernetes.io/component": "sync",
+                        "app.kubernetes.io/name": "cpap-sync",
+                        "k8s:io.kubernetes.pod.namespace": "cpap-sync",
+                    }
+                }
+            ],
+            "toPorts": [{"ports": [{"port": "18080", "protocol": "TCP"}]}],
+        },
+        {
+            "fromEndpoints": [
+                {
+                    "matchLabels": {
+                        "app.kubernetes.io/name": "alloy-node",
+                        "k8s:io.kubernetes.pod.namespace": "monitoring",
+                    }
+                }
+            ],
+            "toPorts": [{"ports": [{"port": "9100", "protocol": "TCP"}]}],
+        },
+    ]
+    assert "egress" not in policy
 
 
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
@@ -345,20 +421,28 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
 
     classes = {storage_class["name"]: storage_class for storage_class in values["storageClasses"]}
     assert len(classes) == len(values["storageClasses"])
-    # Consumers name these four StorageClasses directly, so their names and pool types
-    # are a deployment contract. Every class must resolve to a pool on a prepared node.
+    # StorageClass names and pool types are a deployment contract. Every class must
+    # resolve to a pool on a prepared node.
     expected_class_pools = {
         "piraeus-ssd-local": "ssd",
+        "piraeus-ssd-local-delete": "ssd",
         "piraeus-hdd-local": "hdd",
         "piraeus-ssd-2-autodiskful": "ssd",
         "piraeus-hdd-2": "hdd",
     }
-    assert set(expected_class_pools) <= set(classes)
+    expected_reclaim_policies = {
+        "piraeus-ssd-local": "Retain",
+        "piraeus-ssd-local-delete": "Delete",
+        "piraeus-hdd-local": "Retain",
+        "piraeus-ssd-2-autodiskful": "Retain",
+        "piraeus-hdd-2": "Retain",
+    }
+    assert set(classes) == set(expected_class_pools)
     available_pools = {name for pools in actual_devices.values() for name in pools}
-    local_classes = {"piraeus-ssd-local", "piraeus-hdd-local"}
+    local_classes = {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"}
     replicated_classes = {"piraeus-ssd-2-autodiskful", "piraeus-hdd-2"}
     for name, storage_class in classes.items():
-        assert storage_class["reclaimPolicy"] == "Retain"
+        assert storage_class["reclaimPolicy"] == expected_reclaim_policies[name]
         assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
         assert storage_class["allowVolumeExpansion"] is True
         parameters = storage_class["parameters"]
@@ -398,6 +482,25 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         {"name": "cert-manager", "namespace": "ducktape-flux"},
         {"name": "monitoring-crds", "namespace": "ducktape-flux"},
     ]
+
+
+def test_descheduler_protects_piraeus_node_local_storage_classes(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    descheduler = next(
+        doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "descheduler"
+    )
+    [default_profile] = descheduler["spec"]["values"]["deschedulerPolicy"]["profiles"]
+    default_evictor = next(config for config in default_profile["pluginConfig"] if config["name"] == "DefaultEvictor")
+    protected_classes = {
+        storage_class["name"]
+        for storage_class in default_evictor["args"]["podProtections"]["config"]["PodsWithPVC"][
+            "protectedStorageClasses"
+        ]
+    }
+    # nodeFit does not account for a strict-local PV, so eviction cannot move these Pods.
+    assert {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"} <= protected_classes
 
 
 def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
@@ -661,7 +764,7 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
+def test_litellm_buildbuddy_terraform_runner_no_longer_receives_admin_key(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -673,18 +776,10 @@ def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
     }
     assert set(terraform_resources) == {"litellm-buildbuddy-sync"}
 
-    expected_env = {
-        "name": "BUILDBUDDY_API_KEY",
-        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
-    }
-    expected_var = {
-        "name": "buildbuddy_api_key",
-        "valueFrom": {"secretKeyRef": {"name": "buildbuddy-org-admin-api-key", "key": "api-key"}},
-    }
     for resource in terraform_resources.values():
         env = resource["spec"]["runnerPodTemplate"]["spec"]["env"]
-        assert expected_env in env
-        assert expected_var in resource["spec"]["vars"]
+        assert not any(variable["name"] == "BUILDBUDDY_API_KEY" for variable in env)
+        assert not resource["spec"].get("vars")
         assert not any(variable["name"].startswith("TF_VAR_") for variable in env)
 
 
@@ -979,3 +1074,26 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_buildbuddy_secret_is_managed_by_crossplane_with_terraform_suspended(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    secret = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "buildbuddy.m.allegedly.works/v1alpha1" and doc.get("kind") == "Secret"
+    )
+    terraform = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
+        and doc.get("kind") == "Terraform"
+        and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
+    )
+    assert terraform["metadata"]["namespace"] == "flux-system"
+    assert terraform["spec"]["suspend"] is True
+    assert "approvePlan" not in terraform["spec"]
+    assert "crossplane.io/paused" not in secret["metadata"]["annotations"]
+    assert secret["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]

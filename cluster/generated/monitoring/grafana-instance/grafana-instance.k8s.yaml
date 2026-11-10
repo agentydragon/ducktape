@@ -328,6 +328,23 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: cpap-gateway-disk
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: cpap-gateway-disk.json
+    name: cpap-gateway-disk-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  folder: Cluster & Platform
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: flux-cluster
   namespace: monitoring
 spec:

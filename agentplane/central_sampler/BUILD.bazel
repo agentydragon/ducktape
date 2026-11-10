@@ -36,11 +36,6 @@ py_grpc_service_library(
     py_proto = ":sampler_pb2",
 )
 
-alias(
-    name = "main_bin",
-    actual = "//agentplane/central_sampler/cmd:main_bin",
-)
-
 py_library(
     name = "testing",
     testonly = True,

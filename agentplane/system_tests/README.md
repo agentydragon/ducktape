@@ -35,6 +35,7 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
+| `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
 | `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
@@ -103,6 +104,12 @@ The k3s case checks the deployed Dispatcher, Gateway, LLM ingress and authentica
 together. Its setup and requested shell command must reach the same executor workspace
 ([`central_sampler.py`](scenarios/central_sampler.py)); the [service guide](../central_sampler/README.md)
 covers the image and runtime contract.
+
+`test_sampler_roll` owns a separate stack. It abruptly replaces the sampler Pod during a confirmed
+turn with a live JavaScript cell and running executor process, then checks abandonment ordering,
+retained history, one turn settlement, and a subsequent input projected by authenticated History.
+The Gateway Pod and executor incarnation stay fixed. This checks successful lost-host reconciliation;
+it does not inject the successor startup failure before the driver loads its durable active command.
 
 ## Dispatcher queue and replicas
 

@@ -1905,12 +1905,13 @@ func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
 
 func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 	for _, test := range []struct {
-		name               string
-		failure            error
-		wantActive         samplerpb.CommandOutcome
-		wantQueued         samplerpb.CommandOutcome
-		wantQueueError     bool
-		wantReasonContains string
+		name                 string
+		failure              error
+		failWithNilCommandID bool
+		wantActive           samplerpb.CommandOutcome
+		wantQueued           samplerpb.CommandOutcome
+		wantQueueError       bool
+		wantReasonContains   string
 	}{
 		{
 			name:       "known failure",
@@ -1931,6 +1932,15 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			wantQueued:         samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
 			wantQueueError:     true,
 			wantReasonContains: "unexpected EOF while reading provider stream",
+		},
+		{
+			name:                 "successor fails before loading durable active command",
+			failure:              errors.New("code host reconciliation failed"),
+			failWithNilCommandID: true,
+			wantActive:           samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN,
+			wantQueued:           samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
+			wantQueueError:       true,
+			wantReasonContains:   "code host reconciliation failed",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -1953,7 +1963,11 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			if err != nil || active == nil || active.ID != "active-input" {
 				t.Fatalf("active command=%v err=%v", active, err)
 			}
-			if err := store.FailExecution(t.Context(), owner, session.ID, &active.ID, test.failure); err != nil {
+			var localCommandID *string
+			if !test.failWithNilCommandID {
+				localCommandID = &active.ID
+			}
+			if err := store.FailExecution(t.Context(), owner, session.ID, localCommandID, test.failure); err != nil {
 				t.Fatal(err)
 			}
 

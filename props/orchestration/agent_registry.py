@@ -228,13 +228,6 @@ class AgentRegistry:
             async with sem:
                 yield
 
-    async def _pull_image(self, oci_ref: str) -> str:
-        """Return the runtime image ID for a fully qualified authority/repository@digest.
-
-        `oci_ref` is produced by `build_oci_reference()`.
-        """
-        return await self._executor.ensure_image(oci_ref)
-
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve a tag via the registry proxy using DB credentials for HTTP basic auth.
 
@@ -292,7 +285,7 @@ class AgentRegistry:
         annotations: dict[str, str] | None = None,
     ) -> ContainerHandle:
         """Ensure image, create DB role, create and start an agent container."""
-        image_id = await self._pull_image(image)
+        image_id = await self._executor.ensure_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
 
         creds = await ensure_agent_role(self._db_config, agent_run_id)

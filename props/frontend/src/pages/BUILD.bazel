@@ -21,18 +21,6 @@ filegroup(
 )
 
 ts_library(
-    name = "RunDetailPage",
-    srcs = ["RunDetailPage.tsx"],
-    tsconfig = "//props/frontend:tsconfig",
-    deps = [
-        "//props/frontend:node_modules/@mantine/core",
-        "//props/frontend:node_modules/@types/react",
-        "//props/frontend:node_modules/react",
-        "//props/frontend/src/components:RunDetail",
-    ],
-)
-
-ts_library(
     name = "RunsPage",
     srcs = ["RunsPage.tsx"],
     tsconfig = "//props/frontend:tsconfig",

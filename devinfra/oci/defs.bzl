@@ -18,25 +18,21 @@ def _oci_layout_rloc_impl(ctx):
     ).merge(ctx.attr.image[DefaultInfo].default_runfiles)
     return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
 
-_oci_layout_rloc = rule(
+oci_layout_rloc = rule(
     implementation = _oci_layout_rloc_impl,
     attrs = {
-        "image": attr.label(mandatory = True, allow_single_file = True),
+        "image": attr.label(
+            doc = "OCI image layout target.",
+            mandatory = True,
+            allow_single_file = True,
+        ),
     },
-)
-
-def oci_layout_rloc(name, image, visibility = None, testonly = False):
-    """OCI image .rloc target: a single-line file naming the OCI layout directory.
+    doc = """OCI image .rloc target: a single-line file naming the OCI layout directory.
 
     Prefer `oci_layout_py` for Python consumers. Use this for language-neutral
     handoffs that need a file containing the layout's runfiles path.
-    """
-    _oci_layout_rloc(
-        name = name,
-        image = image,
-        visibility = visibility,
-        testonly = testonly,
-    )
+    """,
+)
 
 _LAYOUT_MODULE = """\"\"\"Auto-generated OCI layout runfiles path (do not edit).\"\"\"
 

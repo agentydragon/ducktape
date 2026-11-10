@@ -834,11 +834,13 @@ data:
     [Service]
     Type=simple
     ExecStart=/usr/local/libexec/buildbuddy-kvm-worker/run-executor
-    ExecStop=/usr/bin/docker stop --time 30 buildbuddy-kvm-worker-executor
+    # Leave 2m beyond the executor shutdown window for Docker to exit cleanly.
+    ExecStop=/usr/bin/docker stop --time 86595 buildbuddy-kvm-worker-executor
     ExecStopPost=/usr/bin/rm -f /run/buildbuddy-executor/environment
     Restart=always
     RestartSec=10
-    TimeoutStopSec=45
+    # KubeVirt allows 4m45s beyond this timeout for the remaining guest shutdown.
+    TimeoutStopSec=24h 5min 15s
 
     [Install]
     WantedBy=multi-user.target
@@ -846,6 +848,9 @@ data:
     # Test actions run nested Kubernetes/KubeVirt with privileged pods. The executor
     # lives inside a VM so those privileges are confined to the guest.
     docker_cap_add: ALL
+    # Bounds drain for the pinned 24h task limit, 1m action termination grace, and 15s cleanup.
+    # BuildBuddy applies action timeouts after input download, so preparation stalls share this bound.
+    max_shutdown_duration: 24h1m15s
     executor:
       app_target: grpcs://remote.buildbuddy.io:443
       api_key: "${BUILDBUDDY_API_KEY}"
@@ -853,6 +858,9 @@ data:
       # 7 GiB of the VM's 8 GiB; sizing evidence is beside the VM memory in cluster/cdk8s/buildbuddy_kvm_worker.py.
       memory_bytes: 7516192768
       max_concurrent_tasks: 1
+      max_task_timeout: 24h
+      max_termination_grace_period: 1m
+      shutdown_cleanup_duration: 15s
       root_directory: /buildbuddy/remotebuilds
       local_cache_directory: /buildbuddy/filecache
       local_cache_size_bytes: 40000000000
@@ -981,7 +989,7 @@ metadata:
   namespace: buildbuddy-executor
 spec:
   maxUnavailable: 1
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/part-of: buildbuddy-kvm-worker
@@ -1002,7 +1010,7 @@ spec:
               resources:
                 requests:
                   storage: 80Gi
-              storageClassName: piraeus-ssd-local
+              storageClassName: piraeus-ssd-local-delete
               volumeMode: Filesystem
       runStrategy: Always
       template:
@@ -1095,6 +1103,7 @@ spec:
               port: 8080
             periodSeconds: 10
             successThreshold: 1
+          terminationGracePeriodSeconds: 87000
           tolerations:
             - effect: NoSchedule
               key: node-role.kubernetes.io/control-plane
@@ -1309,3 +1318,19 @@ spec:
           for: 2m
           labels:
             severity: critical
+        - alert: BuildBuddyKvmAutoscalerMetricsMissing
+          annotations:
+            description: KEDA holds the current VM count until fresh pool metrics are available.
+            summary: KVM worker autoscaler lacks pool metrics
+          expr: absent(((sum(clamp_max((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"})))), 1)) + (sum((buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))) or 0 * sum((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))))) and on () ((count((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))) or vector(0)) == max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"} and (time() - timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}) < 180)))) or (max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"} and (time() - timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}) < 180))))
+          for: 5m
+          labels:
+            severity: warning
+        - alert: BuildBuddyKvmWorkerNotReporting
+          annotations:
+            description: The autoscaler holds its current size until every requested worker reports metrics.
+            summary: KVM worker has not registered or is not scrapable
+          expr: (count((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))) or vector(0)) < max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"} and (time() - timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}) < 180))
+          for: 15m
+          labels:
+            severity: warning

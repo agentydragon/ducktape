@@ -1,14 +1,14 @@
-"""Keep the BuildBuddy live-test credential synced from Crossplane's LiteLLM key."""
+"""Retire Terraform's ownership of the BuildBuddy live-test secret."""
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import App, Chart, JsonPatch
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/buildbuddy-sync"
 TF_MODULE = "litellm-buildbuddy-sync"
@@ -17,15 +17,17 @@ NAME = "litellm-buildbuddy-sync"
 
 def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
-    buildbuddy_api_key = SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key")
-    terraform.gitops_terraform(
+    writer = terraform.gitops_terraform(
         chart,
         "terraform",
         module=module,
         variables=None,
-        additional_vars=[terraform.secret_var("buildbuddy_api_key", buildbuddy_api_key)],
-        env=[terraform.secret_env("BUILDBUDDY_API_KEY", buildbuddy_api_key)],
+        auto_apply=False,
+        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
     )
+    # The writer was forgotten without destroying the remote secret; keep the
+    # remaining Terraform machinery suspended until its later removal.
+    writer.add_json_patch(JsonPatch.add("/spec/suspend", True))
     return chart
 
 
@@ -38,5 +40,5 @@ def resources(
         directory,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller, crossplane_keys),
-        description="Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.",
+        description="Keep the retired BuildBuddy Terraform sync suspended until its later removal.",
     )

@@ -663,8 +663,9 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:thread_list",
-        "//agentplane/app/frontend/threads:thread_view_recorder_tools",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
         "//util/frontend:resize_handle",
+        "//util/frontend/transcript:history_recorder_tools",
     ],
 )
 

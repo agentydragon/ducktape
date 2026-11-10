@@ -2851,6 +2851,13 @@ func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string
 		if err != nil {
 			return err
 		}
+		if commandID == nil {
+			// execute can fail before NextCommand returns the durable active command (for
+			// example, while reconciling a lost code host during successor startup).
+			// Settle that command from Session state so an already-confirmed input is not
+			// failed again by blockQueue.
+			commandID = session.ActiveCommand
+		}
 		return s.settleFailure(ctx, tx, owner, conversation, session, commandID, failure)
 	})
 }

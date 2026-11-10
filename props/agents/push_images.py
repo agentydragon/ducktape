@@ -31,17 +31,13 @@ IMAGES: list[tuple[str, str, str | None]] = [
 ]
 
 
-def _git_sha() -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     registry = get_required_env("PROPS_REGISTRY_URL")
     username = get_required_env("PROPS_REGISTRY_USERNAME")
     password = get_required_env("PROPS_REGISTRY_PASSWORD")
-    sha = _git_sha()
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
     crane = bazel_crane(registry=registry, username=username, password=password)
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import posixpath
 from collections.abc import Mapping, Sequence
 
-from cdk8s import ApiObjectMetadata, JsonPatch
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from pydantic import BaseModel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -122,7 +122,7 @@ def tofu_state_terraform(
     it (cluster/docs/lessons_learned/2026_04_25_tofu_controller_refresh_before_apply.md). The other
     keywords are `TerraformV1Alpha2Spec` fields under their own names.
     """
-    resource = Terraform(
+    return Terraform(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE, annotations=annotations),
@@ -151,10 +151,6 @@ def tofu_state_terraform(
             )
         ),
     )
-    # CLEANUP(added 2026-11-10): Resume reconciliation after the matched upstream
-    # controller and runner are active and the old runner pods have drained.
-    resource.add_json_patch(JsonPatch.add("/spec/suspend", True))
-    return resource
 
 
 def gitops_terraform(

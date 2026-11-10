@@ -892,6 +892,77 @@ fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
     }
 }
 
+/// Opposing control: more iterator-protocol sites. A `catch` parameter's
+/// array pattern iterates the thrown value; a default below the root of a
+/// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
+/// supplies an iterated value; and `new Map`/`new WeakMap`/
+/// `Object.fromEntries`/`new Set` iterate their argument. Each reaches
+/// `second` through a generator or a hand-written iterator.
+#[test]
+fn every_iterator_protocol_site_runs_the_iterator() {
+    const GEN: &str = "function* gen() { second(); yield 0; }";
+    const ENTRIES: &str = "function* gen() { second(); yield [{}, 1]; }";
+    const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
+    for (definitions, resume, extra) in [
+        (GEN, "try { throw gen(); } catch ([x]) {}", &["gen"][..]),
+        (
+            GEN,
+            "try { throw { a: gen() }; } catch ({ a: [x] }) {}",
+            &["gen"][..],
+        ),
+        (MK, "try { throw mk(); } catch ([x]) {}", &["mk"][..]),
+        (MK, "const [[x] = mk()] = [];", &["mk"][..]),
+        (MK, "let x; [[x] = mk()] = [];", &["mk"][..]),
+        (MK, "const { a: [x] = mk() } = {};", &["mk"][..]),
+        (MK, "for (const [[x] = mk()] of [[]]) {}", &["mk"][..]),
+        (MK, "try { throw []; } catch ([[x] = mk()]) {}", &["mk"][..]),
+        (
+            "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }\nfunction take([[x] = mk()]) { return x; }",
+            "take([]);",
+            &["mk", "take"][..],
+        ),
+        (ENTRIES, "new Map(gen());", &["gen"][..]),
+        (ENTRIES, "new WeakMap(gen());", &["gen"][..]),
+        (ENTRIES, "Object.fromEntries(gen());", &["gen"][..]),
+        (GEN, "new Set(gen());", &["gen"][..]),
+        (GEN, "Array.from(gen());", &["gen"][..]),
+        (GEN, "Promise.all(gen());", &["gen"][..]),
+    ] {
+        for guard in ["", "if (first()) {} "] {
+            for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+                assert_reader_split_diverges_with(
+                    &format!(
+                        "{definitions}\nfunction flag() {{ {guard}{resume} return noop; }}\n{run}"
+                    ),
+                    extra,
+                );
+            }
+        }
+    }
+}
+
+/// Positive anchor for the control above: iterating a string, the native
+/// pairs of `Object.entries`, and native arrays through patterns keep the
+/// split.
+#[test]
+fn iterating_strings_entries_and_native_patterns_keeps_the_split() {
+    for body in [
+        "for (const c of 'ab') {}",
+        "for (const [k, v] of Object.entries({ a: 1 })) {}",
+        "const [[y] = [1]] = [];",
+        "try { throw [1]; } catch ([x]) {}",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {body} return noop; }}\nfunction run() {{ flag(); return 0; }}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
 /// `new F()` of a plain function that stores its `this` in a module binding
 /// and stores `value` through `this`; `run` reaches the stored value
 /// through the binding.
