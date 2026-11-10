@@ -36,10 +36,7 @@
       "repository": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker",
       "paths": [
         "devinfra/buildbuddy/kvm/worker/container-disk.nix",
-        "devinfra/buildbuddy/kvm/worker/root-disk-check.nix",
-        "devinfra/buildbuddy/kvm/worker/root-disk.nix",
-        "devinfra/buildbuddy/kvm/worker/root_disk_boot_check.py",
-        "devinfra/buildbuddy/kvm/worker/source-image.nix"
+        "devinfra/buildbuddy/kvm/worker/root_disk_boot_check.py"
       ],
       "smoke": null
     },
