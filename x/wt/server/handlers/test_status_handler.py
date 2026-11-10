@@ -77,6 +77,8 @@ async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies
 @pytest.mark.parametrize("scanning", [False, True])
 async def test_get_status_reports_current_discovery_state(status_deps: ServiceDependencies, scanning: bool) -> None:
     deps = replace(status_deps, discovery_scanning=lambda: scanning)
+    deps.git_manager.get_repo.return_value.head_is_detached = True  # type: ignore[attr-defined]
+    deps.git_manager.get_commit_info.return_value = None  # type: ignore[attr-defined]
 
     response = await get_status(deps, StatusParams())
 
