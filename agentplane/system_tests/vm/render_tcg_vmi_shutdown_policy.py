@@ -7,8 +7,7 @@ from typing import Any, cast
 
 from cdk8s import App, Chart, Testing
 
-from agentplane.egress import sidecar_config
-from cluster.cdk8s.agentplane import launcher_relay, sandbox_pod
+from cluster.cdk8s.agentplane import launcher_relay
 
 _NAMESPACE = "vm-tcg-shutdown-template"
 
@@ -17,14 +16,16 @@ def main() -> None:
     chart = Chart(App(), "standalone-vmi-tcg")
     runner_pod = {
         "spec": {
-            "initContainers": [{"name": sidecar_config.CONTAINER_NAME, "securityContext": {}, "volumeMounts": []}],
+            "initContainers": [
+                {"name": launcher_relay.sidecar_config.CONTAINER_NAME, "securityContext": {}, "volumeMounts": []}
+            ],
             "volumes": [
                 {
-                    "name": sandbox_pod.EGRESS_TOKEN_VOLUME_NAME,
+                    "name": launcher_relay.sandbox_pod.EGRESS_TOKEN_VOLUME_NAME,
                     "projected": {"sources": [{"serviceAccountToken": {"audience": "unused", "path": "token"}}]},
                 },
                 {
-                    "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
+                    "name": launcher_relay.sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
                     "configMap": {"name": "unused-by-virtiofs-only-policy"},
                 },
             ],

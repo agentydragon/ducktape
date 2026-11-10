@@ -292,9 +292,7 @@ py_library(
     name = "render_tcg_vmi_shutdown_policy",
     srcs = ["render_tcg_vmi_shutdown_policy.py"],
     deps = [
-        "//agentplane/egress:sidecar_config",
         "//cluster/cdk8s/agentplane:launcher_relay",
-        "//cluster/cdk8s/agentplane:sandbox_pod",
         "@pypi//cdk8s",
     ],
 )
