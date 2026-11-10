@@ -173,6 +173,15 @@ prototype side, chunk, offset, mutating function; the member only with
 (`G.m || (G.m = …)`, `if`, `?:`, `&&`, `??`, `||=`, `??=`), the shape of a
 polyfill.
 
+A named store is also marked when it is in code that runs only if a test
+of that same member finds it missing (`G.m || (G.m = …)`, `G.m ??= …`,
+`if (!G.m) …`, `typeof G.m == "undefined"`, `G.m == null`, and
+`typeof G.m != "symbol"` for a member of `Symbol` or `!= "function"` for one
+of another global). The premise `intrinsic_members_present` (`G.m` or
+`G.prototype.m`) says the host defines the member with its standard value:
+if every store of it is guarded so, the member counts as unwritten. A store
+no such test guards stays a write.
+
 The report lists each store that counts as a write of a whole global the
 language defines (`whole_write_sites`): the family, the chunk, the byte
 offset of the store's target, how it counted (the binding assigned, a member
@@ -423,13 +432,14 @@ Two points differ from what was asked, both for soundness:
   mutually ordered. Only `decorator` (no private state) lets two classes'
   decorator statements pass each other.
 
-`premise_fixtures.txt` holds 41 programs, each run under Node in both orders:
-18 where a premise lets a swap through and Node agrees, 18 where the premises
-hold but the swap is observable and tier 0 refuses, and 5 where a premise is
+`premise_fixtures.txt` holds 46 programs, each run under Node in both orders:
+19 where a premise lets a swap through and Node agrees, 21 where the premises
+hold but the swap is observable and tier 0 refuses, and 6 where a premise is
 false (a `pure_call` that counts, a `callback_factory` that calls its
 callback, a `decorator` that writes a shared registry, a `decorator` that
-reads outside state, an `immutable_bindings` entry whose object is changed)
-and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
+reads outside state, an `immutable_bindings` entry whose object is changed,
+an `intrinsic_members_present` entry the host lacks) and tier 0 accepts a
+swap Node observes. Without premises tier 0 refuses all 46.
 
 ### Derived contracts
 
@@ -852,8 +862,13 @@ Not modeled, and what each maps to:
 a JSON array of `{"chunk": …, "out": …}` entries with optional
 `effect_report`, `order`, `current_conflicts`, `modules`, `premises` and
 `unproven_pairs`. The program-wide facts are computed once; the cycle verdict
-is taken per chunk. A chunk that fails is reported on stderr and the others
-still run.
+is taken per chunk, and what derivation works out about the program's chunks
+is kept between entries. A chunk that fails is reported on stderr and the
+others still run. On a synthetic program of 2,370 chunks (30 copies of the
+Excalidraw chunks) the read takes 9.4 s and 30 entries take 9.3 s together:
+2.7 s for the first large one, which pays for the program-wide derivations,
+then about 0.25 s for a 1,600-statement chunk and 2 ms for a 31-statement
+one.
 
 ```sh
 bbr build -c opt //devinfra/js/debundle/x/summary_effects:summary_effects_bin
