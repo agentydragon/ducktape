@@ -544,63 +544,15 @@
       }
     },
     {
-      "id": 14,
-      "title": "Work filesystem used",
-      "description": "Bytes used inside each guest /buildbuddy filesystem (size minus free). This is distinct from allocated bytes on its backing PVC or physical thin pool.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 26
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"})",
-          "refId": "A",
-          "legendFormat": "{{pod}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
       "id": 15,
       "title": "Guest RAM used %",
       "description": "Guest memory in use, relative to the guest's MemTotal; MemAvailable includes reclaimable cache.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 35
+        "w": 8,
+        "x": 16,
+        "y": 26
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -641,12 +593,65 @@
       }
     },
     {
-      "id": 16,
-      "title": "Work filesystem used %",
-      "description": "Used guest filesystem bytes divided by its size. Linux-reserved space is free in this calculation but may not be available to unprivileged processes.",
+      "id": 20,
+      "title": "Root filesystem used and capacity",
+      "description": "Allocated bytes and total capacity of each guest root filesystem. This does not include the separate /boot or /buildbuddy filesystems.",
       "type": "timeseries",
       "gridPos": {
-        "h": 9,
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "refId": "A",
+          "legendFormat": "{{pod}} used"
+        },
+        {
+          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "refId": "B",
+          "legendFormat": "{{pod}} capacity"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Work filesystem used and capacity",
+      "description": "Allocated bytes and total capacity inside each guest /buildbuddy filesystem. These are distinct from its backing PVC or physical thin pool.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 11,
         "w": 12,
         "x": 12,
         "y": 35
@@ -654,7 +659,60 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "100 * (1 - max by (pod) (node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}) / max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}))",
+          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"})",
+          "refId": "A",
+          "legendFormat": "{{pod}} used"
+        },
+        {
+          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"})",
+          "refId": "B",
+          "legendFormat": "{{pod}} capacity"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Root filesystem unavailable %",
+      "description": "Percentage of root filesystem capacity not available to unprivileged processes, including reserved ext4 blocks.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "100 * (1 - max by (pod) (node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) / max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}))",
           "refId": "A",
           "legendFormat": "{{pod}}"
         }
@@ -678,10 +736,59 @@
       },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true,
-          "calcs": []
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Work filesystem unavailable %",
+      "description": "Percentage of /buildbuddy capacity not available to unprivileged processes, including reserved ext4 blocks.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "100 * (1 - max by (pod) (node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}) / max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}))",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
         },
         "tooltip": {
           "mode": "multi",
@@ -697,7 +804,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 55
       },
       "collapsed": false,
       "panels": []
@@ -711,7 +818,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 56
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -764,7 +871,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 45
+        "y": 56
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
