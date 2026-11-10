@@ -69,6 +69,28 @@ type Principal struct {
 // destinations that preserve an explicit Pod-bound backend caller path.
 func (p Principal) IsPodBound() bool { return p.PodName != "" && p.PodUID != "" }
 
+// Identity is an Identity in the policy namespace, as the incarnation the caller's workload
+// credential names.
+type Identity struct {
+	Name string
+	UID  string
+}
+
+// IdentityPrincipal is a workload whose credential names an Identity, with the Pod its accepted
+// incarnation runs in once its owner has named it: provenance, never the subject.
+type IdentityPrincipal struct {
+	Identity Identity
+	PodName  string
+	PodUID   string
+}
+
+// Subject is a verified workload: a ServiceAccount Principal, or an IdentityPrincipal, which only
+// a workload SVID yields.
+type Subject interface{ isSubject() }
+
+func (Principal) isSubject()         {}
+func (IdentityPrincipal) isSubject() {}
+
 // ServiceAccountPrincipal is the canonical exact ServiceAccount identity without Pod proof.
 type ServiceAccountPrincipal = identitypb.ServiceAccountIdentity
 
