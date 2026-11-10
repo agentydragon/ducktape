@@ -55,7 +55,8 @@ The sections below hold details, not competing priority queues.
 3. **Public browser smoke.** The Excalidraw corpus and its accepted spec
    landed (<excalidraw/README.md>). Remaining per
    <plans/excalidraw_live_smoke.md>: the live-browser smoke covering bundled
-   vendor singleton/importmap behavior, and the public canonical-spec check.
+   vendor singleton/importmap behavior. The public canonical-spec check is
+   `excalidraw:canonical_summary` (<plans/convergence_landing.md>).
    Node probes already run; browser loading is the missing contract, not a
    missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup

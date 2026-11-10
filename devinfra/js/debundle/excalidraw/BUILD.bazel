@@ -177,3 +177,29 @@ rust_test(
         "@rules_rust//tools/runfiles",
     ],
 )
+
+# The public half of plans/convergence_landing.md § Canonical-spec check:
+# a slice diffs this file between its `devel` base and its head.
+run_binary(
+    name = "canonical_summary",
+    srcs = [":debundle"],
+    outs = ["canonical_summary.json"],
+    args = [
+        "--out-dir",
+        "$(execpath :debundle)",
+        "--summary",
+        "$(execpath canonical_summary.json)",
+    ],
+    tool = ":summarize_tree_bin",
+)
+
+py_binary(
+    name = "summarize_tree_bin",
+    main_module = "devinfra.js.debundle.excalidraw.summarize_tree",
+    deps = [":summarize_tree"],
+)
+
+py_library(
+    name = "summarize_tree",
+    srcs = ["summarize_tree.py"],
+)

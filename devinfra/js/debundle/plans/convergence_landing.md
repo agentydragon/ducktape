@@ -74,10 +74,41 @@ Every PR in this plan:
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
    cannot meet that and say so in their description.
 8. Runs the canonical-spec check (§ below) when it changes any acceptance,
-   placement, emitted order or emitted bytes. Mechanical refactors, report-only
-   additions and test-only splits skip it and say so.
+   placement, emitted order or emitted bytes: always the public half, and the
+   private half where the session can reach it. Mechanical refactors,
+   report-only additions and test-only splits skip it and say so.
 
 ## Canonical-spec check
+
+Two halves: a public corpus every session can run, and the private corpus.
+
+### Public: Excalidraw
+
+`//devinfra/js/debundle/excalidraw:canonical_summary` reduces the Excalidraw
+corpus's accepted tree (<../excalidraw/README.md>) to one JSON file: per chunk,
+the ordinary gate verdict and the translation-validation verdict and counts;
+per emitted file, its SHA-256. Build it at the slice's head and at its `devel`
+base, and diff the two. Cloud sessions use `bbr`; `bbapi artifact download`
+fetches the output by name from each invocation that `bbr` prints:
+
+```sh
+TASK=${TMPDIR:-/tmp}/agents/<date>/<slug>
+git worktree add --detach "$TASK/base" "$(git merge-base HEAD origin/devel)"
+bbr build //devinfra/js/debundle/excalidraw:canonical_summary   # head; note the invocation
+(cd "$TASK/base" && bbr build //devinfra/js/debundle/excalidraw:canonical_summary)
+bbapi artifact download <head-invocation> canonical_summary.json -o "$TASK/head.json"
+bbapi artifact download <base-invocation> canonical_summary.json -o "$TASK/base.json"
+diff "$TASK/base.json" "$TASK/head.json"
+```
+
+A changed verdict, translation-validation count or emitted hash is judged by
+item 8's rule, as for the private corpus. The corpus's `test_debundle_tree`,
+`spec_output_test` and `test_smoke` run in ordinary CI whenever a slice changes
+the analyzer or pipeline, and also block a slice that breaks acceptance or
+browser loading. It covers one esbuild-minified program and does not replace
+the private half.
+
+### Private
 
 The private corpus lives in the sibling repository `../gaffer-private`, which
 pins Ducktape by commit (`DUCKTAPE_COMMIT` in its `MODULE.bazel`; procedure in
