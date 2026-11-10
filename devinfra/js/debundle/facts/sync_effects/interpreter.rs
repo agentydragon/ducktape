@@ -11659,12 +11659,18 @@ enum NativeOwnDataReadCandidate {
 /// Exact native calls whose own heap action cannot observe an existing array
 /// or Set. Argument evaluation remains the collector's responsibility.
 pub(crate) struct FreshRecordFreezeHeapProof {
-    sites: BTreeSet<(u32, u32)>,
+    /// Each certified call site and the `native_call_identity_inputs` entry
+    /// that certified it.
+    sites: BTreeMap<(u32, u32), crate::analysis_inputs::NativeOperationInputEvidence>,
 }
 
 impl FreshRecordFreezeHeapProof {
-    pub(crate) fn contains(&self, call: &CallExpr) -> bool {
-        self.sites.contains(&(call.span.lo.0, call.span.hi.0))
+    /// The author input certifying `call`, if the proof covers it.
+    pub(crate) fn input_evidence(
+        &self,
+        call: &CallExpr,
+    ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence> {
+        self.sites.get(&(call.span.lo.0, call.span.hi.0))
     }
 }
 
@@ -11785,7 +11791,7 @@ impl PreparedSynchronousCallIndex {
                     return None;
                 };
                 (call.span == input.call_span && self.index.plain_data_objects.contains(object))
-                    .then_some((call.span.lo.0, call.span.hi.0))
+                    .then(|| ((call.span.lo.0, call.span.hi.0), input.evidence.clone()))
             })
             .collect();
         FreshRecordFreezeHeapProof { sites }
