@@ -1488,6 +1488,8 @@ impl Executor<'_, '_> {
             capture_contexts: _,
             callback_sets: _,
             invocation_memos: _,
+            // Validated against whichever world is current, restored or not.
+            export_callback_memos: _,
             // A source function of the program alone.
             class_member_effects: _,
             // Control state: an owner's body leaves it as it found it.
