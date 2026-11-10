@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,9 +19,16 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
+	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 // Main must be PID 1 in a private container PID namespace.
@@ -77,12 +83,17 @@ func healthHandler(socket string) http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()
-		connection, _, err := control.Connect(ctx, socket, control.Request{Operation: "inspect"})
+		connection, err := control.Dial(socket)
 		if err != nil {
 			http.Error(w, "companion control unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		_ = connection.Close()
+		defer connection.Close()
+		response, err := controlpb.NewCompanionControlClient(connection).Inspect(ctx, &controlpb.InspectRequest{})
+		if err != nil || response.GetGeneration() == "" {
+			http.Error(w, "companion control unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
@@ -110,6 +121,18 @@ func serve(ctx context.Context, socket, binary, listen, healthListen string, sup
 	defer healthListener.Close()
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
+	state := &companionOwnership{
+		status:        companionStatus{Generation: uuid.NewString()},
+		fenceRequests: make(chan struct{}, 1),
+	}
+	go state.fenceLoop(lifetime, cancel, supervisor)
+	controlServer := grpc.NewServer(grpc.MaxRecvMsgSize(1 << 20))
+	controlpb.RegisterCompanionControlServer(controlServer, &companionControl{
+		lifetime: lifetime, cancel: cancel, state: state, binary: binary, listen: listen, supervisor: supervisor,
+	})
+	healthServerGRPC := health.NewServer()
+	healthServerGRPC.SetServingStatus(controlpb.CompanionControl_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(controlServer, healthServerGRPC)
 	healthServer := &http.Server{
 		Handler:           healthHandler(socket),
 		ReadHeaderTimeout: time.Second,
@@ -118,7 +141,7 @@ func serve(ctx context.Context, socket, binary, listen, healthListen string, sup
 		BaseContext:       func(net.Listener) context.Context { return lifetime },
 	}
 	stop := context.AfterFunc(lifetime, func() {
-		_ = listener.Close()
+		controlServer.Stop()
 		_ = healthServer.Close()
 	})
 	defer stop()
@@ -133,132 +156,100 @@ func serve(ctx context.Context, socket, binary, listen, healthListen string, sup
 	})
 	servers.Go(func() error {
 		defer cancel()
-		return serveControl(lifetime, cancel, listener, binary, listen, supervisor)
+		return controlServer.Serve(listener)
 	})
 	return servers.Wait()
 }
 
-func serveControl(
-	lifetime context.Context,
-	cancel context.CancelFunc,
-	listener net.Listener,
-	binary, listen string,
-	supervisor *supervision.Supervisor,
-) error {
-	state := &companionOwnership{
-		status:        control.Status{Generation: uuid.NewString()},
-		fenceRequests: make(chan struct{}, 1),
+type companionStatus struct {
+	Generation string
+	Owned      bool
+}
+
+type companionControl struct {
+	controlpb.UnimplementedCompanionControlServer
+	lifetime   context.Context
+	cancel     context.CancelFunc
+	state      *companionOwnership
+	binary     string
+	listen     string
+	supervisor *supervision.Supervisor
+}
+
+func (s *companionControl) Inspect(_ context.Context, _ *controlpb.InspectRequest) (*controlpb.InspectResponse, error) {
+	s.state.mu.Lock()
+	defer s.state.mu.Unlock()
+	return &controlpb.InspectResponse{Generation: s.state.status.Generation, Owned: s.state.status.Owned}, nil
+}
+
+func (s *companionControl) Fence(_ context.Context, request *controlpb.FenceRequest) (*controlpb.FenceResponse, error) {
+	if request.GetGeneration() == "" {
+		return nil, status.Error(codes.InvalidArgument, "fence requires a generation")
 	}
-	go state.fenceLoop(lifetime, cancel, supervisor)
-	for {
-		connection, err := listener.Accept()
-		if lifetime.Err() != nil {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		go func(c net.Conn) {
-			defer c.Close()
-			closeOnExit := context.AfterFunc(lifetime, func() { _ = c.Close() })
-			defer closeOnExit()
-			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
-			decoder := json.NewDecoder(io.LimitReader(c, 1<<20))
-			decoder.DisallowUnknownFields()
-			var request control.Request
-			if decoder.Decode(&request) != nil {
-				return
-			}
-			var responseStatus control.Status
-			if request.Operation == "claim" && request.Generation == "" {
-				state.mu.Lock()
-				if state.status.Owned || state.fencing {
-					state.mu.Unlock()
-					cancel()
-					return
-				}
-				process, err := supervisor.NewProcess(supervision.ProcessConfig{
-					Command:   []string{binary, "exec-server", "--listen", listen},
-					Env:       request.Environment,
-					StopGrace: 5 * time.Second,
-				})
-				if err != nil {
-					refused := state.status
-					refused.Error = err.Error()
-					state.mu.Unlock()
-					_ = json.NewEncoder(c).Encode(refused)
-					return
-				}
-				if err := process.Start(lifetime); err != nil {
-					// Nothing started, so this generation has no work to fence. Refuse and keep serving,
-					// allowing Runner to retry or fence without waiting for a container restart.
-					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
-					refused := state.status
-					refused.Error = err.Error() + "; " + process.ExitDescription()
-					state.mu.Unlock()
-					_ = json.NewEncoder(c).Encode(refused)
-					return
-				}
-				expectedExit := &atomic.Bool{}
-				state.status.Owned = true
-				state.status.Error = ""
-				state.process = process
-				state.lease = c
-				state.expectedExit = expectedExit
-				responseStatus = state.status
-				state.mu.Unlock()
-				go forwardOutput(lifetime, cancel, "stdout", process.Stdout(), os.Stdout)
-				go forwardOutput(lifetime, cancel, "stderr", process.Stderr(), os.Stderr)
-				if err := process.CloseStdin(); err != nil {
-					fmt.Fprintln(os.Stderr, "close Codex executor stdin:", err)
-					cancel()
-					return
-				}
-				go waitForExecutor(process, expectedExit, func() { state.unexpectedExit(process) })
-			} else if len(request.Environment) != 0 ||
-				(request.Operation == "inspect" && request.Generation != "") ||
-				(request.Operation == "fence" && request.Generation == "") ||
-				(request.Operation != "inspect" && request.Operation != "fence") {
-				return
-			} else {
-				state.mu.Lock()
-				responseStatus = state.status
-				state.mu.Unlock()
-			}
-			err := json.NewEncoder(c).Encode(responseStatus)
-			if err != nil {
-				if request.Operation == "claim" {
-					cancel()
-				}
-				return
-			}
-			_ = c.SetDeadline(time.Time{})
-			if request.Operation == "claim" {
-				// Closing the lease requests a process-domain fence. PID 1 keeps
-				// serving only after the workload is proven absent.
-				var one [1]byte
-				_, _ = c.Read(one[:])
-				state.requestFence(responseStatus.Generation)
-				return
-			}
-			if request.Operation == "fence" {
-				state.requestFence(request.Generation)
-				return
-			}
-			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
-			var next control.Request
-			if decoder.Decode(&next) == nil && next.Operation == "fence" && next.Generation == responseStatus.Generation && len(next.Environment) == 0 {
-				state.requestFence(next.Generation)
-			}
-		}(connection)
+	s.state.requestFence(request.GetGeneration())
+	return &controlpb.FenceResponse{}, nil
+}
+
+func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.ServerStreamingServer[controlpb.ClaimResponse]) error {
+	s.state.mu.Lock()
+	if s.state.status.Owned || s.state.fencing {
+		s.state.mu.Unlock()
+		s.cancel()
+		return status.Error(codes.Aborted, "executor companion already owned or fencing")
+	}
+	process, err := s.supervisor.NewProcess(supervision.ProcessConfig{
+		Command:   []string{s.binary, "exec-server", "--listen", s.listen},
+		Env:       request.GetEnvironment(),
+		StopGrace: 5 * time.Second,
+	})
+	if err != nil {
+		s.state.mu.Unlock()
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err := process.Start(s.lifetime); err != nil {
+		// No process started, so this idle generation does not need a fence.
+		fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+		s.state.mu.Unlock()
+		return status.Error(codes.FailedPrecondition, err.Error()+"; "+process.ExitDescription())
+	}
+	expectedExit := &atomic.Bool{}
+	leaseDone := make(chan struct{})
+	s.state.status.Owned = true
+	s.state.process = process
+	s.state.lease = leaseDone
+	s.state.expectedExit = expectedExit
+	generation := s.state.status.Generation
+	s.state.mu.Unlock()
+	// Cancellation, transport loss, or an incomplete handshake must fence this owner.
+	defer s.state.requestFence(generation)
+	go forwardOutput(s.lifetime, s.cancel, "stdout", process.Stdout(), os.Stdout)
+	go forwardOutput(s.lifetime, s.cancel, "stderr", process.Stderr(), os.Stderr)
+	if err := process.CloseStdin(); err != nil {
+		fmt.Fprintln(os.Stderr, "close Codex executor stdin:", err)
+		s.cancel()
+		return status.Error(codes.Unavailable, "could not close executor stdin")
+	}
+	go waitForExecutor(process, expectedExit, func() { s.state.unexpectedExit(process) })
+	if err := streaming.SendWithin(stream.Context(), 3*time.Second, stream.Send, &controlpb.ClaimResponse{Generation: generation}); err != nil {
+		// As with a failed claim response before gRPC, an unconfirmed owner exits the container.
+		s.cancel()
+		return status.Error(codes.Unavailable, "could not send executor ownership")
+	}
+	select {
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-leaseDone:
+		return nil
+	case <-s.lifetime.Done():
+		return status.Error(codes.Unavailable, "executor companion is stopping")
 	}
 }
 
 type companionOwnership struct {
 	mu            sync.Mutex
-	status        control.Status
+	status        companionStatus
 	process       *supervision.Process
-	lease         net.Conn
+	lease         chan struct{}
 	expectedExit  *atomic.Bool
 	fencing       bool
 	pendingFence  string
@@ -341,14 +332,13 @@ func (s *companionOwnership) fenceLoop(
 			}
 			s.status.Generation = uuid.NewString()
 			s.status.Owned = false
-			s.status.Error = ""
 			s.process = nil
 			s.lease = nil
 			s.expectedExit = nil
 			s.fencing = false
 			s.mu.Unlock()
 			if lease != nil {
-				_ = lease.Close()
+				close(lease)
 			}
 		}
 	}

@@ -1,55 +1,23 @@
-// Package control implements the local Unix-socket protocol between the Runner and its executor container.
+// Package control dials the companion's local Unix-socket gRPC service.
 package control
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
-	"net"
-	"time"
+	"path/filepath"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Request is one operation on the executor companion's local control socket.
-type Request struct {
-	Operation string `json:"operation"`
-	// Generation identifies the owner to fence. A delayed request must not fence its successor.
-	Generation  string            `json:"generation,omitempty"`
-	Environment map[string]string `json:"environment,omitempty"`
-}
-
-// Status identifies the current executor process-domain generation and whether
-// the companion currently owns exec-server.
-type Status struct {
-	Generation string `json:"generation"`
-	Owned      bool   `json:"owned"`
-	// Error explains a claim refused without starting anything. A refusal leaves this generation idle.
-	Error string `json:"error,omitempty"`
-}
-
-// Connect sends a request and returns the open connection together with the companion's status.
-// A successful claim keeps this connection open as the ownership lease until EOF.
-func Connect(ctx context.Context, socket string, request Request) (net.Conn, Status, error) {
-	c, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	if err != nil {
-		return nil, Status{}, err
+// Dial uses the filesystem-protected Unix socket, never a network endpoint.
+func Dial(socket string) (*grpc.ClientConn, error) {
+	if !filepath.IsAbs(socket) {
+		return nil, errors.New("executor companion socket must be absolute")
 	}
-	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
-	defer stop()
-	deadline, _ := ctx.Deadline()
-	_ = c.SetDeadline(deadline)
-	if err := json.NewEncoder(c).Encode(request); err != nil {
-		_ = c.Close()
-		return nil, Status{}, err
-	}
-	var status Status
-	if err := json.NewDecoder(c).Decode(&status); err != nil {
-		_ = c.Close()
-		return nil, status, err
-	}
-	if status.Generation == "" {
-		_ = c.Close()
-		return nil, status, errors.New("executor companion returned no generation")
-	}
-	_ = c.SetDeadline(time.Time{})
-	return c, status, nil
+	return grpc.NewClient(
+		"unix://"+socket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDisableRetry(),
+		grpc.WithNoProxy(),
+	)
 }
