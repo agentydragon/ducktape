@@ -150,6 +150,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     worker = pool["spec"]["virtualMachineTemplate"]["spec"]
     guest = worker["template"]["spec"]
+    assert pool["spec"]["maxUnavailable"] == 1
     assert worker["runStrategy"] == "Always"
     assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
     kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
@@ -192,6 +193,19 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
     cloud_init = yaml.safe_load(user_data)
+    (journald_dropin,) = [
+        file
+        for file in cloud_init["write_files"]
+        if file["path"] == "/etc/systemd/journald.conf.d/90-buildbuddy-kvm-worker.conf"
+    ]
+    assert journald_dropin["permissions"] == "0644"
+    assert "ForwardToConsole=yes" in journald_dropin["content"]
+    assert "TTYPath=/dev/ttyS0" in journald_dropin["content"]
+    assert "MaxLevelConsole=info" in journald_dropin["content"]
+    assert "SystemMaxUse=32M" in journald_dropin["content"]
+    assert "SystemKeepFree=192M" in journald_dropin["content"]
+    assert "RuntimeMaxUse=16M" in journald_dropin["content"]
+    assert cloud_init["runcmd"][0] == ["systemctl", "restart", "systemd-journald.service"]
     (exporter_install,) = [command for command in cloud_init["runcmd"] if "prometheus-node-exporter" in command]
     assert "--no-install-recommends" in exporter_install
     mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
