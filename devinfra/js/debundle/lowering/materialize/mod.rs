@@ -511,7 +511,21 @@ pub(super) fn finish_logical_chunk(
                     &redundant_admission_overrides,
                     &analysis.redundant_purity_hints,
                     graph_context.resolved_member_sites,
-                ),
+                )
+                .into_iter()
+                .chain(
+                    projection
+                        .chunk_analysis_inputs
+                        .get(chunk_id)
+                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
+                        .then(|| {
+                            LintFinding::trusted_dataflow_summaries(
+                                chunk_id,
+                                analysis.consumed_trusted_dataflow_summaries(),
+                            )
+                        }),
+                )
+                .collect(),
                 consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
             },
         )?;

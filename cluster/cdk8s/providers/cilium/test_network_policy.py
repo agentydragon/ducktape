@@ -5,7 +5,7 @@ import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_egress, fqdn_fence
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_egress
 
 _DNS_LABELS = {"k8s-app": "test-dns"}
 
@@ -37,7 +37,6 @@ def test_fqdn_egress_without_dns_rule_is_refused(
     "egress",
     [
         [dns_egress(_DNS_LABELS, resolves=["*"]), EgressRule.to_fqdns("api.example.test")],
-        fqdn_fence(_DNS_LABELS, ["api.example.test"]),
         [dns_egress(_DNS_LABELS), EgressRule.to_entities(Entity.KUBE_APISERVER)],
     ],
 )

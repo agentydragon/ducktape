@@ -99,12 +99,16 @@ enum ProbeTarget {
     },
     /// A consumed `host_behavior.reentry_free_operations` entry.
     ReentryFreeOperation(ReentryFreeOperation),
+    /// A consumed `chunk_analysis_options.<chunk>.trusted_dataflow_summaries`.
+    TrustedDataflowSummaries { chunk: String },
 }
 
 impl ProbeTarget {
     fn chunk(&self) -> Option<&str> {
         match self {
-            Self::PurityHint { chunk, .. } => Some(chunk),
+            Self::PurityHint { chunk, .. } | Self::TrustedDataflowSummaries { chunk } => {
+                Some(chunk)
+            }
             Self::ReentryFreeOperation(_) => None,
         }
     }
@@ -117,6 +121,13 @@ impl ProbeTarget {
             Self::ReentryFreeOperation(operation) => LintedAnnotation::ReentryFreeOperation {
                 operation: *operation,
             },
+            Self::TrustedDataflowSummaries { chunk } => {
+                LintedAnnotation::TrustedDataflowSummaries {
+                    spec_location: format!(
+                        "chunk_analysis_options.{chunk}.trusted_dataflow_summaries"
+                    ),
+                }
+            }
         }
     }
 
@@ -154,6 +165,16 @@ impl ProbeTarget {
                     spec.host_behavior.reentry_free_operations.remove(operation),
                     "reentry-free operation {operation:?} vanished from the spec"
                 );
+            }
+            Self::TrustedDataflowSummaries { chunk } => {
+                let options = spec
+                    .chunk_analysis_options
+                    .get_mut(chunk)
+                    .filter(|options| options.trusted_dataflow_summaries)
+                    .with_context(|| {
+                        format!("trusted_dataflow_summaries for {chunk:?} vanished from the spec")
+                    })?;
+                options.trusted_dataflow_summaries = false;
             }
         }
         Ok(spec)
@@ -216,8 +237,8 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
 }
 
 /// Withhold each selected annotation in turn and compare the run with the
-/// baseline: every `purity: pure` hint, and every `reentry_free_operations`
-/// entry some chunk consumed (an unconsumed one is already exact). A probed
+/// baseline: every `purity: pure` hint, and every provenance-decided premise
+/// some analysis consumed (an unconsumed one is already exact). A probed
 /// annotation's finding replaces its cheap lead.
 fn probe_annotations(
     args: &SpecLintArgs,
@@ -226,20 +247,30 @@ fn probe_annotations(
     report: &mut SpecLintReport,
 ) -> Result<()> {
     let chunks: BTreeSet<_> = args.probe_chunks.iter().cloned().collect();
-    let consumed_operations = report.findings.iter().filter_map(|finding| match finding {
-        LintFinding {
-            annotation: LintedAnnotation::ReentryFreeOperation { operation },
-            verdict:
-                InferenceVerdict::Inconclusive {
-                    reason: InconclusiveReason::Consumed,
-                },
-            ..
-        } => Some(ProbeTarget::ReentryFreeOperation(*operation)),
-        _ => None,
+    let consumed = report.findings.iter().filter_map(|finding| {
+        if !matches!(
+            finding.verdict,
+            InferenceVerdict::Inconclusive {
+                reason: InconclusiveReason::Consumed,
+            }
+        ) {
+            return None;
+        }
+        match (&finding.annotation, &finding.chunk) {
+            (LintedAnnotation::ReentryFreeOperation { operation }, _) => {
+                Some(ProbeTarget::ReentryFreeOperation(*operation))
+            }
+            (LintedAnnotation::TrustedDataflowSummaries { .. }, Some(chunk)) => {
+                Some(ProbeTarget::TrustedDataflowSummaries {
+                    chunk: chunk.clone(),
+                })
+            }
+            _ => None,
+        }
     });
     let targets: Vec<_> = purity_targets(spec)
         .into_iter()
-        .chain(consumed_operations.collect::<Vec<_>>())
+        .chain(consumed.collect::<Vec<_>>())
         .filter(|target| {
             chunks.is_empty() || target.chunk().is_some_and(|chunk| chunks.contains(chunk))
         })
@@ -458,6 +489,9 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 spec_location,
                 check,
             } => format!("admission override `{check}` at {spec_location}"),
+            LintedAnnotation::TrustedDataflowSummaries { spec_location } => {
+                format!("`trusted_dataflow_summaries` at {spec_location}")
+            }
             LintedAnnotation::ReentryFreeOperation { operation } => format!(
                 "`host_behavior.reentry_free_operations` entry `{}`",
                 serde_json::to_value(operation)

@@ -53,6 +53,8 @@ pub enum LintedAnnotation {
         spec_location: String,
         check: AdmissionCheck,
     },
+    /// `chunk_analysis_options.<chunk>.trusted_dataflow_summaries`.
+    TrustedDataflowSummaries { spec_location: String },
     /// One `host_behavior.reentry_free_operations` entry.
     ReentryFreeOperation { operation: ReentryFreeOperation },
     /// One `chunk_analysis_options.<chunk>.commuting_statements` entry.
@@ -101,8 +103,8 @@ pub enum InferableReason {
     /// annotation withheld: it was accepted with identical reports (dependency
     /// graphs, atomic groups, precision losses, module contents).
     WithheldRunUnchanged,
-    /// No analysis consumed the annotation: its only reader records every use
-    /// it grants, and no chunk recorded one (docs/premise_provenance.md).
+    /// No analysis consumed the annotation: every read of it records the use,
+    /// and none was recorded (docs/premise_provenance.md).
     NeverConsumed,
 }
 
@@ -141,6 +143,27 @@ impl LintFinding {
             chunk: None,
             annotation: LintedAnnotation::ReentryFreeOperation { operation },
             verdict,
+        }
+    }
+
+    /// `trusted_dataflow_summaries` on `chunk`, from whether any statement's
+    /// havoc was discharged by it (`StatementFacts::trusted_summary_discharged`).
+    pub fn trusted_dataflow_summaries(chunk: &str, consumed: bool) -> Self {
+        Self {
+            rule: LintRule::InferableAnnotation,
+            chunk: Some(chunk.to_owned()),
+            annotation: LintedAnnotation::TrustedDataflowSummaries {
+                spec_location: format!("chunk_analysis_options.{chunk}.trusted_dataflow_summaries"),
+            },
+            verdict: if consumed {
+                InferenceVerdict::Inconclusive {
+                    reason: InconclusiveReason::Consumed,
+                }
+            } else {
+                InferenceVerdict::Inferable {
+                    reason: InferableReason::NeverConsumed,
+                }
+            },
         }
     }
 

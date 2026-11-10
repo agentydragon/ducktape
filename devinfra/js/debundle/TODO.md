@@ -52,11 +52,11 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** The Excalidraw corpus and its accepted residual
-   baseline landed (<excalidraw/README.md>). Remaining per
-   <plans/excalidraw_live_smoke.md>: a realistic spec (vendor swap marks,
-   source-anchored modules, renames), the live-browser smoke covering bundled
-   vendor singleton/importmap behavior, and the public canonical-spec check.
+3. **Public browser smoke.** The Excalidraw corpus, its accepted spec and its
+   browser smoke landed (<excalidraw/README.md>); the smoke loads swapped
+   packages through an import map. Remaining per
+   <plans/excalidraw_live_smoke.md>: lazy-chunk coverage and the public
+   canonical-spec check.
    Node probes already run; browser loading is the missing contract, not a
    missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
@@ -227,14 +227,13 @@ to one exact source/spec pair and held to the interactive budget in
 
 - **F5 — Decide the remaining premise kinds from provenance.**
   <docs/premise_provenance.md> lists where each premise is consumed and
-  whether every read records its use; `reentry_free_operations` is complete and
-  linted. Complete recording outside the interpreter's hot paths, one kind per
-  change, then lint it the same way (never consumed → `inferable`, consumed →
-  probe): `census_slots_intact`'s dropped dependencies and the `node_global`
-  alias, a per-statement record for `trusted_dataflow_summaries`, the
-  `heap_contents` / `at_init_fallback` native-input exits, the loader keys, and
-  a per-statement declared-purity use list written at each classifier arm
-  (never a `ProofDependencies` field). The hot-path kinds
+  whether every read records its use; `reentry_free_operations` and
+  `trusted_dataflow_summaries` are complete and linted. Complete recording
+  outside the interpreter's hot paths, one kind per change, then lint it the
+  same way (never consumed → `inferable`, consumed → probe): the `node_global`
+  alias, the `heap_contents` / `at_init_fallback` native-input exits, the
+  loader keys, and a per-statement declared-purity use list written at each
+  classifier arm (never a `ProofDependencies` field). The hot-path kinds
   (`reentry_free_builtin_modules` / `_bun_modules` static closure,
   `initializer_call_effect_inputs`, `deferred_global_publications`,
   `initializer_purity`, `no_reentry_*`) stay probe-only until the
@@ -295,6 +294,23 @@ closure`, conflating unresolved host requests, missing captured chunks,
   pins, structural members, imports, anonymous claims, repeated declarations
   and path-case aliases; accepted rows must reconcile with `modules.json`,
   while unresolved statuses never infer identity by spelling.
+
+- **Vendor swaps on a production esbuild corpus (Excalidraw).** Observed while
+  authoring <excalidraw/spec/vendor_marks.yaml>:
+  - A `partial_swap` package whose subpath is JSON (`open-color.json`) fails
+    `DebundleProjectAnalysis` with the bare parser error
+    `failed to parse <path>: ExpectedSemiForExprStmt`, naming neither the mark
+    nor the package. Reject non-JS subpaths at spec validation with the mark's
+    identity, or support JSON defaults as `swap` does.
+  - A `partial_swap` package has one subpath, so a chunk exporting values from
+    several entry files of one package (roughjs `bin/rough.js`,
+    `bin/generator.js`, `bin/math.js`) cannot be swapped. Next action: decide
+    whether a symbol may name its own subpath.
+  - `chunk_renames` selectors accept only `binding` names, so renaming a
+    residual binding requires a minified-name pin; the corpus renames through
+    module members instead.
+  - `(e => e)({...})`, an immediately invoked local identity arrow, is an
+    `unknown_call` initializer, which put `APP_STATE_STORAGE_CONF` on the side-effect chain.
 
 ### Pipeline performance and architecture cleanup
 

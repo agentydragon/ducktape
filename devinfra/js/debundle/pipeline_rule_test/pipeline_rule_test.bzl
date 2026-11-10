@@ -150,3 +150,71 @@ def _analysis_identity_inputs_test_impl(ctx):
     return analysistest.end(env)
 
 analysis_identity_inputs_test = analysistest.make(_analysis_identity_inputs_test_impl)
+
+_FamilyMemberInfo = provider(doc = "A family member's actions by mnemonic.", fields = ["actions"])
+
+def _family_member_impl(target, _ctx):
+    return [_FamilyMemberInfo(actions = {action.mnemonic: action for action in target.actions})]
+
+_family_member = aspect(implementation = _family_member_impl)
+
+def _basenames(files):
+    return sorted([file.basename for file in files])
+
+def _product_family_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    name = target.label.name
+    actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
+    asserts.equals(
+        env,
+        ["DebundleAnalyze", "DebundleExportGraphs", "DebundlePipeline", "DebundleProjectAnalysis"],
+        sorted(actions),
+    )
+    analyzed = actions["DebundleAnalyze"].outputs.to_list()[0]
+    groups = target[OutputGroupInfo]
+    asserts.equals(env, _basenames(groups.analysis.to_list()), _basenames(ctx.files.analysis))
+    asserts.equals(env, [name + ".dependency_graphs"], _basenames(ctx.files.graphs))
+
+    # A nested residual baseline's YAML is not an input of the outer spec.
+    for mnemonic in ["DebundleProjectAnalysis", "DebundlePipeline"]:
+        asserts.false(env, any(["/residual_baseline/" in file.path for file in actions[mnemonic].inputs.to_list()]))
+
+    # Variants of the same spec register only emission and read the shared analysis.
+    for variant in [ctx.attr.readable, ctx.attr.passing]:
+        if variant:
+            variant_actions = variant[_FamilyMemberInfo].actions
+            asserts.equals(env, ["DebundlePipeline"], sorted(variant_actions))
+            asserts.true(env, analyzed in variant_actions["DebundlePipeline"].inputs.to_list())
+    if ctx.attr.readable:
+        asserts.true(env, "--emit-on-rejection" in ctx.attr.readable[_FamilyMemberInfo].actions["DebundlePipeline"].argv[-1])
+    if ctx.attr.passing:
+        asserts.true(env, "--ownership-subset" in ctx.attr.passing[_FamilyMemberInfo].actions["DebundlePipeline"].argv[-1])
+
+    baseline_actions = ctx.attr.residual_baseline[_FamilyMemberInfo].actions
+    baseline_command = baseline_actions["DebundlePipeline"].argv[-1]
+    for path in ["spec_config.yaml", "modules", "sources/vendor/vendor_marks.yaml"]:
+        asserts.true(env, "product/spec/residual_baseline/" + path + "\"" in baseline_command)
+    if ctx.attr.residual_baseline_reuses_analysis:
+        asserts.equals(env, ["DebundlePipeline"], sorted(baseline_actions))
+        asserts.true(env, analyzed in baseline_actions["DebundlePipeline"].inputs.to_list())
+        baseline_analysis = groups.analysis.to_list()
+    else:
+        asserts.equals(env, ["DebundleAnalyze", "DebundlePipeline", "DebundleProjectAnalysis"], sorted(baseline_actions))
+        asserts.equals(env, "2", baseline_actions["DebundleAnalyze"].env["RAYON_NUM_THREADS"])
+        baseline_analysis = baseline_actions["DebundleAnalyze"].outputs.to_list() + baseline_actions["DebundleProjectAnalysis"].outputs.to_list()
+    asserts.equals(env, _basenames(baseline_analysis), _basenames(ctx.files.residual_baseline_analysis))
+    return analysistest.end(env)
+
+product_family_test = analysistest.make(
+    _product_family_test_impl,
+    attrs = {
+        "analysis": attr.label(allow_files = True, mandatory = True),
+        "graphs": attr.label(allow_files = True, mandatory = True),
+        "passing": attr.label(aspects = [_family_member]),
+        "readable": attr.label(aspects = [_family_member]),
+        "residual_baseline": attr.label(aspects = [_family_member], mandatory = True),
+        "residual_baseline_analysis": attr.label(allow_files = True, mandatory = True),
+        "residual_baseline_reuses_analysis": attr.bool(),
+    },
+)

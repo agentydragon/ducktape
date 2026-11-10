@@ -15,9 +15,17 @@ def out_dir(runfiles: Runfiles) -> Path:
 
 
 @pytest.fixture(scope="module")
-def chunk_ids(runfiles: Runfiles) -> set[str]:
+def chunk_ids_by_file(runfiles: Runfiles) -> dict[str, str]:
+    """Chunk ID by the bundle file name that imports name."""
     js_list = Path(str(runfiles.Rlocation(os.environ["DEBUNDLE_JS_LIST"])))
-    return {line.removesuffix(".js") for line in js_list.read_text().splitlines()}
+    # A line is `<file>.js`, or `<alias>.js<TAB><file>.js` loading `<file>.js` as chunk `<alias>`.
+    lines = [line.split("\t") for line in js_list.read_text().splitlines()]
+    return {fields[-1]: fields[0].removesuffix(".js") for fields in lines}
+
+
+@pytest.fixture(scope="module")
+def chunk_ids(chunk_ids_by_file: dict[str, str]) -> set[str]:
+    return set(chunk_ids_by_file.values())
 
 
 def test_gate_accepted(out_dir: Path) -> None:
@@ -25,9 +33,10 @@ def test_gate_accepted(out_dir: Path) -> None:
 
 
 def test_every_chunk_accepted_and_translation_validated(out_dir: Path, chunk_ids: set[str]) -> None:
+    reports = out_dir / "reports/tree"
     summaries = {
-        path.parent.name: json.loads(path.read_text())
-        for path in (out_dir / "reports/tree").glob("*/graph_summary.json")
+        path.parent.relative_to(reports).as_posix(): json.loads(path.read_text())
+        for path in reports.rglob("graph_summary.json")
     }
     assert set(summaries) == chunk_ids
     rejected = {
@@ -38,18 +47,22 @@ def test_every_chunk_accepted_and_translation_validated(out_dir: Path, chunk_ids
     assert rejected == set()
 
 
-def test_every_chunk_entry_emitted(out_dir: Path, chunk_ids: set[str]) -> None:
-    emitted = {path.parent.name for path in (out_dir / "app").glob("*/entry.js") if path.stat().st_size}
-    assert emitted == chunk_ids
+def test_every_unswapped_chunk_entry_emitted(out_dir: Path, chunk_ids: set[str]) -> None:
+    app = out_dir / "app"
+    emitted = {path.parent.relative_to(app).as_posix() for path in app.rglob("entry.js") if path.stat().st_size}
+    swapped = {
+        swap["chunk_id"] for swap in json.loads((out_dir / "reports/vendor_swaps.json").read_text())["full"].values()
+    }
+    assert emitted == chunk_ids - swapped
 
 
-def test_static_imports_resolve_to_emitted_chunks(out_dir: Path, chunk_ids: set[str]) -> None:
-    unresolved = set()
-    for path in (out_dir / "reports/tree").glob("*/chunk.json"):
-        for chunk_import in json.loads(path.read_text())["imports"]:
-            target = PurePosixPath(chunk_import["source"])
-            if target.suffix != ".js" or target.stem not in chunk_ids:
-                unresolved.add((path.parent.name, chunk_import["source"]))
+def test_static_imports_resolve_to_emitted_chunks(out_dir: Path, chunk_ids_by_file: dict[str, str]) -> None:
+    unresolved = {
+        (path.parent.name, chunk_import["source"])
+        for path in (out_dir / "reports/tree").rglob("chunk.json")
+        for chunk_import in json.loads(path.read_text())["imports"]
+        if PurePosixPath(chunk_import["source"]).name not in chunk_ids_by_file
+    }
     assert unresolved == set()
 
 

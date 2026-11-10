@@ -130,7 +130,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     (work,) = template["spec"]["dataVolumeTemplates"]
     storage = work["spec"]["storage"]
     assert storage["storageClassName"] == "piraeus-ssd-local"
-    assert storage["volumeMode"] == "Block"
+    assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
     # The egress fence that the standalone VMs have must also cover pool members, which carry no VM-name label.
@@ -906,12 +906,8 @@ def test_parked_haku_backup_and_shared_services_remain_configured(
         if doc
     ]
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    # Keep Haku sandbox/CI's shared proxy and the public coder's namespace and access Roles alive.
-    assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-access"} <= owners.keys()
-    deployments = {
-        (doc["metadata"].get("namespace"), doc["metadata"]["name"]) for doc in active if doc["kind"] == "Deployment"
-    }
-    assert ("haku-egress-proxy", "haku-egress-proxy") in deployments
+    # Keep Haku's namespace and the public coder's namespace and access Roles alive.
+    assert {"haku-namespace", "public-coder-agent-access"} <= owners.keys()
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
     # Only the retained backup recovery package remains reproducible outside the live roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
@@ -947,12 +943,7 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert {
-        "agent-sandbox-controller",
-        "haku-egress-proxy",
-        "public-coder-agent-access",
-        "claude-sandbox-secrets",
-    } <= owners.keys()
+    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owners.keys()
 
 
 def test_openclaw_cutover_waits_for_agentplane_credentials(

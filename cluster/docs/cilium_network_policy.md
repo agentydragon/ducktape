@@ -109,8 +109,7 @@ unrestricted pod on the same node reaches without trouble.
 ```
 
 `toEntities: [cluster]` also covers it — `cluster` expands to include
-`remote-node` and `host` — and is why `haku-egress-proxy` reaches these IPs
-today (`haku_cloud_api` in <../cdk8s/egress_fences.py>). Prefer
+`remote-node` and `host`. Prefer
 the narrower pair when the pod is deliberately barred from in-cluster pod-to-pod
 egress.
 
@@ -125,7 +124,7 @@ An egress allowlist built from `toFQDNs` is a fence over the real internet only.
 Every `*.allegedly.works` name is outside what it can express, so such a name
 appearing in a `toFQDNs` block **grants nothing** — either a `toEntities` rule
 elsewhere in the same policy is what actually permits it, or it does not work at
-all. Both cases are live today; see the comments in <../cdk8s/egress_fences.py>.
+all.
 
 The layer that _can_ fence these names is the DNS rule under
 `toPorts.rules.dns`: the DNS proxy matches on the **query name** the pod sends,
