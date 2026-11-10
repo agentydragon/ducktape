@@ -12,6 +12,8 @@ report snapshots. The CI reports are:
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
 
+- **Upstream patches and issues:** [reviewed inventory](upstream-patches/index.html), with upstream status, local impact, evidence, and follow-up actions.
+
 - **Cluster storage:** [current inventory and storage options](storage/index.html), a read-only live inventory snapshot with last-reported usage and migration alternatives.
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.

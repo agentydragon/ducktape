@@ -1,0 +1,957 @@
+{
+  "reviewed_at_utc": "2026-11-09 to 2026-11-10",
+  "source_devel_commit": "5720cbd391b4d02dd84d98c75c9e73801d6d3059",
+  "scope": "A reviewed snapshot of the upstream issues, patches, workarounds and forked features identified in the November 9–10 investigation; not a comprehensive scan of every dependency or a live status feed.",
+  "entries": [
+    {
+      "id": "seaweed-csi",
+      "project": "SeaweedFS CSI",
+      "title": "Dead FUSE mount blocks recovery",
+      "kind": "Issue",
+      "status": "Released",
+      "priority": "High",
+      "impact": "Dead staging mounts can leave workloads stuck until manual cleanup.",
+      "upstream": "PR #325 adds bounded statfs probing and safe detach; present in v1.4.35 and newer. Ducktape declares v1.4.30.",
+      "next_step": "Upgrade and exercise dead-mount recovery before closing the issue.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/4786"
+        },
+        {
+          "label": "Upstream PR",
+          "url": "https://github.com/seaweedfs/seaweedfs-csi-driver/pull/325"
+        },
+        {
+          "label": "Declared pin",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/cluster/cdk8s/seaweedfs_csi.py"
+        }
+      ]
+    },
+    {
+      "id": "seaweed-raft",
+      "project": "SeaweedFS",
+      "title": "Snapshot followers do not campaign",
+      "kind": "Issue",
+      "status": "Released",
+      "priority": "High",
+      "impact": "Restarting the leader after followers restored snapshots caused a leader outage.",
+      "upstream": "Raft PR #16 is included from SeaweedFS 4.49. Declared server 4.52 includes the fix; /cluster/status can still return 200 without a leader.",
+      "next_step": "Verify the rollout and election scenario; assess readiness separately.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/11070"
+        },
+        {
+          "label": "Upstream PR",
+          "url": "https://github.com/seaweedfs/raft/pull/16"
+        },
+        {
+          "label": "Server declaration",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/cluster/cdk8s/seaweedfs/cluster.py"
+        }
+      ]
+    },
+    {
+      "id": "seaweed-ref",
+      "project": "SeaweedFS",
+      "title": "Cross-mount Git ref corruption",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "High",
+      "impact": "Concurrent pushes through separate mounts produced an empty Git ref.",
+      "upstream": "Current code retains deferred creates and path-based rename invalidation; no exact resolution established.",
+      "next_step": "Rebuild the lost two-mount reproducer and run it against current releases.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/7767"
+        },
+        {
+          "label": "Upstream mount code",
+          "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/mount/weedfs_file_mkrm.go"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "mount: remote rename can retarget an unrelated local open handle",
+          "url": "https://github.com/seaweedfs/seaweedfs/issues/new",
+          "body": "**Describe the bug**\n\nWith two mounts, a rename event from one mount can be applied by path to an unrelated open handle on the other. In our incident, closing the unrelated empty Git lock then wrote an empty entry over the destination ref.\n\n**System Setup**\n\nLinux; two weed mounts against one filer. [Recreate and include exact master, filer, mount commands, weed versions, OS, and sanitized filer.toml.]\n\n**Expected behavior**\n\nA rename from another client must not retarget a local handle for a different file.\n\n**Additional context**\n\nWe reproduced the incident with a delayed invalidation worker in an older build; the scratch scripts were not retained. Current behavior needs a new reproduction before this report is submitted. Ducktape: https://github.com/agentydragon/ducktape/issues/7767",
+          "review": "The timing-sensitive reproducer was not retained; rebuild it and verify on current upstream before filing."
+        },
+        {
+          "title": "mount: O_CREAT|O_EXCL is not exclusive across mounts",
+          "url": "https://github.com/seaweedfs/seaweedfs/issues/new",
+          "body": "**Describe the bug**\n\nTwo clients can both create the same lock path with O_CREAT|O_EXCL when each has its own mount. In our setup the second create was checked against local metadata and the filer entry was deferred.\n\n**System Setup**\n\nLinux; two weed mounts on the same filer. [Supply exact version, commands, mount flags, OS, and sanitized filer.toml.]\n\n**Expected behavior**\n\nAn exclusive create succeeds for at most one client, or the cross-mount limitation is clearly documented.\n\n**Additional context**\n\nA prior two-mount experiment reproduced both opens succeeding. Recreate the experiment on a current version and clarify whether -dlm changes the supported contract. https://github.com/agentydragon/ducktape/issues/7767",
+          "review": "Recreate the two-mount test and check the advertised semantics and existing reports before filing."
+        }
+      ]
+    },
+    {
+      "id": "bb-replay",
+      "project": "BuildBuddy",
+      "title": "Accepted remote runs can be replayed",
+      "kind": "Issue",
+      "status": "Present upstream",
+      "priority": "High",
+      "impact": "A log-stream error can cause an accepted remote command to run again.",
+      "upstream": "Current client still returns a log-stream error to a whole-attempt retry loop.",
+      "next_step": "File a report using the invocation evidence; retain the disable-retry mitigation.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/13270"
+        },
+        {
+          "label": "Current client",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/remotebazel/remotebazel.go"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "bb remote retries an accepted run after a log-stream error",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+          "body": "**Describe the bug**\n\nA log observation error after a remote run is accepted can cause bb remote to submit the entire command again. Side effects can repeat and the first run outcome may be unknown.\n\n**To Reproduce**\n\nRun a remote script with a visible side effect; after acceptance interrupt its log stream with an Internal/RST_STREAM failure. We observed a second outer invocation. [Add a minimal fault-injection harness and current-version result.]\n\n**Expected behavior**\n\nReconnect to the accepted invocation or surface an outcome-unknown error instead of submitting it again.\n\n**Desktop**\n\n- OS: Linux\n- Browser: not applicable\n- Version: see additional context\n\n**Additional context**\n\nObserved with bb 5.0.498 on Linux. The client retry loop calls attemptRun again after a streaming logs error. Our detailed evidence and invocation links: https://github.com/agentydragon/ducktape/issues/13270. We currently use --disable_retry=true.",
+          "review": "The observed failure is real; reproduce on the current CLI and check for duplicates before filing.",
+          "template": "bug_report.md"
+        }
+      ]
+    },
+    {
+      "id": "grocy-freezer",
+      "project": "Grocy",
+      "title": "Freezer best-before fallback",
+      "kind": "Workaround",
+      "status": "Present upstream",
+      "priority": "High",
+      "impact": "Adding stock to a freezer can use today instead of the normal default best-before date.",
+      "upstream": "AddProduct still uses >= -1 while the transfer path uses a narrower guard.",
+      "next_step": "Confirm intended semantics and propose a regression test and focused PR.",
+      "links": [
+        {
+          "label": "Local notes",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/grocy_mcp/TODO.md"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/grocy/grocy/blob/master/services/StockService.php"
+        },
+        {
+          "label": "Related UI issue",
+          "url": "https://github.com/grocy/grocy/issues/2721"
+        }
+      ],
+      "filing_policy": {
+        "text": "Grocy asks contributors to exclude AI-generated content. Use the evidence above to write your own report and check its issue template.",
+        "url": "https://github.com/grocy/grocy/issues/new/choose",
+        "template_url": "https://github.com/grocy/grocy/blob/master/.github/ISSUE_TEMPLATE/bug-report.md"
+      }
+    },
+    {
+      "id": "grocy-spec",
+      "project": "Grocy",
+      "title": "Incomplete and invalid OpenAPI",
+      "kind": "Workaround",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "Missing fields and schemas and invalid enum/references impair generated API tools.",
+      "upstream": "The upstream static specification still has an empty enum and lacks sampled fields and schemas.",
+      "next_step": "Separate schema additions from validity and generated-reference fixes.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/grocy_mcp/fix_openapi_spec.py"
+        },
+        {
+          "label": "Upstream spec",
+          "url": "https://github.com/grocy/grocy/blob/master/grocy.openapi.json"
+        }
+      ],
+      "filing_policy": {
+        "text": "Grocy asks contributors to exclude AI-generated content. Use the evidence above to write your own report and check its issue template.",
+        "url": "https://github.com/grocy/grocy/issues/new/choose",
+        "template_url": "https://github.com/grocy/grocy/blob/master/.github/ISSUE_TEMPLATE/bug-report.md"
+      }
+    },
+    {
+      "id": "cli-race",
+      "project": "CLIProxyAPI",
+      "title": "Streaming logger channel race",
+      "kind": "Patch",
+      "status": "Released",
+      "priority": "High",
+      "impact": "Finalization clears a channel while its worker can still read it.",
+      "upstream": "Issue #7064 was closed after upstream changed the worker to capture the channel and writer. v8.0.62 contains the changed code; the original PR #7068 closed unmerged after an equivalent change landed.",
+      "next_step": "Run the race-enabled test on the release and remove our patch only after our pinned source includes the fix.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/cli_proxy_api/patches/streaming-channel-race.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/router-for-me/CLIProxyAPI/blob/v8.0.62/internal/api/middleware/response_writer.go"
+        },
+        {
+          "label": "Our PR",
+          "url": "https://github.com/agentydragon/ducktape/pull/12629"
+        },
+        {
+          "label": "Upstream report",
+          "url": "https://github.com/router-for-me/CLIProxyAPI/issues/7064"
+        },
+        {
+          "label": "Upstream fix history",
+          "url": "https://github.com/router-for-me/CLIProxyAPI/pull/7068"
+        }
+      ]
+    },
+    {
+      "id": "swc",
+      "project": "SWC",
+      "title": "Unresolved default-export resolution",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "A TypeScript default export can receive an incorrect binding during type fallback.",
+      "upstream": "Current resolver still lacks our state-preserving change; latest behavior not rerun.",
+      "next_step": "Run the regression against current SWC and send a minimized test.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/swc_ecma_transforms_base_49_0_1.patch"
+        },
+        {
+          "label": "Upstream resolver",
+          "url": "https://github.com/swc-project/swc/blob/main/crates/swc_ecma_transforms_base/src/resolver/mod.rs"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Resolver gives an unresolved default-export identifier a type binding",
+          "url": "https://github.com/swc-project/swc/issues/new",
+          "body": "",
+          "review": "SWC requires a public minimal reproduction URL; create and verify one before filing. The existing repository test is supporting evidence, not yet a standalone repro.",
+          "template": "bug_report.yml",
+          "form_fields": {
+            "description": "With type-aware resolution enabled, an unresolved default-export identifier after an import can receive a local type binding instead of retaining the unresolved mark.",
+            "code": "import remote from './dep.js';\nexport default defaultRead;",
+            "config": "[Add the exact parser and resolver configuration from the minimized reproduction.]",
+            "expected-behavior": "The identifier retains the unresolved mark. Value-bound and type-only exports retain their appropriate identities.",
+            "actual-behavior": "With the pinned resolver, the identifier can be assigned a local type binding.",
+            "version": "swc_ecma_transforms_base 49.0.1; [verify current upstream]",
+            "swc-info": "[Add output of swc-info if using the CLI.]",
+            "addition": "Existing test and patch: https://github.com/agentydragon/ducktape/pull/14904. [Add a valid standalone reproduction URL to the required form field.]"
+          }
+        }
+      ]
+    },
+    {
+      "id": "forgejo",
+      "project": "Forgejo",
+      "title": "First registry push races across replicas",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "High",
+      "impact": "A concurrent first push can fail with a package unique-constraint error and HTTP 500.",
+      "upstream": "The current Codeberg tracker could not be inspected during this review.",
+      "next_step": "Check Codeberg for an existing fix and report the captured evidence if needed.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/8318"
+        },
+        {
+          "label": "Upstream tracker",
+          "url": "https://codeberg.org/forgejo/forgejo/issues"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Container registry: concurrent first push can race when using multiple replicas",
+          "url": "https://codeberg.org/forgejo/forgejo/issues/new",
+          "body": "## Description\n\nConcurrent blob finalizations for a new container package can race across Forgejo replicas; the losing request returns HTTP 500 after a package unique-constraint violation.\n\n## Reproduction\n\nRun two replicas sharing PostgreSQL and submit concurrent blob finalizations for a new package. [Create a sanitized, repeatable standalone reproduction and current-version result.]\n\n## Expected behavior\n\nConcurrent creation converges on one package without a failed blob finalization.\n\n## Environment and context\n\nObserved on v15.0.8 with two replicas. Correlated database and application evidence: https://github.com/agentydragon/ducktape/issues/8318.",
+          "review": "Codeberg templates and duplicate reports were not accessible during this review; inspect both before filing.",
+          "manual_url": true
+        }
+      ]
+    },
+    {
+      "id": "iron-proxy",
+      "project": "iron-proxy",
+      "title": "Interactive HTTP/2 response does not flush",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "An interactive stream stalls before its initial metadata reaches the client.",
+      "upstream": "Current response-copy code still lacks the flush used by our prototype; current release not retested.",
+      "next_step": "Run the existing comparison on current upstream and submit a focused regression.",
+      "links": [
+        {
+          "label": "Findings",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/agentplane/egress/x/iron_proxy/findings.md"
+        },
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/iron_proxy/streaming.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/paradigmxyz/iron-proxy/blob/main/internal/proxy/proxy.go"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "HTTP/2 interactive responses buffer initial metadata",
+          "url": "https://github.com/paradigmxyz/iron-proxy/issues/new",
+          "body": "## Description\n\nAn interactive HTTP/2 response can stall while the upstream has already flushed response headers and is waiting for the first client message.\n\n## Reproduction\n\nSend a bidirectional gRPC call through CONNECT and TLS interception. Have the upstream flush initial metadata before reading the first message. [Provide a standalone test using the current release.]\n\n## Expected behavior\n\nInitial metadata reaches the client before request EOF.\n\n## Environment and context\n\nOur stock-versus-patched experiment and test results: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/agentplane/egress/x/iron_proxy/findings.md. The tested patch flushes headers and copied chunks.",
+          "review": "Re-run against current upstream and reduce the existing test before filing."
+        }
+      ]
+    },
+    {
+      "id": "eso",
+      "project": "External Secrets",
+      "title": "Removed namespaces retain CES finalizers",
+      "kind": "Issue",
+      "status": "Open upstream",
+      "priority": "High",
+      "impact": "Namespaces can remain Terminating after they stop matching a ClusterExternalSecret.",
+      "upstream": "Issue #6677 and fix PR #6693 are open; current removal path still lacks finalizer cleanup.",
+      "next_step": "Help the existing PR through review, then upgrade and verify.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/11868"
+        },
+        {
+          "label": "Upstream issue",
+          "url": "https://github.com/external-secrets/external-secrets/issues/6677"
+        },
+        {
+          "label": "Upstream PR",
+          "url": "https://github.com/external-secrets/external-secrets/pull/6693"
+        }
+      ]
+    },
+    {
+      "id": "ruff",
+      "project": "Ruff",
+      "title": "Jaxtyping shapes flagged as Python expressions",
+      "kind": "Workaround",
+      "status": "Open upstream",
+      "priority": "Medium",
+      "impact": "Valid shape strings produce false diagnostics or unsafe autofixes.",
+      "upstream": "Ruff #9860 remains open; the newest release was not tested with our reproduction.",
+      "next_step": "Rerun the minimal example and contribute evidence or a fix.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/4570"
+        },
+        {
+          "label": "Upstream issue",
+          "url": "https://github.com/astral-sh/ruff/issues/9860"
+        }
+      ]
+    },
+    {
+      "id": "crossplane",
+      "project": "Crossplane",
+      "title": "Finalizer update delays Ready status",
+      "kind": "Issue",
+      "status": "Open upstream",
+      "priority": "Medium",
+      "impact": "Adopted OpenTofu workspaces can wait a drift poll before Ready and checksum appear.",
+      "upstream": "The matching runtime issue and fix PR closed without merge; current finalizer still updates the object.",
+      "next_step": "Reproduce with current runtime/provider and revive the upstream discussion.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/12157"
+        },
+        {
+          "label": "Upstream issue",
+          "url": "https://github.com/crossplane/crossplane-runtime/issues/791"
+        },
+        {
+          "label": "Closed PR",
+          "url": "https://github.com/crossplane/crossplane-runtime/pull/804"
+        }
+      ]
+    },
+    {
+      "id": "electric",
+      "project": "Electric",
+      "title": "Snapshot cancellations can trigger fast-loop guard",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "Medium",
+      "impact": "Thread synchronization can stop after repeated non-live requests at one offset.",
+      "upstream": "Current guard counts rapid same-offset requests; snapshot cancellation as the cause remains a hypothesis.",
+      "next_step": "Make a minimal client reproduction before reporting or concluding a fix.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/8544"
+        },
+        {
+          "label": "Upstream client",
+          "url": "https://github.com/electric-sql/electric/blob/main/packages/typescript-client/src/client.ts"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Snapshot-paused requests may trip the fast-loop guard",
+          "url": "https://github.com/electric-sql/electric/issues/new",
+          "body": "**Versions**\n\n- Client: TypeScript 1.5.28\n- Electric: [add server version]\n\n**Bug description**\n\nSeveral non-live requests at the same offset were canceled while subset snapshots succeeded. The fast-loop guard reported repeated requests. We suspect snapshot pause/resume cancellations are counted, but the causal path is not yet proven.\n\n**Expected behavior**\n\nNormal snapshot coordination does not trigger a stale-cache fast-loop failure.\n\n**Reproduction**\n\n[Create a minimal ShapeStream/requestSnapshot reproduction and confirm on the current client.]\n\n**Additional context**\n\nSanitized observation: https://github.com/agentydragon/ducktape/issues/8544.",
+          "review": "This is a hypothesis: establish causation with a minimal reproduction before submitting.",
+          "template": "bug_report.md"
+        }
+      ]
+    },
+    {
+      "id": "tofu-stuck",
+      "project": "tofu-controller",
+      "title": "Terminating runner blocks reconciliation",
+      "kind": "Issue",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "An unreachable node can leave a runner Pod terminating across reconciliation retries.",
+      "upstream": "Current runner code still waits for termination in both relevant branches.",
+      "next_step": "Design recovery that accounts for a potentially live process and state lock.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/5704"
+        },
+        {
+          "label": "Runner source",
+          "url": "https://github.com/flux-iac/tofu-controller/blob/main/controllers/runner_pod.go"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Terminating runner Pod on an unreachable node blocks reconciliation",
+          "url": "https://github.com/flux-iac/tofu-controller/issues/new",
+          "body": "## Description\n\nA runner Pod stuck terminating on an unreachable node can make every reconciliation time out while waiting for the same Pod to disappear.\n\n## Reproduction\n\nStart a runner, make its node unreachable and request deletion so it remains Running with a deletion timestamp. Reconcile repeatedly. [Provide a safe isolated reproduction and logs.]\n\n## Expected behavior\n\nReconciliation has a bounded recovery strategy that accounts for a potentially still-running Terraform process and state lock.\n\n## Environment and context\n\nObserved on v0.16.5. Both the TLS-mismatch and terminating branches wait for NotFound. https://github.com/agentydragon/ducktape/issues/5704.",
+          "review": "Validate a safe recovery contract for partitioned nodes; force deletion can permit concurrent state access."
+        }
+      ]
+    },
+    {
+      "id": "tofu-external",
+      "project": "tofu-controller",
+      "title": "ExternalArtifact source support",
+      "kind": "Fork",
+      "status": "Merged, no release",
+      "priority": "Medium",
+      "impact": "Our controller image and CRD are built from a fork to consume per-module artifacts.",
+      "upstream": "Our PR #1901 merged on 28 October; the latest stable release checked predates it.",
+      "next_step": "Wait for a containing release, then validate the image and CRD before switching.",
+      "links": [
+        {
+          "label": "Upstream PR",
+          "url": "https://github.com/flux-iac/tofu-controller/pull/1901"
+        },
+        {
+          "label": "Local package",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/tofu_controller/README.md"
+        }
+      ]
+    },
+    {
+      "id": "openclaw-sqlite",
+      "project": "OpenClaw",
+      "title": "SQLite startup integrity and lease",
+      "kind": "Patch",
+      "status": "Released",
+      "priority": "High",
+      "impact": "A large HDD-backed agent database exceeded the startup migration lease.",
+      "upstream": "v2026.11.2 has a lease heartbeat and child-process checks; current main advances admission further.",
+      "next_step": "Test the exact large-database scenario with integrity enabled.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/5646"
+        },
+        {
+          "label": "Release docs",
+          "url": "https://github.com/openclaw/openclaw/blob/v2026.11.2/docs/reference/database-schemas/integrity-and-recovery.md"
+        },
+        {
+          "label": "Related upstream issue",
+          "url": "https://github.com/openclaw/openclaw/issues/176342"
+        }
+      ]
+    },
+    {
+      "id": "openclaw-stop",
+      "project": "OpenClaw",
+      "title": "Stop loses conversation context",
+      "kind": "Issue",
+      "status": "Released",
+      "priority": "Medium",
+      "impact": "Stopping a CLI turn could leave a successor without the established context.",
+      "upstream": "Upstream cancellation and cross-runtime fixes merged.",
+      "next_step": "Run the local synthetic regression against a containing release.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/3864"
+        },
+        {
+          "label": "Cancellation fix",
+          "url": "https://github.com/openclaw/openclaw/pull/147139"
+        },
+        {
+          "label": "History fix",
+          "url": "https://github.com/openclaw/openclaw/pull/168726"
+        }
+      ]
+    },
+    {
+      "id": "drbd",
+      "project": "DRBD",
+      "title": "UpToDate replicas with nonzero bitmap",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "High",
+      "impact": "A multipath recovery left out-of-sync bits despite UpToDate states; actual differing blocks were not established.",
+      "upstream": "9.3.4 has relevant bitmap fixes; a related multi-source stall remains open, including on 9.3.5-rc.1.",
+      "next_step": "Compare the exact recovery sequence with the fixes and reproduce.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/15010"
+        },
+        {
+          "label": "9.3.4 changes",
+          "url": "https://github.com/LINBIT/drbd/blob/drbd-9.3.4/ChangeLog"
+        },
+        {
+          "label": "Related issue",
+          "url": "https://github.com/LINBIT/drbd/issues/149"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "UpToDate peer pair retains nonzero out-of-sync bitmap after multi-peer recovery",
+          "url": "https://github.com/LINBIT/drbd/issues/new",
+          "body": "## Description\n\nAfter a disk was reattached and one multi-peer resync completed, both peers reported UpToDate and Established while another connection retained a nonzero out-of-sync bitmap. Verification summary matched the pre-existing bitmap count; it does not establish the number of different blocks.\n\n## Reproduction\n\nThree diskful peers; detach and reattach one disk after storage exhaustion; observe a resync from one peer and a paused resync from another. [Reduce to a safe standalone reproduction; collect UUID, bitmap and state transitions.]\n\n## Expected behavior\n\nReplica state and pending reconciliation clearly reflect the remaining bitmap, or the expected semantics are documented.\n\n## Environment and context\n\nObserved with DRBD 9.3.3 and LINSTOR 1.35.2. Version 9.3.4 lists potentially related fixes; issue #149 describes a related but not proven identical resync stall. https://github.com/agentydragon/ducktape/issues/15010.",
+          "review": "Do not file as confirmed data divergence. Reproduce on current DRBD and compare with existing issue #149."
+        }
+      ]
+    },
+    {
+      "id": "gazelle-parser",
+      "project": "rules_python / tree-sitter",
+      "title": "Python grammar warnings",
+      "kind": "Issue",
+      "status": "In progress",
+      "priority": "Medium",
+      "impact": "Older Gazelle parser warns on PEP 758 and PEP 696 syntax.",
+      "upstream": "The parser migration is in 2.5.0 release candidates; PEP 696 remains an open grammar issue.",
+      "next_step": "Adopt a stable release and verify warnings; track PEP 696 independently.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/9138"
+        },
+        {
+          "label": "Parser migration",
+          "url": "https://github.com/bazel-contrib/rules_python/pull/4272"
+        },
+        {
+          "label": "PEP 696",
+          "url": "https://github.com/tree-sitter/tree-sitter-python/issues/346"
+        }
+      ]
+    },
+    {
+      "id": "conda-name",
+      "project": "rules_conda",
+      "title": "Epoch version repository names",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "Conda versions containing ! produce invalid Bazel repository names.",
+      "upstream": "Current _package_repo_name still concatenates the raw filename.",
+      "next_step": "Add an upstream test for epoch versions and propose sanitization.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_sanitize_repo_name.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/calebzulawski/rules_conda/blob/main/conda/extensions.bzl"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Sanitize epoch versions in generated repository names",
+          "url": "https://github.com/calebzulawski/rules_conda/issues/new",
+          "body": "## Description\n\nConda package versions may contain an epoch separator (!), which is invalid in Bazel repository names generated from the package filename.\n\n## Reproduction\n\nResolve a lockfile containing an epoch-version package, for example one with version 1!164.3095. [Attach a minimal lockfile and exact Bazel output.]\n\n## Expected behavior\n\nGenerated repository names are valid and remain collision-safe.\n\n## Environment and context\n\nThe current _package_repo_name concatenates the filename. We carry a local sanitization patch: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_sanitize_repo_name.patch.",
+          "review": "Provide a minimal public lockfile and examine possible sanitization collisions."
+        }
+      ]
+    },
+    {
+      "id": "conda-python",
+      "project": "rules_conda",
+      "title": "rules_python 2 compatibility",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "The Python extension refers to a wheel repository name that changes with rules_python 2.",
+      "upstream": "Current module and extension still use the older py_rattler repository name.",
+      "next_step": "Validate a portable upstream-compatible fix against supported platforms.",
+      "links": [
+        {
+          "label": "Module patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_rules_python_2_module.patch"
+        },
+        {
+          "label": "Extension patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_rules_python_2_extension.patch"
+        },
+        {
+          "label": "Upstream module",
+          "url": "https://github.com/calebzulawski/rules_conda/blob/main/MODULE.bazel"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "rules_python 2 changes the py_rattler repository name",
+          "url": "https://github.com/calebzulawski/rules_conda/issues/new",
+          "body": "## Description\n\nThe extension refers to a wheel repository name generated by rules_python; that name changes in our rules_python 2 setup and the extension cannot resolve it.\n\n## Reproduction\n\nUse rules_conda 0.3.2 with rules_python 2 and evaluate a conda lock. [Add minimal MODULE.bazel and exact failure output.]\n\n## Expected behavior\n\nThe extension resolves the py_rattler wheel through a supported stable interface.\n\n## Environment and context\n\nLocal compatibility patches: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_conda_rules_python_2_extension.patch.",
+          "review": "Verify the current rules_python integration, platforms and a minimal repro before filing."
+        }
+      ]
+    },
+    {
+      "id": "gazelle-per-file",
+      "project": "rules_python",
+      "title": "Per-file Gazelle main modules",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "Generating a binary for a main module removes the corresponding per-file library.",
+      "upstream": "The behavior remains in 2.5.0-rc4. Our macro-wiring hunk is repository-specific.",
+      "next_step": "Propose the independent per-file behavior change upstream.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_gazelle_ducktape.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/bazel-contrib/rules_python/blob/2.5.0-rc4/gazelle/python/generate.go"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Gazelle per-file mode removes a library for a module with __main__",
+          "url": "https://github.com/bazel-contrib/rules_python/issues/new",
+          "body": "# 🐞 bug report\n\n### Affected Rule\n\nrules_python_gazelle_plugin, per-file generation\n\n### Is this a regression?\n\nNot established.\n\n### Description\n\nA source file containing an if __name__ == \"__main__\" guard is converted into a py_binary and removed from per-file py_library sources. A separately declared srcs-less binary may need the library to remain importable.\n\n## 🔬 Minimal Reproduction\n\n[Provide a small repository with per-file mode, a guarded module, and the generated BUILD output.]\n\n## Expected behavior\n\nGenerate the per-file library for the module while allowing an explicitly defined binary.\n\n## 🔥 Exception or Error\n\n[Add the exact error output from the minimal reproduction.]\n\n## 🌍 Your Environment\n\n- Operating system: Linux\n- Bazel version: [add tested version]\n- rules_python version: 2.4.3; source behavior also seen in 2.5.0-rc4\n\n**Anything else relevant?**\n\nThe existing #1815 is related but not necessarily the same behavior. Our narrow hunk: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_gazelle_ducktape.patch.",
+          "review": "Verify desired upstream behavior and provide a standalone reproduction before filing.",
+          "template": "bug_report.md"
+        }
+      ]
+    },
+    {
+      "id": "rules-tf-source",
+      "project": "rules_tf",
+      "title": "Exclude local .terraform state",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "Local Terraform state and provider artifacts can contaminate Bazel source packaging.",
+      "upstream": "The current source glob still lacks our exclusions.",
+      "next_step": "Submit an independently reviewable source-packaging change.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_exclude_dotterraform.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/yanndegat/rules_tf/blob/main/tf/def.bzl"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Exclude local .terraform files from packaged source",
+          "url": "https://github.com/yanndegat/rules_tf/issues/new",
+          "body": "## Description\n\nThe source packaging glob includes local .terraform contents and its generated lockfile, which can contaminate validation inputs.\n\n## Reproduction\n\nCreate a rules_tf target, run a local Terraform/OpenTofu initialization in that package and rebuild. [Provide a minimal workspace and observed failure.]\n\n## Expected behavior\n\nLocal .terraform artifacts are excluded from packaged inputs, or there is a supported way to exclude them.\n\n## Environment and context\n\nWe carry a narrow exclude patch: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_exclude_dotterraform.patch.",
+          "review": "Confirm whether the lockfile should be excluded for all users or made configurable."
+        }
+      ]
+    },
+    {
+      "id": "rules-tf-tflint",
+      "project": "rules_tf",
+      "title": "TFLint configuration compatibility",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Low",
+      "impact": "The checked-in configuration uses a setting rejected by newer TFLint.",
+      "upstream": "Upstream still uses module = true; we patch it to call_module_type.",
+      "next_step": "Check supported TFLint versions and send the compatibility change.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_tflint064_config.patch"
+        },
+        {
+          "label": "Upstream config",
+          "url": "https://github.com/yanndegat/rules_tf/blob/main/tf/toolchains/tflint/config.hcl"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Default TFLint config uses removed module setting",
+          "url": "https://github.com/yanndegat/rules_tf/issues/new",
+          "body": "## Description\n\nThe bundled config uses module = true; with TFLint 0.64 our local configuration requires call_module_type = \"all\".\n\n## Reproduction\n\nRun the rules_tf lint target with TFLint 0.64 and the bundled config. [Add the exact command and error.]\n\n## Expected behavior\n\nThe bundled config works with supported TFLint versions.\n\n## Environment and context\n\nOur local patch: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_tf_tflint064_config.patch.",
+          "review": "Verify supported TFLint version policy and reproduce the error before filing."
+        }
+      ]
+    },
+    {
+      "id": "rules-tf-mirror",
+      "project": "rules_tf",
+      "title": "Provider mirror errors ignored",
+      "kind": "Patch",
+      "status": "Open upstream",
+      "priority": "Medium",
+      "impact": "A failed provider mirror can be cached as incomplete and later break validation.",
+      "upstream": "Our upstream PR #28 remains open.",
+      "next_step": "Follow up on review and remove both patches only after a released fix.",
+      "links": [
+        {
+          "label": "Our PR",
+          "url": "https://github.com/yanndegat/rules_tf/pull/28"
+        },
+        {
+          "label": "Local override",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/MODULE.bazel"
+        }
+      ]
+    },
+    {
+      "id": "rules-mypy",
+      "project": "rules_mypy",
+      "title": "Generated stubs and runtime inputs",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Medium",
+      "impact": "Generated external stubs can be missed and runtime-only assets can invalidate type-check actions.",
+      "upstream": "Current source still scans complete dependency runfiles and lacks our generated stub root handling.",
+      "next_step": "Split the two changes and verify provider metadata assumptions upstream.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/patches/rules_mypy_external_generated_pyi.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/bazel-contrib/rules_mypy/blob/main/mypy/private/mypy.bzl"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Mypy aspect misses externally generated stubs exposed by a wrapper",
+          "url": "https://github.com/bazel-contrib/rules_mypy/issues/new",
+          "body": "## Description\n\nA first-party Python wrapper can expose generated .pyi files owned by an external repository, but the mypy action does not include the corresponding generated repository and virtual-import roots.\n\n## Reproduction\n\nBuild a first-party wrapper around externally generated protobuf stubs and type-check a consumer. [Publish the smallest BUILD and proto reproduction.]\n\n## Expected behavior\n\nMypy resolves the generated stubs while preserving existing wheel and source imports.\n\n## Environment and context\n\nOur patch and validation context: https://github.com/agentydragon/ducktape/pull/13780.",
+          "review": "Reduce the tested fixture and confirm current rules_mypy behavior before filing."
+        },
+        {
+          "title": "Runtime-only runfiles invalidate mypy actions",
+          "url": "https://github.com/bazel-contrib/rules_mypy/issues/new",
+          "body": "## Description\n\nThe aspect adds dependency default runfiles to mypy actions, including first-party runtime assets unrelated to Python typing. Their changes can invalidate the action and require unrelated image preparation.\n\n## Reproduction\n\nCreate a Python dependency with both Python sources and a large runtime-only directory; inspect mypy action inputs and modify only that directory. [Include a minimal aquery and reproducible targets.]\n\n## Expected behavior\n\nOnly inputs relevant to type checking affect the action, while Python source trees, generated stubs, plugins and type libraries remain available.\n\n## Environment and context\n\nOur source-filtering experiment and its metadata limitation: https://github.com/agentydragon/ducktape/pull/14061.",
+          "review": "Resolve the non-empty but incomplete provider metadata case before proposing this as a general fix."
+        }
+      ]
+    },
+    {
+      "id": "rules-lint",
+      "project": "rules_lint",
+      "title": "External touch in narrow-PATH actions",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Low",
+      "impact": "Some lint actions cannot find touch under a restricted PATH.",
+      "upstream": "Current lint aspect still invokes touch.",
+      "next_step": "Demonstrate the failure in a supported configuration and propose shell redirection.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/aspect_rules_lint_no_external_touch.patch"
+        },
+        {
+          "label": "Upstream source",
+          "url": "https://github.com/bazel-contrib/rules_lint/blob/main/lint/private/lint_aspect.bzl"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Avoid depending on touch in narrow-PATH lint actions",
+          "url": "https://github.com/bazel-contrib/rules_lint/issues/new",
+          "body": "## Description\n\nSome lint actions create empty outputs with external touch, which fails when touch is absent from the action PATH.\n\n## Reproduction\n\nRun a supported lint action with a restricted PATH containing its declared tools but no touch. [Provide a reproducible target and error.]\n\n## Expected behavior\n\nThe action creates empty outputs using declared tools or shell redirection.\n\n## Environment and context\n\nLocal patch: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/aspect_rules_lint_no_external_touch.patch.",
+          "review": "First prove that the narrow-PATH setup is within the upstream supported contract."
+        }
+      ]
+    },
+    {
+      "id": "lock-copier",
+      "project": "rules_python",
+      "title": "Generated lock copier fails mypy",
+      "kind": "Patch",
+      "status": "Present upstream",
+      "priority": "Low",
+      "impact": "The generated helper reuses names for incompatible types under our checks.",
+      "upstream": "The current template retains the original variable reuse.",
+      "next_step": "Propose a small type-preserving cleanup.",
+      "links": [
+        {
+          "label": "Our patch",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_lock_copier_mypy.patch"
+        },
+        {
+          "label": "Upstream template",
+          "url": "https://github.com/bazel-contrib/rules_python/blob/main/python/uv/private/template/lock_copier.py"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Generated uv lock copier reassigns variables across incompatible types",
+          "url": "https://github.com/bazel-contrib/rules_python/issues/new",
+          "body": "# 🐞 bug report\n\n### Affected Rule\n\nuv lock copier template\n\n### Is this a regression?\n\nNot established.\n\n### Description\n\nThe generated Python helper reuses names for str, Path, an iterator and a rendered diff, which fails our mypy analysis.\n\n## 🔬 Minimal Reproduction\n\nGenerate and type-check the lock copier. [Provide a minimal target, mypy options and exact diagnostics.]\n\n## Expected behavior\n\nThe generated helper passes type checking without changing its behavior.\n\n## 🔥 Exception or Error\n\n[Add the exact error output from the minimal reproduction.]\n\n## 🌍 Your Environment\n\n- Operating system: Linux\n- Bazel version: [add tested version]\n- rules_python version: 2.4.3; same template pattern seen on current main\n\n**Anything else relevant?**\n\nLocal type-preserving patch: https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/patches/rules_python_lock_copier_mypy.patch.",
+          "review": "Establish whether upstream supports type checking this generated helper and provide a minimal test.",
+          "template": "bug_report.md"
+        }
+      ]
+    },
+    {
+      "id": "bb-slow",
+      "project": "BuildBuddy",
+      "title": "Slow workers and workspace attachment stalls",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "High",
+      "impact": "Unrelated remote tests time out or wait for workspace attachment.",
+      "upstream": "Hosted execution state and cause cannot be established from source alone.",
+      "next_step": "Refresh execution evidence and share the escalation packet with BuildBuddy.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/10405"
+        },
+        {
+          "label": "Hedge investigation",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/devinfra/buildbuddy/debug/ci_remote_cancellation/action_merge_hedge_hang.md"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Hosted executors: workspace attach can stall after VM resume",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+          "body": "**Describe the bug**\n\nSome hosted executions spend minutes between Firecracker resume and attaching workspacefs; identical actions also show a large worker-dependent runtime spread.\n\n**To Reproduce**\n\nInspect the linked execution VM logs and timestamps from the October incident. [Refresh with current invocations and provide identifiers through an appropriate support channel.]\n\n**Expected behavior**\n\nAn assigned execution attaches its workspace promptly or surfaces a bounded infrastructure failure.\n\n**Desktop**\n\n- OS: Linux\n- Browser: not applicable\n- Version: see additional context\n\n**Additional context**\n\nHistorical investigation and escalation packet: https://github.com/agentydragon/ducktape/issues/10405. Executor-side internal cause is not established.",
+          "review": "Hosted logs and current recurrence require provider access; refresh evidence and sanitize invocation identifiers.",
+          "template": "bug_report.md"
+        }
+      ]
+    },
+    {
+      "id": "bb-kernel",
+      "project": "BuildBuddy",
+      "title": "Hosted Firecracker kernel panics",
+      "kind": "Issue",
+      "status": "Open upstream",
+      "priority": "High",
+      "impact": "Several outer execution VMs panicked despite retried Bazel tests passing.",
+      "upstream": "The newer-kernel issue and kernel-selection PR remain open; availability for our org is unknown.",
+      "next_step": "Ask about kernel availability and correlate our panic evidence.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/14952"
+        },
+        {
+          "label": "Kernel issue",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/issues/13523"
+        },
+        {
+          "label": "Selection PR",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/pull/13858"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "Hosted Firecracker workers panic in scheduler load accounting during remote tests",
+          "url": "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+          "template": "bug_report.md",
+          "review": "The exact kernel patch level and cause are unknown. Refresh the retained execution evidence and ask whether 6.1 is available to our organization before filing.",
+          "body": "**Describe the bug**\n\nThree outer Firecracker worker VMs running remote tests logged Linux 5.15 kernel general-protection faults in scheduler load accounting. BuildBuddy retried the failed executions, so the Bazel tests themselves passed.\n\n**To Reproduce**\n\nRun the Agentplane VM reproduction experiment and inspect the failed remote executions' `vm_log_tail.txt` artifacts. [Add a minimal repeatable action and current hosted results if available.]\n\n**Expected behavior**\n\nThe worker kernel should not panic, and infrastructure retries should remain visible to the operator.\n\n**Desktop**\n\n- OS: hosted Firecracker guest, Linux 5.15.0; exact patch level unknown\n- Browser: not applicable\n- Version: [add current hosted environment and CLI version]\n\n**Additional context**\n\nExecution IDs and log digests are recorded at https://github.com/agentydragon/ducktape/issues/14952. Similar-looking scheduler faults do not by themselves establish one root cause. Newer kernel availability is tracked in #13523 and #13858; availability for our organization is unverified."
+        }
+      ]
+    },
+    {
+      "id": "mhi",
+      "project": "Linux MHI",
+      "title": "Rugged suspend returns EBUSY",
+      "kind": "Issue",
+      "status": "Investigate",
+      "priority": "Medium",
+      "impact": "Some suspend attempts abort in the cellular modem driver.",
+      "upstream": "The error path remains, but the exact reason and any matching upstream fix are unproven.",
+      "next_step": "Capture the modem and power-state evidence needed to isolate the cause.",
+      "links": [
+        {
+          "label": "Our issue",
+          "url": "https://github.com/agentydragon/ducktape/issues/11789"
+        },
+        {
+          "label": "Upstream driver",
+          "url": "https://github.com/torvalds/linux/blob/master/drivers/bus/mhi/host/pci_generic.c"
+        }
+      ],
+      "drafts": [
+        {
+          "title": "mhi-pci-generic suspend intermittently returns EBUSY",
+          "url": "https://docs.kernel.org/admin-guide/reporting-issues.html",
+          "body": "## Description\n\nTwo s2idle attempts aborted after the MHI PCI modem suspend callback returned -EBUSY; a later retry succeeded. The reason the modem was busy is unknown.\n\n## Reproduction\n\n[Provide exact kernel version, device IDs, sanitized kernel logs, workload, reproduction frequency and whether current kernels reproduce.]\n\n## Expected behavior\n\nSuspend enters s2idle when the device can quiesce, or logs identify the blocking state.\n\n## Environment and context\n\nOur investigation: https://github.com/agentydragon/ducktape/issues/11789. Chrome closure preceded a successful retry but causation is not established.",
+          "review": "Linux normally accepts driver reports through the relevant kernel mailing lists, not GitHub issues. Identify the MHI maintainers and capture a current reproduction first.",
+          "manual_url": true
+        }
+      ]
+    },
+    {
+      "id": "oidc",
+      "project": "CLIProxyAPI",
+      "title": "Management OIDC",
+      "kind": "Fork",
+      "status": "Investigate",
+      "priority": "Medium",
+      "impact": "Our image carries backend and UI support for OIDC management login.",
+      "upstream": "Both of our upstream PRs closed unmerged; the reason was not established in this review.",
+      "next_step": "Review closure context and decide whether to revive the contribution.",
+      "links": [
+        {
+          "label": "Backend PR",
+          "url": "https://github.com/router-for-me/CLIProxyAPI/pull/6761"
+        },
+        {
+          "label": "UI PR",
+          "url": "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505"
+        },
+        {
+          "label": "Local package",
+          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/cli_proxy_api/README.md"
+        }
+      ]
+    }
+  ]
+}

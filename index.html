@@ -106,6 +106,22 @@
           >
             <${Paper} component="article" withBorder p="lg" radius="md" my="md">
               <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href=${"upstream-patches/"}>
+                  ${"Upstream patches and issues"}
+                <//>
+              <//>
+              <${Text} component="p" my="sm">
+                ${"Upstream fixes, open issues and local patches with evidence and next actions."}
+              <//>
+              <${ManifestStamp} src=${"upstream-patches/manifest.json"} />
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${"upstream-patches/evidence.json"}>
+                  ${"evidence"}
+                <//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
