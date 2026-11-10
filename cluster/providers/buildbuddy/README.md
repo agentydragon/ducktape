@@ -78,8 +78,6 @@ not what a compromised provider process can access.
 
 The cluster manages `litellm/live-tests` with `Observe`, `Create`, and `Update`
 policies. The former `litellm-buildbuddy-sync` Terraform state was emptied using
-a `removed` block with `destroy = false`. The older, unreferenced `litellm_keys`
-state still contains a `terraform_data.buildbuddy_live_tests_secret` entry. Its
-former configuration had a destroy provisioner that deletes BuildBuddy
-`OPENAI_API_KEY`; do not restore that configuration against the retained state.
-The BuildBuddy admin credential remains independently owned.
+a `removed` block with `destroy = false`. Both retired state schemas were then
+removed without running their former destroy provisioners. The BuildBuddy admin
+credential remains independently owned.
